@@ -28,9 +28,10 @@ export default defineNuxtConfig({
       clientUrl: "http://localhost:5173",
       // Overridden by NUXT_PUBLIC_BACKEND_URL
       backendUrl: "http://localhost:3000",
-      // Direct download / store page for the desktop app. Empty until the
-      // installer URL is set via NUXT_PUBLIC_DESKTOP_APP_URL.
-      desktopAppUrl: "",
+      // GitHub Releases page for the desktop installers.
+      // Overridden by NUXT_PUBLIC_DESKTOP_APP_URL.
+      desktopAppUrl:
+        "https://github.com/a-matyukh/pile-commander/releases/latest",
       // Overridden by NUXT_PUBLIC_ABUSE_EMAIL
       abuseEmail: "abuse@pile-commander.app",
       // Who operates the service, for /terms and /privacy. The defaults are

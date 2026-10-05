@@ -9,7 +9,7 @@ export function useAppLinks() {
     clientUrl,
     demoUrl: `${clientUrl}/demo`,
     backendUrl,
-    /** `#` until NUXT_PUBLIC_DESKTOP_APP_URL is set, so the CTAs still render. */
+    /** `#` only if NUXT_PUBLIC_DESKTOP_APP_URL is set to an empty string. */
     desktopAppLink: desktopAppUrl
       ? { href: desktopAppUrl, target: "_blank", rel: "noopener noreferrer" }
       : { href: "#" },

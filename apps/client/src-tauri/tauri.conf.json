@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Pile Commander",
   "version": "../package.json",
-  "identifier": "com.pilecommander.desktop",
+  "identifier": "com.pile.commander",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
