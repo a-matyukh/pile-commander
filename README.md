@@ -27,8 +27,6 @@ database.
 https://github.com/user-attachments/assets/5106fd5d-968a-48bd-a9c6-2470fd7f209f
 
 
----
-
 
 
 ## The idea
