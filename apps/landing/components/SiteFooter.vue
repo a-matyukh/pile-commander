@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { clientUrl, desktopAppLink } = useAppLinks();
+const { clientUrl } = useAppLinks();
 </script>
 
 <template>
@@ -30,12 +30,9 @@ const { clientUrl, desktopAppLink } = useAppLinks();
         <NuxtLink to="/support" class="text-slate-600 no-underline hover:text-slate-900">
           Support
         </NuxtLink>
-        <a
-          v-bind="desktopAppLink"
-          class="text-slate-600 no-underline hover:text-slate-900"
-        >
+        <NuxtLink to="/download" class="text-slate-600 no-underline hover:text-slate-900">
           Download desktop app
-        </a>
+        </NuxtLink>
         <a
           :href="clientUrl"
           target="_blank"

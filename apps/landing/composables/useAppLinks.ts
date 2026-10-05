@@ -9,9 +9,9 @@ export function useAppLinks() {
     clientUrl,
     demoUrl: `${clientUrl}/demo`,
     backendUrl,
-    /** `#` only if NUXT_PUBLIC_DESKTOP_APP_URL is set to an empty string. */
-    desktopAppLink: desktopAppUrl
-      ? { href: desktopAppUrl, target: "_blank", rel: "noopener noreferrer" }
-      : { href: "#" },
+    /** Every "Download desktop app" goes to /download, which picks the file. */
+    desktopAppLink: { to: "/download" },
+    /** All release files. Empty only if NUXT_PUBLIC_DESKTOP_APP_URL is set to "". */
+    desktopReleaseUrl: desktopAppUrl,
   };
 }

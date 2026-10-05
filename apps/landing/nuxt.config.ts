@@ -23,12 +23,17 @@ export default defineNuxtConfig({
     storage: "cookie",
   },
   runtimeConfig: {
+    // Server only. Optional token for the GitHub API behind /download; the
+    // anonymous limit is enough with the 10-minute cache.
+    // Overridden by NUXT_GITHUB_TOKEN
+    githubToken: "",
     public: {
       // Overridden by NUXT_PUBLIC_CLIENT_URL
       clientUrl: "http://localhost:5173",
       // Overridden by NUXT_PUBLIC_BACKEND_URL
       backendUrl: "http://localhost:3000",
-      // GitHub Releases page for the desktop installers.
+      // GitHub Releases page for the desktop installers: /download reads the
+      // latest release of this repo and links here for the other files.
       // Overridden by NUXT_PUBLIC_DESKTOP_APP_URL.
       desktopAppUrl:
         "https://github.com/a-matyukh/pile-commander/releases/latest",
