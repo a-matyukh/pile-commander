@@ -159,9 +159,14 @@ Builds for every platform are on the
 The desktop app updates itself when a new release comes out.
 
 > [!NOTE]
-> The macOS builds are not notarized yet. On first launch macOS will refuse
-> to open the app: go to **System Settings → Privacy & Security** and click
-> **Open Anyway**.
+> During the beta, while Apple notarization is still being set up, macOS says the app is damaged and will not open it. Copy Pile Commander into Applications, then run:
+>
+> ```bash
+> xattr -cr "/Applications/Pile Commander.app"
+> ```
+>
+> Windows SmartScreen says the publisher is unknown: choose **More info**, then **Run anyway**.
+> A downloaded Linux `.AppImage` is not executable until you run `chmod +x` on the file. `.deb` and `.rpm` install as usual.
 
 **Use the cloud.** Sign in from the app to create a cloud workspace,
 invite people, or publish a workspace at a public link. Local folders and
