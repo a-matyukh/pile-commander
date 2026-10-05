@@ -1,0 +1,19 @@
+{
+  "name": "@pile-commander/tauri-plugin-xattrs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./guest-js/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^2.2.0",
+    "typescript": "^5.7.3"
+  }
+}

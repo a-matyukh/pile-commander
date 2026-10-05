@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Folder</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.folder</string>
+      </array>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Pile Workspace</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.pilecommander.workspace</string>
+      </array>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>pile</string>
+    </dict>
+  </array>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.pilecommander.workspace</string>
+      <key>UTTypeDescription</key>
+      <string>Pile Workspace</string>
+      <key>UTTypeIconFile</key>
+      <string>pile.icns</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.archive</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>pile</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

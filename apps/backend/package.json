@@ -1,0 +1,19 @@
+{
+  "name": "@pile-commander/backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.1",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.0"
+  }
+}

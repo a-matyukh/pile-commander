@@ -1,0 +1,83 @@
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import cloud from '@/store/cloud'
+
+const props = withDefaults(defineProps<{
+	initial_email?: string
+	initial_mode?: 'sign_in' | 'sign_up'
+	redirect_to?: string
+}>(), {
+	initial_mode: 'sign_in',
+})
+
+const mode = ref<'sign_in' | 'sign_up'>(props.initial_mode)
+const email = ref(props.initial_email ?? '')
+const password = ref('')
+const is_submitting = ref(false)
+
+watch(() => props.initial_email, (value) => {
+	if (value && !email.value) email.value = value
+})
+
+watch(() => props.initial_mode, (value) => {
+	mode.value = value
+})
+
+async function submit() {
+	if (!email.value || !password.value || is_submitting.value) return
+	is_submitting.value = true
+	try {
+		if (mode.value === 'sign_in') {
+			await cloud.sign_in(email.value, password.value)
+		} else {
+			await cloud.sign_up(email.value, password.value, props.redirect_to)
+		}
+	} finally {
+		is_submitting.value = false
+	}
+}
+
+function toggle_mode() {
+	mode.value = mode.value === 'sign_in' ? 'sign_up' : 'sign_in'
+	cloud.clear_error()
+}
+
+// Sign-up is where the account (and its email) is created, so the terms have to
+// be reachable from here. No VITE_LANDING_URL, no links: a dead link would be
+// worse than none
+const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
+	?.trim()
+	.replace(/\/$/, '') || null
+</script>
+
+<template>
+	<form
+		class="flex flex-col gap-2 p-2 rounded border border-gray-200 dark:border-gray-700"
+		@submit.prevent="submit"
+	>
+		<UInput v-model="email" type="email" placeholder="Email" required autocomplete="email" />
+		<UInput
+			v-model="password"
+			type="password"
+			placeholder="Password (min 6 characters)"
+			required
+			:autocomplete="mode === 'sign_in' ? 'current-password' : 'new-password'"
+		/>
+		<p v-if="cloud.notice" class="text-xs text-green-600 dark:text-green-400">{{ cloud.notice }}</p>
+		<p v-if="cloud.last_error" class="text-xs text-red-500 cursor-pointer" @click="cloud.clear_error()">
+			{{ cloud.last_error }}
+		</p>
+		<UButton type="submit" size="sm" block :loading="is_submitting">
+			{{ mode === 'sign_in' ? 'Sign in' : 'Sign up' }}
+		</UButton>
+		<p v-if="mode === 'sign_up' && landing_url" class="text-xs opacity-60">
+			By creating an account you agree to the
+			<a :href="`${landing_url}/terms`" target="_blank" rel="noopener noreferrer" class="underline">Terms</a>
+			and the
+			<a :href="`${landing_url}/privacy`" target="_blank" rel="noopener noreferrer" class="underline">Privacy Policy</a>.
+		</p>
+		<button type="button" class="text-xs opacity-60 hover:opacity-100 cursor-pointer" @click="toggle_mode">
+			{{ mode === 'sign_in' ? 'No account yet? Sign up' : 'Have an account? Sign in' }}
+		</button>
+	</form>
+</template>

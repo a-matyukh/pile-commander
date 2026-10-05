@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-folder-with-children-xattrs"
+description = "Enables the folder_with_children_xattrs command without any pre-configured scope."
+commands.allow = ["folder_with_children_xattrs"]
+
+[[permission]]
+identifier = "deny-folder-with-children-xattrs"
+description = "Denies the folder_with_children_xattrs command without any pre-configured scope."
+commands.deny = ["folder_with_children_xattrs"]

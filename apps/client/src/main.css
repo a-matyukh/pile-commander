@@ -1,0 +1,51 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "@nuxt/ui";
+
+:root {
+  --pc-gray-h: 215;
+
+  --pc-gray-surface: hsl(var(--pc-gray-h) 38% 97.5%);
+  --pc-gray-header: hsl(var(--pc-gray-h) 40% 96%);
+  --pc-gray-muted: hsl(var(--pc-gray-h) 18% 96%);
+  --pc-gray-border: hsl(var(--pc-gray-h) 35% 91.5%);
+
+  --ui-bg-elevated: var(--pc-gray-header);
+  --ui-bg-muted: hsl(var(--pc-gray-h) 40% 98%);
+  --ui-border: var(--pc-gray-border);
+  --ui-border-muted: var(--pc-gray-border);
+
+  --pc-border: var(--pc-gray-border);
+  --pc-bg-muted: var(--ui-bg-muted);
+  --pc-text-muted: var(--ui-text-muted, #737373);
+  --pc-accent: #2182F8;
+  --pc-selection-bg: color-mix(in oklab, var(--pc-accent) 14%, transparent);
+  --pc-selection-ring: color-mix(in oklab, var(--pc-accent) 55%, transparent);
+  --pc-edit-shadow: rgba(100, 100, 111, 0.2) 0 7px 29px 0;
+  --pc-masonry-unit: 80px;
+  --pc-masonry-gap: 12px;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.pc-selected {
+  background-color: var(--pc-selection-bg);
+  box-shadow: inset 0 0 0 2px var(--pc-selection-ring);
+}
+
+.pc-cut {
+  opacity: 0.4;
+}
+
+/* Sortable forceFallback clones the item onto body; hide that floating ghost. */
+.sortable-fallback {
+  opacity: 0 !important;
+}

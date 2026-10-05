@@ -1,0 +1,20 @@
+[package]
+name = "tauri-plugin-xattrs"
+version = "0.1.0"
+description = "Tauri plugin for cross-platform extended file attributes"
+edition = "2021"
+links = "tauri-plugin-xattrs"
+
+[dependencies]
+tauri = { version = "2", default-features = false }
+tauri-plugin = "2"
+serde = { version = "1", features = ["derive"] }
+
+[target."cfg(unix)".dependencies]
+xattr = "1"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

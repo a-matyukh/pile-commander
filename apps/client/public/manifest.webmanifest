@@ -1,0 +1,14 @@
+{
+  "name": "Pile Commander",
+  "short_name": "Pile Commander",
+  "icons": [
+    {
+      "src": "/app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "display": "standalone",
+  "start_url": "/"
+}

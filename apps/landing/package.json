@@ -1,0 +1,26 @@
+{
+  "name": "@pile-commander/landing",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "nuxt prepare",
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.126",
+    "@nuxt/ui": "^4.9.0",
+    "tailwindcss": "^4.3.1",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.183.0",
+    "nuxt": "^4.1.0",
+    "playwright": "1.49.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  }
+}

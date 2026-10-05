@@ -1,0 +1,25 @@
+{
+  "name": "pile-commander",
+  "private": true,
+  "packageManager": "bun@1.4.1",
+  "workspaces": ["packages/*", "apps/*"],
+  "overrides": {
+    "vue": "3.5.40"
+  },
+  "scripts": {
+    "dev:web": "bun --filter @pile-commander/client dev",
+    "dev:desktop": "bun --filter @pile-commander/client tauri:dev",
+    "dev:landing": "bun --filter @pile-commander/landing dev",
+    "dev:backend": "bun --filter @pile-commander/backend dev",
+    "test": "bun --filter @pile-commander/file-manager test && bun --filter @pile-commander/backend test && bun --filter @pile-commander/client test",
+    "build": "bun run build:file-manager && bun run build:web && bun run build:landing",
+    "build:file-manager": "bun --filter @pile-commander/file-manager build",
+    "build:web": "bun --filter @pile-commander/client build",
+    "build:landing": "bun --filter @pile-commander/landing build",
+    "build:desktop": "TAURI_SIGNING_PRIVATE_KEY=\"$(git rev-parse --show-toplevel)/.tauri/pile-commander.key\" bun --filter @pile-commander/client tauri:build",
+    "icon:desktop": "bun --filter @pile-commander/client tauri icon",
+    "version:desktop": "bun apps/client/scripts/set-desktop-version.ts",
+    "demo:pack": "bun apps/client/scripts/export-demo-pack.ts",
+    "demo:publish": "bun apps/client/scripts/publish-demo-pack.ts"
+  }
+}

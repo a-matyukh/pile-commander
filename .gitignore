@@ -1,0 +1,13 @@
+node_modules
+dist
+.output
+.nuxt
+.tauri
+**/target/
+*.local
+.env
+apps/client/.env
+.DS_Store
+.cursor
+.claude
+piles

@@ -1,0 +1,46 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme static {
+  --color-pc-50: #e8f3fe;
+  --color-pc-100: #c5e0fd;
+  --color-pc-200: #9dccfb;
+  --color-pc-300: #6ab3f9;
+  --color-pc-400: #3e99f8;
+  --color-pc-500: #2182f8;
+  --color-pc-600: #1a6ad4;
+  --color-pc-700: #1553aa;
+  --color-pc-800: #103d80;
+  --color-pc-900: #0c2b5c;
+  --color-pc-950: #071a38;
+}
+
+:root {
+  --pc-gray-h: 215;
+
+  --pc-gray-surface: hsl(var(--pc-gray-h) 38% 97.5%);
+  --pc-gray-header: hsl(var(--pc-gray-h) 40% 96%);
+  --pc-gray-muted: hsl(var(--pc-gray-h) 18% 96%);
+  --pc-gray-border: hsl(var(--pc-gray-h) 35% 91.5%);
+
+  --ui-bg-elevated: var(--pc-gray-header);
+  --ui-bg-muted: hsl(var(--pc-gray-h) 40% 98%);
+  --ui-border: var(--pc-gray-border);
+  --ui-border-muted: var(--pc-gray-border);
+
+  --pc-border: var(--pc-gray-border);
+  --pc-bg-muted: var(--ui-bg-muted);
+  --pc-text-muted: var(--ui-text-muted, #737373);
+  --pc-accent: #2182f8;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--pc-gray-surface);
+  color: #1e293b;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}

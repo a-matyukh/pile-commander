@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the xattrs plugin"
+permissions = [
+  "allow-set-xattr",
+  "allow-get-xattr",
+  "allow-remove-xattr",
+  "allow-list-xattrs",
+  "allow-folder-with-children-xattrs",
+]

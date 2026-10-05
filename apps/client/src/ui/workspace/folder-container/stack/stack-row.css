@@ -1,0 +1,77 @@
+.stack-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--pc-border);
+}
+
+.stack-row-actions {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.stack-drag-handle {
+	display: flex;
+	align-items: center;
+}
+
+.stack-row-main {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	align-items: center;
+	gap: 0.75rem;
+	cursor: pointer;
+	user-select: none;
+}
+
+/* note row */
+.stack-note-row {
+	align-items: stretch;
+	min-height: 3rem;
+}
+
+.stack-note-row .stack-row-main {
+	align-items: stretch;
+}
+
+.stack-note-row.is_edit {
+	box-shadow: var(--pc-edit-shadow);
+}
+.stack-note-row.is_edit .stack-row-main {
+	cursor: text;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+/* media/shape preview row */
+.stack-preview-row {
+	align-items: stretch;
+	min-height: var(--stack-preview-min-height);
+}
+
+.stack-preview-main {
+	align-self: stretch;
+	align-items: stretch;
+	min-height: var(--stack-preview-min-height);
+}
+
+/* embedded folder preview row */
+.stack-folder-preview-row {
+	align-items: flex-start;
+	padding: 0;
+}
+
+.stack-folder-preview-main {
+	flex: 1;
+	min-width: 0;
+	min-height: 200px;
+	border-right: 1px solid var(--pc-border);
+}
+
+.stack-folder-preview-row .stack-row-actions {
+	padding: 0.5rem 0.75rem 0.5rem 0;
+}

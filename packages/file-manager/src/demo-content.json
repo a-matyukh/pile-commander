@@ -1,0 +1,157 @@
+{
+	"version": 1,
+	"root": "/demo",
+	"tree": [
+		{
+			"path": "",
+			"type": "folder",
+			"xattrs": {
+				"view": "board"
+			}
+		},
+		{
+			"path": "Welcome.txt",
+			"type": "file",
+			"content": "Welcome to the demo workspace.\n\nCreate notes, folders, and rearrange the board — nothing is written to disk.",
+			"xattrs": {
+				"position": "{\"x\":80,\"y\":60}",
+				"order": "0"
+			}
+		},
+		{
+			"path": "Notes",
+			"type": "folder",
+			"xattrs": {
+				"is_preview": "true",
+				"position": "{\"x\":360,\"y\":80}",
+				"order": "1"
+			}
+		},
+		{
+			"path": "Notes/Ideas.txt",
+			"type": "file",
+			"content": "Capture ideas here.",
+			"xattrs": {
+				"order": "0"
+			}
+		},
+		{
+			"path": "Notes/Todo.txt",
+			"type": "file",
+			"content": "- Try opening folders\n- Edit this note\n- Create a new note",
+			"xattrs": {
+				"order": "1"
+			}
+		},
+		{
+			"path": "Ideas",
+			"type": "folder",
+			"xattrs": {
+				"position": "{\"x\":640,\"y\":100}",
+				"order": "2"
+			}
+		},
+		{
+			"path": "Ideas/Sketch.txt",
+			"type": "file",
+			"content": "A place for longer drafts.",
+			"xattrs": {
+				"order": "0"
+			}
+		},
+		{
+			"path": "Mood.txt",
+			"type": "file",
+			"content": "Mood for the opening — warm light, quiet room, one object on the table.",
+			"xattrs": {
+				"is_preview": "true",
+				"background": "#FEF3C7",
+				"position": "{\"x\":80,\"y\":240}",
+				"size": "{\"width\":240,\"height\":100}",
+				"order": "3"
+			}
+		},
+		{
+			"path": "Harbor morning.svg",
+			"type": "file",
+			"content": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 160\"><defs><linearGradient id=\"harborMorning\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0\" stop-color=\"#7dd3fc\"/><stop offset=\"0.4\" stop-color=\"#38bdf8\"/><stop offset=\"1\" stop-color=\"#2182f8\"/></linearGradient></defs><rect width=\"320\" height=\"160\" rx=\"12\" fill=\"url(#harborMorning)\"/></svg>",
+			"xattrs": {
+				"is_preview": "true",
+				"position": "{\"x\":720,\"y\":260}",
+				"size": "{\"width\":200,\"height\":120}",
+				"order": "4"
+			}
+		},
+		{
+			"path": "References",
+			"type": "folder",
+			"xattrs": {
+				"position": "{\"x\":300,\"y\":320}",
+				"size": "{\"width\":160,\"height\":110}",
+				"order": "5"
+			}
+		},
+		{
+			"path": "References/Shot list.txt",
+			"type": "file",
+			"content": "- Table, one object\n- Window light\n- Quiet room",
+			"xattrs": {
+				"order": "0"
+			}
+		},
+		{
+			"path": "References/Color notes.txt",
+			"type": "file",
+			"content": "Warm paper, cool sky, one accent.",
+			"xattrs": {
+				"order": "1"
+			}
+		},
+		{
+			"path": "References/Locations.txt",
+			"type": "file",
+			"content": "Harbor in the morning. Keep the live version on this board.",
+			"xattrs": {
+				"order": "2"
+			}
+		},
+		{
+			"path": "References/Stills",
+			"type": "folder",
+			"xattrs": {
+				"order": "3"
+			}
+		},
+		{
+			"path": "References/Stills/Take 1.txt",
+			"type": "file",
+			"content": "First frame — hold the light.",
+			"xattrs": {
+				"order": "0"
+			}
+		},
+		{
+			"path": "Live.txt",
+			"type": "file",
+			"content": "Keep the live version on this board. Share the link when the pile feels ready.",
+			"xattrs": {
+				"is_preview": "true",
+				"background": "#FFFFFF",
+				"position": "{\"x\":540,\"y\":360}",
+				"size": "{\"width\":260,\"height\":100}",
+				"order": "6"
+			}
+		}
+	],
+	"connections": [
+		{
+			"id": "/demo/References:right-/demo/Live.txt:left",
+			"from": "/demo/References",
+			"to": "/demo/Live.txt",
+			"from_handle": "right",
+			"to_handle": "left",
+			"marker_end": "arrow",
+			"is_animated": true
+		}
+	]
+}

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "preserve",
+    "paths": {
+      "@pile-commander/file-manager": ["./packages/file-manager/src/index.ts"],
+      "@pile-commander/file-manager/*": ["./packages/file-manager/src/*"],
+      "@pile-commander/tauri-plugin-xattrs": ["./packages/tauri-plugin-xattrs/guest-js/index.ts"],
+      "@pile-commander/tauri-plugin-xattrs/*": ["./packages/tauri-plugin-xattrs/guest-js/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".nuxt", ".output"]
+}

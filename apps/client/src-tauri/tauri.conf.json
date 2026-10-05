@@ -1,0 +1,58 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Pile Commander",
+  "version": "../package.json",
+  "identifier": "com.pilecommander.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun --filter @pile-commander/client build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Pile Commander",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "files": {
+        "Resources/pile.icns": "icons/pile.icns"
+      }
+    },
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2NzIzMkFFOEQ3MjNDRTAKUldUZ1BIS05yakp5NXJtK01wNGxQbTl5QWJsQmNZVHlNbnFjcWw3VHBPcGdEdHEvNENQenZITXgK",
+      "endpoints": [
+        "https://github.com/a-matyukh/pile-commander/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
