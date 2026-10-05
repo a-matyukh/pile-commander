@@ -18,7 +18,7 @@
     },
     "apps/client": {
       "name": "@pile-commander/client",
-      "version": "2.0.0-rc.1",
+      "version": "2.0.0-rc.2",
       "dependencies": {
         "@google/model-viewer": "^4.3.1",
         "@iconify-json/fa": "^1.2.2",

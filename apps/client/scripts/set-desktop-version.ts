@@ -20,7 +20,7 @@ if (!version || !SEMVER.test(version)) {
 	process.exit(1)
 }
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
+const root = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const pkgPath = join(root, 'apps/client/package.json')
 const cargoTomlPath = join(root, 'apps/client/src-tauri/Cargo.toml')
 const cargoLockPath = join(root, 'apps/client/src-tauri/Cargo.lock')
