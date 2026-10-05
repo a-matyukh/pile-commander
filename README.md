@@ -24,7 +24,11 @@ database.
 ![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_RLS-3ecf8e?logo=supabase&logoColor=white)
 
 
-https://github.com/user-attachments/assets/5106fd5d-968a-48bd-a9c6-2470fd7f209f
+
+
+https://github.com/user-attachments/assets/365745eb-7503-464c-b09d-1fd607cb8244
+
+
 
 
 
@@ -60,7 +64,9 @@ Research/                     user.view = "board"   user.background = "dots"
 If you delete Pile Commander, your folders, files and their names stay
 exactly as they were.
 
-https://github.com/user-attachments/assets/9fc3b8c1-241c-40b8-95fd-1eecf90fef9b
+https://github.com/user-attachments/assets/60fae415-5e05-4eff-b6fb-3656586da096
+
+
 
 
 
