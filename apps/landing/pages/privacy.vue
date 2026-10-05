@@ -11,7 +11,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Privacy"
-    updated="21 September 2026"
+    updated="5 October 2026"
     note="Written against what the code actually does. It changes when the product does."
   >
     <p>
@@ -101,6 +101,11 @@ useSeoMeta({
       <li>Render — the API server.</li>
       <li>Vercel — hosting for the app and this site.</li>
       <li>Plunk — sign-in, invite, and moderation email.</li>
+      <li>
+        Have I Been Pwned — when a password is set or used to sign in, the
+        sign-in system sends the first five characters of its SHA-1 hash there
+        to reject known leaked passwords. The password itself is not sent.
+      </li>
     </ul>
     <p>
       There are no advertising or analytics trackers on this site or in the app.

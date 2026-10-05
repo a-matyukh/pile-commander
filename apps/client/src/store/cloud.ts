@@ -78,6 +78,7 @@ import {
 	remember_invite_workspace,
 } from './helpers/inviteAccept'
 import { open_quota_wall_from_error } from '@/store/quotaWall'
+import { sign_up_error_message } from './helpers/signUpPasswordError'
 
 /** Current public-link state of a workspace, if any */
 export type Publication = {
@@ -402,7 +403,7 @@ const cloud: CloudStore = {
 			options: { emailRedirectTo: redirect_to || origin },
 		})
 		if (error) {
-			this.last_error = error.message
+			this.last_error = sign_up_error_message(error)
 			return
 		}
 		// email confirmation enabled → no session yet; disabled → onAuthStateChange sets the user

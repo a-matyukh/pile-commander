@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import cloud from '@/store/cloud'
+import { SIGN_UP_PASSWORD_HINT, SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
 
 const props = withDefaults(defineProps<{
 	initial_email?: string
@@ -14,6 +15,7 @@ const mode = ref<'sign_in' | 'sign_up'>(props.initial_mode)
 const email = ref(props.initial_email ?? '')
 const password = ref('')
 const is_submitting = ref(false)
+const password_too_short = ref(false)
 
 watch(() => props.initial_email, (value) => {
 	if (value && !email.value) email.value = value
@@ -23,8 +25,20 @@ watch(() => props.initial_mode, (value) => {
 	mode.value = value
 })
 
+watch(password, (value) => {
+	if (value.length >= SIGN_UP_PASSWORD_MIN) password_too_short.value = false
+})
+
 async function submit() {
 	if (!email.value || !password.value || is_submitting.value) return
+	// Length is known here. A leaked password is not: that answer comes back
+	// from Auth after the request, as sign_up_error_message.
+	if (mode.value === 'sign_up' && password.value.length < SIGN_UP_PASSWORD_MIN) {
+		password_too_short.value = true
+		cloud.clear_error()
+		return
+	}
+	password_too_short.value = false
 	is_submitting.value = true
 	try {
 		if (mode.value === 'sign_in') {
@@ -39,6 +53,7 @@ async function submit() {
 
 function toggle_mode() {
 	mode.value = mode.value === 'sign_in' ? 'sign_up' : 'sign_in'
+	password_too_short.value = false
 	cloud.clear_error()
 }
 
@@ -59,10 +74,17 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 		<UInput
 			v-model="password"
 			type="password"
-			placeholder="Password (min 6 characters)"
+			placeholder="Password"
 			required
 			:autocomplete="mode === 'sign_in' ? 'current-password' : 'new-password'"
 		/>
+		<p
+			v-if="mode === 'sign_up'"
+			class="text-xs"
+			:class="password_too_short ? 'text-red-500' : 'opacity-60'"
+		>
+			{{ SIGN_UP_PASSWORD_HINT }}
+		</p>
 		<p v-if="cloud.notice" class="text-xs text-green-600 dark:text-green-400">{{ cloud.notice }}</p>
 		<p v-if="cloud.last_error" class="text-xs text-red-500 cursor-pointer" @click="cloud.clear_error()">
 			{{ cloud.last_error }}

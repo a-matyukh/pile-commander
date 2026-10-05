@@ -25,7 +25,6 @@ show only these intentional INFOs. Anything else is a regression.
 | lint | why it stays |
 | --- | --- |
 | `rls_enabled_no_policy` (`billing_events`, `blob_deletions`, `plan_launch_subscribers`, `feedback`, `egress_daily`, `download_daily`, `egress_notices`, `entry_derivatives`, `moderation_mail`, `moderation_digest_state`) | service-role-only tables: RLS on, no client policies. Do not add anon/authenticated policies to "fix" the lint. |
-| `auth_leaked_password_protection` | Pro-plan feature; on Free set min password length + required character classes in Auth settings (rollout checklist) |
 
 ---
 
@@ -469,10 +468,11 @@ deferred). Done work is in the invariants above.
   `DeleteObject` only hides versions and storage keeps costing.
 - Server-side copy (`b2_copy_file` / S3 CopyObject) for fork re-keying once
   Bun's S3 client exposes it; today the gateway streams the object.
-- Dashboard (manual): password policy (min length ≥ 10 and required
-  character classes; leaked-password protection is Pro-only), Confirm
-  email + redirect allowlist, Send Email Hook → `POST /auth/send-email`
-  (Plunk; enable the hook only after the Plunk env is set).
+- Dashboard (manual): leaked-password protection on (Have I Been Pwned; Pro)
+  and minimum password length 8. No required character classes. If Have I
+  Been Pwned is unreachable, Auth allows the password. Confirm email +
+  redirect allowlist, Send Email Hook → `POST /auth/send-email` (Plunk;
+  enable the hook only after the Plunk env is set).
 - Full enforcing CSP after the Report-Only run confirms the origins
   (Supabase, backend, B2, model-viewer decoders).
 
@@ -546,7 +546,8 @@ deferred). Done work is in the invariants above.
   `PUBLIC_APP_URL` (invite links; without it or Plunk, pending
   `POST /workspace/invite` returns 503 — adding an existing member still works).
 - [ ] B2 bucket private, lifecycle keeps only the last version.
-- [ ] Supabase Auth: password policy, Confirm email on, redirect allowlist,
+- [ ] Supabase Auth: leaked-password protection on, minimum password length 8,
+  no required character classes, Confirm email on, redirect allowlist,
   Send Email Hook pointing at `POST /auth/send-email` (after mail env).
 - [ ] `get_advisors` (security + performance) matches the intentional INFOs
       in Advisors above.
