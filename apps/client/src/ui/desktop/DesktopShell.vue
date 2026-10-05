@@ -22,6 +22,7 @@ import Taskbar from './Taskbar.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
 import UpdateBanner from './UpdateBanner.vue'
+import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
 import { desktops_enabled } from '@/store/experiments'
 
 // App root: two render modes. fullscreen = the classic single-workspace app;
@@ -188,6 +189,7 @@ onUnmounted(() => {
 		</div>
 		<QuotaWallDialog />
 		<BridgeDialog />
+		<PasswordDialog />
 		<UpdateBanner />
 	</UApp>
 </template>

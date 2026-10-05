@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { note_auth_event } from './passwordRecovery'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
@@ -124,6 +125,13 @@ export function fetch_with_timeout(
 export const supabase: SupabaseClient | null = is_cloud_configured
 	? createClient(url!, key!, { global: { fetch: fetch_with_timeout as typeof fetch } })
 	: null
+
+// Before cloud.init. The recovery event is not replayed for a later subscriber.
+if (supabase) {
+	supabase.auth.onAuthStateChange((event) => {
+		note_auth_event(event)
+	})
+}
 
 export function require_supabase(): SupabaseClient {
 	if (!supabase) {

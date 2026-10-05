@@ -79,6 +79,7 @@ import {
 } from './helpers/inviteAccept'
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
+import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 
 /** Current public-link state of a workspace, if any */
 export type Publication = {
@@ -143,6 +144,11 @@ export type CloudStore = {
 	last_error: string | null
 	/** Neutral info (e.g. "check your email" after sign up) */
 	notice: string | null
+	/**
+	 * Password dialog. `recovery` opens from the email link (no current
+	 * password). `change` opens from the account panel.
+	 */
+	password_prompt: 'recovery' | 'change' | null
 	/** /invite/<token> landing; null when not on that route */
 	invite_view: {
 		token: string
@@ -185,6 +191,14 @@ export type CloudStore = {
 	sign_up(email: string, password: string, redirect_to?: string): Promise<void>
 	sign_in(email: string, password: string): Promise<void>
 	sign_out(): Promise<void>
+	/** Emails a recovery link. The link opens the password dialog. */
+	request_password_reset(email: string): Promise<void>
+	/** Sets a new password on the current session (the recovery link). */
+	update_password(password: string): Promise<boolean>
+	/** Re-enters the current password, then sets a new one. */
+	change_password(current: string, password: string): Promise<boolean>
+	open_password_change(): void
+	dismiss_password_prompt(): void
 	/** Deletes the account and everything it owns (backend cascades + GC) */
 	delete_account(password: string): Promise<void>
 	fetch_workspaces(): Promise<void>
@@ -266,6 +280,10 @@ function hub_offset(page?: number): number {
 	return Math.max((page ?? 1) - 1, 0) * HUB_PAGE_SIZE
 }
 
+function public_origin(): string {
+	return (import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, '')
+}
+
 const cloud: CloudStore = {
 	is_configured: is_cloud_configured,
 	user: null,
@@ -278,6 +296,7 @@ const cloud: CloudStore = {
 	is_loading: false,
 	last_error: null,
 	notice: null,
+	password_prompt: null,
 	invite_view: null,
 	my_profile: null,
 	billing: null,
@@ -307,11 +326,16 @@ const cloud: CloudStore = {
 		// localStorage only — getSession() refreshes an expired access token
 		// and would hold the shell until the request times out
 		this.user = cached_session_user()
+		if (take_password_recovery()) this.password_prompt = 'recovery'
 		if (this.user) {
 			void this.load_after_sign_in()
 		}
 
 		supabase.auth.onAuthStateChange((event, session) => {
+			if (event === 'PASSWORD_RECOVERY') {
+				this.password_prompt = 'recovery'
+				take_password_recovery()
+			}
 			if (session) {
 				this.user = session.user
 				// Defer out of the auth callback (lock + fresh JWT clock skew).
@@ -341,6 +365,7 @@ const cloud: CloudStore = {
 			this.owner_usage = null
 			this.plan_loading = false
 			this.user = null
+			this.password_prompt = null
 			// keep the /invite/:token card so signing out to switch accounts
 			// does not flash “no longer valid”
 			if (this.invite_view) this.invite_view = { ...this.invite_view, error: null }
@@ -393,10 +418,7 @@ const cloud: CloudStore = {
 	async sign_up(email: string, password: string, redirect_to?: string) {
 		this.last_error = null
 		this.notice = null
-		const origin = (import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin).replace(
-			/\/$/,
-			'',
-		)
+		const origin = public_origin()
 		const { data, error } = await require_supabase().auth.signUp({
 			email,
 			password,
@@ -427,6 +449,59 @@ const cloud: CloudStore = {
 		if (error) {
 			this.last_error = error.message
 		}
+	},
+
+	async request_password_reset(email: string) {
+		this.last_error = null
+		this.notice = null
+		const { error } = await require_supabase().auth.resetPasswordForEmail(email, {
+			redirectTo: public_origin(),
+		})
+		if (error) {
+			this.last_error = error.message
+			return
+		}
+		this.notice = 'Check your email for a link to choose a new password.'
+	},
+
+	async update_password(password: string) {
+		this.last_error = null
+		const { error } = await require_supabase().auth.updateUser({ password })
+		if (error) {
+			this.last_error = sign_up_error_message(error, 'Could not update the password')
+			return false
+		}
+		this.notice = 'Password updated.'
+		return true
+	},
+
+	async change_password(current: string, password: string) {
+		this.last_error = null
+		this.notice = null
+		const email = this.user?.email
+		if (!email) {
+			this.last_error = 'Not signed in'
+			return false
+		}
+		const { error: reauth_error } = await require_supabase().auth.signInWithPassword({
+			email,
+			password: current,
+		})
+		if (reauth_error) {
+			this.last_error = reauth_error.message
+			return false
+		}
+		return this.update_password(password)
+	},
+
+	open_password_change() {
+		this.last_error = null
+		this.password_prompt = 'change'
+	},
+
+	dismiss_password_prompt() {
+		this.password_prompt = null
+		this.last_error = null
 	},
 
 	// Step-up: the backend refuses a session that did not authenticate within

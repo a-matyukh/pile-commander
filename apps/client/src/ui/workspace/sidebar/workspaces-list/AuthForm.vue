@@ -16,6 +16,8 @@ const email = ref(props.initial_email ?? '')
 const password = ref('')
 const is_submitting = ref(false)
 const password_too_short = ref(false)
+const email_missing = ref(false)
+const is_resetting = ref(false)
 
 watch(() => props.initial_email, (value) => {
 	if (value && !email.value) email.value = value
@@ -28,6 +30,26 @@ watch(() => props.initial_mode, (value) => {
 watch(password, (value) => {
 	if (value.length >= SIGN_UP_PASSWORD_MIN) password_too_short.value = false
 })
+
+watch(email, (value) => {
+	if (value) email_missing.value = false
+})
+
+async function forgot() {
+	if (is_resetting.value) return
+	if (!email.value) {
+		email_missing.value = true
+		cloud.clear_error()
+		return
+	}
+	email_missing.value = false
+	is_resetting.value = true
+	try {
+		await cloud.request_password_reset(email.value)
+	} finally {
+		is_resetting.value = false
+	}
+}
 
 async function submit() {
 	if (!email.value || !password.value || is_submitting.value) return
@@ -54,6 +76,8 @@ async function submit() {
 function toggle_mode() {
 	mode.value = mode.value === 'sign_in' ? 'sign_up' : 'sign_in'
 	password_too_short.value = false
+	email_missing.value = false
+	cloud.notice = null
 	cloud.clear_error()
 }
 
@@ -85,6 +109,7 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 		>
 			{{ SIGN_UP_PASSWORD_HINT }}
 		</p>
+		<p v-if="email_missing" class="text-xs text-red-500">Enter your email address.</p>
 		<p v-if="cloud.notice" class="text-xs text-green-600 dark:text-green-400">{{ cloud.notice }}</p>
 		<p v-if="cloud.last_error" class="text-xs text-red-500 cursor-pointer" @click="cloud.clear_error()">
 			{{ cloud.last_error }}
@@ -92,6 +117,15 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 		<UButton type="submit" size="sm" block :loading="is_submitting">
 			{{ mode === 'sign_in' ? 'Sign in' : 'Sign up' }}
 		</UButton>
+		<button
+			v-if="mode === 'sign_in'"
+			type="button"
+			class="text-xs opacity-60 hover:opacity-100 cursor-pointer"
+			:disabled="is_resetting"
+			@click="forgot"
+		>
+			Forgot password?
+		</button>
 		<p v-if="mode === 'sign_up' && landing_url" class="text-xs opacity-60">
 			By creating an account you agree to the
 			<a :href="`${landing_url}/terms`" target="_blank" rel="noopener noreferrer" class="underline">Terms</a>

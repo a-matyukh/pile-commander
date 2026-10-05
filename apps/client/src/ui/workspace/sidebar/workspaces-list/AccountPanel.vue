@@ -92,6 +92,20 @@ async function on_confirm_delete() {
 				</span>
 			</UButton>
 
+			<UButton
+				color="neutral"
+				variant="outline"
+				icon="i-lucide:key-round"
+				class="justify-start"
+				@click="cloud.open_password_change()"
+			>
+				Change password
+			</UButton>
+
+			<p v-if="cloud.notice && !is_delete_open" class="text-xs text-green-600 dark:text-green-400">
+				{{ cloud.notice }}
+			</p>
+
 			<p v-if="cloud.billing && cloud.owner_usage" class="px-0.5 text-xs text-muted">
 				{{ format_bytes(cloud.owner_usage.used_bytes) }} of
 				{{ format_bytes(cloud.billing.quota_bytes) }} used

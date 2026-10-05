@@ -28,6 +28,11 @@ describe('sign_up_error_message', () => {
 		)
 	})
 
+	test('uses the caller fallback when the error has no message', () => {
+		expect(sign_up_error_message({}, 'Could not update the password'))
+			.toBe('Could not update the password')
+	})
+
 	test('leaves other signup errors as the server wrote them', () => {
 		expect(sign_up_error_message(new Error('User already registered'))).toBe('User already registered')
 		expect(sign_up_error_message({

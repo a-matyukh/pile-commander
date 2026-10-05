@@ -11,7 +11,10 @@ const PWNED_MESSAGE = 'This password has appeared in a data breach. Choose a dif
  * Signup copy for a weak password. Length and breach checks are the only
  * reasons we rewrite; anything else stays the server's own message.
  */
-export function sign_up_error_message(error: unknown): string {
+export function sign_up_error_message(
+	error: unknown,
+	fallback = 'Could not create the account',
+): string {
 	const reasons = weak_password_reasons(error)
 	if (reasons) {
 		const parts: string[] = []
@@ -20,7 +23,7 @@ export function sign_up_error_message(error: unknown): string {
 		if (parts.length > 0) return parts.join(' ')
 	}
 	const message = error_message(error)
-	return message ?? 'Could not create the account'
+	return message ?? fallback
 }
 
 function error_message(error: unknown): string | null {
