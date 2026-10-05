@@ -72,7 +72,6 @@ function megabytes(bytes: number) {
   return `${(bytes / 1_000_000).toFixed(0)} MB`;
 }
 
-const macCommand = 'xattr -cr "/Applications/Pile Commander.app"';
 const appImageCommand = computed(
   () => `chmod +x ${release.value?.assets.appImage?.name ?? "Pile.Commander_*.AppImage"}`,
 );
@@ -233,33 +232,14 @@ async function copy(text: string) {
       <div class="mx-auto max-w-2xl rounded-2xl border border-[var(--pc-gray-border)] bg-white p-6 md:p-8">
         <h2 class="text-xl font-semibold tracking-tight text-slate-900">After you install</h2>
 
-        <div v-if="platform === 'mac'" class="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
-          <p>
-            During the beta, while Apple notarization is still being set up,
-            macOS says the app is damaged and will not open it. Copy Pile
-            Commander into Applications, then run this in Terminal:
-          </p>
-          <div class="flex items-center gap-2 rounded-xl bg-[var(--pc-gray-muted)] py-2 pr-2 pl-4">
-            <code class="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-slate-800">{{ macCommand }}</code>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :icon="copied === macCommand ? 'i-lucide-check' : 'i-lucide-copy'"
-              :aria-label="copied === macCommand ? 'Copied' : 'Copy command'"
-              @click="copy(macCommand)"
-            />
-          </div>
-        </div>
-
-        <div v-else-if="platform === 'windows'" class="mt-4 text-sm leading-relaxed text-slate-600">
+        <div v-if="platform === 'windows'" class="mt-4 text-sm leading-relaxed text-slate-600">
           <p>
             Windows SmartScreen says the publisher is unknown: choose
             <strong>More info</strong>, then <strong>Run anyway</strong>.
           </p>
         </div>
 
-        <div v-else class="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
+        <div v-else-if="platform === 'linux'" class="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
           <p>
             A downloaded <code>.AppImage</code> is not executable until you make
             it so:
