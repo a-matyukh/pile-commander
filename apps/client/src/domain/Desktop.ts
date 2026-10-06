@@ -122,6 +122,29 @@ function window_content_matches_item(
 		&& content.item.id === item.id
 }
 
+/**
+ * Same view carried into desktops mode: a workspace by type + id, a public
+ * slug, a profile, or the hub. Empty windows never match — entering desktops
+ * must not reuse a blank window as the current workspace.
+ */
+export
+function same_window_content(a: WindowContent, b: WindowContent): boolean {
+	switch (a.kind) {
+		case 'workspace':
+			return b.kind === 'workspace'
+				&& a.item.type === b.item.type
+				&& a.item.id === b.item.id
+		case 'slug':
+			return b.kind === 'slug' && a.username === b.username && a.slug === b.slug
+		case 'profile':
+			return b.kind === 'profile' && a.username === b.username
+		case 'hub':
+			return b.kind === 'hub'
+		case 'empty':
+			return false
+	}
+}
+
 const WINDOW_STATES = ['minimized', 'floating', 'fullscreen'] as const
 
 /** Tolerant read of window from persistent/sinked payload; null = discard */

@@ -2,7 +2,7 @@ import { reactive, ref } from 'vue'
 import { basename } from '@tauri-apps/api/path'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import type { ImportProgress, LoadWorkspaceOptions, Store, WorkspaceStore } from '../domain/Store'
-import { focused_window } from '@/domain/Desktop'
+import { focused_window, same_window_content } from '@/domain/Desktop'
 import { is_desktop } from '@/isDesktop'
 import { createFileManager, download_blob } from '@pile-commander/file-manager'
 import { create_window_manager } from '../services/window/WindowManager'
@@ -208,10 +208,12 @@ const store: Store = {
 	/**
 	 * fullscreen app mode → desktops mode: public views become the matching
 	 * window (slug / profile / hub); a regular workspace keeps its live store.
-	 * The address bar resets to `/`.
+	 * A window already showing that view is reused — entering again must not
+	 * stack a second copy. The address bar resets to `/`.
+	 * `minimize` drops that one window onto the taskbar in the same turn.
 	 */
-	enter_desktops_mode() {
-		if (!desktops_enabled.value) return
+	enter_desktops_mode(opts?: { minimize?: boolean }) {
+		if (!desktops_enabled.value) return null
 		const workspace = fullscreen_workspace.value
 		const content = window_content_from_fullscreen({
 			publication: cloud.publication_view
@@ -231,15 +233,29 @@ const store: Store = {
 		if (!content) {
 			workspace?.dispose()
 			fullscreen_workspace.value = null
-			return
+			return null
 		}
-		const opened = desktops.open_window(content)
+		const existing = desktops.selected_desktop?.windows.find(w =>
+			same_window_content(w.content, content),
+		) ?? null
+		const opened = existing ?? desktops.open_window(content)
 		if (workspace && (content.kind === 'workspace' || content.kind === 'slug')) {
 			workspace_registry.adopt(opened.id, workspace)
 		} else {
 			workspace?.dispose()
 		}
 		fullscreen_workspace.value = null
+		if (opts?.minimize) {
+			// another fullscreen window would keep covering the desktop
+			if (opened.state !== 'fullscreen') desktops.focus_window(opened.id)
+			desktops.hide_window(opened.id)
+		} else if (existing) {
+			// green "Desktops": show this window on the desktop, don't add one
+			if (opened.state === 'fullscreen') desktops.toggle_fullscreen(opened.id)
+			if (opened.state === 'minimized') desktops.restore_window(opened.id)
+			else desktops.focus_window(opened.id)
+		}
+		return opened
 	},
 
 	exit_desktops_mode() {
