@@ -198,7 +198,6 @@ function on_chrome_dblclick() {
 		</header>
 		<div class="min-h-0 flex-1">
 			<WorkspaceWindow
-				:show_controls="false"
 				embedded
 				class="h-full"
 			/>
