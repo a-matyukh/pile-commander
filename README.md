@@ -17,6 +17,8 @@ database.
 > [!NOTE]
 > Pile Commander is in beta. If you have suggestions or any feedback, it would be very much appreciated — you can send it from the [feedback page](https://www.pile-commander.com/feedback).
 
+<a href="https://www.producthunt.com/products/pile-commander?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-pile-commander-2" target="_blank" rel="noopener noreferrer"><img alt="Pile Commander 2 - File manager with unusual possibilities | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1271850&theme=light&t=1791307934463"></a>
+
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883?logo=vuedotjs&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)

@@ -69,6 +69,19 @@ function stopDemo() {
             Watch demo video (0:52)
           </UButton>
         </div>
+        <a
+          href="https://www.producthunt.com/products/pile-commander?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-pile-commander-2"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mt-6 inline-block"
+        >
+          <img
+            alt="Pile Commander 2 - File manager with unusual possibilities | Product Hunt"
+            width="250"
+            height="54"
+            src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1271850&theme=light&t=1791307934463"
+          >
+        </a>
       </div>
       <DemoFrame />
     </div>
