@@ -1,16 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import WindowControls from '@/ui/window/WindowControls.vue'
 import WorkspaceTree from './workspace-tree/WorkspaceTree.vue'
 import cloud from '@/store/cloud'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWorkspaceDialogs } from './workspaceDialogs'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
-
-defineProps<{
-	show_controls: boolean
-}>()
 
 const workspace = useWorkspace()
 const dialogs = useWorkspaceDialogs()
@@ -98,9 +93,6 @@ const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 <template>
 	<div class="sidebar flex min-h-0 w-full flex-1 flex-col overflow-hidden">
 		<nav>
-			<div v-if="show_controls">
-				<WindowControls />
-			</div>
 			<div class="sidebar-header flex items-stretch gap-1 border-b border-default pr-1">
 				<UButton
 					v-if="workspace"

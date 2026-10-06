@@ -31,8 +31,6 @@ import { desktops_enabled } from '@/store/experiments'
 // the other windows via the v-if below).
 // Desktops are an opt-in experiment: with the switch off the window controls
 // (the way into desktops mode) are hidden and Cmd/Alt+N does nothing.
-const show_controls = computed(() => desktops_enabled.value)
-
 const mode = computed(() => desktops.mode)
 // A saved selection may point at a cloud desktop that has not been fetched
 // yet (or cannot be, while offline). Show a desktop that is already in
@@ -168,7 +166,7 @@ onUnmounted(() => {
 				Drop a folder to open, a .pile to import, or files into the workspace
 			</div>
 		</Teleport>
-		<WorkspaceWindow v-if="mode === 'fullscreen'" :show_controls />
+		<WorkspaceWindow v-if="mode === 'fullscreen'" />
 		<div v-else class="relative flex h-svh w-full flex-col overflow-hidden bg-default">
 			<template v-if="fullscreen_window && selected_desktop">
 				<Window

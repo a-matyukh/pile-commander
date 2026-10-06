@@ -4,6 +4,7 @@ import type { ShapeTemplate } from '@/domain/shapes'
 import type { LinePlug, LineAxis } from '@/services/board/shapes'
 import type { EntryContentCaches } from '@/ui/workspace/folder-container/textContentCache'
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
+import type { AppWindow } from './Desktop'
 import { Color, Connection, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
 
@@ -57,9 +58,11 @@ type Store = {
 	eject_workspace(window_id: string): void
 	/**
 	 * fullscreen app mode → desktops mode, moving the open view into a window.
-	 * No-op while the desktops experiment is off (store/experiments.ts).
+	 * Reuses a window that already shows that view. `minimize` puts that
+	 * window on the taskbar instead of leaving it floating.
+	 * No-op (returns null) while the desktops experiment is off.
 	 */
-	enter_desktops_mode(): void
+	enter_desktops_mode(opts?: { minimize?: boolean }): AppWindow | null
 	/**
 	 * desktops mode → fullscreen app mode (the experiment switch turned off):
 	 * the focused workspace window's live store becomes the fullscreen

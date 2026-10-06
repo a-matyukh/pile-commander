@@ -60,7 +60,6 @@ const tab_title = (tab: WorkspaceTab) => {
 
 const props = withDefaults(
 	defineProps<{
-		show_controls: boolean
 		/** Rendered inside an app Window: no OS-level listeners, no viewport sizing. */
 		embedded?: boolean
 	}>(),
@@ -600,7 +599,7 @@ watch(
 					:max-size="28"
 				:ui="sidebar_ui"
 				>
-					<Sidebar :show_controls />
+					<Sidebar />
 				</UDashboardSidebar>
 				<UDashboardPanel :ui="dashboard_panel_ui">
 					<div class="workspace-panel flex h-full flex-col" :class="{ 'min-h-svh': !embedded }">

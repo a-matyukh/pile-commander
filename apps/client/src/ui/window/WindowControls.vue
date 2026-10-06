@@ -26,6 +26,7 @@ function on_close() {
 
 function on_hide() {
 	if (ctx) desktops.hide_window(ctx.window_id)
+	else store.enter_desktops_mode({ minimize: true })
 }
 
 function on_toggle_fullscreen() {
@@ -75,7 +76,6 @@ const toggle_title = computed(() => {
 				class="window-controls__button window-controls__button--hide"
 				type="button"
 				aria-label="Minimize"
-				:disabled="!ctx"
 				@click.stop="on_hide"
 			>
 				<UIcon name="i-lucide:minus" />

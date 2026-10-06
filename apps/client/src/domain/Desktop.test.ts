@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
 	public_window_path,
+	same_window_content,
 	window_content_matches_item,
 	window_title,
 	type AppWindow,
@@ -46,6 +47,37 @@ describe('window_content_matches_item', () => {
 		)).toBe(false)
 		expect(window_content_matches_item({ kind: 'hub' }, cloud_item)).toBe(false)
 		expect(window_content_matches_item({ kind: 'empty' }, cloud_item)).toBe(false)
+	})
+})
+
+describe('same_window_content', () => {
+	it('matches a workspace by type and id, ignoring the name', () => {
+		expect(same_window_content(
+			{ kind: 'workspace', item: cloud_item },
+			{ kind: 'workspace', item: { ...cloud_item, name: 'Renamed' } },
+		)).toBe(true)
+		expect(same_window_content(
+			{ kind: 'workspace', item: cloud_item },
+			{ kind: 'workspace', item: local_item },
+		)).toBe(false)
+	})
+
+	it('matches slug, profile and hub, and never empty windows', () => {
+		expect(same_window_content(
+			{ kind: 'slug', username: 'anna', slug: 'notes' },
+			{ kind: 'slug', username: 'anna', slug: 'notes', name: 'Notes' },
+		)).toBe(true)
+		expect(same_window_content(
+			{ kind: 'slug', username: 'anna', slug: 'notes' },
+			{ kind: 'slug', username: 'anna', slug: 'other' },
+		)).toBe(false)
+		expect(same_window_content(
+			{ kind: 'profile', username: 'anna' },
+			{ kind: 'profile', username: 'anna' },
+		)).toBe(true)
+		expect(same_window_content({ kind: 'hub' }, { kind: 'hub' })).toBe(true)
+		expect(same_window_content({ kind: 'empty' }, { kind: 'empty' })).toBe(false)
+		expect(same_window_content({ kind: 'hub' }, { kind: 'empty' })).toBe(false)
 	})
 })
 
