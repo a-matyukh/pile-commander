@@ -28,6 +28,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
 
@@ -44,6 +46,44 @@ jobs:
 
       - name: install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: commits since the previous release
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if prev=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null); then
+            range="${prev}..HEAD"
+          else
+            range="HEAD"
+          fi
+          delimiter="RELEASE_NOTES_EOF"
+          {
+            echo "body<<${delimiter}"
+            git log --format='%H' "$range" | while read -r sha; do
+              files=$(git diff-tree --no-commit-id --name-only -r "$sha")
+              keep=0
+              while IFS= read -r path; do
+                [ -z "$path" ] && continue
+                case "$path" in
+                  *.test.ts|*.test.js|*.test.vue|*.spec.ts|*.spec.js) continue ;;
+                esac
+                case "$path" in
+                  apps/client/src/*|apps/client/src-tauri/src/*|apps/backend/src/*|apps/landing/*|packages/file-manager/src/*)
+                    keep=1
+                    break
+                    ;;
+                esac
+              done <<< "$files"
+              [ "$keep" = 1 ] || continue
+              subject=$(git log -1 --format='%s' "$sha")
+              safe=$(printf '%s' "$subject" | sed 's/\\/\\\\/g; s/\[/\\[/g; s/\]/\\]/g')
+              printf -- '- [%s](%s/%s/commit/%s)\n' "$safe" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$sha"
+            done
+            echo
+            echo "See the assets to download this version and install."
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -66,7 +106,7 @@ jobs:
           tauriScript: bun --filter @pile-commander/client tauri
           tagName: v__VERSION__
           releaseName: "v__VERSION__"
-          releaseBody: "See the assets to download this version and install."
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
