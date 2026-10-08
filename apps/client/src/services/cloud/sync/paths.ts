@@ -43,3 +43,17 @@ export function relative_of(root: string, absolute: string): string | null {
 	if (!absolute.startsWith(prefix)) return null
 	return absolute.slice(prefix.length).split(/[/\\]/).join('/')
 }
+
+/** Names the sync never writes here: sidecars, OS litter, and what a local file system cannot hold. */
+const UNWRITABLE_NAMES = new Set(['.pile', '.DS_Store', 'Thumbs.db', '.', '..', ''])
+
+/** A cloud name this device can create as a file or folder name. */
+export function is_local_name(name: string): boolean {
+	// eslint-disable-next-line no-control-regex
+	return !UNWRITABLE_NAMES.has(name) && !/[\\/\x00-\x1f\x7f]/.test(name)
+}
+
+/** The relative path of a cloud path ('/' is the root, '' here). */
+export function cloud_relative(path: string): string {
+	return path === '/' ? '' : path.replace(/^\//, '')
+}

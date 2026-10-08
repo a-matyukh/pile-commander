@@ -7,10 +7,15 @@ export type SyncStatus = {
 	 * paused: waits for the person (mass delete, the plan) · error: retried soon
 	 */
 	phase: 'idle' | 'syncing' | 'paused' | 'error'
-	reason?: 'mass_delete' | 'plan_limit' | 'unlinked'
+	/**
+	 * mass_delete_cloud: most of the cloud copy would go to the cloud trash
+	 * (the folder was emptied or unmounted here); mass_delete_local: most of the
+	 * folder would go to the system trash (the cloud workspace was emptied)
+	 */
+	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked'
 	message?: string
 	last_synced_at?: number
-	/** Files a paused pass would trash in the cloud. */
+	/** Files a paused pass would trash (on the side `reason` names). */
 	pending_deletes?: number
 	/** Recent conflicted copies, newest last. */
 	conflicts: string[]
@@ -47,11 +52,16 @@ export const DEFAULT_SYNC_TIMING: SyncTiming = {
 /** Conflicted copies kept in the status. */
 const CONFLICTS_SHOWN = 50
 
+export type SyncNowOptions = {
+	allow_cloud_deletes?: boolean
+	allow_local_deletes?: boolean
+}
+
 export type SyncEngine = {
 	start(): Promise<void>
 	stop(): void
-	/** A pass right away; `allow_mass_delete` confirms a paused one. */
-	sync_now(options?: { allow_mass_delete?: boolean }): Promise<void>
+	/** A pass right away that also reads the cloud; the `allow_*` flags confirm a paused one. */
+	sync_now(options?: SyncNowOptions): Promise<void>
 }
 
 function message_of(error: unknown): string {
@@ -68,6 +78,9 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 	let status: SyncStatus = { phase: 'idle', conflicts: [], skipped: [], errors: [] }
 	let running: Promise<void> | null = null
 	let again = false
+	// the next pass reads the cloud even if nothing changed here: true at
+	// start, on the interval and on Sync now (and, later, on cloud events)
+	let cloud_dirty = true
 	let stopped = true
 	let failures = 0
 	let timer: ReturnType<typeof setTimeout> | null = null
@@ -88,28 +101,42 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		}, delay_ms)
 	}
 
-	async function pass(allow_mass_delete: boolean): Promise<void> {
+	async function pass(confirm: SyncNowOptions): Promise<void> {
 		state ??= await deps.load_state()
 		if (!state) {
 			publish({ phase: 'paused', reason: 'unlinked', message: 'This folder is not linked to a cloud workspace on this device.' })
 			return
 		}
 		publish({ phase: 'syncing' })
-		const result = await run_sync_pass(deps.pass_deps(state), state, {
-			max_file_bytes: deps.max_file_bytes(),
-			allow_mass_delete,
-		})
+		const check_cloud = cloud_dirty
+		cloud_dirty = false
+		let result: Awaited<ReturnType<typeof run_sync_pass>>
+		try {
+			result = await run_sync_pass(deps.pass_deps(state), state, {
+				max_file_bytes: deps.max_file_bytes(),
+				check_cloud,
+				...confirm,
+			})
+		} catch (error) {
+			// the cloud still has to be read once the failure clears
+			cloud_dirty ||= check_cloud
+			throw error
+		}
 		failures = 0
 		if (result.kind === 'unchanged') {
 			publish({ phase: 'idle', reason: undefined, message: undefined, pending_deletes: undefined, skipped: result.skipped, errors: [] })
 			return
 		}
 		if (result.kind === 'mass_delete') {
+			// read the cloud again on the next pass: the person may restore the files instead
+			cloud_dirty = true
 			publish({
 				phase: 'paused',
-				reason: 'mass_delete',
+				reason: result.side === 'cloud' ? 'mass_delete_cloud' : 'mass_delete_local',
 				pending_deletes: result.deletes,
-				message: `${result.deletes} of ${result.base_files} files are gone from this folder.`,
+				message: result.side === 'cloud'
+					? `${result.deletes} of ${result.base_files} files are gone from this folder.`
+					: `${result.deletes} of ${result.base_files} files are gone from the cloud workspace.`,
 			})
 			return
 		}
@@ -137,7 +164,7 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		publish({ ...common, phase: 'idle', reason: undefined, message: undefined })
 	}
 
-	async function run(allow_mass_delete = false): Promise<void> {
+	async function run(confirm: SyncNowOptions = {}): Promise<void> {
 		if (stopped) return
 		if (running) {
 			again = true
@@ -145,7 +172,7 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		}
 		running = (async () => {
 			try {
-				await pass(allow_mass_delete)
+				await pass(confirm)
 			} catch (error) {
 				failures += 1
 				publish({ phase: 'error', reason: undefined, message: message_of(error) })
@@ -166,7 +193,10 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 			if (!stopped) return
 			stopped = false
 			deps.on_status(status)
-			interval = setInterval(() => void run(), timing.interval_ms)
+			interval = setInterval(() => {
+				cloud_dirty = true
+				void run()
+			}, timing.interval_ms)
 			try {
 				unwatch = await deps.watch(() => schedule(timing.debounce_ms))
 			} catch (error) {
@@ -193,7 +223,8 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 			if (timer) clearTimeout(timer)
 			timer = null
 			if (running) await running
-			await run(options.allow_mass_delete ?? false)
+			cloud_dirty = true
+			await run(options)
 		},
 	}
 }

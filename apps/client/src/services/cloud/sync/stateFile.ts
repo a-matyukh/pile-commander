@@ -14,9 +14,12 @@ export function sync_state_path(root: string): string {
 	return join_local(root, `${PILE_DIR_NAME}/${SYNC_STATE_FILE}`)
 }
 
-/** True for the state file and its temporary twin: writing them must not wake the watcher. */
+/**
+ * True for the state file, its temporary twin and the sync's own download
+ * scratch files: writing them must not wake the watcher
+ */
 export function is_sync_state_path(path: string): boolean {
-	return /[/\\]\.pile[/\\]sync\.json(\.tmp)?$/.test(path)
+	return /[/\\]\.pile[/\\](sync\.json(\.tmp)?|sync-[^/\\]+\.tmp)$/.test(path)
 }
 
 export type SyncLinkOwner = {

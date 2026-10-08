@@ -74,14 +74,14 @@ function open_cloud_copy() {
 					<p class="text-xs text-muted">{{ last_synced }}</p>
 				</div>
 				<p class="text-xs text-muted">
-					Changes in this folder go to the cloud copy while the app is open. Edits made in the cloud stay there.
+					Changes go both ways between this folder and its cloud copy while the app is open.
 				</p>
 				<p v-if="status?.message" class="text-xs" :class="status.phase === 'error' ? 'text-error' : ''">
 					{{ status.message }}
 				</p>
 				<p v-if="status?.conflicts.length" class="text-xs">
-					{{ status.conflicts.length }} {{ status.conflicts.length === 1 ? 'file was' : 'files were' }} changed in the cloud too
-					and went up as conflicted copies: {{ status.conflicts.slice(-3).join(', ') }}
+					{{ status.conflicts.length }} {{ status.conflicts.length === 1 ? 'file was' : 'files were' }} changed on both sides.
+					The cloud version kept the name; yours is beside it as a conflicted copy: {{ status.conflicts.slice(-3).join(', ') }}
 				</p>
 				<p v-if="status?.skipped.length" class="text-xs text-muted">
 					{{ status.skipped.length }} {{ status.skipped.length === 1 ? 'item is' : 'items are' }} not synced
@@ -95,11 +95,18 @@ function open_cloud_copy() {
 				</div>
 				<div class="flex flex-wrap gap-2 pt-1">
 					<UButton
-						v-if="status?.reason === 'mass_delete'"
+						v-if="status?.reason === 'mass_delete_cloud'"
 						size="xs"
 						color="error"
-						:label="`Trash ${status.pending_deletes} files in the cloud too`"
-						@click="sync_now(root, { allow_mass_delete: true })"
+						:label="`Move ${status.pending_deletes} files to the cloud trash`"
+						@click="sync_now(root, { allow_cloud_deletes: true })"
+					/>
+					<UButton
+						v-if="status?.reason === 'mass_delete_local'"
+						size="xs"
+						color="error"
+						:label="`Move ${status.pending_deletes} files here to the Trash`"
+						@click="sync_now(root, { allow_local_deletes: true })"
 					/>
 					<UButton
 						size="xs"

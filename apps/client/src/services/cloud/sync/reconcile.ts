@@ -1,4 +1,4 @@
-import { base_name, depth, is_within, join_cloud, parent_relative } from './paths'
+import { base_name, cloud_relative, depth, is_local_name, is_within, parent_relative } from './paths'
 import type { BaseEntry, CloudEntry, LocalEntry, SkipReason, SyncAction, SyncPlan } from './types'
 
 export type ReconcileOptions = {
@@ -52,33 +52,37 @@ function is_local_change(local: LocalEntry, base: BaseEntry): boolean {
 	return local.size !== base.size || local.mtime_ms !== base.mtime_ms
 }
 
-function is_cloud_change(cloud: CloudEntry, base: BaseEntry): boolean {
+function is_content_change(cloud: CloudEntry, base: BaseEntry): boolean {
 	return base.kind === 'file' && cloud.modified_at !== base.cloud_modified_at
 }
 
-/** Moves the base entries of `from` (and everything below it) under `to`. */
-function rekey(base: Map<string, BaseEntry>, from: string, to: string): void {
-	for (const [relative, entry] of [...base]) {
-		if (!is_within(relative, from)) continue
-		base.delete(relative)
-		base.set(to + relative.slice(from.length), entry)
+/** Moves the keys of `from` (and everything below it) under `to`. */
+function rekey<T>(map: Map<string, T>, from: string, to: string, update: (value: T, key: string) => T = value => value): void {
+	for (const [key, value] of [...map]) {
+		if (!is_within(key, from)) continue
+		const moved = to + key.slice(from.length)
+		map.delete(key)
+		map.set(moved, update(value, moved))
 	}
 }
 
+const by_depth = (a: string, b: string) => depth(a) - depth(b)
+
 /**
- * Plans one local → cloud pass from the base, the folder on disk and the
- * cloud listing. Pure: no I/O, the executor carries the actions out.
+ * Plans one two-way pass from the base, the folder on disk and the cloud
+ * listing. Pure: no I/O, the executor (syncPass.ts) carries the actions out.
  *
- * - new here → created in the cloud, or adopted when the cloud already holds
- *   the same thing at that path (a linked earlier copy, a resumed first pass);
- * - edited here → the cloud row is updated, unless it changed there too: then
- *   the local version goes up as a conflicted copy and the cloud one stays;
- * - deleted here → the cloud row goes to the trash when it is unchanged
- *   there; a folder only when nothing in it would be lost;
- * - renamed or moved here (the same size and mtime under a new path, a
- *   folder whose files all moved along) → the cloud row follows, keeping its
- *   id, layout and edges;
- * - changes made only in the cloud are left alone (one-way sync).
+ * 1. Moves here → cloud: a file with the same size and mtime under a new
+ *    path, or a folder whose files all moved along, while its cloud row stayed
+ *    put and unchanged: the cloud row follows, keeping its id.
+ * 2. Moves in the cloud → here: a linked row under another path while the
+ *    entry here stayed put: the file or folder here follows.
+ * 3. Per entry, with the base as the common ancestor: a change on one side
+ *    goes to the other; a file changed on both sides keeps the cloud version
+ *    under its name and the local one as a conflicted copy; a deletion goes
+ *    through when the other side did not change the entry, and is undone
+ *    (the entry comes back) when it did. A folder is removed on either side
+ *    only when nothing in it would be lost.
  */
 export function reconcile(
 	base_record: Readonly<Record<string, BaseEntry>>,
@@ -88,30 +92,56 @@ export function reconcile(
 ): SyncPlan {
 	const base = new Map(Object.entries(base_record))
 	const base_files = [...base.values()].filter(entry => entry.kind === 'file').length
-	const cloud_by_id = new Map(cloud_entries.map(entry => [entry.id, entry]))
-	const cloud_by_path = new Map(cloud_entries.map(entry => [entry.path, entry]))
 
-	const { local, skipped, skips } = partition_local(local_entries, options)
-	// a skipped entry is neither pushed nor deleted: its base stays as it was
-	const is_gone = (relative: string) => !local.has(relative) && !skipped.has(relative)
+	const { local: scanned, skipped, skips } = partition_local(local_entries, options)
+	// the folder as it will be once this pass's moves here are done
+	const local = new Map(scanned)
+	const is_blocked = (relative: string): boolean => {
+		for (let at = relative; at !== ''; at = parent_relative(at)) {
+			if (skipped.has(at) || options.exclude.has(at)) return true
+		}
+		return false
+	}
+	const is_gone = (relative: string) => !local.has(relative) && !is_blocked(relative)
 
-	// ---- renames and moves ------------------------------------------------
+	// every row by id (existence); the rows this device can hold, by path
+	const cloud_by_id = new Map(cloud_entries.map(row => [row.id, row]))
+	const cloud_at = new Map<string, CloudEntry>()
+	const unwritable = new Set<string>()
+	for (const row of [...cloud_entries].sort((a, b) => by_depth(cloud_relative(a.path), cloud_relative(b.path)))) {
+		if (row.path === '/') continue
+		const relative = cloud_relative(row.path)
+		const parent = parent_relative(relative)
+		// a name this device cannot write, and everything below it, stays in the cloud
+		if (!is_local_name(row.name) || (parent !== '' && unwritable.has(parent))) {
+			unwritable.add(relative)
+			continue
+		}
+		if (!is_blocked(relative)) cloud_at.set(relative, row)
+	}
+
+	const occupied = new Set<string>()
+	const note_occupied = (relative: string) => {
+		if (occupied.has(relative)) return
+		occupied.add(relative)
+		skips.push({ kind: 'skip', relative, reason: 'occupied' })
+	}
+
+	// ---- 1. moves here → cloud ---------------------------------------------
 	const moves: Extract<SyncAction, { kind: 'move' }>[] = []
-	const moved_to = new Set<string>()
-
-	const unchanged_cloud = (entry: BaseEntry): CloudEntry | null => {
-		const cloud = cloud_by_id.get(entry.cloud_id)
-		return cloud && !is_cloud_change(cloud, entry) ? cloud : null
+	const stays_in_cloud = (entry: BaseEntry, key: string): boolean => {
+		const row = cloud_by_id.get(entry.cloud_id)
+		return !!row && !is_content_change(row, entry) && cloud_relative(row.path) === key
 	}
 
 	// folders first, shallowest first: a folder that moved takes its files along
 	const gone_folders = [...base]
 		.filter(([relative, entry]) => entry.kind === 'folder' && is_gone(relative))
 		.map(([relative]) => relative)
-		.sort((a, b) => depth(a) - depth(b))
+		.sort(by_depth)
 	for (const from of gone_folders) {
 		const entry = base.get(from)
-		if (!entry || !is_gone(from) || !unchanged_cloud(entry)) continue
+		if (!entry || !is_gone(from) || !stays_in_cloud(entry, from)) continue
 		const inside = [...base].filter(([relative]) => relative.startsWith(`${from}/`))
 		const candidates = [...local.values()].filter(folder =>
 			folder.kind === 'folder'
@@ -131,14 +161,13 @@ export function reconcile(
 		if (matches.length !== 1) continue
 		const to = matches[0]!.relative
 		moves.push({ kind: 'move', from, relative: to, cloud_id: entry.cloud_id })
-		moved_to.add(to)
 		rekey(base, from, to)
 	}
 
 	const signature = (size: number, mtime_ms: number) => `${size}:${mtime_ms}`
 	const gone_files = new Map<string, string[]>()
 	for (const [relative, entry] of base) {
-		if (entry.kind !== 'file' || !is_gone(relative) || !unchanged_cloud(entry)) continue
+		if (entry.kind !== 'file' || !is_gone(relative) || !stays_in_cloud(entry, relative)) continue
 		const key = signature(entry.size, entry.mtime_ms)
 		gone_files.set(key, [...(gone_files.get(key) ?? []), relative])
 	}
@@ -154,41 +183,90 @@ export function reconcile(
 		if (!from || !to || more_gone.length > 0 || more_new.length > 0) continue
 		const entry = base.get(from)!
 		moves.push({ kind: 'move', from, relative: to, cloud_id: entry.cloud_id })
-		moved_to.add(to)
 		rekey(base, from, to)
 	}
 
-	// ---- where an entry lands in the cloud ---------------------------------
-	const moved_below = (relative: string) => [...moved_to].some(to => is_within(relative, to))
-	const cloud_paths = new Map<string, string | null>([['', '/']])
-	const cloud_path_of = (relative: string): string | null => {
-		const known = cloud_paths.get(relative)
-		if (known !== undefined) return known
-		const entry = base.get(relative)
-		const cloud = entry ? cloud_by_id.get(entry.cloud_id) : undefined
-		let path: string | null
-		if (cloud && !moved_below(relative)) {
-			path = cloud.path
-		} else {
-			const parent = cloud_path_of(parent_relative(relative))
-			path = parent === null ? null : join_cloud(parent, base_name(relative))
+	// where a key of the (rekeyed) base sits in the cloud until the moves above are done
+	const cloud_key = (relative: string): string => {
+		let key = relative
+		for (const move of [...moves].reverse()) {
+			if (is_within(key, move.relative)) key = move.from + key.slice(move.relative.length)
 		}
-		cloud_paths.set(relative, path)
-		return path
+		return key
 	}
 
-	// ---- per entry ---------------------------------------------------------
-	const structure: SyncAction[] = [...moves.filter(move => base.get(move.relative)?.kind === 'folder')]
-	const content: SyncAction[] = [...moves.filter(move => base.get(move.relative)?.kind === 'file')]
-	const removals: SyncAction[] = []
+	// ---- 2. moves in the cloud → here --------------------------------------
+	const local_moves: Extract<SyncAction, { kind: 'local_move' }>[] = []
+	for (let round = 0; round < 8; round++) {
+		let moved = false
+		for (const key of [...base.keys()].sort(by_depth)) {
+			const entry = base.get(key)
+			const row = entry ? cloud_by_id.get(entry.cloud_id) : undefined
+			if (!entry || !row || !local.has(key)) continue
+			const target = cloud_relative(row.path)
+			if (target === cloud_key(key) || !cloud_at.has(target)) continue
+			// something else here already holds the target: leave both this pass
+			if (local.has(target) || base.has(target)) {
+				note_occupied(key)
+				continue
+			}
+			local_moves.push({ kind: 'local_move', from: key, relative: target, cloud_id: entry.cloud_id })
+			rekey(base, key, target)
+			rekey(local, key, target, (value, moved_to) => ({ ...value, relative: moved_to, name: base_name(moved_to) }))
+			moved = true
+		}
+		if (!moved) break
+	}
+
+	// ---- 3. per entry --------------------------------------------------------
+	const linked = new Map([...base].map(([relative, entry]) => [entry.cloud_id, relative]))
+	const deletable_in_cloud = (folder: CloudEntry): boolean =>
+		cloud_entries.every((row) => {
+			if (!row.path.startsWith(`${folder.path}/`)) return true
+			const relative = linked.get(row.id)
+			if (relative === undefined || !is_gone(relative)) return false
+			return !is_content_change(row, base.get(relative)!)
+		})
+	const removable_here = (folder: string): boolean =>
+		[...local.values()].every((entry) => {
+			if (!entry.relative.startsWith(`${folder}/`)) return true
+			const known = base.get(entry.relative)
+			if (!known || known.kind !== entry.kind) return false
+			if (entry.kind === 'file' && is_local_change(entry, known)) return false
+			return !cloud_by_id.has(known.cloud_id)
+		})
+	const untouched_since_link = (row: CloudEntry) =>
+		options.adopt_before !== undefined
+		&& row.modified_at !== null
+		&& Date.parse(row.modified_at) <= options.adopt_before
+
+	const is_folder_move = (move: { relative: string }) => base.get(move.relative)?.kind === 'folder'
+	const structure: SyncAction[] = [...moves.filter(is_folder_move), ...local_moves.filter(is_folder_move)]
+	const content: SyncAction[] = [
+		...moves.filter(move => !is_folder_move(move)),
+		...local_moves.filter(move => !is_folder_move(move)),
+	]
 	// a file that became a folder (or back) leaves before its name is reused
 	const replaced: SyncAction[] = []
+	const removals: SyncAction[] = []
 	const clashed = new Set<string>()
+	const trashed_in_cloud: string[] = []
+	const trashed_here: string[] = []
+	let deletes = 0
+	let local_deletes = 0
 
-	const by_depth = [...local.values()].sort((a, b) => depth(a.relative) - depth(b.relative))
-	for (const entry of by_depth) {
-		const { relative } = entry
-		if (moved_to.has(relative)) continue
+	const keys = [...new Set([...base.keys(), ...local.keys(), ...cloud_at.keys()])].sort(by_depth)
+	for (const relative of keys) {
+		if (is_blocked(relative)) continue
+		let known = base.get(relative)
+		if (trashed_in_cloud.some(folder => is_within(relative, folder))) {
+			if (known?.kind === 'file') deletes += 1
+			continue
+		}
+		if (trashed_here.some(folder => is_within(relative, folder))) {
+			if (known?.kind === 'file') local_deletes += 1
+			continue
+		}
 		const parent = parent_relative(relative)
 		if (parent !== '' && clashed.has(parent)) {
 			clashed.add(relative)
@@ -196,84 +274,113 @@ export function reconcile(
 			continue
 		}
 
-		let known = base.get(relative)
-		if (known && known.kind !== entry.kind) {
-			// a file became a folder or back: the old one goes, the new one comes
-			const cloud = unchanged_cloud(known)
-			replaced.push(cloud ? { kind: 'delete', relative, cloud_id: known.cloud_id } : { kind: 'forget', relative })
+		const here = local.get(relative)
+		const there = cloud_at.get(relative)
+		let row = known ? cloud_by_id.get(known.cloud_id) : undefined
+
+		if (known && here && known.kind !== here.kind) {
+			// a file became a folder here, or back: the old one goes, the new one comes
+			replaced.push(stays_in_cloud(known, cloud_key(relative))
+				? { kind: 'delete', relative, cloud_id: known.cloud_id }
+				: { kind: 'forget', relative })
 			known = undefined
+			row = undefined
 		}
-		const cloud = known ? cloud_by_id.get(known.cloud_id) : undefined
 
-		if (known && cloud) {
-			if (entry.kind === 'folder' || !is_local_change(entry, known)) continue
-			content.push(is_cloud_change(cloud, known)
-				? { kind: 'conflict', relative }
-				: { kind: 'update', relative, cloud_id: cloud.id })
-			continue
-		}
-		// known but gone from the cloud: a folder comes back, an unchanged
-		// file stays deleted there, an edited one comes back
-		if (known && entry.kind === 'file' && !is_local_change(entry, known)) continue
-
-		const path = cloud_path_of(relative)
-		const there = path === null ? undefined : cloud_by_path.get(path)
-		if (entry.kind === 'folder') {
-			if (!there) structure.push({ kind: 'create_folder', relative })
-			else if (there.kind === 'folder') structure.push({ kind: 'adopt', relative, cloud_id: there.id })
-			else {
-				clashed.add(relative)
-				skips.push({ kind: 'skip', relative, reason: 'kind_clash' })
+		if (known) {
+			// linked to a row that moved elsewhere in the cloud while its move here is held up
+			if (row && cloud_relative(row.path) !== cloud_key(relative)) continue
+			if (here && row) {
+				if (known.kind === 'folder') continue
+				const changed_here = is_local_change(here, known)
+				const changed_there = is_content_change(row, known)
+				if (changed_here && changed_there) content.push({ kind: 'local_conflict', relative, cloud_id: row.id })
+				else if (changed_here) content.push({ kind: 'update', relative, cloud_id: row.id })
+				else if (changed_there) content.push({ kind: 'download', relative, cloud_id: row.id })
+				continue
 			}
-			continue
-		}
-		if (!there) {
-			content.push({ kind: 'upload', relative })
-		} else if (there.kind === 'folder' || known) {
-			content.push({ kind: 'conflict', relative })
-		} else if (there.size === entry.size) {
-			content.push({ kind: 'adopt', relative, cloud_id: there.id })
-		} else {
-			const untouched = options.adopt_before !== undefined
-				&& there.modified_at !== null
-				&& Date.parse(there.modified_at) <= options.adopt_before
-			content.push(untouched
-				? { kind: 'update', relative, cloud_id: there.id }
-				: { kind: 'conflict', relative })
-		}
-	}
-
-	// ---- deleted here ------------------------------------------------------
-	const linked = new Map<string, string>()
-	for (const [relative, entry] of base) linked.set(entry.cloud_id, relative)
-	const deletable_folder = (folder: CloudEntry): boolean =>
-		cloud_entries.every((cloud) => {
-			if (!cloud.path.startsWith(`${folder.path}/`)) return true
-			const relative = linked.get(cloud.id)
-			if (relative === undefined || !is_gone(relative)) return false
-			const entry = base.get(relative)!
-			return !is_cloud_change(cloud, entry)
-		})
-
-	const deleted_folders: string[] = []
-	let deletes = 0
-	const gone = [...base].filter(([relative]) => is_gone(relative)).sort(([a], [b]) => depth(a) - depth(b))
-	for (const [relative, entry] of gone) {
-		if (deleted_folders.some(folder => is_within(relative, folder))) {
-			if (entry.kind === 'file') deletes += 1
-			continue
-		}
-		const cloud = unchanged_cloud(entry)
-		const removable = cloud && (entry.kind === 'file' || deletable_folder(cloud))
-		if (!removable) {
+			if (here) {
+				// deleted in the cloud
+				if (known.kind === 'file') {
+					if (is_local_change(here, known)) {
+						content.push(there && !linked.has(there.id)
+							? { kind: 'local_conflict', relative, cloud_id: there.id }
+							: { kind: 'upload', relative })
+					} else if (there && !linked.has(there.id)) {
+						// another file took the name in the cloud
+						content.push({ kind: 'download', relative, cloud_id: there.id })
+					} else {
+						removals.push({ kind: 'local_trash', relative })
+						local_deletes += 1
+					}
+				} else if (there?.kind === 'folder' && !linked.has(there.id)) {
+					structure.push({ kind: 'adopt', relative, cloud_id: there.id })
+				} else if (removable_here(relative)) {
+					removals.push({ kind: 'local_trash', relative })
+					trashed_here.push(relative)
+				} else {
+					structure.push({ kind: 'create_folder', relative })
+				}
+				continue
+			}
+			if (row) {
+				// deleted here
+				if (!is_gone(relative)) continue
+				if (known.kind === 'file') {
+					if (is_content_change(row, known)) {
+						content.push({ kind: 'download', relative, cloud_id: row.id })
+					} else {
+						removals.push({ kind: 'delete', relative, cloud_id: row.id })
+						deletes += 1
+					}
+				} else if (deletable_in_cloud(row)) {
+					removals.push({ kind: 'delete', relative, cloud_id: row.id })
+					trashed_in_cloud.push(relative)
+				} else {
+					structure.push({ kind: 'download_folder', relative, cloud_id: row.id })
+				}
+				continue
+			}
 			removals.push({ kind: 'forget', relative })
 			continue
 		}
-		removals.push({ kind: 'delete', relative, cloud_id: entry.cloud_id })
-		if (entry.kind === 'folder') deleted_folders.push(relative)
-		else deletes += 1
+
+		// not linked yet
+		if (here && there) {
+			if (linked.has(there.id)) {
+				note_occupied(relative)
+				continue
+			}
+			if (here.kind !== there.kind) {
+				clashed.add(relative)
+				skips.push({ kind: 'skip', relative, reason: 'kind_clash' })
+			} else if (here.kind === 'folder') {
+				structure.push({ kind: 'adopt', relative, cloud_id: there.id })
+			} else if (here.size === there.size) {
+				content.push({ kind: 'adopt', relative, cloud_id: there.id })
+			} else if (untouched_since_link(there)) {
+				content.push({ kind: 'update', relative, cloud_id: there.id })
+			} else {
+				content.push({ kind: 'local_conflict', relative, cloud_id: there.id })
+			}
+			continue
+		}
+		if (here) {
+			if (here.kind === 'folder') structure.push({ kind: 'create_folder', relative })
+			else content.push({ kind: 'upload', relative })
+			continue
+		}
+		if (there && !linked.has(there.id)) {
+			if (there.kind === 'folder') structure.push({ kind: 'download_folder', relative, cloud_id: there.id })
+			else content.push({ kind: 'download', relative, cloud_id: there.id })
+		}
 	}
 
-	structure.sort((a, b) => depth(a.relative) - depth(b.relative))
-	return { actions: [...skips, ...replaced, ...structure, ...content, ...removals], deletes, base_files }
+	structure.sort((a, b) => by_depth((a as { relative: string }).relative, (b as { relative: string }).relative))
+	return {
+		actions: [...skips, ...replaced, ...structure, ...content, ...removals],
+		deletes,
+		local_deletes,
+		base_files,
+	}
 }

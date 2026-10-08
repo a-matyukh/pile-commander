@@ -9,7 +9,15 @@ import { derived_uuid } from './hash'
 import { reconcile, type ReconcileOptions } from './reconcile'
 import { create_sync_engine, type SyncStatus } from './syncEngine'
 import { is_sync_state_path, new_sync_state, parse_sync_state } from './stateFile'
-import { MASS_DELETE_MIN, conflicted_name, run_sync_pass, type SyncPassDeps } from './syncPass'
+import {
+	MASS_DELETE_MIN,
+	conflicted_name,
+	run_sync_pass,
+	type LocalWriter,
+	type SyncPassDeps,
+	type SyncPassOptions,
+	type SyncReport,
+} from './syncPass'
 import { SYNC_STATE_VERSION, type BaseEntry, type CloudEntry, type LocalEntry, type SyncState } from './types'
 
 const OPTIONS: ReconcileOptions = { exclude: new Set(), max_file_bytes: 1_000_000 }
@@ -56,7 +64,7 @@ describe('reconcile', () => {
 		])
 	})
 
-	test('updates a local edit, keeps a cloud-only edit, and copies a clash', () => {
+	test('a local edit goes up, a cloud edit comes down, an edit on both sides keeps the cloud name', () => {
 		const base = { 'x.md': base_file('cx'), 'y.md': base_file('cy'), 'z.md': base_file('cz') }
 		const local = [local_file('x.md', 11), local_file('y.md'), local_file('z.md', 12)]
 		const cloud = [
@@ -67,22 +75,23 @@ describe('reconcile', () => {
 		]
 		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
 			{ kind: 'update', relative: 'x.md', cloud_id: 'cx' },
-			{ kind: 'conflict', relative: 'z.md' },
+			{ kind: 'download', relative: 'y.md', cloud_id: 'cy' },
+			{ kind: 'local_conflict', relative: 'z.md', cloud_id: 'cz' },
 		])
 	})
 
-	test('trashes what was deleted here unless it changed in the cloud', () => {
+	test('trashes what was deleted here, and brings back what changed in the cloud meanwhile', () => {
 		const base = { 'x.md': base_file('cx'), 'y.md': base_file('cy') }
 		const cloud = [ROOT, cloud_entry('/x.md', 'cx'), cloud_entry('/y.md', 'cy', { modified_at: 't2' })]
 		const plan = reconcile(base, [], cloud, OPTIONS)
 		expect(plan.actions).toEqual([
+			{ kind: 'download', relative: 'y.md', cloud_id: 'cy' },
 			{ kind: 'delete', relative: 'x.md', cloud_id: 'cx' },
-			{ kind: 'forget', relative: 'y.md' },
 		])
 		expect(plan.deletes).toBe(1)
 	})
 
-	test('keeps a folder that holds something added in the cloud', () => {
+	test('a folder deleted here comes back when the cloud added to it', () => {
 		const base = { a: base_folder('ca'), 'a/x.md': base_file('cx') }
 		const cloud = [
 			ROOT,
@@ -91,7 +100,8 @@ describe('reconcile', () => {
 			cloud_entry('/a/theirs.md', 'ct'),
 		]
 		expect(reconcile(base, [], cloud, OPTIONS).actions).toEqual([
-			{ kind: 'forget', relative: 'a' },
+			{ kind: 'download_folder', relative: 'a', cloud_id: 'ca' },
+			{ kind: 'download', relative: 'a/theirs.md', cloud_id: 'ct' },
 			{ kind: 'delete', relative: 'a/x.md', cloud_id: 'cx' },
 		])
 	})
@@ -132,12 +142,12 @@ describe('reconcile', () => {
 		])
 	})
 
-	test('adopts what the cloud already holds and copies what differs', () => {
+	test('adopts what the cloud already holds; a different file there keeps the cloud name', () => {
 		const local = [local_file('same.md', 10), local_file('other.md', 99)]
 		const cloud = [ROOT, cloud_entry('/same.md', 'c1'), cloud_entry('/other.md', 'c2')]
 		expect(reconcile({}, local, cloud, OPTIONS).actions).toEqual([
 			{ kind: 'adopt', relative: 'same.md', cloud_id: 'c1' },
-			{ kind: 'conflict', relative: 'other.md' },
+			{ kind: 'local_conflict', relative: 'other.md', cloud_id: 'c2' },
 		])
 	})
 
@@ -175,7 +185,54 @@ describe('reconcile', () => {
 		const plan = reconcile(base, [], cloud, OPTIONS)
 		expect(plan.actions).toEqual([{ kind: 'delete', relative: 'a', cloud_id: 'ca' }])
 		expect(plan.deletes).toBe(5)
+		expect(plan.local_deletes).toBe(0)
 		expect(plan.base_files).toBe(5)
+	})
+})
+
+describe('reconcile, cloud → here', () => {
+	test('a folder renamed in the cloud is renamed here, its files follow without moves of their own', () => {
+		const base = { a: base_folder('ca'), 'a/x.md': base_file('cx') }
+		const local = [local_folder('a'), local_file('a/x.md')]
+		const cloud = [ROOT, cloud_entry('/b', 'ca', { kind: 'folder' }), cloud_entry('/b/x.md', 'cx')]
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'local_move', from: 'a', relative: 'b', cloud_id: 'ca' },
+		])
+	})
+
+	test('a folder deleted in the cloud goes to the trash here whole', () => {
+		const base = { f: base_folder('cf'), 'f/x.md': base_file('cx') }
+		const plan = reconcile(base, [local_folder('f'), local_file('f/x.md')], [ROOT], OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'local_trash', relative: 'f' }])
+		expect(plan.local_deletes).toBe(1)
+	})
+
+	test('a folder deleted in the cloud that holds something new here comes back to the cloud', () => {
+		const base = { f: base_folder('cf'), 'f/x.md': base_file('cx') }
+		const local = [local_folder('f'), local_file('f/x.md'), local_file('f/new.md', 3)]
+		expect(reconcile(base, local, [ROOT], OPTIONS).actions).toEqual([
+			{ kind: 'create_folder', relative: 'f' },
+			{ kind: 'upload', relative: 'f/new.md' },
+			{ kind: 'local_trash', relative: 'f/x.md' },
+		])
+	})
+
+	test('a cloud move onto a path taken here waits', () => {
+		const base = { 'a.md': base_file('ca') }
+		const local = [local_file('a.md'), local_file('b.md', 3)]
+		const cloud = [ROOT, cloud_entry('/b.md', 'ca')]
+		// neither moves nor goes up while the cloud path is held by the other file
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'a.md', reason: 'occupied' },
+			{ kind: 'skip', relative: 'b.md', reason: 'occupied' },
+		])
+	})
+
+	test('a cloud name this device cannot write stays in the cloud', () => {
+		const cloud = [ROOT, cloud_entry('/back\\slash.md', 'c1'), cloud_entry('/fine.md', 'c2')]
+		expect(reconcile({}, [], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'download', relative: 'fine.md', cloud_id: 'c2' },
+		])
 	})
 })
 
@@ -285,24 +342,60 @@ function new_state(): SyncState {
 	}
 }
 
+/** Downloads land through the fake's upload (a new entry, xattrs dropped — like a rename over the file). */
+function make_writer(local: FakeFileManager) {
+	const trashed: string[] = []
+	const writer: LocalWriter = {
+		async write_file(folder, name, data) {
+			await local.fm.upload_file(folder, name, data)
+		},
+		async trash(path) {
+			trashed.push(path)
+			await local.fm.remove(path)
+		},
+	}
+	return { writer, trashed }
+}
+
 function make_deps(local: FakeFileManager, stat: SyncPassDeps['stat'], cloud: ReturnType<typeof make_cloud>) {
 	const purge = vi.fn(async () => {})
+	const { writer, trashed } = make_writer(local)
+	const saved_progress: SyncState[] = []
 	const deps: SyncPassDeps = {
 		local_fm: local.fm,
 		root: '/ws',
 		stat,
+		writer,
+		save_progress: async (state) => {
+			saved_progress.push(state)
+		},
 		cloud_fm: cloud.fm,
 		list_cloud: cloud.list_cloud,
 		purge,
 		now: () => new Date(2026, 9, 8, 14, 30),
 	}
-	return { deps, purge }
+	return { deps, purge, trashed, saved_progress }
 }
 
-async function pass(deps: SyncPassDeps, state: SyncState, allow_mass_delete = false) {
-	const result = await run_sync_pass(deps, state, { max_file_bytes: 1_000_000, allow_mass_delete })
+async function pass(deps: SyncPassDeps, state: SyncState, options: Omit<SyncPassOptions, 'max_file_bytes'> = {}) {
+	const result = await run_sync_pass(deps, state, { max_file_bytes: 1_000_000, ...options })
 	if (result.kind !== 'done') throw new Error(`pass ended with ${result.kind}`)
 	return result
+}
+
+/** A pass that reads the cloud, as on a cloud event or the interval. */
+function cloud_pass(deps: SyncPassDeps, state: SyncState, options: Omit<SyncPassOptions, 'max_file_bytes'> = {}) {
+	return pass(deps, state, { check_cloud: true, ...options })
+}
+
+/** Text of a file here, whether the fake holds it as text or as bytes. */
+async function local_text(local: FakeFileManager, path: string): Promise<string> {
+	return (await local.get_blob(path)?.text()) ?? local.fm.read_text_file(path)
+}
+
+/** The pass found nothing to do on either side. */
+function expect_quiet(report: SyncReport) {
+	expect(report).toMatchObject({ uploaded: 0, updated: 0, downloaded: 0, moved: 0, deleted: 0, trashed: 0, conflicts: [], errors: [] })
 }
 
 describe('run_sync_pass', () => {
@@ -470,28 +563,37 @@ describe('run_sync_pass', () => {
 		expect(cloud.fake.has('/New folder 1')).toBe(false)
 	})
 
-	test('a file edited on both sides goes up as a conflicted copy', async () => {
+	test('a file edited on both sides keeps the cloud version under its name on both sides', async () => {
 		const { local, stat, mtimes } = make_local()
 		local.seed_file('/ws/note.md', 'base')
 		const cloud = make_cloud()
 		const { deps } = make_deps(local, stat, cloud)
 		const first = await pass(deps, new_state())
+		const id = cloud.ids.get('/note.md')
 
 		await cloud.edit('/note.md', 'theirs')
 		await local.fm.save_text_file('/ws/note.md', 'mine')
 		mtimes.set('/ws/note.md', 2)
 		const second = await pass(deps, first.state)
 
+		const copy = 'note (conflicted copy 2026-10-08 1430).md'
 		expect(second.report.conflicts).toEqual(['note.md'])
 		expect(await cloud.fm.read_text_file('/note.md')).toBe('theirs')
-		expect(await cloud.fm.read_text_file('/note (conflicted copy 2026-10-08 1430).md')).toBe('mine')
+		expect(cloud.ids.get('/note.md')).toBe(id)
+		expect(await cloud.fm.read_text_file(`/${copy}`)).toBe('mine')
+		expect(await local_text(local, '/ws/note.md')).toBe('theirs')
+		expect(await local_text(local, `/ws/${copy}`)).toBe('mine')
+		expect(second.state.entries['note.md']!.cloud_id).toBe(id)
 
-		// the local file now follows its copy: no second conflict
-		await local.fm.save_text_file('/ws/note.md', 'mine, again')
+		// both sides now hold the same two files: nothing more to do
+		expect_quiet((await cloud_pass(deps, second.state)).report)
+
+		// the name follows the cloud version from now on
+		await local.fm.save_text_file('/ws/note.md', 'theirs, edited here')
 		mtimes.set('/ws/note.md', 3)
 		const third = await pass(deps, second.state)
 		expect(third.report.conflicts).toEqual([])
-		expect(await cloud.fm.read_text_file('/note (conflicted copy 2026-10-08 1430).md')).toBe('mine, again')
+		expect(await cloud.fm.read_text_file('/note.md')).toBe('theirs, edited here')
 	})
 
 	test('trashes deleted files, and asks before trashing most of the copy', async () => {
@@ -508,10 +610,10 @@ describe('run_sync_pass', () => {
 
 		for (let index = 1; index <= MASS_DELETE_MIN; index++) await local.fm.remove(`/ws/${index}.md`)
 		const paused = await run_sync_pass(deps, second.state, { max_file_bytes: 1_000_000 })
-		expect(paused).toEqual({ kind: 'mass_delete', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN })
+		expect(paused).toEqual({ kind: 'mass_delete', side: 'cloud', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN })
 		expect(cloud.fake.has('/1.md')).toBe(true)
 
-		const confirmed = await pass(deps, second.state, true)
+		const confirmed = await pass(deps, second.state, { allow_cloud_deletes: true })
 		expect(confirmed.report.deleted).toBe(MASS_DELETE_MIN)
 		expect(cloud.fake.list_entries().map(entry => entry.path)).toEqual(['/'])
 	})
@@ -589,6 +691,7 @@ describe('sync state file', () => {
 	test('its own writes do not wake the watcher', () => {
 		expect(is_sync_state_path('/ws/.pile/sync.json')).toBe(true)
 		expect(is_sync_state_path('C:\\ws\\.pile\\sync.json.tmp')).toBe(true)
+		expect(is_sync_state_path('/ws/board/.pile/sync-3f2a.tmp')).toBe(true)
 		expect(is_sync_state_path('/ws/.pile/strokes.json')).toBe(false)
 		expect(is_sync_state_path('/ws/sync.json')).toBe(false)
 	})
@@ -634,12 +737,12 @@ describe('sync engine', () => {
 			await vi.advanceTimersByTimeAsync(150)
 			await vi.waitFor(() => expect(statuses.at(-1)).toMatchObject({
 				phase: 'paused',
-				reason: 'mass_delete',
+				reason: 'mass_delete_cloud',
 				pending_deletes: MASS_DELETE_MIN,
 			}))
 			expect(cloud.fake.has('/0.md')).toBe(true)
 
-			await engine.sync_now({ allow_mass_delete: true })
+			await engine.sync_now({ allow_cloud_deletes: true })
 			expect(statuses.at(-1)?.phase).toBe('idle')
 			expect(cloud.fake.has('/0.md')).toBe(false)
 			engine.stop()
@@ -675,5 +778,152 @@ describe('sync engine', () => {
 		} finally {
 			vi.useRealTimers()
 		}
+	})
+})
+
+describe('two-way pass', () => {
+	test('a note edited in the cloud comes down, and the next pass finds nothing to do', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/note.md', 'mine')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+
+		await cloud.edit('/note.md', 'edited in the web')
+		// nothing changed here and the cloud was not asked: no pass
+		expect((await run_sync_pass(deps, first.state, { max_file_bytes: 1_000_000 })).kind).toBe('unchanged')
+
+		const second = await cloud_pass(deps, first.state)
+		expect(second.report.downloaded).toBe(1)
+		expect(await local_text(local, '/ws/note.md')).toBe('edited in the web')
+		expect_quiet((await cloud_pass(deps, second.state)).report)
+		expect((await run_sync_pass(deps, second.state, { max_file_bytes: 1_000_000 })).kind).toBe('unchanged')
+	})
+
+	test('new cloud folders and files come down with their layout', async () => {
+		const { local, stat } = make_local()
+		const cloud = make_cloud()
+		await cloud.fm.create_folder('/', 'board', { xattrs: { view: 'board' } })
+		await cloud.fm.upload_file('/board', 'photo.png', bytes(64), 'image/png')
+		cloud.fake.set_xattr('/board/photo.png', 'position', '{"x":3,"y":4}')
+		const { deps } = make_deps(local, stat, cloud)
+
+		const first = await cloud_pass(deps, new_state())
+
+		expect(first.report.downloaded).toBe(1)
+		expect(local.get_xattr('/ws/board', 'view')).toBe('board')
+		expect(local.get_blob('/ws/board/photo.png')?.size).toBe(64)
+		expect(local.get_xattr('/ws/board/photo.png', 'position')).toBe('{"x":3,"y":4}')
+		// the layout that came down is not pushed back
+		expect_quiet((await cloud_pass(deps, first.state)).report)
+		expect(cloud.fake.get_xattr('/board/photo.png', 'position')).toBe('{"x":3,"y":4}')
+	})
+
+	test('a rename in the cloud renames the folder here', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/a')
+		local.seed_file('/ws/a/x.md', 'x')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+		const id = cloud.ids.get('/a')
+
+		await cloud.fm.rename('/a', 'b')
+		const second = await cloud_pass(deps, first.state)
+
+		expect(second.report.moved).toBe(1)
+		expect(local.has('/ws/b/x.md')).toBe(true)
+		expect(local.has('/ws/a')).toBe(false)
+		expect(second.state.entries.b?.cloud_id).toBe(id)
+		expect(Object.keys(second.state.entries).sort()).toEqual(['b', 'b/x.md'])
+		expect_quiet((await cloud_pass(deps, second.state)).report)
+	})
+
+	test('deleted in the cloud: the file here goes to the trash, unless it was edited here', async () => {
+		const { local, stat, mtimes } = make_local()
+		local.seed_file('/ws/old.md', 'old')
+		local.seed_file('/ws/kept.md', 'kept')
+		const cloud = make_cloud()
+		const { deps, trashed } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+
+		await cloud.fm.remove('/old.md')
+		await cloud.fm.remove('/kept.md')
+		await local.fm.save_text_file('/ws/kept.md', 'kept and edited')
+		mtimes.set('/ws/kept.md', 2)
+		const second = await cloud_pass(deps, first.state)
+
+		expect(trashed).toEqual(['/ws/old.md'])
+		expect(second.report.trashed).toBe(1)
+		expect(await cloud.fm.read_text_file('/kept.md')).toBe('kept and edited')
+		expect(Object.keys(second.state.entries)).toEqual(['kept.md'])
+	})
+
+	test('deleted here but edited in the cloud: the cloud version comes back', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/note.md', 'base')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+
+		await local.fm.remove('/ws/note.md')
+		await cloud.edit('/note.md', 'edited in the web')
+		const second = await cloud_pass(deps, first.state)
+
+		expect(second.report.deleted).toBe(0)
+		expect(await local_text(local, '/ws/note.md')).toBe('edited in the web')
+	})
+
+	test('asks before trashing most of the folder when the cloud workspace was emptied', async () => {
+		const { local, stat } = make_local()
+		for (let index = 0; index < MASS_DELETE_MIN; index++) local.seed_file(`/ws/${index}.md`, 'x'.repeat(index + 1))
+		const cloud = make_cloud()
+		const { deps, trashed } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+
+		for (let index = 0; index < MASS_DELETE_MIN; index++) await cloud.fm.remove(`/${index}.md`)
+		const paused = await run_sync_pass(deps, first.state, { max_file_bytes: 1_000_000, check_cloud: true })
+		expect(paused).toEqual({ kind: 'mass_delete', side: 'local', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN })
+		expect(trashed).toEqual([])
+
+		// confirming the cloud side does not confirm this one
+		const still = await run_sync_pass(deps, first.state, { max_file_bytes: 1_000_000, check_cloud: true, allow_cloud_deletes: true })
+		expect(still.kind).toBe('mass_delete')
+
+		const confirmed = await cloud_pass(deps, first.state, { allow_local_deletes: true })
+		expect(confirmed.report.trashed).toBe(MASS_DELETE_MIN)
+		expect(trashed).toHaveLength(MASS_DELETE_MIN)
+	})
+
+	test('an empty folder on a second computer downloads the whole workspace', async () => {
+		const { local, stat } = make_local()
+		const cloud = make_cloud()
+		await cloud.fm.create_folder('/', 'a')
+		await cloud.fm.create_text_file('/a', 'note.md', { content: 'hello' })
+		await cloud.fm.upload_file('/', 'photo.png', bytes(10), 'image/png')
+		const { deps } = make_deps(local, stat, cloud)
+		const upload = vi.spyOn(cloud.fm, 'upload_file')
+
+		const first = await cloud_pass(deps, new_state())
+
+		expect(first.report.downloaded).toBe(2)
+		expect(upload).not.toHaveBeenCalled()
+		expect(await local_text(local, '/ws/a/note.md')).toBe('hello')
+		expect(Object.keys(first.state.entries).sort()).toEqual(['a', 'a/note.md', 'photo.png'])
+		expect_quiet((await cloud_pass(deps, first.state)).report)
+	})
+
+	test('saves its progress as it goes', async () => {
+		const { local, stat } = make_local()
+		const cloud = make_cloud()
+		await cloud.fm.create_folder('/', 'a')
+		await cloud.fm.upload_file('/a', 'photo.png', bytes(10), 'image/png')
+		const { deps, saved_progress } = make_deps(local, stat, cloud)
+
+		await cloud_pass(deps, new_state())
+
+		// the folder at once; the download follows within the 2 s throttle or at the end
+		expect(saved_progress.length).toBeGreaterThan(0)
+		expect(Object.keys(saved_progress[0]!.entries)).toEqual(['a'])
 	})
 })

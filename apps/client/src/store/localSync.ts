@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import {
+	PILE_DIR_NAME,
 	client_instance_id,
 	createFileManager,
 	list_workspace_entries,
@@ -10,7 +11,9 @@ import {
 import { is_desktop } from '@/isDesktop'
 import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
-import { create_sync_engine, type SyncEngine, type SyncStatus } from '@/services/cloud/sync/syncEngine'
+import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStatus } from '@/services/cloud/sync/syncEngine'
+import { join_local, relative_of } from '@/services/cloud/sync/paths'
+import type { LocalWriter } from '@/services/cloud/sync/syncPass'
 import {
 	is_sync_state_path,
 	new_sync_state,
@@ -93,6 +96,33 @@ async function remove_state(root: string): Promise<void> {
 	await remove(sync_state_path(root)).catch(() => {})
 }
 
+/** Plugin-fs writes into the synced folder, the system trash through the app's `trash_path` command. */
+function local_writer(root: string): LocalWriter {
+	return {
+		async write_file(folder, name, data) {
+			const { mkdir, remove, rename, writeFile } = await fs()
+			// beside the target, inside `.pile`: listings and the watcher filter skip it
+			const scratch = join_local(folder, PILE_DIR_NAME)
+			await mkdir(scratch, { recursive: true })
+			const temporary = join_local(scratch, `sync-${crypto.randomUUID()}.tmp`)
+			await writeFile(temporary, new Uint8Array(await data.arrayBuffer()))
+			try {
+				await rename(temporary, join_local(folder, name))
+			} catch (error) {
+				await remove(temporary).catch(() => {})
+				throw error
+			}
+		},
+		async trash(path) {
+			const relative = relative_of(root, path)
+			// `trash_path` trusts the path it gets: only below the synced folder
+			if (relative === null || relative === '') throw new Error(`refusing to trash ${path}`)
+			const { invoke } = await import('@tauri-apps/api/core')
+			await invoke('trash_path', { path })
+		},
+	}
+}
+
 function start_engine(link: SyncLink): void {
 	if (engines.has(link.root)) return
 	const local_fm = createFileManager('local')
@@ -105,6 +135,8 @@ function start_engine(link: SyncLink): void {
 		pass_deps: () => ({
 			local_fm,
 			root: link.root,
+			writer: local_writer(link.root),
+			save_progress: state => save_state(link, state),
 			stat: async (id) => {
 				const info = await (await fs()).stat(id)
 				return { size: info.size, mtime_ms: info.mtime?.getTime() ?? 0 }
@@ -177,7 +209,7 @@ export async function unlink_folder(root: string): Promise<void> {
 	await remove_state(root)
 }
 
-export async function sync_now(root: string, options: { allow_mass_delete?: boolean } = {}): Promise<void> {
+export async function sync_now(root: string, options: SyncNowOptions = {}): Promise<void> {
 	await engines.get(root)?.sync_now(options)
 }
 

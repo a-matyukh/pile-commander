@@ -1,9 +1,10 @@
 /**
- * One-way local → cloud sync of a workspace folder (LOCAL_SYNC.md). A local
- * folder is linked to one cloud workspace; every pass compares three trees:
- * the base (what both sides held after the last good pass), the folder on
- * disk and the cloud workspace, and pushes local changes up. Cloud edits are
- * never overwritten: a file changed on both sides goes up as a conflicted copy.
+ * Two-way sync of a workspace folder on disk with a cloud workspace
+ * (LOCAL_SYNC.md, LOCAL_SYNC_PHASE2.md). Every pass compares three trees: the
+ * base (what both sides held after the last good pass), the folder on disk
+ * and the cloud workspace, and carries each side's changes to the other.
+ * Nothing is overwritten blindly: a file changed on both sides keeps the
+ * cloud version under its name and the local one as a conflicted copy.
  */
 
 export const SYNC_STATE_VERSION = 1
@@ -76,31 +77,48 @@ export type CloudEntry = {
 	xattrs: Record<string, string>
 }
 
-export type SkipReason = 'bad_name' | 'too_large' | 'excluded' | 'parent_skipped' | 'kind_clash'
+export type SkipReason = 'bad_name' | 'too_large' | 'excluded' | 'parent_skipped' | 'kind_clash' | 'occupied'
 
 export type SyncAction =
-	/** A new folder (or one gone from the cloud). */
+	// ---- here → cloud ----
+	/** A new folder here (or one deleted in the cloud that still holds something new here). */
 	| { kind: 'create_folder'; relative: string }
-	/** A new file, or one deleted in the cloud and edited here. */
+	/** A new file here, or one deleted in the cloud and edited here. */
 	| { kind: 'upload'; relative: string }
-	/** Local edit over an unchanged cloud row. */
+	/** Edited here over an unchanged cloud row. */
 	| { kind: 'update'; relative: string; cloud_id: string }
-	/** Changed on both sides, or the cloud already holds something else here. */
-	| { kind: 'conflict'; relative: string }
-	/** The cloud already holds this entry (a linked earlier copy, a resumed first pass). */
-	| { kind: 'adopt'; relative: string; cloud_id: string }
 	/** Renamed or moved here: the cloud row follows, keeping its id, layout and edges. */
 	| { kind: 'move'; from: string; relative: string; cloud_id: string }
-	/** Deleted here and unchanged in the cloud: the cloud row goes to the trash. */
+	/** Deleted here and unchanged in the cloud: the cloud row goes to the cloud trash. */
 	| { kind: 'delete'; relative: string; cloud_id: string }
-	/** Gone here, kept in the cloud (edited there): the link is dropped. */
+	// ---- cloud → here ----
+	/** A folder new in the cloud (or deleted here while the cloud added to it). */
+	| { kind: 'download_folder'; relative: string; cloud_id: string }
+	/** New or edited in the cloud and unchanged here (or deleted here, edited there): the cloud bytes come down. */
+	| { kind: 'download'; relative: string; cloud_id: string }
+	/** Renamed or moved in the cloud: the file or folder here follows. */
+	| { kind: 'local_move'; from: string; relative: string; cloud_id: string }
+	/** Deleted in the cloud and unchanged here: the file or folder goes to the system trash. */
+	| { kind: 'local_trash'; relative: string }
+	// ---- both ----
+	/**
+	 * Changed on both sides (or different files at one path): the cloud version
+	 * keeps the name. The local file is renamed to a conflicted copy, goes up
+	 * as a new file, and the cloud version comes down under the name
+	 */
+	| { kind: 'local_conflict'; relative: string; cloud_id: string }
+	/** The cloud already holds this entry (a linked earlier copy, a resumed pass). */
+	| { kind: 'adopt'; relative: string; cloud_id: string }
+	/** Gone on both sides: the link is dropped. */
 	| { kind: 'forget'; relative: string }
 	| { kind: 'skip'; relative: string; reason: SkipReason }
 
 export type SyncPlan = {
 	actions: SyncAction[]
-	/** Base files a pass would remove from the cloud. */
+	/** Base files a pass would move to the cloud trash. */
 	deletes: number
+	/** Base files a pass would move to the system trash here. */
+	local_deletes: number
 	/** Base files before the pass. */
 	base_files: number
 }
