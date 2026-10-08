@@ -623,7 +623,12 @@ class PassRun {
 		const info = await this.deps.stat(this.absolute(copy))
 		this.local.delete(relative)
 		this.local.set(copy, { ...entry, relative: copy, id: this.absolute(copy), name: copy_name, ...info })
+		// the name is gone here: drop its link and save at once. Interrupted
+		// before the download, the next pass then brings the cloud version
+		// down and sends the copy up, instead of reading "deleted here,
+		// unchanged in the cloud" and trashing the cloud version
 		delete this.state.entries[relative]
+		await this.checkpoint(true)
 		await this.upload(copy)
 		await this.download(relative, cloud_id)
 	}

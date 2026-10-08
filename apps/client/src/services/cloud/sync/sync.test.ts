@@ -859,6 +859,31 @@ describe('two-way pass', () => {
 		expect(Object.keys(second.state.entries)).toEqual(['kept.md'])
 	})
 
+	test('a conflict interrupted after the rename does not trash the cloud version', async () => {
+		const { local, stat, mtimes } = make_local()
+		local.seed_file('/ws/note.md', 'base')
+		const cloud = make_cloud()
+		const { deps, saved_progress } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+
+		await cloud.edit('/note.md', 'theirs')
+		await local.fm.save_text_file('/ws/note.md', 'mine')
+		mtimes.set('/ws/note.md', 2)
+		// the process dies while the conflicted copy goes up
+		vi.spyOn(cloud.fm, 'upload_file').mockRejectedValueOnce(new Error('killed'))
+		await pass(deps, first.state)
+		const interrupted = saved_progress.at(-1)!
+		expect(interrupted.entries['note.md']).toBeUndefined()
+
+		const resumed = await cloud_pass(deps, interrupted)
+
+		const copy = 'note (conflicted copy 2026-10-08 1430).md'
+		expect(resumed.report.deleted).toBe(0)
+		expect(await cloud.fm.read_text_file('/note.md')).toBe('theirs')
+		expect(await local_text(local, '/ws/note.md')).toBe('theirs')
+		expect(await cloud.fm.read_text_file(`/${copy}`)).toBe('mine')
+	})
+
 	test('deleted here but edited in the cloud: the cloud version comes back', async () => {
 		const { local, stat } = make_local()
 		local.seed_file('/ws/note.md', 'base')
