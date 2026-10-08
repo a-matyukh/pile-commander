@@ -61,6 +61,17 @@ export function useCanvasNodes(
 	const requireWorkspace = useRequireWorkspace()
 	const nodes = ref<CanvasFlowNode[]>([])
 
+	// the node being resized and the selection resized along with it
+	let resizeGroup: {
+		primaryId: string
+		primaryStart: Size
+		memberStarts: Record<string, Size>
+	} | null = null
+
+	function isBeingResized(id: string) {
+		return !!resizeGroup && (resizeGroup.primaryId === id || id in resizeGroup.memberStarts)
+	}
+
 	function getNodePosition(id: string) {
 		const node = nodes.value.find(n => n.id === id)
 		return node?.position
@@ -82,7 +93,10 @@ export function useCanvasNodes(
 				// Vue Flow NodeProps.selected is Boolean — undefined triggers prop warnings.
 				selected: prev?.selected ?? false,
 				data: { widget, index },
-				style: prev?.style ?? nodeStyle(widget),
+				// the stored size, so a size set elsewhere (another tab, a
+				// collaborator, folder sync) shows at once; a node under the
+				// person's resize handle keeps its live size
+				style: prev && isBeingResized(widget.id) ? prev.style : nodeStyle(widget),
 			}
 		})
 	}
@@ -169,12 +183,6 @@ export function useCanvasNodes(
 
 	/** Matches NodeResizer min-width/min-height in CanvasWidgetNode. */
 	const minNodeSize: Size = { width: 100, height: 50 }
-
-	let resizeGroup: {
-		primaryId: string
-		primaryStart: Size
-		memberStarts: Record<string, Size>
-	} | null = null
 
 	/** Line shapes resize via endpoint handles, not NodeResizer — skip them. */
 	function isLineNode(id: string) {

@@ -30,6 +30,7 @@ useSeoMeta({
     <HomeDesks />
     <HomeSharePublish />
     <HomeWhereItLives />
+    <HomeFolderSync />
     <HomeAnyDevice />
     <HomeStartCta />
     <HomeTryDemos />

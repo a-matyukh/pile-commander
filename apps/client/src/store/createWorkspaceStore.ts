@@ -320,6 +320,7 @@ export async function createWorkspaceStore(
 			for (const child of store.folders[id]?.children ?? []) {
 				content_caches.shapes.invalidate(child.id)
 				content_caches.notes.invalidate(child.id)
+				media_cache.invalidate(child.id)
 			}
 		}
 	}
@@ -351,6 +352,17 @@ export async function createWorkspaceStore(
 								content_caches.shapes.invalidate(id)
 								content_caches.notes.invalidate(id)
 							}
+						}
+						// New bytes under the same id (an image edited on disk, a
+						// blob replaced in place in the cloud): images and videos
+						// load again. Not on a layout-only change, and not on
+						// 'other' — an access event from reading the file would
+						// otherwise reload it forever
+						if (
+							(event.kind === 'modify' || event.kind === 'create' || event.kind === 'rename')
+							&& event.content_changed !== false
+						) {
+							for (const id of event.ids) media_cache.invalidate(id)
 						}
 
 						const folder_ids = cached_folders_affected_by(

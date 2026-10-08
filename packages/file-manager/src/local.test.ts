@@ -896,4 +896,12 @@ describe("map_tauri_watch_event", () => {
 			attrs: {},
 		})).toEqual({ kind: "other", ids: ["/a"] })
 	})
+
+	test("an xattr write is a modify whose bytes did not change", () => {
+		expect(map_tauri_watch_event({
+			type: { modify: { kind: "metadata", mode: "extended" } },
+			paths: ["/a.png"],
+			attrs: {},
+		})).toEqual({ kind: "modify", ids: ["/a.png"], content_changed: false })
+	})
 })

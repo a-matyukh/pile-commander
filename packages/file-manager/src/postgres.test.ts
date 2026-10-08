@@ -162,4 +162,153 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 			b.release()
 		}
 	})
+
+	test("replace_blob_entry does not deadlock with a text save of the same row", async () => {
+		const f = await fixture()
+		const key = `${f.workspace}/${crypto.randomUUID()}.png`
+		const a = await db.reserve()
+		const b = await db.reserve()
+		try {
+			// The save's billing lock, taken before it asks for KEY SHARE on the
+			// entry. Same lock assert_owner_can_add takes from entry_contents_guard.
+			await a.unsafe("begin; set local search_path = public, extensions; set local statement_timeout = '8s'; set local deadlock_timeout = '1s'").simple()
+			await a`select private.assert_owner_can_add(${f.owner}::uuid, 1, null)`
+			await b.unsafe("begin; set local search_path = public, extensions; set local statement_timeout = '8s'; set local deadlock_timeout = '1s'").simple()
+			const [{ pid }] = await b`select pg_backend_pid() as pid`
+			const replaced = b`select private.replace_blob_entry(${f.file}::uuid, ${f.workspace}::uuid, ${key}, 20, 'image/png', ${f.owner}::uuid, null)`.then(() => null, (error: Error) => error)
+			expect(await is_waiting_for_lock(pid)).toBe(true)
+			await a.unsafe("set local role authenticated").simple()
+			await a`select set_config('request.jwt.claims', ${JSON.stringify({ sub: f.owner, role: "authenticated" })}, true)`
+			await a`insert into public.entry_contents(entry_id, workspace_id, content)
+				values (${f.file}::uuid, ${f.workspace}::uuid, 'a longer note')
+				on conflict (entry_id) do update set content = excluded.content, workspace_id = excluded.workspace_id`
+			await a.unsafe("commit").simple()
+			const error = await replaced
+			if (error) throw error
+			await b.unsafe("commit").simple()
+			const [row] = await db`select id::text, storage_key from public.entries where id = ${f.file}::uuid`
+			expect(row.id).toBe(f.file)
+			expect(row.storage_key).toBe(key)
+		} finally {
+			await a.unsafe("rollback").simple()
+			await b.unsafe("rollback").simple()
+			a.release()
+			b.release()
+		}
+	}, 15_000)
+
+	function blob_key(workspace: string): string {
+		return `${workspace}/${crypto.randomUUID()}.png`
+	}
+
+	async function with_owner(run: (tx: SQL, ctx: { owner: string; workspace: string; root: string }) => Promise<void>) {
+		await db.begin(async (tx) => {
+			const owner = crypto.randomUUID()
+			await tx`insert into auth.users(id, email) values (${owner}::uuid, ${`${owner}@example.invalid`})`
+			await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: owner, role: "authenticated" })}, true)`
+			const [ws] = await tx`select public.create_workspace('replace') as id`
+			const [root] = await tx`select id from public.entries where workspace_id = ${ws.id}::uuid and parent_id is null`
+			await run(tx, { owner, workspace: ws.id as string, root: root.id as string })
+		})
+	}
+
+	function row_of(value: unknown): Record<string, unknown> {
+		return (typeof value === "string" ? JSON.parse(value) : value) as Record<string, unknown>
+	}
+
+	/** A refused statement aborts the transaction; roll it back to a savepoint. */
+	async function refused(tx: SQL, run: () => Promise<unknown>, pattern: RegExp) {
+		await tx`savepoint replace_case`
+		try {
+			await run()
+			throw new Error("accepted")
+		} catch (error) {
+			await tx`rollback to savepoint replace_case`
+			expect(error instanceof Error ? error.message : String(error)).toMatch(pattern)
+		}
+	}
+
+	test("replace_blob_entry charges the size delta, not the whole file", async () => {
+		await with_owner(async (tx, { owner, workspace, root }) => {
+			const key = blob_key(workspace)
+			const [created] = await tx`select private.create_blob_entry(null, ${workspace}::uuid, ${root}::uuid, 'a.png', 'image/png', ${key}, 1000, ${owner}::uuid, null) as entry`
+			const entry = row_of(created.entry)
+			const [usage] = await tx`select used_bytes from private.owner_usage(${owner}::uuid)`
+			await tx`update public.billing_accounts set quota_bytes = ${usage.used_bytes} where owner_id = ${owner}::uuid`
+			const next = blob_key(workspace)
+			const [replaced] = await tx`select private.replace_blob_entry(${entry.id}::uuid, ${workspace}::uuid, ${next}, 1000, 'image/png', ${owner}::uuid, null) as entry`
+			expect(row_of(replaced.entry).id).toBe(entry.id)
+			await refused(tx, () => tx`select private.create_blob_entry(null, ${workspace}::uuid, ${root}::uuid, 'b.png', 'image/png', ${blob_key(workspace)}, 1000, ${owner}::uuid, null)`, /quota_exceeded/)
+			await refused(tx, () => tx`select private.replace_blob_entry(${entry.id}::uuid, ${workspace}::uuid, ${blob_key(workspace)}, 1001, 'image/png', ${owner}::uuid, null)`, /quota_exceeded/)
+		})
+	})
+
+	test("replace_blob_entry refuses a viewer, a trashed row and an empty mime", async () => {
+		await with_owner(async (tx, { owner, workspace, root }) => {
+			const viewer = crypto.randomUUID()
+			await tx`insert into auth.users(id, email) values (${viewer}::uuid, ${`${viewer}@example.invalid`})`
+			await tx`insert into public.workspace_members(workspace_id, user_id, role) values (${workspace}::uuid, ${viewer}::uuid, 'viewer')`
+			const key = blob_key(workspace)
+			const [created] = await tx`select private.create_blob_entry(null, ${workspace}::uuid, ${root}::uuid, 'a.png', 'image/png', ${key}, 10, ${owner}::uuid, null) as entry`
+			const entry = row_of(created.entry)
+			await refused(tx, () => tx`select private.replace_blob_entry(${entry.id}::uuid, ${workspace}::uuid, ${blob_key(workspace)}, 10, 'image/png', ${viewer}::uuid, null)`, /access denied/)
+			await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: owner, role: "authenticated" })}, true)`
+			await tx`select public.delete_entry(${entry.id}::uuid, null)`
+			await refused(tx, () => tx`select private.replace_blob_entry(${entry.id}::uuid, ${workspace}::uuid, ${blob_key(workspace)}, 10, 'image/png', ${owner}::uuid, null)`, /not found/)
+			await refused(tx, () => tx`select private.replace_blob_entry(${entry.id}::uuid, ${workspace}::uuid, ${blob_key(workspace)}, 10, '', ${owner}::uuid, null)`, /mime is required/)
+		})
+	})
+
+	test("replace_blob_entry turns text into a blob and moves content_modified_at", async () => {
+		await with_owner(async (tx, { owner, workspace, root }) => {
+			await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: owner, role: "authenticated" })}, true)`
+			const [made] = await tx`select public.create_text_file(${root}::uuid, 'note.md', 'text/markdown', 'hello', null, null) as entry`
+			const text = row_of(made.entry)
+			await tx`update public.entries set content_modified_at = now() - interval '2 days' where id = ${text.id}::uuid`
+			const [before] = await tx`select content_modified_at from public.entries where id = ${text.id}::uuid`
+			const key = blob_key(workspace)
+			const [replaced] = await tx`select private.replace_blob_entry(${text.id}::uuid, ${workspace}::uuid, ${key}, 5, 'application/octet-stream', ${owner}::uuid, 'device') as entry`
+			const after = row_of(replaced.entry)
+			expect(after.id).toBe(text.id)
+			expect(after.storage_key).toBe(key)
+			const [contents] = await tx`select count(*)::int as n from public.entry_contents where entry_id = ${text.id}::uuid`
+			expect(contents.n).toBe(0)
+			const [stamp] = await tx`select content_modified_at from public.entries where id = ${text.id}::uuid`
+			expect(new Date(stamp.content_modified_at as string).getTime()).toBeGreaterThan(new Date(before.content_modified_at as string).getTime())
+			const [queued] = await tx`select count(*)::int as n from public.blob_deletions where storage_key = ${key}`
+			expect(queued.n).toBe(0)
+		})
+	})
+
+	test("replace_blob_entry enqueues the old key unless another row still holds it", async () => {
+		await with_owner(async (tx, { owner, workspace, root }) => {
+			const shared = blob_key(workspace)
+			const [first] = await tx`select private.create_blob_entry(null, ${workspace}::uuid, ${root}::uuid, 'a.png', 'image/png', ${shared}, 10, ${owner}::uuid, null) as entry`
+			const id = row_of(first.entry).id as string
+			const [second] = await tx`select private.create_blob_entry(null, ${workspace}::uuid, ${root}::uuid, 'b.png', 'image/png', ${shared}, 10, ${owner}::uuid, null) as entry`
+			const kept = row_of(second.entry).id as string
+			const next = blob_key(workspace)
+			await tx`update public.entries set content_modified_at = now() - interval '2 days' where id = ${id}::uuid`
+			const [before] = await tx`select content_modified_at from public.entries where id = ${id}::uuid`
+			const [replaced] = await tx`select private.replace_blob_entry(${id}::uuid, ${workspace}::uuid, ${next}, 12, 'image/png', ${owner}::uuid, null) as entry`
+			expect(row_of(replaced.entry).id).toBe(id)
+			const [stamp] = await tx`select content_modified_at from public.entries where id = ${id}::uuid`
+			expect(new Date(stamp.content_modified_at as string).getTime()).toBeGreaterThan(new Date(before.content_modified_at as string).getTime())
+			const [queued] = await tx`select count(*)::int as n from public.blob_deletions where storage_key = ${shared}`
+			expect(queued.n).toBe(1)
+			const [refs] = await tx`select public.blob_references(array[${shared}]::text[]) as refs`
+			const referenced = typeof refs.refs === "string" ? JSON.parse(refs.refs) as Record<string, boolean> : refs.refs as Record<string, boolean>
+			expect(referenced[shared]).toBe(true)
+			const [still] = await tx`select storage_key from public.entries where id = ${kept}::uuid`
+			expect(still.storage_key).toBe(shared)
+			const [same] = await tx`select private.replace_blob_entry(${id}::uuid, ${workspace}::uuid, ${next}, 12, 'image/png', ${owner}::uuid, null) as entry`
+			expect(row_of(same.entry).storage_key).toBe(next)
+			const [stamp_again] = await tx`select content_modified_at from public.entries where id = ${id}::uuid`
+			expect(new Date(stamp_again.content_modified_at as string).getTime()).toBe(new Date(stamp.content_modified_at as string).getTime())
+			const [queued_again] = await tx`select count(*)::int as n from public.blob_deletions where storage_key = ${next}`
+			expect(queued_again.n).toBe(0)
+			const [old_still] = await tx`select count(*)::int as n from public.blob_deletions where storage_key = ${shared}`
+			expect(old_still.n).toBe(1)
+		})
+	})
 })

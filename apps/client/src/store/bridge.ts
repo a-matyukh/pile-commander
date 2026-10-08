@@ -27,7 +27,12 @@ import { create_window_manager } from '@/services/window/WindowManager'
 import { extract_pile_to_cache } from '@/services/workspace/pack'
 import store from '@/store'
 import cloud from '@/store/cloud'
+import { link_folder } from '@/store/localSync'
 
+/**
+ * Where the copy started. `sync` is the first upload of Auto-sync (store/localSync):
+ * the folder stays linked to the new cloud workspace afterwards
+ */
 export type BridgeDoor = BridgeEventInput['door']
 
 export type BridgeSource = {
@@ -115,6 +120,21 @@ function bridge_deps(): BridgeDeps {
 	}
 }
 
+/** A sync's first upload resumes on its own: a plain copy of the same folder is another job. */
+function job_key_of(user_id: string, source: BridgeSource, door: BridgeDoor): string {
+	const key = bridge_job_key(user_id, source)
+	return door === 'sync' ? `${key}:sync` : key
+}
+
+/** The finished copy of this source that still exists, made from any door. */
+function finished_copy(user_id: string, source: BridgeSource): BridgeJob | null {
+	for (const door of ['sync', 'device'] as const) {
+		const job = jobs.get(job_key_of(user_id, source, door))
+		if (job?.phase === 'done' && cloud.workspaces.some(ws => ws.id === job.workspace_id)) return job
+	}
+	return null
+}
+
 function source_file_manager(source: BridgeSource): FileManager {
 	return source.type === 'browser'
 		? createBrowserFileManager(require_browser_storage())
@@ -140,11 +160,12 @@ async function run_cleanup(): Promise<void> {
 function record(step: BridgeEventInput['step'], extra: Partial<BridgeEventInput> = {}): void {
 	const user = cloud.user
 	const source = bridge.source
+	const door = bridge.door
 	if (!user || !source) return
 	const preflight = bridge.preflight
 	void record_bridge_event(require_supabase(), user.id, {
 		step,
-		door: bridge.door,
+		door,
 		source_type: source.type,
 		...(preflight
 			? {
@@ -237,15 +258,12 @@ export async function measure(): Promise<void> {
 		])
 		// reopened for another workspace meanwhile
 		if (bridge.source !== source) return
-		const key = bridge_job_key(user.id, source)
-		const last = jobs.get(key)
+		const key = job_key_of(user.id, source, bridge.door)
 		bridge.preflight = preflight
 		bridge.pro = pro
 		bridge.exclude = [...preflight.suggested_exclude]
 		bridge.resumable = await resumable_job(bridge_deps(), key)
-		bridge.copied = last?.phase === 'done' && cloud.workspaces.some(ws => ws.id === last.workspace_id)
-			? last
-			: null
+		bridge.copied = finished_copy(user.id, source)
 		bridge.step = 'summary'
 		if (!opened_recorded) {
 			opened_recorded = true
@@ -272,7 +290,7 @@ export async function start_copy(): Promise<void> {
 	const fm = source_fm
 	const user = cloud.user
 	if (!source || !preflight || !fm || !user || bridge.step === 'copying') return
-	const key = bridge_job_key(user.id, source)
+	const key = job_key_of(user.id, source, bridge.door)
 	const controller = new AbortController()
 	abort = controller
 	record(bridge.resumable ? 'resumed' : 'started', { workspace_id: bridge.resumable?.workspace_id ?? null })
@@ -323,6 +341,21 @@ export async function start_copy(): Promise<void> {
 async function finish(workspace_id: string, job_key: string): Promise<void> {
 	// an extracted .pile is removed after the copy: its job has nothing to resume
 	if (bridge.door === 'pile') jobs.remove(job_key)
+	const source = bridge.source
+	if (bridge.door === 'sync' && source) {
+		// the folder stays open here; its first sync pass adopts the copy just made
+		await link_folder({
+			root: source.id,
+			name: source.name,
+			workspace_id,
+			exclude: [...bridge.exclude],
+			adopt_before: Date.now(),
+		})
+		bridge.open = false
+		bridge.step = 'summary'
+		await run_cleanup()
+		return
+	}
 	const item = cloud.workspaces.find(ws => ws.id === workspace_id)
 	bridge.pending_intent = { workspace_id, door: bridge.door }
 	bridge.step = 'summary'
@@ -354,8 +387,30 @@ export async function delete_partial_copy(): Promise<void> {
 		bridge.error = cloud.last_error
 		return
 	}
-	jobs.remove(bridge_job_key(user.id, source))
+	jobs.remove(job_key_of(user.id, source, bridge.door))
 	bridge.resumable = null
+}
+
+/**
+ * Auto-sync into the earlier cloud copy of this folder instead of a new one.
+ * Files the copy holds unchanged are adopted; files edited here since then
+ * update it, unless they were edited in the cloud too
+ */
+export async function sync_with_copied(): Promise<void> {
+	const job = bridge.copied
+	const source = bridge.source
+	if (!job || !source || bridge.door !== 'sync') return
+	try {
+		await link_folder({
+			root: source.id,
+			name: source.name,
+			workspace_id: job.workspace_id,
+			adopt_before: job.finished_at ?? job.started_at,
+		})
+		close_bridge()
+	} catch (error) {
+		bridge.error = message_of(error)
+	}
 }
 
 /** Opens the finished earlier copy of this workspace instead of copying again. */

@@ -61,13 +61,14 @@ function extra_from_postgrest(details: string | undefined): Record<string, unkno
 async function assert_upload_quota(
 	client: ReturnType<typeof user_client>,
 	workspace_id: string,
-	size_bytes: number,
+	delta_bytes: number,
+	file_bytes: number,
 	file_mime: string | null,
 ): Promise<void> {
 	const { error } = await client.rpc("assert_owner_quota", {
 		p_workspace: workspace_id,
-		p_delta_bytes: size_bytes,
-		p_file_bytes: size_bytes,
+		p_delta_bytes: delta_bytes,
+		p_file_bytes: file_bytes,
 	});
 	if (!error) return;
 	throw rpc_error_to_api(error, "quota check", file_mime_extra(file_mime));
@@ -282,9 +283,68 @@ export async function handle_download_presign(
 	return Response.json({ url, expires_in: env.presign_get_ttl_seconds, variant: choice.variant });
 }
 
-// POST /presign/upload { workspace_id, name?, mime?, size_bytes? } →
-// { storage_key, url, expires_in }. The client then PUTs the blob directly to
-// B2 with the desired Content-Type and calls /finalize
+export type ReplaceEntryRow = {
+	workspace_id: string;
+	kind: string;
+	deleted_at: string | null;
+	size_bytes: number | string | null;
+};
+
+/**
+ * Quota for a replacement is the difference from the live file. A missing,
+ * trashed, foreign or non-file row is the same 404: the caller learns nothing
+ * about a row RLS already hid.
+ */
+export function presign_replace_charge(
+	replace: unknown,
+	workspace_id: string,
+	size_bytes: number,
+	row: ReplaceEntryRow | null,
+): { replace: string; delta_bytes: number } | null {
+	if (replace == null || replace === "") return null;
+	const id = String(replace).toLowerCase();
+	if (!UUID_ONLY_RE.test(id)) throw new ApiError(400, "invalid replace");
+	if (!row || row.deleted_at || row.kind !== "file" || row.workspace_id !== workspace_id) {
+		throw new ApiError(404, "entry not found");
+	}
+	const old_size = row.size_bytes == null ? 0 : Number(row.size_bytes);
+	if (!Number.isFinite(old_size) || old_size < 0) throw new ApiError(404, "entry not found");
+	return { replace: id, delta_bytes: size_bytes - old_size };
+}
+
+export type FinalizeBlobRequest =
+	| { replace: string; mime: string; client_id: string | null }
+	| { id: string; parent_id: string; name: string; mime: string; client_id: string | null };
+
+/** `replace` does not need a parent or a name: the row already has both. */
+export function finalize_blob_request(body: Record<string, unknown>, staging_id: string): FinalizeBlobRequest {
+	const mime = typeof body.mime === "string" && body.mime ? body.mime : "application/octet-stream";
+	const client_id = typeof body.client_id === "string" ? body.client_id : null;
+	if (mime.length > 255 || (client_id?.length ?? 0) > 255) throw new ApiError(400, "invalid upload metadata");
+	if (body.replace != null && body.replace !== "") {
+		const replace = String(body.replace).toLowerCase();
+		if (!UUID_ONLY_RE.test(replace)) throw new ApiError(400, "invalid replace");
+		return { replace, mime, client_id };
+	}
+	const parent_id = String(body.parent_id ?? "");
+	if (!UUID_ONLY_RE.test(parent_id)) throw new ApiError(400, "invalid parent_id");
+	const id = body.id == null ? staging_id : String(body.id);
+	if (!UUID_ONLY_RE.test(id)) throw new ApiError(400, "invalid id");
+	const name = typeof body.name === "string" ? body.name : "";
+	if (!name || name.includes("/") || name === "." || name === ".." || /[\x00-\x1f\x7f]/.test(name) || [...name].length > 255) {
+		throw new ApiError(400, "invalid name");
+	}
+	return { id, parent_id, name, mime, client_id };
+}
+
+export function upload_presign_body(storage_key: string, url: string, expires_in: number, replace: string | null) {
+	return replace ? { storage_key, url, expires_in, replace } : { storage_key, url, expires_in };
+}
+
+// POST /presign/upload { workspace_id, name?, mime?, size_bytes?, replace? } →
+// { storage_key, url, expires_in, replace? }. The client then PUTs the blob
+// directly to B2 with the desired Content-Type and calls /finalize.
+// `replace` is echoed so the client can tell this backend accepts it before the PUT.
 export async function handle_upload_presign(
 	env: Env,
 	s3: S3Client,
@@ -311,7 +371,18 @@ export async function handle_upload_presign(
 	const file_mime = resolve_upload_file_mime(body);
 
 	await require_write_access(client, user, workspace_id);
-	await assert_upload_quota(client, workspace_id, size_bytes, file_mime);
+	let row: ReplaceEntryRow | null = null;
+	if (body.replace != null && body.replace !== "" && UUID_ONLY_RE.test(String(body.replace))) {
+		const { data, error } = await client
+			.from("entries")
+			.select("workspace_id, kind, deleted_at, size_bytes")
+			.eq("id", String(body.replace).toLowerCase())
+			.maybeSingle();
+		if (error) throw internal_error("replace lookup", error);
+		row = data as ReplaceEntryRow | null;
+	}
+	const replacing = presign_replace_charge(body.replace, workspace_id, size_bytes, row);
+	await assert_upload_quota(client, workspace_id, replacing?.delta_bytes ?? size_bytes, size_bytes, file_mime);
 
 	const ext = /(\.[a-z0-9]{1,16})$/i.exec(name)?.[1].toLowerCase() ?? "";
 	const { data: storage_key, error } = await db.rpc("register_upload", {
@@ -320,7 +391,7 @@ export async function handle_upload_presign(
 	if (error) throw rpc_error_to_api(error, "register upload");
 
 	const url = s3.presign(storage_key, { method: "PUT", expiresIn: env.presign_put_ttl_seconds });
-	return Response.json({ storage_key, url, expires_in: env.presign_put_ttl_seconds });
+	return Response.json(upload_presign_body(storage_key, url, env.presign_put_ttl_seconds, replacing?.replace ?? null));
 }
 
 // POST /finalize { storage_key, parent_id, name, mime, id?, client_id? } →
@@ -341,23 +412,13 @@ export async function handle_finalize(
 
 	const storage_key = String(body.storage_key ?? "");
 	const staging = parse_staging_key(storage_key, "blob");
-	const workspace_id = staging.workspace_id;
+	const request = finalize_blob_request(body, staging.id);
 
-	const parent_id = String(body.parent_id ?? "");
-	if (!UUID_ONLY_RE.test(parent_id)) throw new ApiError(400, "invalid parent_id");
-	const id = body.id == null ? staging.id : String(body.id);
-	if (!UUID_ONLY_RE.test(id)) throw new ApiError(400, "invalid id");
-	const name = typeof body.name === "string" ? body.name : "";
-	if (!name || name.includes("/") || name === "." || name === ".." || /[\x00-\x1f\x7f]/.test(name) || [...name].length > 255) throw new ApiError(400, "invalid name");
-	const mime = typeof body.mime === "string" && body.mime ? body.mime : "application/octet-stream";
-	const client_id = typeof body.client_id === "string" ? body.client_id : null;
-	if (mime.length > 255 || (client_id?.length ?? 0) > 255) throw new ApiError(400, "invalid upload metadata");
+	await require_write_access(client, user, staging.workspace_id);
 
-	await require_write_access(client, user, workspace_id);
-
-	return Response.json(await finalize_upload(s3, db, storage_key, user.id, "blob", {
-		id, parent_id, name, mime, client_id,
-	}, (error, context) => rpc_error_to_api(error, context, file_mime_extra(mime))));
+	return Response.json(await finalize_upload(s3, db, storage_key, user.id, "blob", request, (error, context) =>
+		rpc_error_to_api(error, context, file_mime_extra(request.mime)),
+	));
 }
 
 // POST /presign/hub-preview-upload { workspace_id, name } →

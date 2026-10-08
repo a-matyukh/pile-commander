@@ -15,6 +15,7 @@ import type {
 	MediaSrc,
 	PutBlob,
 	StrokesWatchEvent,
+	Unwatch,
 	UploadProgressCallback,
 	WatchEvent,
 	Xattr,
@@ -283,7 +284,28 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve_sleep) => setTimeout(resolve_sleep, ms))
 }
 
-function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
+export type CloudFileManager = FileManager & {
+	/**
+	 * Replaces the bytes of a live file without changing its id. `'unsupported'`
+	 * means this backend did not echo `replace` on the presign: nothing was
+	 * uploaded, and later calls in this session skip the network.
+	 */
+	replace_file(
+		id: string,
+		data: Blob,
+		mime?: string,
+		onProgress?: UploadProgressCallback,
+	): Promise<"replaced" | "unsupported">
+	/**
+	 * Calls back on any change of the workspace from elsewhere: an entry, ink
+	 * or an edge, or a reconnect after a gap. No details: the local sync only
+	 * needs to know that the cloud moved, and reads it whole. Joins the shared
+	 * channels itself, whether or not a folder of the workspace is open.
+	 */
+	watch_workspace(on_change: () => void): Promise<Unwatch>
+}
+
+function createCloudFileManager(options: CloudFileManagerOptions): CloudFileManager {
 	const { client, workspace_id, backend_url } = options
 
 	type RefusedXattrs = { path: string; status: "missing" | "too_large" }
@@ -642,6 +664,53 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 		}
 	}
 
+	// Remembered for the session: an old backend accepts the extra field and
+	// answers without echoing it. Detect that before the PUT, so the bytes
+	// are never uploaded into a ticket the finalize cannot use.
+	let replace_supported = true
+
+	async function replace_file(
+		id: string,
+		data: Blob,
+		mime?: string,
+		onProgress?: UploadProgressCallback,
+	): Promise<"replaced" | "unsupported"> {
+		if (!replace_supported) return "unsupported"
+		const row = await resolve(id)
+		let type = mime || data.type || mime_from_name(row.name)
+		if (is_text_mime(type)) {
+			const bytes = new Uint8Array(await data.arrayBuffer())
+			if (bytes.byteLength > MAX_TEXT_CONTENT_BYTES || decode_text_content(bytes) === null) {
+				type = "application/octet-stream"
+			}
+		}
+		try {
+			const ticket = await backend_post<{ storage_key: string; url: string; replace?: string }>(
+				"/presign/upload",
+				{ workspace_id, name: row.name, size_bytes: data.size, mime: type, replace: row.id },
+			)
+			if (ticket.replace !== row.id) {
+				replace_supported = false
+				return "unsupported"
+			}
+			if (options.put_blob) await options.put_blob(ticket.url, type, data, onProgress)
+			else await put_with_progress(ticket.url, type, data, onProgress)
+			mark_write(row.id)
+			await backend_post<{ entry: EntryRow }>("/finalize", {
+				storage_key: ticket.storage_key,
+				replace: row.id,
+				mime: type,
+				client_id: client_instance_id(),
+			})
+			return "replaced"
+		} catch (error) {
+			if (error instanceof PlanLimitError && !error.file_mime) {
+				throw new PlanLimitError({ ...error.to_info(), file_mime: type }, error.message)
+			}
+			throw error
+		}
+	}
+
 	let watch_counter = 0
 	// supabase-js 2.112 reuses RealtimeChannel by topic: a second
 	// .on('postgres_changes') on a joining/joined channel throws
@@ -740,6 +809,13 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 		}
 	}
 
+	// whole-workspace listeners (watch_workspace): told about every change that
+	// is not this instance's own echo, on all three tables
+	const workspace_watchers = new Set<() => void>()
+	function notify_workspace() {
+		for (const on_change of workspace_watchers) on_change()
+	}
+
 	// folder_strokes: watchers register by entry uuid (survives renames),
 	// events are dispatched to the matching folder's callbacks. A DELETE
 	// payload carries only the narrow replica identity (workspace_id + id, see
@@ -750,11 +826,12 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 	const strokes_channel = shared_postgres_channel(
 		"strokes",
 		"folder_strokes",
-		() => strokes_watchers.size > 0,
+		() => strokes_watchers.size > 0 || workspace_watchers.size > 0,
 		(payload) => {
 			if (payload.eventType === "DELETE") {
 				const id = (payload.old as Partial<StrokeRow>).id
 				if (!id || consume_own_echo(id)) return
+				notify_workspace()
 				for (const callbacks of strokes_watchers.values()) {
 					for (const on_event of callbacks) {
 						on_event({ upserted: [], deleted: [id] })
@@ -764,12 +841,14 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 			}
 			const row = payload.new as StrokeRow
 			if (!row.id || consume_own_echo(row.id)) return
+			notify_workspace()
 			const callbacks = strokes_watchers.get(row.entry_id)
 			if (!callbacks) return
 			const event: StrokesWatchEvent = { upserted: [row_to_stroke(row)], deleted: [] }
 			for (const on_event of callbacks) on_event(event)
 		},
 		() => {
+			notify_workspace()
 			for (const callbacks of strokes_watchers.values()) {
 				for (const on_event of callbacks) on_event({ upserted: [], deleted: [], resync: true })
 			}
@@ -847,16 +926,22 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 	const connections_channel = shared_postgres_channel(
 		"connections",
 		"folder_connections",
-		() => connections_watchers.size > 0,
+		() => connections_watchers.size > 0 || workspace_watchers.size > 0,
 		(payload) => {
 			dispatch_connections(async () => {
 				if (payload.eventType === "DELETE") {
 					const old = payload.old as Partial<ConnectionRow>
 					if (old.workspace_id && old.workspace_id !== workspace_id) return
 					const record = old.record_id ? connection_records.get(old.record_id) : undefined
-					if (!record) return
+					// an edge this instance never read: no own-echo check is
+					// possible, and a whole-workspace listener still wants to know
+					if (!record) {
+						notify_workspace()
+						return
+					}
 					connection_records.delete(old.record_id!)
 					if (consume_own_echo(record.id)) return
+					notify_workspace()
 					for (const on_event of connections_watchers.get(record.entry_id) ?? []) {
 						on_event({ upserted: [], deleted: [record.id] })
 					}
@@ -866,6 +951,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 				if (row.workspace_id !== workspace_id) return
 				remember_connection(row)
 				if (!row.id || consume_own_echo(row.id)) return
+				notify_workspace()
 				const callbacks = connections_watchers.get(row.entry_id)
 				if (!callbacks) return
 				const paths = await paths_for_entry_ids([row.from_entry, row.to_entry])
@@ -877,6 +963,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 		},
 		() => {
 			dispatch_connections(() => {
+				notify_workspace()
 				for (const callbacks of connections_watchers.values()) {
 					for (const on_event of callbacks) on_event({ upserted: [], deleted: [], resync: true })
 				}
@@ -891,7 +978,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 	const entries_channel = shared_postgres_channel(
 		"entries",
 		"entries",
-		() => entries_watchers.size > 0,
+		() => entries_watchers.size > 0 || workspace_watchers.size > 0,
 		(payload) => {
 			const new_row = payload.new as Partial<EntryRow>
 			const old_row = payload.old as Partial<EntryRow>
@@ -899,6 +986,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 			// Per-instance tracking, not updated_by: the same account may
 			// be active on several devices, and their events must flow
 			if (consume_own_echo(new_row.id ?? old_row.id)) return
+			notify_workspace()
 
 			let event: WatchEvent | null = null
 			if (payload.eventType === "INSERT" && new_row.path) {
@@ -920,10 +1008,18 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 					// restored from the trash
 					event = { kind: "create", ids: [new_row.path] }
 				} else if (!is_deleted) {
+					// replica identity full: the old row is whole, so a layout-only
+					// update (xattrs, a drag) is told apart from new bytes — a blob
+					// replaced in place, a text save
 					event =
 						old_row.path && old_row.path !== new_row.path
 							? { kind: "rename", ids: [old_row.path, new_row.path] }
-							: { kind: "modify", ids: [new_row.path] }
+							: {
+								kind: "modify",
+								ids: [new_row.path],
+								content_changed: old_row.storage_key !== new_row.storage_key
+									|| old_row.content_modified_at !== new_row.content_modified_at,
+							}
 				}
 				// updates inside the trash (was && is) are ignored
 			}
@@ -931,9 +1027,26 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 			for (const on_event of entries_watchers) on_event(event)
 		},
 		() => {
+			notify_workspace()
 			for (const on_event of entries_watchers) on_event({ kind: "resync", ids: [] })
 		},
 	)
+
+	async function watch_workspace(on_change: () => void): Promise<Unwatch> {
+		workspace_watchers.add(on_change)
+		const channels = [entries_channel, strokes_channel, connections_channel]
+		try {
+			await Promise.all(channels.map(channel => channel.ensure()))
+		} catch (error) {
+			workspace_watchers.delete(on_change)
+			await Promise.all(channels.map(channel => channel.release_if_idle()))
+			throw error
+		}
+		return () => {
+			if (!workspace_watchers.delete(on_change)) return
+			for (const channel of channels) void channel.release_if_idle()
+		}
+	}
 
 	return {
 		async FolderChildren(folder_id: string): Promise<FolderChild[]> {
@@ -1020,6 +1133,10 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 		async upload_file(folder_id: string, filename: string, data: Blob, mime?: string, onProgress?: UploadProgressCallback) {
 			return upload_file_impl(folder_id, filename, data, mime, onProgress)
 		},
+
+		replace_file,
+
+		watch_workspace,
 
 		async rename(id: string, new_name: string) {
 			const row = await resolve(id)
@@ -2001,7 +2118,7 @@ export type BridgeEventInput = {
 		| "completed"
 		| "failed"
 		| "cancelled"
-	door: "share" | "publish" | "device" | "list" | "tile" | "pile"
+	door: "share" | "publish" | "device" | "list" | "tile" | "pile" | "sync"
 	source_type: "local" | "browser"
 	workspace_id?: string | null
 	total_bytes?: number | null
@@ -2072,6 +2189,76 @@ export async function purge_entry(
 	const entry_id = await resolve_trashed(client, workspace_id, path)
 	const { error } = await client.rpc("purge_entry", { p_entry: entry_id })
 	if (error) throw new Error(`purge_entry failed: ${error.message}`)
+}
+
+/**
+ * Hard-deletes one entry by id once it is in the trash. A path can name
+ * several trashed versions of a file; the local sync knows the exact row
+ */
+export async function purge_entry_id(client: SupabaseClient, entry_id: string): Promise<void> {
+	const { error } = await client.rpc("purge_entry", { p_entry: entry_id })
+	if (error) throw new Error(`purge_entry failed: ${error.message}`)
+}
+
+/** Rows of a workspace listed at once, ordered by a unique key for stable pages */
+const LIST_ENTRIES_PAGE = 1000
+
+async function list_workspace_rows<Row>(
+	client: SupabaseClient,
+	table: "entries" | "folder_strokes" | "folder_connections",
+	columns: string,
+	order: string,
+	workspace_id: string,
+	live_only: boolean,
+): Promise<Row[]> {
+	const rows: Row[] = []
+	for (let from = 0; ; from += LIST_ENTRIES_PAGE) {
+		let query = client.from(table).select(columns).eq("workspace_id", workspace_id)
+		if (live_only) query = query.is("deleted_at", null)
+		const { data, error } = await query.order(order).range(from, from + LIST_ENTRIES_PAGE - 1)
+		if (error) throw new Error(`list ${table} failed: ${error.message}`)
+		const page = (data ?? []) as Row[]
+		rows.push(...page)
+		if (page.length < LIST_ENTRIES_PAGE) return rows
+	}
+}
+
+/**
+ * Every live entry of a workspace in one paged read (root included, path
+ * "/"). The local sync compares it with a folder on disk; RLS limits it to
+ * workspaces the caller can read
+ */
+export async function list_workspace_entries(
+	client: SupabaseClient,
+	workspace_id: string,
+): Promise<EntryRow[]> {
+	return list_workspace_rows<EntryRow>(client, "entries", ENTRY_COLUMNS, "id", workspace_id, true)
+}
+
+/** Every ink stroke of a workspace, each with the folder entry it belongs to. */
+export async function list_workspace_strokes(
+	client: SupabaseClient,
+	workspace_id: string,
+): Promise<StrokeRow[]> {
+	return list_workspace_rows<StrokeRow>(client, "folder_strokes", STROKE_COLUMNS, "id", workspace_id, false)
+}
+
+/**
+ * Every edge of a workspace. Ends are entry uuids (`from_entry`, `to_entry`),
+ * not paths: the caller maps them through its own entries listing
+ */
+export async function list_workspace_connections(
+	client: SupabaseClient,
+	workspace_id: string,
+): Promise<ConnectionRow[]> {
+	return list_workspace_rows<ConnectionRow>(
+		client,
+		"folder_connections",
+		CONNECTION_COLUMNS,
+		"record_id",
+		workspace_id,
+		false,
+	)
 }
 
 /** Empties the trash (hard-deletes all deleted entries of the workspace) */

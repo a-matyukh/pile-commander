@@ -67,6 +67,12 @@ export type WatchEventKind = 'create' | 'modify' | 'remove' | 'rename' | 'other'
 export type WatchEvent = {
 	kind: WatchEventKind
 	ids: string[]
+	/**
+	 * `modify` only: false when the bytes are the same and only the name,
+	 * layout or other metadata changed. Absent means unknown — treat it as
+	 * changed (a media URL is then fetched again)
+	 */
+	content_changed?: boolean
 }
 
 export type Unwatch = () => void

@@ -5,6 +5,9 @@ import createCloudFileManager, {
 	first_embed,
 	inert_document_mime,
 	is_text_mime,
+	list_workspace_connections,
+	list_workspace_entries,
+	list_workspace_strokes,
 	mime_from_name,
 	retry_after_ms,
 } from "./supabase"
@@ -160,5 +163,156 @@ describe("upload_file put_blob", () => {
 		} finally {
 			globalThis.fetch = original
 		}
+	})
+})
+
+describe("replace_file", () => {
+	const file = {
+		id: "33333333-3333-4333-8333-333333333333",
+		workspace_id: "ws",
+		parent_id: "root-id",
+		name: "photo.png",
+		kind: "file" as const,
+		mime: "image/png",
+		path: "/photo.png",
+		xattrs: {},
+		storage_key: "ws/old.png",
+		size_bytes: 4,
+		deleted_at: null,
+		updated_by: null,
+		updated_by_client: null,
+		updated_at: "",
+		content_modified_at: null,
+	}
+
+	function manager(handler: (path: string, body: Record<string, unknown>) => Response) {
+		const puts: string[] = []
+		const query = {
+			select: () => query,
+			eq: () => query,
+			is: () => query,
+			maybeSingle: async () => ({ data: file, error: null }),
+		}
+		const client = {
+			from: () => query,
+			auth: { getSession: async () => ({ data: { session: { access_token: "token" } } }) },
+		} as unknown as SupabaseClient
+		globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+			const path = String(input)
+			const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
+			return handler(path, body)
+		}) as typeof fetch
+		const fm = createCloudFileManager({
+			client,
+			workspace_id: "ws",
+			backend_url: "https://backend.example",
+			put_blob: async (url) => { puts.push(url) },
+		})
+		return { fm, puts }
+	}
+
+	test("presign carries replace and finalize names only the row", async () => {
+		const original = globalThis.fetch
+		const seen: { path: string; body: Record<string, unknown> }[] = []
+		const { fm, puts } = manager((path, body) => {
+			seen.push({ path, body })
+			if (path.endsWith("/presign/upload")) {
+				return new Response(JSON.stringify({
+					storage_key: "uploads/blob/ws/ticket.png",
+					url: "https://b2.example/put",
+					replace: file.id,
+				}))
+			}
+			if (path.endsWith("/finalize")) {
+				return new Response(JSON.stringify({ entry: file, size_bytes: 4 }))
+			}
+			throw new Error(`unexpected fetch ${path}`)
+		})
+		try {
+			const result = await fm.replace_file("/photo.png", new Blob([Uint8Array.from([1, 2, 3, 4])]), "image/png")
+			expect(result).toBe("replaced")
+			expect(puts).toEqual(["https://b2.example/put"])
+			expect(seen[0]?.body).toMatchObject({ replace: file.id, workspace_id: "ws", size_bytes: 4 })
+			expect(seen[1]?.body).toEqual({
+				storage_key: "uploads/blob/ws/ticket.png",
+				replace: file.id,
+				mime: "image/png",
+				client_id: expect.any(String),
+			})
+			expect(seen[1]?.body).not.toHaveProperty("parent_id")
+			expect(seen[1]?.body).not.toHaveProperty("name")
+			expect(seen[1]?.body).not.toHaveProperty("id")
+		} finally {
+			globalThis.fetch = original
+		}
+	})
+
+	test("a presign that does not echo replace uploads nothing", async () => {
+		const original = globalThis.fetch
+		let calls = 0
+		const { fm, puts } = manager((path) => {
+			calls += 1
+			if (path.endsWith("/presign/upload")) {
+				return new Response(JSON.stringify({
+					storage_key: "uploads/blob/ws/ticket.png",
+					url: "https://b2.example/put",
+				}))
+			}
+			throw new Error(`unexpected fetch ${path}`)
+		})
+		try {
+			expect(await fm.replace_file("/photo.png", new Blob([Uint8Array.from([1])]), "image/png")).toBe("unsupported")
+			expect(puts).toEqual([])
+			expect(await fm.replace_file("/photo.png", new Blob([Uint8Array.from([1])]), "image/png")).toBe("unsupported")
+			expect(calls).toBe(1)
+		} finally {
+			globalThis.fetch = original
+		}
+	})
+})
+
+describe("workspace listings", () => {
+	/** A PostgREST-style builder that serves `total` rows in pages and records the filters. */
+	function paged_client(total: number) {
+		const calls: { table: string; filters: string[]; order: string; range: [number, number] }[] = []
+		const client = {
+			from(table: string) {
+				const call = { table, filters: [] as string[], order: "", range: [0, 0] as [number, number] }
+				const builder = {
+					select() { return builder },
+					eq(column: string, value: string) { call.filters.push(`${column}=${value}`); return builder },
+					is(column: string, value: null) { call.filters.push(`${column} is ${value}`); return builder },
+					order(column: string) { call.order = column; return builder },
+					range(from: number, to: number) {
+						call.range = [from, to]
+						calls.push(call)
+						const rows = Array.from({ length: Math.max(0, Math.min(to + 1, total) - from) }, (_, index) => ({
+							id: `row-${from + index}`,
+						}))
+						return Promise.resolve({ data: rows, error: null })
+					},
+				}
+				return builder
+			},
+		}
+		return { client: client as unknown as SupabaseClient, calls }
+	}
+
+	test("reads every page of live entries", async () => {
+		const { client, calls } = paged_client(1001)
+		const rows = await list_workspace_entries(client, "ws-1")
+		expect(rows).toHaveLength(1001)
+		expect(calls.map(call => call.range)).toEqual([[0, 999], [1000, 1999]])
+		expect(calls[0]!.filters).toEqual(["workspace_id=ws-1", "deleted_at is null"])
+	})
+
+	test("ink and edges of the whole workspace, in stable order", async () => {
+		const strokes = paged_client(3)
+		expect(await list_workspace_strokes(strokes.client, "ws-1")).toHaveLength(3)
+		expect(strokes.calls[0]).toMatchObject({ table: "folder_strokes", filters: ["workspace_id=ws-1"], order: "id" })
+
+		const edges = paged_client(2)
+		expect(await list_workspace_connections(edges.client, "ws-1")).toHaveLength(2)
+		expect(edges.calls[0]).toMatchObject({ table: "folder_connections", filters: ["workspace_id=ws-1"], order: "record_id" })
 	})
 })

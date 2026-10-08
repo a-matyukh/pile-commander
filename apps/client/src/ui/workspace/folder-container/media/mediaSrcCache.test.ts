@@ -127,3 +127,31 @@ describe('createMediaSrcCache', () => {
 		expect(revoke).toHaveBeenCalledTimes(1)
 	})
 })
+
+describe('createMediaSrcCache.invalidate', () => {
+	test('new bytes under the same id: the next acquire loads again and the version moves', async () => {
+		const cache = createMediaSrcCache()
+		const revoke_old = vi.fn()
+		const load = vi.fn()
+			.mockResolvedValueOnce({ url: 'blob:old', revoke: revoke_old })
+			.mockResolvedValueOnce({ url: 'blob:new', revoke: vi.fn() })
+
+		await cache.acquire('photo.png', load)
+		expect(cache.version('photo.png')).toBe(0)
+
+		cache.invalidate('photo.png')
+		expect(cache.version('photo.png')).toBe(1)
+		const fresh = await cache.acquire('photo.png', load)
+
+		expect(load).toHaveBeenCalledTimes(2)
+		expect(fresh.url).toBe('blob:new')
+		expect(revoke_old).toHaveBeenCalledTimes(1)
+	})
+
+	test('a file nobody shows only moves its version', () => {
+		const cache = createMediaSrcCache()
+		cache.invalidate('gone.png')
+		expect(cache.version('gone.png')).toBe(1)
+		expect(cache.has('gone.png')).toBe(false)
+	})
+})

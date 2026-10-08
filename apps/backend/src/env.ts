@@ -63,6 +63,12 @@ export type Env = {
 	supabase_publishable_key: string;
 	/** only the GC worker needs it; without it the worker is disabled */
 	supabase_service_role_key: string | null;
+	/**
+	 * GC, reconcile, previews, Hub mail and the egress flush. Off for a local
+	 * process that still has the production service role: the HTTP routes stay
+	 * up, and a second copy of those jobs does not run against the live project.
+	 */
+	background_workers: boolean;
 	b2_endpoint: string;
 	b2_region: string;
 	b2_bucket: string;
@@ -198,6 +204,7 @@ export function load_env(): Env {
 		supabase_url: required("SUPABASE_URL"),
 		supabase_publishable_key: required("SUPABASE_PUBLISHABLE_KEY"),
 		supabase_service_role_key: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || null,
+		background_workers: on_off_or("BACKGROUND_WORKERS", true),
 		b2_endpoint: required("B2_ENDPOINT"),
 		b2_region: required("B2_REGION"),
 		b2_bucket: required("B2_BUCKET"),

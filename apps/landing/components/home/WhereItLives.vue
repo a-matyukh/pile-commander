@@ -8,7 +8,7 @@ const places = [
     points: [
       "Real folders on your disk",
       "Export and import .pile archives",
-      "Copy to cloud when you want to share",
+      "Copy to the cloud, or keep a folder in sync with it",
     ],
   },
   {

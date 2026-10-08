@@ -1848,3 +1848,33 @@ describe('createWorkspaceStore: connections', () => {
 		})
 	})
 })
+
+describe('createWorkspaceStore: a file saved by another app', () => {
+	test('keeps the card layout an atomic save dropped, and writes it back to the file', async () => {
+		const { fake, store } = await makeStore()
+		fake.set_xattr('/ws/note.txt', 'position', '{"x":10,"y":20}')
+		fake.set_xattr('/ws/note.txt', 'size', '{"width":300,"height":200}')
+		await refresh_cached_folder(store, fake.fm, '/ws', { kind: 'modify', ids: ['/ws/note.txt'], content_changed: false })
+
+		// Preview-style save: a new file under the same name, without xattrs
+		await fake.fm.upload_file('/ws', 'note.txt', new Blob(['saved elsewhere']), 'text/plain')
+		await refresh_cached_folder(store, fake.fm, '/ws', { kind: 'modify', ids: ['/ws/note.txt'] })
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		const note = store.folders['/ws']!.children.find(child => child.id === '/ws/note.txt')!
+		expect(note.xattrs).toContainEqual({ name: 'size', value: '{"width":300,"height":200}' })
+		expect(fake.get_xattr('/ws/note.txt', 'position')).toBe('{"x":10,"y":20}')
+		expect(fake.get_xattr('/ws/note.txt', 'size')).toBe('{"width":300,"height":200}')
+	})
+
+	test('a layout-only change that removes keys is not undone', async () => {
+		const { fake, store } = await makeStore()
+		fake.set_xattr('/ws/note.txt', 'position', '{"x":10,"y":20}')
+		await refresh_cached_folder(store, fake.fm, '/ws', { kind: 'modify', ids: ['/ws/note.txt'], content_changed: false })
+
+		await fake.fm.remove_xattr('/ws/note.txt', 'position')
+		await refresh_cached_folder(store, fake.fm, '/ws', { kind: 'modify', ids: ['/ws/note.txt'], content_changed: false })
+
+		expect(fake.get_xattr('/ws/note.txt', 'position')).toBeNull()
+	})
+})
