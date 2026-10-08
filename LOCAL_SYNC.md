@@ -152,7 +152,10 @@ A binary edit keeps `entries.id` (so edges, layout and links survive) and
 does not hold the old bytes in the trash.
 
 `private.replace_blob_entry` locks with `lock_workspace_tree`, then re-reads
-the row `for update` and checks that `p_user` is the owner or an editor.
+the row and checks that `p_user` is the owner or an editor. The row is not
+taken `FOR UPDATE` here: the order is workspace, then billing, then the row,
+and the `UPDATE` locks it after the quota check. A row lock before billing
+deadlocks with a text save of the same entry.
 `lock_entry_workspace` is not used: it checks `auth.uid()`, which is null
 when `complete_upload` runs as the service role. The quota is the size
 delta (`assert_owner_can_add`); the row count is unchanged, so
