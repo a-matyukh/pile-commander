@@ -49,6 +49,40 @@ export function cached_folders_affected_by(
 }
 
 /**
+ * Preview and most editors save by writing a new file and renaming it over
+ * the old one, which drops the file's xattrs: the card loses its position,
+ * size and order. When the bytes of a file changed, the keys it lost were
+ * lost, not removed — the app removes a key as a metadata-only change — so
+ * the cached values are kept in the snapshot and written back to the file.
+ * Keys it still has (or got again meanwhile) are left as they are.
+ */
+function restore_layout_lost_on_save(
+	fm: FileManager,
+	previous_children: readonly FolderWithChildrenXattrs['children'][number][],
+	folder_data: FolderWithChildrenXattrs,
+	event: WatchEvent,
+): void {
+	const content_event = (event.kind === 'modify' || event.kind === 'create' || event.kind === 'rename')
+		&& event.content_changed !== false
+	if (!content_event) return
+	const before = new Map(previous_children.map(child => [child.id, child]))
+	const restored: { id: string; xattrs: Record<string, string> }[] = []
+	for (const child of folder_data.children ?? []) {
+		const previous = before.get(child.id)
+		if (child.type !== 'file' || !previous) continue
+		const present = new Set(child.xattrs.map(xattr => xattr.name))
+		const lost = previous.xattrs.filter(xattr => !present.has(xattr.name))
+		if (lost.length === 0) continue
+		child.xattrs = [...child.xattrs, ...lost.map(xattr => ({ ...xattr }))]
+		restored.push({ id: child.id, xattrs: Object.fromEntries(lost.map(({ name, value }) => [name, value])) })
+	}
+	if (restored.length === 0) return
+	void fm.set_xattrs(restored).catch((error: unknown) => {
+		console.error('[workspace] could not restore the layout of a file saved elsewhere', error)
+	})
+}
+
+/**
  * Re-fetches a cached folder from disk, replaces the cache entry and
  * refreshes the projected tree; cleans up disappeared entries.
  *
@@ -95,6 +129,7 @@ export async function refresh_cached_folder(
 		}
 
 		apply_pending_entry_xattrs(folder_data)
+		restore_layout_lost_on_save(fm, previous_children, folder_data, event)
 
 		const new_children = folder_data.children ?? []
 		const new_child_ids = new Set(new_children.map(c => c.id))

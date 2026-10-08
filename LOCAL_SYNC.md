@@ -254,6 +254,15 @@ decided one by one.
   entry's layout and edges are pushed again.
 - **The board does not lock its sidecars.** The 10 s window covers the race
   for ink and edges that just came down, not an arbitrary later one.
+- **Layout lost to an atomic save is restored on both levels.** Preview and
+  most editors write a new file and drop its xattrs:
+  - a pass that sees a file's bytes change here restores the missing keys
+    from the base instead of removing them in the cloud;
+  - an open board (`refresh_cached_folder`, synced or not) writes back the
+    keys a file lost when its bytes changed.
+
+  A cloud key removal that lands as a content event here (rare event
+  coalescing) can therefore be put back.
 
 ## Database changes
 
