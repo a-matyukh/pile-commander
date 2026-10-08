@@ -115,7 +115,6 @@ onBeforeUnmount(() => {
     eyebrow="Any device"
     title="Use it on any device."
     lede="The same app on a desktop, a tablet and a phone. The interface reshapes itself for the screen — and for fingers instead of a mouse."
-    muted
   >
     <div ref="root" class="devices-wrap" aria-hidden="true">
       <p class="cloud" :class="{ busy: cloudBusy }">

@@ -2,10 +2,10 @@
 useSeoMeta({
   title: "Vision",
   description:
-    "Long-term directions for Pile Commander: a 3D view of a folder, AI tools, local folders that stay in sync, and a desktop environment for Linux.",
+    "Long-term directions for Pile Commander: a 3D view of a folder, AI tools, and a desktop environment for Linux.",
   ogTitle: "Vision — Pile Commander",
   ogDescription:
-    "Where the pile is going: a 3D view, AI tools, synced local folders, and a Linux desktop.",
+    "Where the pile is going: a 3D view, AI tools, and a Linux desktop.",
   ogImage: "/app-icon.png",
   twitterCard: "summary",
 });
@@ -20,11 +20,6 @@ const directions = [
     scene: "ai",
     title: "AI tools",
     body: "Ask a folder for ideas and get them back as cards on the board. Sorting, naming and summaries come next — help that works on the pile you already have.",
-  },
-  {
-    scene: "sync",
-    title: "Local folders that stay in sync",
-    body: "Turn on sync for a workspace folder and work in it right on your computer — the way desktop cloud drives do. Changes travel both ways on their own, and on either side the folder is still a board or a canvas, not just a list of files.",
   },
   {
     scene: "desktop",
@@ -54,7 +49,6 @@ const directions = [
           <div class="aspect-[16/9] overflow-hidden rounded-xl">
             <VisionSpace v-if="item.scene === 'space'" />
             <VisionAi v-else-if="item.scene === 'ai'" />
-            <VisionSync v-else-if="item.scene === 'sync'" />
             <VisionDesktop v-else />
           </div>
           <h2 class="mt-4 px-2 text-lg font-semibold text-slate-900 sm:px-3">{{ item.title }}</h2>
