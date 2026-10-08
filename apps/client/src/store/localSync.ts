@@ -15,6 +15,9 @@ import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
 import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStatus } from '@/services/cloud/sync/syncEngine'
 import { join_local, relative_of } from '@/services/cloud/sync/paths'
+import { choose_sync_folder } from '@/services/cloud/sync/syncToFolder'
+import { create_window_manager } from '@/services/window/WindowManager'
+import { pile_root_name } from '@/services/workspace/pack'
 import type { LocalWriter } from '@/services/cloud/sync/syncPass'
 import {
 	is_sync_state_path,
@@ -220,6 +223,42 @@ export async function link_folder(input: {
 	await save_state(link, new_sync_state(owner_of(link), { exclude: input.exclude, adopt_before: input.adopt_before }))
 	links.value = { ...links.value, [input.root]: link }
 	start_engine(link)
+}
+
+/**
+ * "Sync to a folder on this computer" for a cloud workspace: a new empty
+ * folder (inside the parent the person picks, `~/Pile Commander` suggested)
+ * is linked to it, and the first pass downloads the whole workspace. A
+ * workspace already synced on this device returns its folder instead.
+ * Returns the folder, or null when the person cancels.
+ */
+export async function sync_workspace_to_folder(workspace: { id: string; name: string }): Promise<string | null> {
+	const existing = synced_folder_of(workspace.id)
+	if (existing) return existing.root
+	const { homeDir, join } = await import('@tauri-apps/api/path')
+	const { mkdir, readDir } = await fs()
+	const home = await homeDir()
+	const folder_name = pile_root_name(workspace.name)
+	const root = await choose_sync_folder({
+		home,
+		suggested_parent: await join(home, 'Pile Commander'),
+		pick_parent: async default_path => (await create_window_manager().pick_folder({
+			title: `Choose where "${folder_name}" syncs on this computer`,
+			default_path,
+		}))?.folder_id ?? null,
+		join,
+		is_free: async (path) => {
+			try {
+				return (await readDir(path)).length === 0
+			} catch {
+				return true // missing
+			}
+		},
+		mkdir: path => mkdir(path, { recursive: true }),
+	}, folder_name)
+	if (!root) return null
+	await link_folder({ root, name: folder_name, workspace_id: workspace.id })
+	return root
 }
 
 /** Stops syncing a folder. Both the folder and its cloud workspace stay as they are. */

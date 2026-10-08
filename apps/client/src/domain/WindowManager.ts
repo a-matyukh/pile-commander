@@ -2,6 +2,8 @@ type PickedFolder = { folder_id: string; name: string }
 
 export type PickFolderOptions = {
 	title?: string
+	/** The folder the dialog opens in. */
+	default_path?: string
 }
 
 export

@@ -6,7 +6,8 @@ import cloud from '@/store/cloud'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWorkspaceDialogs } from './workspaceDialogs'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
-import { sync_link_of, unlink_folder } from '@/store/localSync'
+import { sync_link_of, sync_workspace_to_folder, synced_folder_of, unlink_folder } from '@/store/localSync'
+import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import SyncStatusButton from './SyncStatusButton.vue'
 
@@ -73,6 +74,24 @@ function set_auto_sync(on: boolean) {
 	else void unlink_folder(ws.id)
 }
 
+/** Desktop: this cloud workspace as a folder on this computer (the menu shows only to owners and editors) */
+const is_cloud_syncable = computed(() => is_desktop && cloud.is_configured && workspace.value?.type === 'cloud')
+const synced_folder = computed(() => {
+	const ws = workspace.value
+	return ws?.type === 'cloud' ? synced_folder_of(ws.uid) : null
+})
+
+async function sync_to_folder() {
+	const ws = workspace.value
+	if (!ws || ws.type !== 'cloud') return
+	try {
+		const root = await sync_workspace_to_folder({ id: ws.uid, name: ws.name })
+		if (root) await store.open_local_workspace(root)
+	} catch (error) {
+		store.last_error = error instanceof Error ? error.message : String(error)
+	}
+}
+
 const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 	[
 		{
@@ -101,6 +120,13 @@ const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 				label: 'Copy to cloud…',
 				icon: 'i-lucide-monitor-smartphone',
 				onSelect: () => copy_to_cloud('device'),
+			}]
+			: []),
+		...(is_cloud_syncable.value
+			? [{
+				label: synced_folder.value ? 'Open synced folder' : 'Sync to a folder on this computer…',
+				icon: 'i-lucide-folder-sync',
+				onSelect: () => void sync_to_folder(),
 			}]
 			: []),
 		...(is_syncable.value

@@ -9,6 +9,7 @@ import {
 } from '@pile-commander/file-manager'
 import { derived_uuid, hash_value } from './hash'
 import { merge_xattrs } from './layoutSync'
+import { choose_sync_folder, type SyncFolderDeps } from './syncToFolder'
 import { reconcile, type ReconcileOptions } from './reconcile'
 import { create_sync_engine, type SyncStatus } from './syncEngine'
 import { is_sync_state_path, new_sync_state, parse_sync_state } from './stateFile'
@@ -1230,5 +1231,38 @@ describe('two-way layout', () => {
 		await cloud_pass(deps, state)
 
 		expect(await local.fm.strokes.list_strokes('/ws/board')).toEqual([])
+	})
+})
+
+describe('choose_sync_folder', () => {
+	function folder_deps(parent: string | null, taken: string[] = []) {
+		const made: string[] = []
+		const deps: SyncFolderDeps = {
+			home: '/Users/me',
+			suggested_parent: '/Users/me/Pile Commander',
+			pick_parent: async () => parent,
+			join: async (...parts) => parts.join('/'),
+			is_free: async path => !taken.includes(path),
+			mkdir: async (path) => {
+				made.push(path)
+			},
+		}
+		return { deps, made }
+	}
+
+	test('a new folder named after the workspace in the chosen parent', async () => {
+		const { deps, made } = folder_deps('/Users/me/Pile Commander')
+		expect(await choose_sync_folder(deps, 'Harbor moodboard')).toBe('/Users/me/Pile Commander/Harbor moodboard')
+		expect(made).toEqual(['/Users/me/Pile Commander', '/Users/me/Pile Commander/Harbor moodboard'])
+	})
+
+	test('a name that holds something gets a number', async () => {
+		const { deps } = folder_deps('/Users/me/Documents', ['/Users/me/Documents/Harbor', '/Users/me/Documents/Harbor (2)'])
+		expect(await choose_sync_folder(deps, 'Harbor')).toBe('/Users/me/Documents/Harbor (3)')
+	})
+
+	test('cancelled, or outside the home folder', async () => {
+		expect(await choose_sync_folder(folder_deps(null).deps, 'Harbor')).toBeNull()
+		await expect(choose_sync_folder(folder_deps('/Volumes/USB').deps, 'Harbor')).rejects.toThrow('inside your home folder')
 	})
 })

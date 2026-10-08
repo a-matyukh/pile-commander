@@ -15,6 +15,7 @@ export function create_window_manager(): WindowManager {
 				directory: true,
 				multiple: false,
 				title: options?.title,
+				defaultPath: options?.default_path,
 			})
 			if (!path) return null
 			const name = await basename(path)

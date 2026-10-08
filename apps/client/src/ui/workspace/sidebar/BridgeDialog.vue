@@ -48,7 +48,7 @@ const lead = computed(() => {
 		case 'publish': return 'To publish a workspace, it has to be in the cloud. Copy it there?'
 		case 'device': return 'Your local workspace will be copied to the cloud.'
 		case 'pile': return 'The archive becomes a new workspace in your cloud.'
-		case 'sync': return 'Your local workspace is uploaded to a new cloud workspace, and changes made here keep going there while the app is open. Edits made in the cloud stay in the cloud.'
+		case 'sync': return 'Your local workspace is uploaded to a new cloud workspace, and the two stay in sync both ways while the app is open.'
 		default: return 'The local workspace is copied into a new cloud workspace.'
 	}
 })

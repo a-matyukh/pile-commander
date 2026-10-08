@@ -12,6 +12,7 @@ import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import cloud from '@/store/cloud'
 import { CLOUD_UNAVAILABLE, cloud_status_message } from '@/services/cloud/client'
 import { import_pile_to_cloud, open_bridge } from '@/store/bridge'
+import { sync_workspace_to_folder, synced_folder_of } from '@/store/localSync'
 import { useWindowContext } from '@/ui/window/windowContext'
 
 const props = withDefaults(
@@ -162,11 +163,31 @@ function local_menu_items(ws: WorkspacesListItem): DropdownMenuItem[] {
 	}]
 }
 
+/** Desktop: the cloud workspace as a folder on this computer, kept in sync (store/localSync) */
+async function sync_to_folder(ws: WorkspacesListItem) {
+	emit('opened')
+	try {
+		const root = await sync_workspace_to_folder({ id: ws.id, name: ws.name })
+		if (root) await store.open_local_workspace(root, load_opts())
+	} catch (error) {
+		store.last_error = error instanceof Error ? error.message : String(error)
+	}
+}
+
 function cloud_menu_items(ws: WorkspacesListItem): DropdownMenuItem[] {
 	// rename/remove are owner-only (RLS); shared members just open
 	const is_owner = cloud.role_of(ws.id) === 'owner'
+	// viewers cannot write back, so they get no synced folder
+	const can_sync = is_desktop && cloud.role_of(ws.id) !== 'viewer'
 	return [
 		{ label: 'Open', icon: 'i-lucide:folder-open', onSelect: () => open_cloud(ws) },
+		...(can_sync
+			? [{
+				label: synced_folder_of(ws.id) ? 'Open synced folder' : 'Sync to a folder on this computer…',
+				icon: 'i-lucide:folder-sync',
+				onSelect: () => void sync_to_folder(ws),
+			}]
+			: []),
 		{
 			label: 'Rename',
 			icon: 'i-lucide:pen',
