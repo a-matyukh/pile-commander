@@ -4,7 +4,7 @@ import { is_cloud_name } from '@/services/cloud/bridge/preflight'
 import { run_pool } from '@/services/cloud/bridge/pool'
 import { hash_value } from './hash'
 import { join_local, join_relative, relative_of } from './paths'
-import type { BaseFolderLayout, LocalEntry } from './types'
+import type { LocalEntry } from './types'
 
 /** Size and content mtime of a local file. */
 export type LocalStat = (id: string) => Promise<{ size: number; mtime_ms: number }>
@@ -49,7 +49,8 @@ export async function scan_local(fm: FileManager, root: string, stat: LocalStat)
 export type LocalFolderLayout = {
 	strokes: FolderStroke[]
 	connections: FolderConnection[]
-	hashes: BaseFolderLayout
+	/** The v1 hashes of this ink and these edges, to tell whether a v1 state saw them. */
+	legacy: { strokes_hash: string; connections_hash: string }
 }
 
 /** The layout of the synced folder, keyed by relative path. */
@@ -100,7 +101,7 @@ export async function read_local_layout(
 		layout.folders.set(relative, {
 			strokes: sorted_strokes,
 			connections: edges,
-			hashes: {
+			legacy: {
 				strokes_hash: hash_value(sorted_strokes),
 				connections_hash: hash_value(edges.map(edge => ({ ...edge, id: '' }))),
 			},

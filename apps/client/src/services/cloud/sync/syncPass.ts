@@ -1,11 +1,22 @@
-import type { FileManager, FolderConnection, FolderStroke, PlanLimitInfo } from '@pile-commander/file-manager'
+import type { ConnectionRow, FileManager, FolderConnection, FolderStroke, PlanLimitInfo, StrokeRow } from '@pile-commander/file-manager'
 import { MAX_TEXT_CONTENT_BYTES, PILE_DIR_NAME, PlanLimitError, decode_text_content, is_text_mime } from '@pile-commander/file-manager'
 import { read_entry_blob, upload_mime } from '@/services/workspace/entryBytes'
-import { derived_uuid, hash_value } from './hash'
-import { read_local_layout, scan_local, type LocalLayout, type LocalStat } from './localScan'
-import { base_name, depth, is_within, join_cloud, join_local, parent_relative } from './paths'
+import { hash_value } from './hash'
+import {
+	connection_hash,
+	connection_key,
+	lift_v1_connections,
+	lift_v1_strokes,
+	lift_v1_xattrs,
+	merge_connections,
+	merge_strokes,
+	merge_xattrs,
+	stroke_hash,
+} from './layoutSync'
+import { read_local_layout, scan_local, type LocalFolderLayout, type LocalLayout, type LocalStat } from './localScan'
+import { base_name, cloud_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
 import { partition_local, reconcile, type ReconcileOptions } from './reconcile'
-import type { BaseEntry, BaseFolderLayout, CloudEntry, LocalEntry, SkipReason, SyncAction, SyncState } from './types'
+import { SYNC_STATE_VERSION, type BaseEntry, type BaseFolderLayout, type CloudEntry, type ConnectionBase, type LocalEntry, type SkipReason, type StrokeBase, type SyncAction, type SyncState } from './types'
 
 /**
  * Writes to the synced folder that the local file manager does not cover.
@@ -33,6 +44,8 @@ export type SyncPassDeps = {
 	cloud_fm: FileManager
 	/** Every live entry of the linked workspace. */
 	list_cloud(): Promise<CloudEntry[]>
+	/** Every stroke and edge of the linked workspace (ends and folders as entry uuids). */
+	list_cloud_layout(): Promise<{ strokes: StrokeRow[]; connections: ConnectionRow[] }>
 	/** Hard-deletes a trashed cloud entry by id. */
 	purge(cloud_id: string): Promise<void>
 	read_blob?: (fm: FileManager, id: string, name: string, mime: string) => Promise<Blob>
@@ -96,11 +109,6 @@ const FAILURES_IN_A_ROW = 3
 /** Content writes save the state at most this often; moves and deletes save right away. */
 const PROGRESS_SAVE_MS = 2_000
 
-const EMPTY_FOLDER_LAYOUT: BaseFolderLayout = {
-	strokes_hash: hash_value([]),
-	connections_hash: hash_value([]),
-}
-
 function message_of(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
@@ -140,15 +148,42 @@ function has_local_changes(
 	for (const relative of Object.keys(state.entries)) {
 		if (!local.has(relative) && !skipped.has(relative)) return true
 	}
-	if (hash_value(layout.xattrs.get('') ?? {}) !== (state.root_xattrs_hash ?? hash_value({}))) return true
+	if (xattrs_differ(state.root_xattrs, state.root_xattrs_hash, layout.xattrs.get('') ?? {})) return true
 	for (const [relative, known] of Object.entries(state.entries)) {
 		if (!local.has(relative)) continue
-		if (hash_value(layout.xattrs.get(relative) ?? {}) !== (known.xattrs_hash ?? hash_value({}))) return true
+		if (xattrs_differ(known.xattrs, known.xattrs_hash, layout.xattrs.get(relative) ?? {})) return true
 	}
 	for (const [relative, folder] of layout.folders) {
-		const known = state.layout[relative] ?? EMPTY_FOLDER_LAYOUT
-		if (known.strokes_hash !== folder.hashes.strokes_hash) return true
-		if (known.connections_hash !== folder.hashes.connections_hash) return true
+		if (folder_layout_differs(state.layout[relative] ?? {}, folder)) return true
+	}
+	return false
+}
+
+function xattrs_differ(
+	known: Readonly<Record<string, string>> | undefined,
+	legacy_hash: string | undefined,
+	local: Readonly<Record<string, string>>,
+): boolean {
+	if (known) return hash_value(known) !== hash_value(local)
+	if (legacy_hash !== undefined) return legacy_hash !== hash_value(local)
+	return Object.keys(local).length > 0
+}
+
+/** Ink or edges here differ from what both sides held. */
+function folder_layout_differs(known: BaseFolderLayout, folder: LocalFolderLayout): boolean {
+	if (known.strokes) {
+		const expected = new Map(Object.values(known.strokes).map(stroke => [stroke.local_id, stroke.hash]))
+		if (expected.size !== folder.strokes.length) return true
+		if (folder.strokes.some(stroke => expected.get(stroke.id) !== stroke_hash(stroke))) return true
+	} else if (known.strokes_hash !== undefined ? known.strokes_hash !== folder.legacy.strokes_hash : folder.strokes.length > 0) {
+		return true
+	}
+	if (known.connections) {
+		const keys = Object.keys(known.connections)
+		if (keys.length !== folder.connections.length) return true
+		if (folder.connections.some(edge => known.connections![connection_key(edge)]?.hash !== connection_hash(edge))) return true
+	} else if (known.connections_hash !== undefined ? known.connections_hash !== folder.legacy.connections_hash : folder.connections.length > 0) {
+		return true
 	}
 	return false
 }
@@ -198,10 +233,19 @@ export async function run_sync_pass(
 	const cloud_after = await deps.list_cloud()
 	run.refresh(cloud_after)
 	if (!stop) {
+		// read after the actions: moves and downloads changed the folder's layout
 		const folders = folders_of(run.local)
-		await run.push_layout(await read_local_layout(deps.local_fm, deps.root, folders), folders, cloud_after)
+		const [layout, cloud_layout] = await Promise.all([
+			read_local_layout(deps.local_fm, deps.root, folders),
+			deps.list_cloud_layout(),
+		])
+		await run.merge_layout(layout, folders, cloud_after, cloud_layout)
 	}
-	const next: SyncState = { ...run.state, last_synced_at: (deps.now?.() ?? new Date()).getTime() }
+	const next: SyncState = {
+		...run.state,
+		version: SYNC_STATE_VERSION,
+		last_synced_at: (deps.now?.() ?? new Date()).getTime(),
+	}
 	if (stop) return { kind: 'plan_limit', state: next, report: run.report, ...stop }
 	return { kind: 'done', state: next, report: run.report }
 }
@@ -450,7 +494,20 @@ class PassRun {
 		}
 		this.names_in(cloud_parent(path)).delete(base_name(path))
 		await this.upload(relative)
-		delete this.state.layout[parent_relative(relative)]
+		// the purge took the old row's edges along: they are not "deleted in
+		// the cloud", they go up again with the new row
+		this.forget_edges_of(relative)
+	}
+
+	private forget_edges_of(relative: string): void {
+		const folder = this.state.layout[parent_relative(relative)]
+		if (!folder?.connections) return
+		const connections: Record<string, ConnectionBase> = {}
+		for (const [key, known] of Object.entries(folder.connections)) {
+			const [from, , to] = key.split('|')
+			if (from !== relative && to !== relative) connections[key] = known
+		}
+		this.state.layout[parent_relative(relative)] = { ...folder, connections }
 	}
 
 	private async move(from: string, to: string): Promise<void> {
@@ -523,7 +580,7 @@ class PassRun {
 			mtime_ms: 0,
 			cloud_id: row.id,
 			cloud_modified_at: row.modified_at,
-			xattrs_hash: hash_value(row.xattrs),
+			xattrs: { ...row.xattrs },
 		}
 	}
 
@@ -561,8 +618,12 @@ class PassRun {
 			cloud_id: row.id,
 			cloud_modified_at: row.modified_at,
 		}
-		if (!replaced) next.xattrs_hash = hash_value(xattrs)
-		else if (known?.xattrs_hash !== undefined) next.xattrs_hash = known.xattrs_hash
+		// a new file holds the cloud layout; a replaced one keeps the base of its own
+		if (!replaced) next.xattrs = { ...xattrs }
+		else {
+			if (known?.xattrs) next.xattrs = known.xattrs
+			if (known?.xattrs_hash !== undefined) next.xattrs_hash = known.xattrs_hash
+		}
 		this.state.entries[relative] = next
 	}
 
@@ -649,18 +710,26 @@ class PassRun {
 				cloud_id: row.id,
 				cloud_modified_at: row.modified_at,
 			}
-			if (known?.xattrs_hash !== undefined && this.keeps_xattrs.has(relative)) next.xattrs_hash = known.xattrs_hash
+			if (known && this.keeps_xattrs.has(relative)) {
+				if (known.xattrs) next.xattrs = known.xattrs
+				if (known.xattrs_hash !== undefined) next.xattrs_hash = known.xattrs_hash
+			}
 			this.state.entries[relative] = next
 		}
 	}
 
 	/**
-	 * Makes the cloud layout match the local one where the local one changed:
-	 * xattrs per entry, then ink and edges per folder. The first push of an
-	 * entry only adds and overwrites keys; later pushes also remove the keys
-	 * removed here
+	 * Three-way merge of the layout (layoutSync.ts): xattrs per entry, then
+	 * ink and edges per folder. Writes go to both sides; the base keeps only
+	 * what is known to hold on both — a local sidecar write is read back, and
+	 * what a board wrote over is left for the next pass
 	 */
-	async push_layout(layout: LocalLayout, folders: readonly string[], cloud: readonly CloudEntry[]): Promise<void> {
+	async merge_layout(
+		layout: LocalLayout,
+		folders: readonly string[],
+		cloud: readonly CloudEntry[],
+		cloud_layout: { strokes: StrokeRow[]; connections: ConnectionRow[] },
+	): Promise<void> {
 		const by_id = new Map(cloud.map(entry => [entry.id, entry]))
 		const root_row = cloud.find(entry => entry.path === '/')
 		const row_of = (relative: string): CloudEntry | undefined => {
@@ -668,104 +737,219 @@ class PassRun {
 			const known = this.state.entries[relative]
 			return known ? by_id.get(known.cloud_id) : undefined
 		}
+		await this.merge_entry_xattrs(layout, row_of)
 
-		const sets: { id: string; xattrs: Record<string, string> }[] = []
-		const removals: { path: string; name: string }[] = []
-		const hashes = new Map<string, string>()
-		const linked = ['', ...Object.keys(this.state.entries).filter(relative => this.local.has(relative))]
-		for (const relative of linked) {
-			const local = layout.xattrs.get(relative) ?? {}
-			const hash = hash_value(local)
-			const before = relative === '' ? this.state.root_xattrs_hash : this.state.entries[relative]?.xattrs_hash
-			// never pushed and nothing to push: the cloud keeps what it has
-			if (before === undefined ? Object.keys(local).length === 0 : hash === before) continue
-			const row = row_of(relative)
-			if (!row) continue
-			const changed: Record<string, string> = {}
-			for (const [name, value] of Object.entries(local)) {
-				if (row.xattrs[name] !== value) changed[name] = value
-			}
-			if (Object.keys(changed).length > 0) sets.push({ id: row.path, xattrs: changed })
-			if (before !== undefined) {
-				for (const name of Object.keys(row.xattrs)) {
-					if (!(name in local)) removals.push({ path: row.path, name })
-				}
-			}
-			hashes.set(relative, hash)
+		// ink and edges of live folders only: a trashed folder keeps its rows
+		const strokes_by_folder = new Map<string, FolderStroke[]>()
+		for (const row of cloud_layout.strokes) {
+			if (by_id.get(row.entry_id)?.kind !== 'folder') continue
+			const { entry_id, workspace_id: _workspace, updated_by_client: _client, ...stroke } = row
+			strokes_by_folder.set(entry_id, [...(strokes_by_folder.get(entry_id) ?? []), stroke])
 		}
-		const missing = new Set(sets.length > 0 ? (await this.deps.cloud_fm.set_xattrs(sets)).missing : [])
-		const failed = new Set<string>(missing)
-		for (const removal of removals) {
-			try {
-				await this.deps.cloud_fm.remove_xattr(removal.path, removal.name)
-			} catch {
-				failed.add(removal.path)
-			}
+		const edges_by_folder = new Map<string, FolderConnection[]>()
+		for (const row of cloud_layout.connections) {
+			const from = by_id.get(row.from_entry)
+			const to = by_id.get(row.to_entry)
+			if (by_id.get(row.entry_id)?.kind !== 'folder' || !from || !to) continue
+			const label = row.props?.label
+			edges_by_folder.set(row.entry_id, [...(edges_by_folder.get(row.entry_id) ?? []), {
+				id: row.id,
+				from: cloud_relative(from.path),
+				to: cloud_relative(to.path),
+				from_handle: row.props?.from_handle ?? undefined,
+				to_handle: row.props?.to_handle ?? undefined,
+				marker_start: row.props?.marker_start ?? undefined,
+				marker_end: row.props?.marker_end ?? undefined,
+				is_animated: row.props?.is_animated ?? false,
+				...(label ? { label } : {}),
+			}])
 		}
-		for (const [relative, hash] of hashes) {
-			const row = row_of(relative)
-			if (!row || failed.has(row.path)) continue
-			if (relative === '') this.state.root_xattrs_hash = hash
-			else this.state.entries[relative] = { ...this.state.entries[relative]!, xattrs_hash: hash }
-		}
+		const in_cloud = new Set(cloud.map(entry => cloud_relative(entry.path)))
+		const here = (relative: string) => relative === '' || this.local.has(relative)
 
-		const shallow_first = [...folders].sort((a, b) => depth(a) - depth(b))
-		for (const relative of shallow_first) {
+		for (const relative of folders) {
 			const folder = layout.folders.get(relative)
 			const row = row_of(relative)
 			if (!folder || !row) continue
-			const before = this.state.layout[relative] ?? EMPTY_FOLDER_LAYOUT
+			const known = this.state.layout[relative] ?? {}
 			try {
-				if (before.strokes_hash !== folder.hashes.strokes_hash) {
-					await this.push_strokes(row.path, folder.strokes)
-				}
-				if (before.connections_hash !== folder.hashes.connections_hash) {
-					await this.push_connections(row.path, folder.connections, by_id)
-				}
-				this.state.layout[relative] = folder.hashes
+				const strokes = await this.merge_folder_strokes(relative, row, folder, known, strokes_by_folder.get(row.id) ?? [])
+				const connections = await this.merge_folder_edges(
+					relative,
+					row,
+					folder,
+					known,
+					edges_by_folder.get(row.id) ?? [],
+					end => here(end) && in_cloud.has(end),
+				)
+				this.state.layout[relative] = { strokes, connections }
 			} catch (error) {
 				this.report.errors.push({ relative, message: message_of(error) })
 			}
 		}
 	}
 
-	private async push_strokes(folder_path: string, strokes: readonly FolderStroke[]): Promise<void> {
-		const strokes_store = this.deps.cloud_fm.strokes
-		const mapped = await Promise.all(strokes.map(async stroke => ({
-			...stroke,
-			id: await derived_uuid(this.state.workspace_id, stroke.id),
-		})))
-		if (mapped.length > 0) await strokes_store.upsert_strokes(folder_path, mapped)
-		const keep = new Set(mapped.map(stroke => stroke.id))
-		const stale = (await strokes_store.list_strokes(folder_path)).filter(stroke => !keep.has(stroke.id))
-		if (stale.length > 0) await strokes_store.delete_strokes(folder_path, stale.map(stroke => stroke.id))
+	private async merge_entry_xattrs(layout: LocalLayout, row_of: (relative: string) => CloudEntry | undefined): Promise<void> {
+		const local_sets: { id: string; xattrs: Record<string, string> }[] = []
+		const local_removes: { path: string; name: string }[] = []
+		const cloud_sets: { id: string; xattrs: Record<string, string> }[] = []
+		const cloud_removes: { path: string; name: string }[] = []
+		const merged = new Map<string, Record<string, string>>()
+		const linked = ['', ...Object.keys(this.state.entries).filter(relative => this.local.has(relative))]
+		for (const relative of linked) {
+			const row = row_of(relative)
+			if (!row) continue
+			const local = layout.xattrs.get(relative) ?? {}
+			const entry = relative === '' ? undefined : this.state.entries[relative]
+			const known = relative === ''
+				? this.state.root_xattrs ?? lift_v1_xattrs(this.state.root_xattrs_hash, local)
+				: entry?.xattrs ?? lift_v1_xattrs(entry?.xattrs_hash, local)
+			const merge = merge_xattrs(known, local, row.xattrs)
+			const path = this.absolute(relative)
+			if (Object.keys(merge.local_sets).length > 0) local_sets.push({ id: path, xattrs: merge.local_sets })
+			for (const name of merge.local_removes) local_removes.push({ path, name })
+			if (Object.keys(merge.cloud_sets).length > 0) cloud_sets.push({ id: row.path, xattrs: merge.cloud_sets })
+			for (const name of merge.cloud_removes) cloud_removes.push({ path: row.path, name })
+			merged.set(relative, merge.merged)
+		}
+
+		const failed = new Set<string>()
+		const local_failed = new Set<string>()
+		if (local_sets.length > 0) {
+			for (const path of (await this.deps.local_fm.set_xattrs(local_sets)).missing) local_failed.add(path)
+		}
+		for (const removal of local_removes) {
+			try {
+				await this.deps.local_fm.remove_xattr(removal.path, removal.name)
+			} catch {
+				local_failed.add(removal.path)
+			}
+		}
+		if (cloud_sets.length > 0) {
+			for (const path of (await this.deps.cloud_fm.set_xattrs(cloud_sets)).missing) failed.add(path)
+		}
+		for (const removal of cloud_removes) {
+			try {
+				await this.deps.cloud_fm.remove_xattr(removal.path, removal.name)
+			} catch {
+				failed.add(removal.path)
+			}
+		}
+		for (const [relative, values] of merged) {
+			const row = row_of(relative)
+			if (!row || failed.has(row.path) || local_failed.has(this.absolute(relative))) continue
+			if (relative === '') {
+				this.state.root_xattrs = values
+				delete this.state.root_xattrs_hash
+			} else {
+				const { xattrs_hash: _legacy, ...entry } = this.state.entries[relative]!
+				this.state.entries[relative] = { ...entry, xattrs: values }
+			}
+		}
 	}
 
-	/** Edges with root-relative endpoints, rebased onto the cloud paths of their ends. */
-	private async push_connections(
-		folder_path: string,
-		edges: readonly FolderConnection[],
-		by_id: ReadonlyMap<string, CloudEntry>,
-	): Promise<void> {
-		const store = this.deps.cloud_fm.connections
-		const cloud_path = (relative: string): string | undefined => {
-			if (relative === '') return '/'
-			const known = this.state.entries[relative]
-			return known ? by_id.get(known.cloud_id)?.path : undefined
+	private async merge_folder_strokes(
+		relative: string,
+		row: CloudEntry,
+		folder: LocalFolderLayout,
+		known: BaseFolderLayout,
+		cloud: readonly FolderStroke[],
+	): Promise<Record<string, StrokeBase>> {
+		const workspace_id = this.state.workspace_id
+		const base = known.strokes ?? await lift_v1_strokes(workspace_id, known.strokes_hash, folder.legacy.strokes_hash, folder.strokes)
+		const merge = await merge_strokes(workspace_id, base, folder.strokes, cloud, this.now.getTime())
+		const cloud_store = this.deps.cloud_fm.strokes
+		if (merge.cloud_upserts.length > 0) await cloud_store.upsert_strokes(row.path, merge.cloud_upserts)
+		if (merge.cloud_deletes.length > 0) await cloud_store.delete_strokes(row.path, merge.cloud_deletes)
+		if (merge.local_upserts.length === 0 && merge.local_deletes.length === 0) return merge.next
+
+		const path = this.absolute(relative)
+		const local_store = this.deps.local_fm.strokes
+		if (merge.local_upserts.length > 0) await local_store.upsert_strokes(path, merge.local_upserts)
+		if (merge.local_deletes.length > 0) await local_store.delete_strokes(path, merge.local_deletes)
+		// read back: a board may have written its own sidecar over ours
+		const on_disk = new Map((await local_store.list_strokes(path)).map(stroke => [stroke.id, stroke_hash(stroke)]))
+		const next = { ...merge.next }
+		for (const cloud_id of merge.written_here) {
+			const written = next[cloud_id]!
+			if (on_disk.get(written.local_id) === written.hash) continue
+			if (base[cloud_id]) next[cloud_id] = base[cloud_id]!
+			else delete next[cloud_id]
 		}
+		const cloud_id_of = new Map(Object.entries(base).map(([cloud_id, stroke]) => [stroke.local_id, cloud_id]))
+		for (const local_id of merge.local_deletes) {
+			const cloud_id = cloud_id_of.get(local_id)
+			// still here: kept in the base, so the next pass deletes it again
+			if (cloud_id && on_disk.has(local_id) && base[cloud_id]) next[cloud_id] = base[cloud_id]!
+		}
+		return next
+	}
+
+	/**
+	 * Edges count only when both ends are on both sides: an edge to a file
+	 * that does not go up (too large, left out) must not look deleted in the
+	 * cloud. Its base is carried over untouched
+	 */
+	private async merge_folder_edges(
+		relative: string,
+		row: CloudEntry,
+		folder: LocalFolderLayout,
+		known: BaseFolderLayout,
+		cloud: readonly FolderConnection[],
+		syncable_end: (relative: string) => boolean,
+	): Promise<Record<string, ConnectionBase>> {
+		const syncable = (edge: FolderConnection) => syncable_end(edge.from) && syncable_end(edge.to)
+		const local = folder.connections.filter(syncable)
+		const lifted = known.connections ?? lift_v1_connections(known.connections_hash, folder.legacy.connections_hash, folder.connections)
+		const base: Record<string, ConnectionBase> = {}
+		const carried: Record<string, ConnectionBase> = {}
+		for (const [key, value] of Object.entries(lifted)) {
+			const [from, , to] = key.split('|')
+			if (syncable_end(from!) && syncable_end(to!)) base[key] = value
+			else carried[key] = value
+		}
+		const merge = merge_connections(base, local, cloud.filter(syncable), this.now.getTime())
+
 		const handle = (value: string | undefined) => value ?? 'default'
-		const mapped: FolderConnection[] = []
-		for (const edge of edges) {
-			const from = cloud_path(edge.from)
-			const to = cloud_path(edge.to)
-			if (!from || !to) continue
-			const local_id = `${join_local(this.deps.root, edge.from)}:${handle(edge.from_handle)}-${join_local(this.deps.root, edge.to)}:${handle(edge.to_handle)}`
-			const id = edge.id === local_id ? `${from}:${handle(edge.from_handle)}-${to}:${handle(edge.to_handle)}` : edge.id
-			mapped.push({ ...edge, id, from, to })
+		const cloud_path = (end: string) => (end === '' ? '/' : `/${end}`)
+		if (merge.cloud_upserts.length > 0) {
+			await this.deps.cloud_fm.connections.upsert_connections(row.path, merge.cloud_upserts.map((edge) => {
+				const from = cloud_path(edge.from)
+				const to = cloud_path(edge.to)
+				return { ...edge, id: `${from}:${handle(edge.from_handle)}-${to}:${handle(edge.to_handle)}`, from, to }
+			}))
 		}
-		if (mapped.length > 0) await store.upsert_connections(folder_path, mapped)
-		const keep = new Set(mapped.map(edge => edge.id))
-		const stale = (await store.list_connections(folder_path)).filter(edge => !keep.has(edge.id))
-		if (stale.length > 0) await store.delete_connections(folder_path, stale.map(edge => edge.id))
+		if (merge.cloud_deletes.length > 0) await this.deps.cloud_fm.connections.delete_connections(row.path, merge.cloud_deletes)
+		const next = { ...carried, ...merge.next }
+		if (merge.local_upserts.length === 0 && merge.local_deletes.length === 0) return next
+
+		// here: absolute ends and the board's own deterministic ids, so reading
+		// the sidecar does not "heal" (rewrite) it
+		const path = this.absolute(relative)
+		const local_store = this.deps.local_fm.connections
+		if (merge.local_upserts.length > 0) {
+			await local_store.upsert_connections(path, merge.local_upserts.map((edge) => {
+				const from = this.absolute(edge.from)
+				const to = this.absolute(edge.to)
+				return { ...edge, id: `${from}:${handle(edge.from_handle)}-${to}:${handle(edge.to_handle)}`, from, to }
+			}))
+		}
+		if (merge.local_deletes.length > 0) await local_store.delete_connections(path, merge.local_deletes)
+		const on_disk = new Map<string, string>()
+		for (const edge of await local_store.list_connections(path)) {
+			const from = relative_of(this.deps.root, edge.from)
+			const to = relative_of(this.deps.root, edge.to)
+			if (from !== null && to !== null) on_disk.set(connection_key({ ...edge, from, to }), connection_hash(edge))
+		}
+		for (const key of merge.written_here) {
+			if (on_disk.get(key) === next[key]!.hash) continue
+			if (base[key]) next[key] = base[key]!
+			else delete next[key]
+		}
+		for (const edge of local) {
+			const key = connection_key(edge)
+			if (merge.local_deletes.includes(edge.id) && on_disk.has(key) && base[key]) next[key] = base[key]!
+		}
+		return next
 	}
 }

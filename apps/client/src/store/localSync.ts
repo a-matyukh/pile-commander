@@ -4,7 +4,9 @@ import {
 	PILE_DIR_NAME,
 	client_instance_id,
 	createFileManager,
+	list_workspace_connections,
 	list_workspace_entries,
+	list_workspace_strokes,
 	purge_entry_id,
 	type EntryRow,
 } from '@pile-commander/file-manager'
@@ -144,6 +146,14 @@ function start_engine(link: SyncLink): void {
 			cloud_fm,
 			replace_blob: (cloud_path, blob, mime) => cloud_fm.replace_file(cloud_path, blob, mime),
 			list_cloud: async () => (await list_workspace_entries(require_supabase(), link.workspace_id)).map(cloud_entry),
+			list_cloud_layout: async () => {
+				const client = require_supabase()
+				const [strokes, connections] = await Promise.all([
+					list_workspace_strokes(client, link.workspace_id),
+					list_workspace_connections(client, link.workspace_id),
+				])
+				return { strokes, connections }
+			},
 			purge: cloud_id => purge_entry_id(require_supabase(), cloud_id),
 		}),
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,

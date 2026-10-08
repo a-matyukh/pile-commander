@@ -2,10 +2,13 @@ import { describe, expect, test, vi } from 'vitest'
 import {
 	createFakeFileManager,
 	is_text_mime,
+	type ConnectionRow,
 	type FakeFileManager,
+	type StrokeRow,
 	type FileManager,
 } from '@pile-commander/file-manager'
-import { derived_uuid } from './hash'
+import { derived_uuid, hash_value } from './hash'
+import { merge_xattrs } from './layoutSync'
 import { reconcile, type ReconcileOptions } from './reconcile'
 import { create_sync_engine, type SyncStatus } from './syncEngine'
 import { is_sync_state_path, new_sync_state, parse_sync_state } from './stateFile'
@@ -313,12 +316,37 @@ function make_cloud() {
 			xattrs: snapshot.xattrs,
 		})),
 	))
+	const id_of = (path: string) => ids.get(path) ?? `seed:${path}`
+	const list_cloud_layout = async () => {
+		const strokes: StrokeRow[] = []
+		const connections: ConnectionRow[] = []
+		for (const folder of fake.list_entries().filter(entry => entry.type === 'folder')) {
+			const entry_id = id_of(folder.path)
+			for (const stroke of await fake.fm.strokes.list_strokes(folder.path)) {
+				strokes.push({ ...stroke, entry_id, workspace_id: 'ws-1', updated_by_client: null })
+			}
+			for (const edge of await fake.fm.connections.list_connections(folder.path)) {
+				const { id, from, to, ...props } = edge
+				connections.push({
+					record_id: id,
+					id,
+					entry_id,
+					workspace_id: 'ws-1',
+					from_entry: id_of(from),
+					to_entry: id_of(to),
+					props,
+					updated_by_client: null,
+				})
+			}
+		}
+		return { strokes, connections }
+	}
 	/** An edit made in the cloud by someone else. */
 	const edit = async (path: string, content: string) => {
 		await fake.fm.save_text_file(path, content)
 		touch(path)
 	}
-	return { fake, fm, list_cloud, ids, edit }
+	return { fake, fm, list_cloud, list_cloud_layout, ids, edit }
 }
 
 function make_local() {
@@ -371,6 +399,7 @@ function make_deps(local: FakeFileManager, stat: SyncPassDeps['stat'], cloud: Re
 		},
 		cloud_fm: cloud.fm,
 		list_cloud: cloud.list_cloud,
+		list_cloud_layout: cloud.list_cloud_layout,
 		purge,
 		now: () => new Date(2026, 9, 8, 14, 30),
 	}
@@ -680,6 +709,12 @@ describe('sync state file', () => {
 		expect(parse_sync_state(JSON.stringify(state), owner)).toEqual(state)
 	})
 
+	test('a v1 file is still linked: its first pass lifts it to v2', () => {
+		const v1 = { ...new_sync_state(owner), version: 1, root_xattrs_hash: 'h' }
+		expect(parse_sync_state(JSON.stringify(v1), owner)?.version).toBe(1)
+		expect(parse_sync_state(JSON.stringify({ ...v1, version: 3 }), owner)).toBeNull()
+	})
+
 	test('a folder copied elsewhere or to another device is not linked', () => {
 		const text = JSON.stringify(new_sync_state(owner))
 		expect(parse_sync_state(text, { ...owner, root_path: '/copy' })).toBeNull()
@@ -950,5 +985,193 @@ describe('two-way pass', () => {
 		// the folder at once; the download follows within the 2 s throttle or at the end
 		expect(saved_progress.length).toBeGreaterThan(0)
 		expect(Object.keys(saved_progress[0]!.entries)).toEqual(['a'])
+	})
+})
+
+describe('merge_xattrs', () => {
+	test('a change on one side goes to the other; on both sides the cloud wins', () => {
+		const merge = merge_xattrs(
+			{ position: 'a', size: 's', view: 'board' },
+			{ position: 'moved here', size: 's', view: 'grid', color: 'red' },
+			{ position: 'a', size: 'resized there', view: 'canvas' },
+		)
+		expect(merge.merged).toEqual({ position: 'moved here', size: 'resized there', view: 'canvas', color: 'red' })
+		expect(merge.local_sets).toEqual({ size: 'resized there', view: 'canvas' })
+		expect(merge.cloud_sets).toEqual({ position: 'moved here', color: 'red' })
+	})
+
+	test('a key removed on one side is removed on the other', () => {
+		const merge = merge_xattrs({ is_preview: 'true', color: 'red' }, { color: 'red' }, { is_preview: 'true' })
+		expect(merge.merged).toEqual({})
+		expect(merge.cloud_removes).toEqual(['is_preview'])
+		expect(merge.local_removes).toEqual(['color'])
+	})
+
+	test('with no base, what differs here goes up', () => {
+		const merge = merge_xattrs(undefined, { position: 'here' }, { position: 'there', view: 'board' })
+		expect(merge.merged).toEqual({ position: 'here', view: 'board' })
+		expect(merge.cloud_sets).toEqual({ position: 'here' })
+		expect(merge.local_sets).toEqual({ view: 'board' })
+	})
+})
+
+describe('two-way layout', () => {
+	const INK = {
+		z: 1,
+		position: { x: 0, y: 0 },
+		points: [{ x: 0, y: 0 }],
+		color: '#000',
+		stroke_width: 2,
+		width: 4,
+		height: 4,
+	}
+
+	/** A linked folder with a board, synced once; `clock` drives the pass's now. */
+	async function linked_board() {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/board')
+		local.seed_file('/ws/board/a.md', 'a')
+		local.seed_file('/ws/board/b.md', 'b')
+		const cloud = make_cloud()
+		const made = make_deps(local, stat, cloud)
+		const clock = { now: new Date(2026, 9, 8, 14, 30).getTime() }
+		made.deps.now = () => new Date(clock.now)
+		const first = await pass(made.deps, new_state())
+		return { local, cloud, ...made, clock, state: first.state }
+	}
+
+	test('a card moved in the cloud moves here, and nothing goes back', async () => {
+		const { local, cloud, deps, state } = await linked_board()
+		cloud.fake.set_xattr('/board/a.md', 'position', '{"x":50,"y":60}')
+
+		const second = await cloud_pass(deps, state)
+
+		expect(local.get_xattr('/ws/board/a.md', 'position')).toBe('{"x":50,"y":60}')
+		expect(second.state.entries['board/a.md']?.xattrs).toEqual({ position: '{"x":50,"y":60}' })
+		expect(second.state.version).toBe(2)
+		expect((await run_sync_pass(deps, second.state, { max_file_bytes: 1_000_000 })).kind).toBe('unchanged')
+	})
+
+	test('ink drawn in the cloud comes down under its cloud id, once, over three cycles', async () => {
+		const { local, cloud, deps, state } = await linked_board()
+		await cloud.fm.strokes.upsert_strokes('/board', [{ id: 'cloud-ink', ...INK }])
+
+		let current = state
+		for (let cycle = 0; cycle < 3; cycle++) current = (await cloud_pass(deps, current)).state
+
+		expect((await local.fm.strokes.list_strokes('/ws/board')).map(stroke => stroke.id)).toEqual(['cloud-ink'])
+		expect((await cloud.fm.strokes.list_strokes('/board')).map(stroke => stroke.id)).toEqual(['cloud-ink'])
+		expect((await run_sync_pass(deps, current, { max_file_bytes: 1_000_000 })).kind).toBe('unchanged')
+	})
+
+	test('ink erased on either side is erased on the other', async () => {
+		const { local, cloud, deps, state, clock } = await linked_board()
+		local.seed_strokes('/ws/board', [{ id: 'mine', ...INK }])
+		await cloud.fm.strokes.upsert_strokes('/board', [{ id: 'theirs', ...INK, z: 2 }])
+		const second = await cloud_pass(deps, state)
+		const mine_in_cloud = await derived_uuid('ws-1', 'mine')
+		expect((await cloud.fm.strokes.list_strokes('/board')).map(stroke => stroke.id).sort())
+			.toEqual([mine_in_cloud, 'theirs'].sort())
+
+		// erased in the web
+		await cloud.fm.strokes.delete_strokes('/board', [mine_in_cloud])
+		const third = await cloud_pass(deps, second.state)
+		expect((await local.fm.strokes.list_strokes('/ws/board')).map(stroke => stroke.id)).toEqual(['theirs'])
+
+		// erased here, after the race window
+		clock.now += 60_000
+		local.seed_strokes('/ws/board', [])
+		await cloud_pass(deps, third.state)
+		expect(await cloud.fm.strokes.list_strokes('/board')).toEqual([])
+	})
+
+	test('ink a board overwrote right after it came down comes down again, not erased in the cloud', async () => {
+		const { local, cloud, deps, state, clock } = await linked_board()
+		await cloud.fm.strokes.upsert_strokes('/board', [{ id: 'theirs', ...INK }])
+		const second = await cloud_pass(deps, state)
+		const downloaded_at = second.state.layout.board?.strokes?.theirs?.downloaded_at
+
+		// the open board wrote its old sidecar over ours
+		local.seed_strokes('/ws/board', [])
+		clock.now += 3_000
+		const third = await cloud_pass(deps, second.state)
+
+		expect((await cloud.fm.strokes.list_strokes('/board')).map(stroke => stroke.id)).toEqual(['theirs'])
+		expect((await local.fm.strokes.list_strokes('/ws/board')).map(stroke => stroke.id)).toEqual(['theirs'])
+		// the window runs from the first download: it does not restart
+		expect(third.state.layout.board?.strokes?.theirs?.downloaded_at).toBe(downloaded_at)
+	})
+
+	test('an edge drawn in the cloud comes down with the ids a board writes, and is not rewritten', async () => {
+		const { local, cloud, deps, state, clock } = await linked_board()
+		await cloud.fm.connections.upsert_connections('/board', [{
+			id: '/board/a.md:default-/board/b.md:default',
+			from: '/board/a.md',
+			to: '/board/b.md',
+			is_animated: false,
+		}])
+
+		const second = await cloud_pass(deps, state)
+
+		expect(await local.fm.connections.list_connections('/ws/board')).toEqual([{
+			id: '/ws/board/a.md:default-/ws/board/b.md:default',
+			from: '/ws/board/a.md',
+			to: '/ws/board/b.md',
+			is_animated: false,
+		}])
+		expect_quiet((await cloud_pass(deps, second.state)).report)
+
+		// removed here, past the race window: removed in the cloud
+		clock.now += 60_000
+		await local.fm.connections.delete_connections('/ws/board', ['/ws/board/a.md:default-/ws/board/b.md:default'])
+		await pass(deps, second.state)
+		expect(await cloud.fm.connections.list_connections('/board')).toEqual([])
+	})
+
+	test('a v1 state lifts to v2 without doubling the ink it already pushed', async () => {
+		const { local, cloud, deps } = await linked_board()
+		local.seed_strokes('/ws/board', [{ id: 'old-ink', ...INK }])
+		local.set_xattr('/ws/board/a.md', 'position', '{"x":1,"y":1}')
+		const v2 = (await pass(deps, new_state())).state
+		// the same link as a v1 build left it: hashes of what was pushed
+		const v1: SyncState = {
+			...v2,
+			version: 1,
+			entries: Object.fromEntries(Object.entries(v2.entries).map(([relative, { xattrs, ...entry }]) => [
+				relative,
+				xattrs && Object.keys(xattrs).length > 0 ? { ...entry, xattrs_hash: hash_value(xattrs) } : entry,
+			])),
+			layout: {
+				'': { strokes_hash: hash_value([]), connections_hash: hash_value([]) },
+				board: {
+					strokes_hash: hash_value(await local.fm.strokes.list_strokes('/ws/board')),
+					connections_hash: hash_value([]),
+				},
+			},
+		}
+		delete v1.root_xattrs
+
+		let current = v1
+		for (let cycle = 0; cycle < 3; cycle++) current = (await cloud_pass(deps, current)).state
+
+		expect((await local.fm.strokes.list_strokes('/ws/board')).map(stroke => stroke.id)).toEqual(['old-ink'])
+		expect(await cloud.fm.strokes.list_strokes('/board')).toHaveLength(1)
+		expect(current.version).toBe(2)
+		expect(current.layout.board?.strokes_hash).toBeUndefined()
+		expect(current.entries['board/a.md']?.xattrs).toEqual({ position: '{"x":1,"y":1}' })
+	})
+
+	test('ink of a folder in the cloud trash is ignored', async () => {
+		const { local, deps, state } = await linked_board()
+		const list_cloud_layout = deps.list_cloud_layout
+		deps.list_cloud_layout = async () => {
+			const layout = await list_cloud_layout()
+			layout.strokes.push({ id: 'ghost', entry_id: 'trashed-folder', workspace_id: 'ws-1', updated_by_client: null, ...INK })
+			return layout
+		}
+
+		await cloud_pass(deps, state)
+
+		expect(await local.fm.strokes.list_strokes('/ws/board')).toEqual([])
 	})
 })

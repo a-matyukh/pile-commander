@@ -7,7 +7,12 @@
  * cloud version under its name and the local one as a conflicted copy.
  */
 
-export const SYNC_STATE_VERSION = 1
+/**
+ * 2: the base keeps layout values (xattrs per entry, ink by cloud id, edges by
+ * their ends) for a three-way merge. A v1 state, which kept only hashes of
+ * what was pushed, is read and lifted to v2 on its first pass
+ */
+export const SYNC_STATE_VERSION = 2
 
 /** One entry as of the last good pass. */
 export type BaseEntry = {
@@ -19,14 +24,36 @@ export type BaseEntry = {
 	cloud_id: string
 	/** Cloud content mtime then (entries.content_modified_at, or updated_at for folders). */
 	cloud_modified_at: string | null
-	/** Hash of the local xattrs last pushed; absent = never pushed. */
+	/** Plain xattrs both sides held; absent = not merged yet. */
+	xattrs?: Record<string, string>
+	/** v1: hash of the local xattrs last pushed. */
 	xattrs_hash?: string
 }
 
-/** Ink and edges of a folder as last pushed (hashes of the local records). */
+/** A stroke both sides held, by its cloud id. */
+export type StrokeBase = {
+	/** Its id here: the cloud id for ink that came down, the board's own id for ink drawn here. */
+	local_id: string
+	/** Hash of the stroke without its id. */
+	hash: string
+	/** Epoch ms it was written here, kept for 10 s: gone from disk sooner, it was overwritten, not erased. */
+	downloaded_at?: number
+}
+
+/** An edge both sides held, by `from|from_handle|to|to_handle` (root-relative ends). */
+export type ConnectionBase = {
+	/** Hash of its markers, animation and label. */
+	hash: string
+	downloaded_at?: number
+}
+
+/** Ink and edges of a folder as both sides held them. */
 export type BaseFolderLayout = {
-	strokes_hash: string
-	connections_hash: string
+	strokes?: Record<string, StrokeBase>
+	connections?: Record<string, ConnectionBase>
+	/** v1: hashes of the local ink and edges last pushed. */
+	strokes_hash?: string
+	connections_hash?: string
 }
 
 /** `<root>/.pile/sync.json` — the link and the base snapshot. */
@@ -46,6 +73,9 @@ export type SyncState = {
 	adopt_before?: number
 	entries: Record<string, BaseEntry>
 	layout: Record<string, BaseFolderLayout>
+	/** Plain xattrs of the synced folder itself. */
+	root_xattrs?: Record<string, string>
+	/** v1 */
 	root_xattrs_hash?: string
 	last_synced_at?: number
 }

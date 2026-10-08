@@ -43,7 +43,8 @@ export function parse_sync_state(text: string, owner: SyncLinkOwner): SyncState 
 	}
 	if (!raw || typeof raw !== 'object') return null
 	const state = raw as Partial<SyncState>
-	if (state.version !== SYNC_STATE_VERSION) return null
+	// v1 is read as is: its first pass lifts it to v2 (seeds the layout base)
+	if (state.version !== 1 && state.version !== SYNC_STATE_VERSION) return null
 	if (state.root_path !== owner.root_path || state.device_id !== owner.device_id) return null
 	if (state.user_id !== owner.user_id || state.workspace_id !== owner.workspace_id) return null
 	if (!state.entries || typeof state.entries !== 'object' || !state.layout || typeof state.layout !== 'object') return null
