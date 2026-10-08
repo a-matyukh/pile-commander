@@ -44,6 +44,13 @@ function ago(epoch_ms: number): string {
 	return new Date(epoch_ms).toLocaleString()
 }
 
+const progress_line = computed(() => {
+	const progress = status.value?.progress
+	if (!progress || progress.total === 0) return ''
+	const of = `${Math.min(progress.done + 1, progress.total)} of ${progress.total}`
+	return progress.current ? `${of} · ${progress.current}` : of
+})
+
 const last_synced = computed(() => {
 	const at = status.value?.last_synced_at
 	return at ? `Last synced ${ago(at)}` : 'Not synced yet'
@@ -71,7 +78,8 @@ function open_cloud_copy() {
 			<div class="flex w-72 flex-col gap-2 p-3 text-sm" role="status" aria-live="polite">
 				<div>
 					<p class="font-medium">{{ label }}</p>
-					<p class="text-xs text-muted">{{ last_synced }}</p>
+					<p v-if="progress_line" class="truncate text-xs text-muted" :title="progress_line">{{ progress_line }}</p>
+					<p v-else class="text-xs text-muted">{{ last_synced }}</p>
 				</div>
 				<p class="text-xs text-muted">
 					Changes go both ways between this folder and its cloud copy while the app is open.

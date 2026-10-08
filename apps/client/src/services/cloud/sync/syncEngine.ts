@@ -1,4 +1,4 @@
-import { run_sync_pass, type SyncPassDeps, type SyncReport } from './syncPass'
+import { run_sync_pass, type SyncPassDeps, type SyncProgress, type SyncReport } from './syncPass'
 import type { SyncState } from './types'
 
 export type SyncStatus = {
@@ -17,6 +17,8 @@ export type SyncStatus = {
 	last_synced_at?: number
 	/** Files a paused pass would trash (on the side `reason` names). */
 	pending_deletes?: number
+	/** While a pass moves bytes or entries. */
+	progress?: SyncProgress
 	/** Recent conflicted copies, newest last. */
 	conflicts: string[]
 	skipped: SyncReport['skipped']
@@ -31,6 +33,8 @@ export type SyncEngineDeps = {
 	max_file_bytes(): number
 	/** Calls back on any change in the folder; resolves to the unwatch. */
 	watch(on_change: () => void): Promise<() => void>
+	/** Calls back on any change of the cloud workspace made elsewhere; resolves to the unwatch. */
+	watch_cloud?(on_change: () => void): Promise<() => void>
 	on_status(status: SyncStatus): void
 }
 
@@ -70,8 +74,10 @@ function message_of(error: unknown): string {
 
 /**
  * Keeps one linked folder in sync while the app runs: a pass at start, after
- * changes settle, every few minutes, and again after a failure with backoff.
- * Passes never overlap; a change during a pass queues one more.
+ * changes here or in the cloud settle, every few minutes, and again after a
+ * failure with backoff. Passes never overlap; a change during a pass queues
+ * one more. A pass reads the cloud only when it may have changed: at start,
+ * after a cloud event, on the interval and on Sync now.
  */
 export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DEFAULT_SYNC_TIMING): SyncEngine {
 	let state: SyncState | null = null
@@ -79,13 +85,14 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 	let running: Promise<void> | null = null
 	let again = false
 	// the next pass reads the cloud even if nothing changed here: true at
-	// start, on the interval and on Sync now (and, later, on cloud events)
+	// start, after a cloud event, on the interval and on Sync now
 	let cloud_dirty = true
 	let stopped = true
 	let failures = 0
 	let timer: ReturnType<typeof setTimeout> | null = null
 	let interval: ReturnType<typeof setInterval> | null = null
 	let unwatch: (() => void) | null = null
+	let unwatch_cloud: (() => void) | null = null
 
 	const publish = (patch: Partial<SyncStatus>) => {
 		status = { ...status, ...patch }
@@ -112,7 +119,11 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		cloud_dirty = false
 		let result: Awaited<ReturnType<typeof run_sync_pass>>
 		try {
-			result = await run_sync_pass(deps.pass_deps(state), state, {
+			const pass_deps: SyncPassDeps = {
+				...deps.pass_deps(state),
+				on_progress: progress => publish({ progress }),
+			}
+			result = await run_sync_pass(pass_deps, state, {
 				max_file_bytes: deps.max_file_bytes(),
 				check_cloud,
 				...confirm,
@@ -120,8 +131,10 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		} catch (error) {
 			// the cloud still has to be read once the failure clears
 			cloud_dirty ||= check_cloud
+			publish({ progress: undefined })
 			throw error
 		}
+		publish({ progress: undefined })
 		failures = 0
 		if (result.kind === 'unchanged') {
 			publish({ phase: 'idle', reason: undefined, message: undefined, pending_deletes: undefined, skipped: result.skipped, errors: [] })
@@ -203,9 +216,19 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 				// without a watcher the interval still catches up
 				console.error('[sync] watch failed', error)
 			}
+			try {
+				unwatch_cloud = await deps.watch_cloud?.(() => {
+					cloud_dirty = true
+					schedule(timing.debounce_ms)
+				}) ?? null
+			} catch (error) {
+				console.error('[sync] cloud watch failed', error)
+			}
 			if (stopped) {
 				unwatch?.()
+				unwatch_cloud?.()
 				unwatch = null
+				unwatch_cloud = null
 				return
 			}
 			await run()
@@ -217,7 +240,9 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 			timer = null
 			interval = null
 			unwatch?.()
+			unwatch_cloud?.()
 			unwatch = null
+			unwatch_cloud = null
 		},
 		async sync_now(options = {}) {
 			if (timer) clearTimeout(timer)

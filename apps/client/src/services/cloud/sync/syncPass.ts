@@ -59,7 +59,16 @@ export type SyncPassDeps = {
 	 * not mistake its own writes for changes made on both sides
 	 */
 	save_progress?: (state: SyncState) => Promise<void>
+	/** Told before and after each action that moves bytes or entries. */
+	on_progress?: (progress: SyncProgress) => void
 	now?: () => Date
+}
+
+/** How far a pass is: actions done of all that move bytes or entries, and the one under way. */
+export type SyncProgress = {
+	done: number
+	total: number
+	current: string | null
 }
 
 export type SyncPassOptions = {
@@ -322,12 +331,19 @@ class PassRun {
 
 	/** Runs the actions in order; returns why the pass stopped early, if it did. */
 	async apply(actions: readonly SyncAction[]): Promise<{ info: PlanLimitInfo; file: string } | null> {
+		// bookkeeping (skip, adopt, forget) is instant: it does not count as progress
+		const counts = (action: SyncAction) => action.kind !== 'skip' && action.kind !== 'adopt' && action.kind !== 'forget'
+		const total = actions.filter(counts).length
+		let done = 0
+		const progress = (current: string | null) => this.deps.on_progress?.({ done, total, current })
+		if (total > 0) progress(null)
 		let failures = 0
 		for (const action of actions) {
 			if (action.kind === 'skip') {
 				this.report.skipped.push({ relative: action.relative, reason: action.reason })
 				continue
 			}
+			if (counts(action)) progress(action.relative)
 			try {
 				await this.apply_one(action)
 				failures = 0
@@ -336,6 +352,11 @@ class PassRun {
 				this.report.errors.push({ relative: action.relative, message: message_of(error) })
 				failures += 1
 				if (failures >= FAILURES_IN_A_ROW) throw error
+			} finally {
+				if (counts(action)) {
+					done += 1
+					progress(null)
+				}
 			}
 		}
 		return null

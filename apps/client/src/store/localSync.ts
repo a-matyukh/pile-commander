@@ -48,6 +48,11 @@ export function sync_link_of(root: string): SyncLink | null {
 	return links.value[root] ?? null
 }
 
+/** The folder this account syncs with a cloud workspace on this device, if any. */
+export function synced_folder_of(workspace_id: string, user_id = cloud.user?.id): SyncLink | null {
+	return Object.values(links.value).find(link => link.workspace_id === workspace_id && link.user_id === user_id) ?? null
+}
+
 function owner_of(link: SyncLink): SyncLinkOwner {
 	return {
 		root_path: link.root,
@@ -157,6 +162,8 @@ function start_engine(link: SyncLink): void {
 			purge: cloud_id => purge_entry_id(require_supabase(), cloud_id),
 		}),
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,
+		// joins the workspace's realtime channels itself, board open or not
+		watch_cloud: on_change => cloud_fm.watch_workspace(on_change),
 		watch: async (on_change) => {
 			const { watch: fs_watch } = await fs()
 			return fs_watch(link.root, (event) => {
@@ -203,6 +210,11 @@ export async function link_folder(input: {
 }): Promise<void> {
 	const user = cloud.user
 	if (!is_desktop || !user) throw new Error('Sign in to sync this folder')
+	// one folder per cloud workspace on a device: two would write each other's files
+	const other = synced_folder_of(input.workspace_id, user.id)
+	if (other && other.root !== input.root) {
+		throw new Error(`This cloud workspace already syncs with ${other.root} on this computer.`)
+	}
 	stop_engine(input.root)
 	const link: SyncLink = { root: input.root, name: input.name, workspace_id: input.workspace_id, user_id: user.id }
 	await save_state(link, new_sync_state(owner_of(link), { exclude: input.exclude, adopt_before: input.adopt_before }))

@@ -19,6 +19,7 @@ import {
 	type LocalWriter,
 	type SyncPassDeps,
 	type SyncPassOptions,
+	type SyncProgress,
 	type SyncReport,
 } from './syncPass'
 import { SYNC_STATE_VERSION, type BaseEntry, type CloudEntry, type LocalEntry, type SyncState } from './types'
@@ -786,6 +787,46 @@ describe('sync engine', () => {
 		}
 	})
 
+	test('a change in the cloud wakes it, and the pass brings the change down', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+		try {
+			const { local, stat } = make_local()
+			local.seed_file('/ws/note.md', 'mine')
+			const cloud = make_cloud()
+			const { deps } = make_deps(local, stat, cloud)
+			let saved: SyncState = new_state()
+			let on_cloud_change = () => {}
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => saved,
+				save_state: async (state) => {
+					saved = state
+				},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				watch: async () => () => {},
+				watch_cloud: async (callback) => {
+					on_cloud_change = callback
+					return () => {}
+				},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+			await engine.start()
+
+			await cloud.edit('/note.md', 'edited in the web')
+			on_cloud_change()
+			await vi.advanceTimersByTimeAsync(150)
+			await vi.waitFor(async () => expect(await local_text(local, '/ws/note.md')).toBe('edited in the web'))
+			await vi.waitFor(() => expect(statuses.at(-1)?.phase).toBe('idle'))
+			// progress is shown while a pass moves files, and cleared after
+			expect(statuses.some(status => status.progress?.total === 1)).toBe(true)
+			expect(statuses.at(-1)?.progress).toBeUndefined()
+			engine.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	test('a failed pass is retried', async () => {
 		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 		try {
@@ -971,6 +1012,22 @@ describe('two-way pass', () => {
 		expect(await local_text(local, '/ws/a/note.md')).toBe('hello')
 		expect(Object.keys(first.state.entries).sort()).toEqual(['a', 'a/note.md', 'photo.png'])
 		expect_quiet((await cloud_pass(deps, first.state)).report)
+	})
+
+	test('reports how far it is', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/a.md', 'a')
+		local.seed_file('/ws/b.md', 'b')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+		const progress: SyncProgress[] = []
+		deps.on_progress = step => progress.push(step)
+
+		await pass(deps, new_state())
+
+		expect(progress[0]).toEqual({ done: 0, total: 2, current: null })
+		expect(progress).toContainEqual({ done: 0, total: 2, current: 'a.md' })
+		expect(progress.at(-1)).toEqual({ done: 2, total: 2, current: null })
 	})
 
 	test('saves its progress as it goes', async () => {
