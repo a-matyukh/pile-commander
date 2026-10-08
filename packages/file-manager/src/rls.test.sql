@@ -681,6 +681,13 @@ begin
         execute 'set local role authenticated';
     end;
     begin
+        perform public.replace_blob_entry(v_file, v_ws, v_ws::text || '/ffffffff-ffff-4fff-8fff-ffffffffffff.png', 1, 'image/png', c_owner, null);
+        insert into __results values ('authenticated: replace_blob_entry revoked', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('authenticated: replace_blob_entry revoked', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
         select count(*) into v_n from public.list_foreign_blob_entries(10);
         insert into __results values ('authenticated: list_foreign_blob_entries revoked', false, 'accepted');
     exception when insufficient_privilege then
@@ -895,6 +902,13 @@ begin
         insert into __results values ('anon: cannot insert bridge_events', false, 'accepted');
     exception when insufficient_privilege then
         insert into __results values ('anon: cannot insert bridge_events', true, null);
+        execute 'set local role anon';
+    end;
+    begin
+        perform public.replace_blob_entry(v_file, v_ws, v_ws::text || '/ffffffff-ffff-4fff-8fff-ffffffffffff.png', 1, 'image/png', c_owner, null);
+        insert into __results values ('anon: replace_blob_entry revoked', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('anon: replace_blob_entry revoked', true, null);
         execute 'set local role anon';
     end;
     begin
@@ -1714,6 +1728,8 @@ begin
             -- trust the backend's word on a user id, an object size or a key
             ('private.create_blob_entry(uuid, uuid, uuid, text, text, text, bigint, uuid, text)', false, false),
             ('public.create_blob_entry(uuid, uuid, uuid, text, text, text, bigint, uuid, text)', false, false),
+            ('private.replace_blob_entry(uuid, uuid, text, bigint, text, uuid, text)', false, false),
+            ('public.replace_blob_entry(uuid, uuid, text, bigint, text, uuid, text)', false, false),
             ('private.record_hub_preview_upload(text, bigint, uuid)', false, false),
             ('public.record_hub_preview_upload(text, bigint, uuid)', false, false),
             -- list blob keys of an arbitrary subtree with no access check inside

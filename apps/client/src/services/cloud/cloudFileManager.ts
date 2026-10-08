@@ -1,7 +1,7 @@
 import {
 	createCloudFileManager,
 	StorageUnreachableError,
-	type FileManager,
+	type CloudFileManager,
 	type PutBlob,
 	type UploadProgressCallback,
 } from '@pile-commander/file-manager'
@@ -91,7 +91,7 @@ export async function put_blob_native(
 /** The PUT every presigned storage upload in this app goes through */
 export const app_put_blob: PutBlob | undefined = uses_native_b2_put(is_desktop) ? put_blob_native : undefined
 
-export function create_app_cloud_file_manager(workspace_id: string): FileManager {
+export function create_app_cloud_file_manager(workspace_id: string): CloudFileManager {
 	return createCloudFileManager({
 		client: require_supabase(),
 		workspace_id,

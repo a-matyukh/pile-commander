@@ -283,7 +283,21 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve_sleep) => setTimeout(resolve_sleep, ms))
 }
 
-function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
+export type CloudFileManager = FileManager & {
+	/**
+	 * Replaces the bytes of a live file without changing its id. `'unsupported'`
+	 * means this backend did not echo `replace` on the presign: nothing was
+	 * uploaded, and later calls in this session skip the network.
+	 */
+	replace_file(
+		id: string,
+		data: Blob,
+		mime?: string,
+		onProgress?: UploadProgressCallback,
+	): Promise<"replaced" | "unsupported">
+}
+
+function createCloudFileManager(options: CloudFileManagerOptions): CloudFileManager {
 	const { client, workspace_id, backend_url } = options
 
 	type RefusedXattrs = { path: string; status: "missing" | "too_large" }
@@ -634,6 +648,53 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 				client_id: client_instance_id(),
 			})
 			return to_child(entry)
+		} catch (error) {
+			if (error instanceof PlanLimitError && !error.file_mime) {
+				throw new PlanLimitError({ ...error.to_info(), file_mime: type }, error.message)
+			}
+			throw error
+		}
+	}
+
+	// Remembered for the session: an old backend accepts the extra field and
+	// answers without echoing it. Detect that before the PUT, so the bytes
+	// are never uploaded into a ticket the finalize cannot use.
+	let replace_supported = true
+
+	async function replace_file(
+		id: string,
+		data: Blob,
+		mime?: string,
+		onProgress?: UploadProgressCallback,
+	): Promise<"replaced" | "unsupported"> {
+		if (!replace_supported) return "unsupported"
+		const row = await resolve(id)
+		let type = mime || data.type || mime_from_name(row.name)
+		if (is_text_mime(type)) {
+			const bytes = new Uint8Array(await data.arrayBuffer())
+			if (bytes.byteLength > MAX_TEXT_CONTENT_BYTES || decode_text_content(bytes) === null) {
+				type = "application/octet-stream"
+			}
+		}
+		try {
+			const ticket = await backend_post<{ storage_key: string; url: string; replace?: string }>(
+				"/presign/upload",
+				{ workspace_id, name: row.name, size_bytes: data.size, mime: type, replace: row.id },
+			)
+			if (ticket.replace !== row.id) {
+				replace_supported = false
+				return "unsupported"
+			}
+			if (options.put_blob) await options.put_blob(ticket.url, type, data, onProgress)
+			else await put_with_progress(ticket.url, type, data, onProgress)
+			mark_write(row.id)
+			await backend_post<{ entry: EntryRow }>("/finalize", {
+				storage_key: ticket.storage_key,
+				replace: row.id,
+				mime: type,
+				client_id: client_instance_id(),
+			})
+			return "replaced"
 		} catch (error) {
 			if (error instanceof PlanLimitError && !error.file_mime) {
 				throw new PlanLimitError({ ...error.to_info(), file_mime: type }, error.message)
@@ -1020,6 +1081,8 @@ function createCloudFileManager(options: CloudFileManagerOptions): FileManager {
 		async upload_file(folder_id: string, filename: string, data: Blob, mime?: string, onProgress?: UploadProgressCallback) {
 			return upload_file_impl(folder_id, filename, data, mime, onProgress)
 		},
+
+		replace_file,
 
 		async rename(id: string, new_name: string) {
 			const row = await resolve(id)

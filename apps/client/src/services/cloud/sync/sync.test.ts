@@ -370,6 +370,69 @@ describe('run_sync_pass', () => {
 		expect(second.state.entries['photo.png']!.cloud_id).not.toBe(old_id)
 	})
 
+	test('replaces a binary file in place when the backend can', async () => {
+		const { local, stat, mtimes } = make_local()
+		await local.fm.upload_file('/ws', 'photo.png', bytes(10), 'image/png')
+		local.set_xattr('/ws/photo.png', 'position', '{"x":5,"y":5}')
+		local.seed_connections('/ws', [{
+			id: '/ws/photo.png:default-/ws/photo.png:default',
+			from: '/ws/photo.png',
+			to: '/ws/photo.png',
+			is_animated: false,
+		}])
+		const cloud = make_cloud()
+		const { deps, purge } = make_deps(local, stat, cloud)
+		deps.replace_blob = async (cloud_path, blob, mime) => {
+			const saved = cloud.fake.list_entries().find(entry => entry.path === cloud_path)?.xattrs ?? {}
+			const slash = cloud_path.lastIndexOf('/')
+			await cloud.fake.fm.upload_file(cloud_path.slice(0, slash) || '/', cloud_path.slice(slash + 1), blob, mime)
+			for (const [name, value] of Object.entries(saved)) cloud.fake.set_xattr(cloud_path, name, value)
+			return 'replaced'
+		}
+		const set_xattrs = vi.spyOn(cloud.fm, 'set_xattrs')
+		const upsert = vi.spyOn(cloud.fm.connections, 'upsert_connections')
+		const first = await pass(deps, new_state())
+		const cloud_id = first.state.entries['photo.png']!.cloud_id
+		expect(upsert).toHaveBeenCalled()
+
+		await local.fm.upload_file('/ws', 'photo.png', bytes(30), 'image/png')
+		local.set_xattr('/ws/photo.png', 'position', '{"x":5,"y":5}')
+		mtimes.set('/ws/photo.png', 2)
+		set_xattrs.mockClear()
+		upsert.mockClear()
+		purge.mockClear()
+		const upload = vi.spyOn(cloud.fm, 'upload_file')
+		const second = await pass(deps, first.state)
+
+		expect(second.report.updated).toBe(1)
+		expect(second.state.entries['photo.png']!.cloud_id).toBe(cloud_id)
+		expect(cloud.fake.get_blob('/photo.png')?.size).toBe(30)
+		expect(purge).not.toHaveBeenCalled()
+		expect(upload).not.toHaveBeenCalled()
+		expect(set_xattrs).not.toHaveBeenCalled()
+		expect(upsert).not.toHaveBeenCalled()
+	})
+
+	test('an unsupported replace uploads the file once through the old path', async () => {
+		const { local, stat, mtimes } = make_local()
+		await local.fm.upload_file('/ws', 'photo.png', bytes(10), 'image/png')
+		const cloud = make_cloud()
+		const { deps, purge } = make_deps(local, stat, cloud)
+		deps.replace_blob = async () => 'unsupported'
+		const first = await pass(deps, new_state())
+		const old_id = first.state.entries['photo.png']!.cloud_id
+
+		await local.fm.upload_file('/ws', 'photo.png', bytes(30), 'image/png')
+		mtimes.set('/ws/photo.png', 2)
+		const upload = vi.spyOn(cloud.fm, 'upload_file')
+		const second = await pass(deps, first.state)
+
+		expect(upload).toHaveBeenCalledTimes(1)
+		expect(purge).toHaveBeenCalledWith(old_id)
+		expect(second.state.entries['photo.png']!.cloud_id).not.toBe(old_id)
+		expect(cloud.fake.get_blob('/photo.png')?.size).toBe(30)
+	})
+
 	test('follows a rename here with a rename in the cloud', async () => {
 		const { local, stat } = make_local()
 		local.seed_folder('/ws/a')

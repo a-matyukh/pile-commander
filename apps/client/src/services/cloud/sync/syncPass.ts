@@ -19,6 +19,11 @@ export type SyncPassDeps = {
 	/** Hard-deletes a trashed cloud entry by id. */
 	purge(cloud_id: string): Promise<void>
 	read_blob?: (fm: FileManager, id: string, name: string, mime: string) => Promise<Blob>
+	/**
+	 * Replaces a cloud file's bytes in place. Absent, or `'unsupported'`,
+	 * means this backend cannot: the pass falls back to trash, purge, upload.
+	 */
+	replace_blob?: (cloud_path: string, blob: Blob, mime: string) => Promise<'replaced' | 'unsupported'>
 	now?: () => Date
 }
 
@@ -306,11 +311,11 @@ class PassRun {
 	}
 
 	/**
-	 * Text in the cloud's text column is saved in place. A binary file has no
-	 * in-place update without a new RPC (LOCAL_SYNC.md, phase 2): the old row
-	 * is trashed and purged — the trash counts against the quota — and the new
-	 * bytes go up under the same name. The new row has a new id: its layout
-	 * and the folder's edges are pushed again
+	 * Text in the cloud's text column is saved in place. A binary file is
+	 * replaced in place when the backend echoes `replace` (the id, the layout
+	 * and the edges stay). Otherwise the old row is trashed and purged — the
+	 * trash counts against the quota — and the new bytes go up under the same
+	 * name, with a new id, so the layout and the folder's edges are pushed again.
 	 */
 	private async update(relative: string, cloud_id: string): Promise<void> {
 		const entry = this.local_entry(relative)
@@ -322,6 +327,16 @@ class PassRun {
 			const text = decode_text_content(new Uint8Array(await blob.arrayBuffer()))
 			if (text !== null) {
 				await this.deps.cloud_fm.save_text_file(path, text)
+				this.paths.set(relative, path)
+				this.touched.add(relative)
+				this.keeps_xattrs.add(relative)
+				return
+			}
+		}
+		const type = is_text_mime(mime) && blob.size > MAX_TEXT_CONTENT_BYTES ? 'application/octet-stream' : mime
+		if (this.deps.replace_blob) {
+			const replaced = await this.deps.replace_blob(path, blob, type)
+			if (replaced === 'replaced') {
 				this.paths.set(relative, path)
 				this.touched.add(relative)
 				this.keeps_xattrs.add(relative)

@@ -99,17 +99,21 @@ function start_engine(link: SyncLink): void {
 	const engine = create_sync_engine({
 		load_state: () => load_state(link),
 		save_state: state => save_state(link, state),
-		pass_deps: () => ({
-			local_fm,
-			root: link.root,
-			stat: async (id) => {
-				const info = await (await fs()).stat(id)
-				return { size: info.size, mtime_ms: info.mtime?.getTime() ?? 0 }
-			},
-			cloud_fm: create_app_cloud_file_manager(link.workspace_id),
-			list_cloud: async () => (await list_workspace_entries(require_supabase(), link.workspace_id)).map(cloud_entry),
-			purge: cloud_id => purge_entry_id(require_supabase(), cloud_id),
-		}),
+		pass_deps: () => {
+			const cloud_fm = create_app_cloud_file_manager(link.workspace_id)
+			return {
+				local_fm,
+				root: link.root,
+				stat: async (id) => {
+					const info = await (await fs()).stat(id)
+					return { size: info.size, mtime_ms: info.mtime?.getTime() ?? 0 }
+				},
+				cloud_fm,
+				replace_blob: (cloud_path, blob, mime) => cloud_fm.replace_file(cloud_path, blob, mime),
+				list_cloud: async () => (await list_workspace_entries(require_supabase(), link.workspace_id)).map(cloud_entry),
+				purge: cloud_id => purge_entry_id(require_supabase(), cloud_id),
+			}
+		},
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,
 		watch: async (on_change) => {
 			const { watch: fs_watch } = await fs()

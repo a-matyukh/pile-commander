@@ -162,3 +162,108 @@ describe("upload_file put_blob", () => {
 		}
 	})
 })
+
+describe("replace_file", () => {
+	const file = {
+		id: "33333333-3333-4333-8333-333333333333",
+		workspace_id: "ws",
+		parent_id: "root-id",
+		name: "photo.png",
+		kind: "file" as const,
+		mime: "image/png",
+		path: "/photo.png",
+		xattrs: {},
+		storage_key: "ws/old.png",
+		size_bytes: 4,
+		deleted_at: null,
+		updated_by: null,
+		updated_by_client: null,
+		updated_at: "",
+		content_modified_at: null,
+	}
+
+	function manager(handler: (path: string, body: Record<string, unknown>) => Response) {
+		const puts: string[] = []
+		const query = {
+			select: () => query,
+			eq: () => query,
+			is: () => query,
+			maybeSingle: async () => ({ data: file, error: null }),
+		}
+		const client = {
+			from: () => query,
+			auth: { getSession: async () => ({ data: { session: { access_token: "token" } } }) },
+		} as unknown as SupabaseClient
+		globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+			const path = String(input)
+			const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
+			return handler(path, body)
+		}) as typeof fetch
+		const fm = createCloudFileManager({
+			client,
+			workspace_id: "ws",
+			backend_url: "https://backend.example",
+			put_blob: async (url) => { puts.push(url) },
+		})
+		return { fm, puts }
+	}
+
+	test("presign carries replace and finalize names only the row", async () => {
+		const original = globalThis.fetch
+		const seen: { path: string; body: Record<string, unknown> }[] = []
+		const { fm, puts } = manager((path, body) => {
+			seen.push({ path, body })
+			if (path.endsWith("/presign/upload")) {
+				return new Response(JSON.stringify({
+					storage_key: "uploads/blob/ws/ticket.png",
+					url: "https://b2.example/put",
+					replace: file.id,
+				}))
+			}
+			if (path.endsWith("/finalize")) {
+				return new Response(JSON.stringify({ entry: file, size_bytes: 4 }))
+			}
+			throw new Error(`unexpected fetch ${path}`)
+		})
+		try {
+			const result = await fm.replace_file("/photo.png", new Blob([Uint8Array.from([1, 2, 3, 4])]), "image/png")
+			expect(result).toBe("replaced")
+			expect(puts).toEqual(["https://b2.example/put"])
+			expect(seen[0]?.body).toMatchObject({ replace: file.id, workspace_id: "ws", size_bytes: 4 })
+			expect(seen[1]?.body).toEqual({
+				storage_key: "uploads/blob/ws/ticket.png",
+				replace: file.id,
+				mime: "image/png",
+				client_id: expect.any(String),
+			})
+			expect(seen[1]?.body).not.toHaveProperty("parent_id")
+			expect(seen[1]?.body).not.toHaveProperty("name")
+			expect(seen[1]?.body).not.toHaveProperty("id")
+		} finally {
+			globalThis.fetch = original
+		}
+	})
+
+	test("a presign that does not echo replace uploads nothing", async () => {
+		const original = globalThis.fetch
+		let calls = 0
+		const { fm, puts } = manager((path) => {
+			calls += 1
+			if (path.endsWith("/presign/upload")) {
+				return new Response(JSON.stringify({
+					storage_key: "uploads/blob/ws/ticket.png",
+					url: "https://b2.example/put",
+				}))
+			}
+			throw new Error(`unexpected fetch ${path}`)
+		})
+		try {
+			expect(await fm.replace_file("/photo.png", new Blob([Uint8Array.from([1])]), "image/png")).toBe("unsupported")
+			expect(puts).toEqual([])
+			expect(await fm.replace_file("/photo.png", new Blob([Uint8Array.from([1])]), "image/png")).toBe("unsupported")
+			expect(calls).toBe(1)
+		} finally {
+			globalThis.fetch = original
+		}
+	})
+})

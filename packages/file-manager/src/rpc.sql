@@ -2043,6 +2043,110 @@ end
 $$;
 
 -- ----------------------------------------------------------------------------
+-- replace_blob_entry: point a live file at a new blob without changing its
+-- id, so edges, layout and links survive. Called by complete_upload under
+-- the service role, where auth.uid() is null — lock_entry_workspace would
+-- refuse every call, because it checks the JWT. The lock is the workspace
+-- tree lock (same as create_blob_entry); write access is checked for p_user.
+-- ----------------------------------------------------------------------------
+
+create or replace function private.replace_blob_entry(
+    p_entry uuid,
+    p_workspace uuid,
+    p_storage_key text,
+    p_size_bytes bigint,
+    p_mime text,
+    p_user uuid,
+    p_client_id text default null
+)
+returns json
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_owner uuid;
+    v_row public.entries%rowtype;
+    v_old_key text;
+begin
+    if p_user is null then
+        raise exception 'replace_blob_entry: user is required';
+    end if;
+    if p_mime is null or p_mime = '' then
+        raise exception 'replace_blob_entry: mime is required';
+    end if;
+    if p_size_bytes is null or p_size_bytes < 0 then
+        raise exception 'replace_blob_entry: invalid size %', p_size_bytes;
+    end if;
+    if p_storage_key is null
+       or p_storage_key !~ ('^' || p_workspace::text || '/[0-9a-f-]{36}(\.[a-z0-9]{1,16})?$')
+    then
+        raise exception 'replace_blob_entry: storage_key does not belong to workspace %', p_workspace;
+    end if;
+
+    -- Workspace, then billing, then the row. No FOR UPDATE here: a text save
+    -- of this entry holds the billing lock and then takes KEY SHARE for the
+    -- entry_contents foreign key, and a row lock taken first deadlocks with
+    -- it (lock_workspace_tree). Delete, rename and move are already excluded
+    -- by the tree lock. The UPDATE below locks the row after the quota check.
+    perform private.lock_workspace_tree(p_workspace);
+    select * into v_row from public.entries where id = p_entry;
+    if not found
+       or v_row.deleted_at is not null
+       or v_row.kind <> 'file'
+       or v_row.workspace_id <> p_workspace
+    then
+        raise exception 'replace_blob_entry: entry % not found', p_entry;
+    end if;
+
+    select w.owner_id into v_owner from public.workspaces w where w.id = p_workspace;
+    if v_owner is null then
+        raise exception 'replace_blob_entry: workspace % not found', p_workspace;
+    end if;
+    if v_owner <> p_user and not exists (
+        select 1 from public.workspace_members m
+         where m.workspace_id = p_workspace
+           and m.user_id = p_user
+           and m.role = 'editor'
+    ) then
+        raise exception 'replace_blob_entry: access denied';
+    end if;
+
+    -- A retry whose update already committed: the key is the new one.
+    -- Do not enqueue it, and do not charge the quota again.
+    if v_row.storage_key = p_storage_key then
+        return to_json(v_row);
+    end if;
+
+    v_old_key := v_row.storage_key;
+    -- Row count does not change, so assert_owner_entries stays out.
+    perform private.assert_owner_can_add(v_owner, p_size_bytes - coalesce(v_row.size_bytes, 0), p_size_bytes);
+
+    -- Text and a blob cannot coexist. The guard fires on content writes,
+    -- not on this delete, and entries_payload_check allows a file with a key.
+    delete from public.entry_contents where entry_id = p_entry;
+
+    -- content_modified_at is set here on purpose: entries_touch leaves it
+    -- alone when a row that already had a blob is re-keyed.
+    update public.entries
+       set storage_key = p_storage_key,
+           size_bytes = p_size_bytes,
+           mime = p_mime,
+           content_modified_at = now(),
+           updated_by = p_user,
+           updated_by_client = p_client_id
+     where id = p_entry
+    returning * into v_row;
+
+    if v_old_key is not null then
+        insert into public.blob_deletions (storage_key) values (v_old_key);
+    end if;
+
+    return to_json(v_row);
+end
+$$;
+
+-- ----------------------------------------------------------------------------
 -- Upload tickets are backend-only: p_user comes from a verified JWT. Writer
 -- access is rechecked both before copying and at commit (including revocation).
 -- ----------------------------------------------------------------------------
@@ -2152,7 +2256,13 @@ begin
     v_upload := private.prepare_upload(p_key, p_user, p_kind, p_request);
     if v_upload->'result' <> 'null'::jsonb then return v_upload->'result'; end if;
     v_workspace := (v_upload->>'workspace_id')::uuid;
-    if p_kind = 'blob' then
+    if p_kind = 'blob' and p_request ? 'replace' then
+        v_entry := private.replace_blob_entry(
+            (p_request->>'replace')::uuid, v_workspace, p_final_key, p_size,
+            p_request->>'mime', p_user, p_request->>'client_id'
+        );
+        v_result := jsonb_build_object('entry', v_entry, 'size_bytes', p_size);
+    elsif p_kind = 'blob' then
         v_entry := private.create_blob_entry(
             (p_request->>'id')::uuid, v_workspace, (p_request->>'parent_id')::uuid,
             p_request->>'name', p_request->>'mime', p_final_key, p_size, p_user, p_request->>'client_id'
@@ -3054,6 +3164,36 @@ grant execute on function public.create_blob_entry(uuid, uuid, uuid, text, text,
 revoke execute on function private.create_blob_entry(uuid, uuid, uuid, text, text, text, bigint, uuid, text)
     from public, anon, authenticated;
 grant execute on function private.create_blob_entry(uuid, uuid, uuid, text, text, text, bigint, uuid, text)
+    to service_role;
+
+create or replace function public.replace_blob_entry(
+    p_entry uuid,
+    p_workspace uuid,
+    p_storage_key text,
+    p_size_bytes bigint,
+    p_mime text,
+    p_user uuid,
+    p_client_id text default null
+)
+returns json
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.replace_blob_entry(
+        p_entry, p_workspace, p_storage_key, p_size_bytes, p_mime, p_user, p_client_id
+    );
+$$;
+
+-- backend-only, like create_blob_entry: p_user and the object size are the
+-- backend's word, after it verified the JWT and stat'ed the copy
+revoke execute on function public.replace_blob_entry(uuid, uuid, text, bigint, text, uuid, text)
+    from public, anon, authenticated;
+grant execute on function public.replace_blob_entry(uuid, uuid, text, bigint, text, uuid, text)
+    to service_role;
+revoke execute on function private.replace_blob_entry(uuid, uuid, text, bigint, text, uuid, text)
+    from public, anon, authenticated;
+grant execute on function private.replace_blob_entry(uuid, uuid, text, bigint, text, uuid, text)
     to service_role;
 
 create or replace function public.record_hub_preview_upload(

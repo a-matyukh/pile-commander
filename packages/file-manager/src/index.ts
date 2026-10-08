@@ -51,6 +51,7 @@ export {
 export { resolve_connection_endpoint } from './connectionPaths'
 export {
 	default as createCloudFileManager,
+	type CloudFileManager,
 	create_workspace,
 	add_workspace_member,
 	preview_workspace_invite,

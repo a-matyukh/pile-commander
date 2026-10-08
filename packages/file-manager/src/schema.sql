@@ -954,7 +954,7 @@ alter table public.entries replica identity full;
 -- Structural columns (name, parent_id, path, node_path, workspace_id) are
 -- never client-writable: rename/move/copy/delete go through RPCs. Blob
 -- columns (storage_key, size_bytes) are written only by the backend through
--- create_blob_entry (rpc.sql) and by security-definer RPCs: a client that
+-- create_blob_entry / replace_blob_entry (rpc.sql) and by security-definer RPCs: a client that
 -- could set them would re-point its own rows at foreign blobs (/presign
 -- authorizes by row visibility) or zero its usage (owner_usage sums
 -- size_bytes). Both INSERT and UPDATE are therefore column-level — a client

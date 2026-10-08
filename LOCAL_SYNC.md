@@ -116,11 +116,12 @@ Layout:
 
 ### Phase 1 limits (and why)
 
-- **Binary edits change the cloud id.** No RPC replaces a blob in place, so a
-  pass does three things: soft-delete, `purge_entry_id` (the trash counts
-  toward the quota), then upload. The entry's xattrs and its folder's edges
-  are pushed again, because the purge cascades the edges. Fix: `replace_blob`
-  below.
+- **An old backend still changes the cloud id on a binary edit.** The pass
+  asks the presign to echo `replace`. When the echo is missing it does not
+  PUT, and falls back to soft-delete, `purge_entry_id` (the trash counts
+  toward the quota), then one upload. The entry's xattrs and its folder's
+  edges are pushed again, because the purge cascades the edges. A backend
+  that echoes `replace` keeps the id (item 2).
 - **Cloud edits are not pulled.** This is one-way, and the status popover
   says so.
 - **mtime + size detect local edits.** A same-size edit that restores the old
@@ -145,55 +146,36 @@ The live constraint is `bridge_events_door_check`. It lists `'sync'`.
 `BridgeEventInput['door']` includes it, and `record()` in
 `apps/client/src/store/bridge.ts` writes the row.
 
-### 2. Replace a blob in place (`replace_blob_entry`)
+### 2. Replace a blob in place (`replace_blob_entry`) — done
 
-Goal: a binary edit keeps `entries.id` (so edges, layout and links survive)
-and does not hold the old bytes in the trash.
+A binary edit keeps `entries.id` (so edges, layout and links survive) and
+does not hold the old bytes in the trash.
 
-- **Request.** Keep upload kind `'blob'`, so `assert_upload_access` and
-  `register_upload` stay as they are. `/finalize` accepts an optional
-  `replace` (entry id) in the request body. `prepare_upload` binds the ticket
-  to the whole body as before.
-- **`private.complete_upload`.** When `p_request ? 'replace'`, call
-  `private.replace_blob_entry(...)` instead of `create_blob_entry`.
-- **New `private.replace_blob_entry(p_entry uuid, p_workspace uuid,
-  p_storage_key text, p_size_bytes bigint, p_mime text, p_user uuid,
-  p_client_id text)`**, `security definer`. It must:
-  - call `private.lock_entry_workspace(p_entry)`, then re-read the row;
-  - refuse unless the row is live, `kind = 'file'`, belongs to `p_workspace`,
-    and `private.can_write_workspace` holds for `p_user`;
-  - check the quota with the **delta** against the old size:
-    `private.assert_owner_can_add(owner, p_size - coalesce(old.size_bytes, 0), p_size)`;
-  - if the row held text, delete its `entry_contents` row first. Check that
-    `entries_payload_check` and `entry_contents_guard` allow the switch in one
-    transaction;
-  - `update public.entries set storage_key = p_storage_key, size_bytes = p_size,
-    mime = p_mime, content_modified_at = now(), updated_by = p_user,
-    updated_by_client = p_client_id where id = p_entry`.
-    Set `content_modified_at` **explicitly**: `entries_touch` treats a key
-    swap on a row that already had a blob as a fork re-key and leaves it
-    alone;
-  - enqueue the old key:
-    `insert into public.blob_deletions (storage_key) values (old.storage_key)`.
-    Only a hard delete enqueues one today. Confirm that
-    `apps/backend/src/gc.ts` skips keys still referenced by another row
-    (same-workspace copies share keys);
-  - return the row as `create_blob_entry` does.
-- **Idempotent retries.** The `p_kind = 'blob'` "result is not null" branch
-  of `prepare_upload` re-reads the entry by `result->'entry'->>'id'`. That
-  works for a replace too, since the id is unchanged.
-- **Backend.** `apps/backend/src/blobs.ts` `/finalize` passes `replace`
-  through. `uploads.ts` copies staging to the final key as today.
-- **Client.** Add `replace_file(id, data, mime, onProgress)` to the cloud FM:
-  presign → PUT → finalize with `replace`. In `PassRun.update`
-  (`syncPass.ts`), use it for blobs. When finalize answers 404/400 for an
-  unknown field, keep the phase 1 fallback, so code that ships before the
-  diff still works.
-- **Tests.**
-  - `postgres.test.ts`: quota delta; viewer refused; trashed row refused;
-    text → blob switch; old key enqueued; `content_modified_at` moves.
-  - `rls.test.sql`: replace through the public wrapper refused for anon and
-    non-members.
+`private.replace_blob_entry` locks with `lock_workspace_tree`, then re-reads
+the row `for update` and checks that `p_user` is the owner or an editor.
+`lock_entry_workspace` is not used: it checks `auth.uid()`, which is null
+when `complete_upload` runs as the service role. The quota is the size
+delta (`assert_owner_can_add`); the row count is unchanged, so
+`assert_owner_entries` is not called. An empty mime is refused. A retry
+whose `storage_key` is already the new one returns the row and does not
+charge or enqueue. Text is dropped (`delete from entry_contents`) before the
+key is set. `content_modified_at` is set in the update: `entries_touch`
+leaves a blob-to-blob re-key alone. The old key goes to `blob_deletions`.
+`gc.ts` and `entry_derivatives` are unchanged — a preview is keyed by
+`storage_key`, so a new one is generated and `drain` already skips a key
+another row still references.
+
+`private.complete_upload` calls it when `p_request ? 'replace'`. The public
+wrapper is `security invoker` and executable only by `service_role`, same as
+`create_blob_entry`.
+
+The client does not extend `FileManager`. `createCloudFileManager` returns
+`CloudFileManager`, which adds `replace_file`. Before the PUT, presign must
+echo `replace`; if it does not, the call returns `'unsupported'` and later
+calls in that session skip the network. Finalize errors propagate.
+`PassRun.update` uses `replace_blob` when it returns `'replaced'` (path and
+id stay, xattrs and edges are not pushed again). Absent or `'unsupported'`
+keeps the phase 1 trash, purge and one upload.
 
 ### 3. Incremental listing (needed for phase 2 pull)
 
