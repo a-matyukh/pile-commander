@@ -14,6 +14,7 @@ function waitlist_env(overrides: Partial<Env> = {}): Env {
 		supabase_url: "https://proj.supabase.co",
 		supabase_publishable_key: "sb_publishable_x",
 		supabase_service_role_key: "service-role",
+		background_workers: true,
 		b2_endpoint: "https://s3.example",
 		b2_region: "us",
 		b2_bucket: "b",

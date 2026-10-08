@@ -138,23 +138,20 @@ const server = Bun.serve({
 
 console.log(`Listening on http://localhost:${server.port}`);
 
-const gc = service ? start_gc_worker(env, s3, service) : null;
-if (!gc) console.warn("[gc] SUPABASE_SERVICE_ROLE_KEY is not set — GC worker disabled");
-
-const deriv = service ? start_derivative_worker(env, s3, service) : null;
-if (!service && env.deriv.mode !== "off") {
-	console.warn("[deriv] SUPABASE_SERVICE_ROLE_KEY is not set — preview worker disabled");
-}
-
-const moderation = service ? start_moderation_worker(env, service) : null;
-if (!moderation) {
+const gc = env.background_workers && service ? start_gc_worker(env, s3, service) : null;
+const deriv = env.background_workers && service ? start_derivative_worker(env, s3, service) : null;
+const moderation = env.background_workers && service ? start_moderation_worker(env, service) : null;
+if (!env.background_workers) {
+	console.log("[workers] BACKGROUND_WORKERS=off — GC, reconcile, previews, moderation and egress are not running");
+} else if (!service) {
+	console.warn("[gc] SUPABASE_SERVICE_ROLE_KEY is not set — GC worker disabled");
+	if (env.deriv.mode !== "off") {
+		console.warn("[deriv] SUPABASE_SERVICE_ROLE_KEY is not set — preview worker disabled");
+	}
 	console.warn("[moderation] SUPABASE_SERVICE_ROLE_KEY is not set — Hub mail/digest disabled");
-}
-
-if (meter && downloads) {
-	start_egress_worker(meter, downloads);
-} else {
 	console.warn("[egress] SUPABASE_SERVICE_ROLE_KEY is not set — egress meters disabled (public and .pile downloads are not counted)");
+} else if (meter && downloads) {
+	start_egress_worker(meter, downloads);
 }
 
 // Render stops the old instance with SIGTERM and SIGKILLs it after the
