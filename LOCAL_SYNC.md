@@ -234,8 +234,10 @@ decided one by one.
 - **"Sync to a folder…" only takes an empty folder.** There is no content
   hash, so files of the same size in an existing folder would be adopted
   unread.
-- **One folder per workspace per device.** Two engines would write each
-  other's files.
+- **One folder per workspace per account on a device.** Two engines would
+  write each other's files. The check is by account (`user_id`): another
+  account on the same computer may link its own folder, and only the
+  signed-in account's engines run.
 
 ## Limits
 
