@@ -21,7 +21,6 @@ const notes = [
 <template>
   <FeatureSection
     eyebrow="Folder sync"
-    badge="New"
     title="Local folders that stay in sync."
     lede="Turn on Auto-sync for a workspace folder, or sync a cloud workspace to a folder on your computer, and work in it right on your disk — the way desktop cloud drives do. Changes travel both ways while the desktop app is open, and on either side the folder is still a board or a canvas, not just a list of files."
     muted
