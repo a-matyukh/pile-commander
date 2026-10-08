@@ -32,10 +32,13 @@ function is_pile_path(path: string): boolean {
 
 /** Maps Tauri's nested watch event union into our flat `WatchEvent`. */
 export function map_tauri_watch_event(event: TauriWatchEvent): WatchEvent {
-	return {
-		kind: map_tauri_watch_kind(event.type),
-		ids: event.paths,
-	}
+	const kind = map_tauri_watch_kind(event.type)
+	const type = event.type
+	// an xattr write (layout) is a metadata change: the bytes are the same
+	const metadata_only = typeof type === "object" && "modify" in type && type.modify.kind === "metadata"
+	return metadata_only
+		? { kind, ids: event.paths, content_changed: false }
+		: { kind, ids: event.paths }
 }
 
 function map_tauri_watch_kind(type: TauriWatchEventKind): WatchEventKind {

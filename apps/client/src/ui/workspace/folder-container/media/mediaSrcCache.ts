@@ -1,3 +1,4 @@
+import { reactive } from 'vue'
 import type { MediaVariant } from '@pile-commander/file-manager'
 
 export type MediaBlob = {
@@ -21,6 +22,9 @@ type MediaCacheEntry = MediaBlob & {
 export function createMediaSrcCache(now: () => number = Date.now) {
 	const mediaCache = new Map<string, MediaCacheEntry>()
 	const pendingLoads = new Map<string, Promise<MediaCacheEntry>>()
+	// Bumped when a file's bytes change under the same id (an edit on disk, a
+	// blob replaced in place): holders watch it and load the file again
+	const versions = reactive(new Map<string, number>())
 
 	async function acquire(
 		fileId: string,
@@ -105,6 +109,23 @@ export function createMediaSrcCache(now: () => number = Date.now) {
 		}
 		mediaCache.clear()
 		pendingLoads.clear()
+		versions.clear()
+	}
+
+	/**
+	 * The file's bytes changed: the cached URL serves the old ones. It is
+	 * treated as expired (the next acquire loads again) and the version bump
+	 * makes every holder reload
+	 */
+	function invalidate(fileId: string) {
+		const cached = mediaCache.get(fileId)
+		if (cached) cached.expires_at = 0
+		versions.set(fileId, (versions.get(fileId) ?? 0) + 1)
+	}
+
+	/** Reactive: changes when `invalidate` is called for this file. */
+	function version(fileId: string): number {
+		return versions.get(fileId) ?? 0
 	}
 
 	function getRefCount(fileId: string) {
@@ -115,7 +136,7 @@ export function createMediaSrcCache(now: () => number = Date.now) {
 		return mediaCache.has(fileId)
 	}
 
-	return { acquire, release, clear, getRefCount, has }
+	return { acquire, release, clear, getRefCount, has, invalidate, version }
 }
 
 export type MediaSrcCache = ReturnType<typeof createMediaSrcCache>

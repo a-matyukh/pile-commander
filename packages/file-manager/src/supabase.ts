@@ -981,10 +981,18 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 					// restored from the trash
 					event = { kind: "create", ids: [new_row.path] }
 				} else if (!is_deleted) {
+					// replica identity full: the old row is whole, so a layout-only
+					// update (xattrs, a drag) is told apart from new bytes — a blob
+					// replaced in place, a text save
 					event =
 						old_row.path && old_row.path !== new_row.path
 							? { kind: "rename", ids: [old_row.path, new_row.path] }
-							: { kind: "modify", ids: [new_row.path] }
+							: {
+								kind: "modify",
+								ids: [new_row.path],
+								content_changed: old_row.storage_key !== new_row.storage_key
+									|| old_row.content_modified_at !== new_row.content_modified_at,
+							}
 				}
 				// updates inside the trash (was && is) are ignored
 			}

@@ -293,7 +293,36 @@ describe("cloud realtime entries watch", () => {
 
 		// both echoes are spent: the next change comes from elsewhere
 		channels[0]!.emit({ eventType: "UPDATE", new: row, old: row })
-		expect(events).toEqual([{ kind: "modify", ids: ["/Note 1.md"] }])
+		expect(events).toEqual([{ kind: "modify", ids: ["/Note 1.md"], content_changed: false }])
+	})
+
+	test("a modify says whether the bytes changed or only the layout", async () => {
+		const { client, channels } = create_mock_realtime_client()
+		const fm = cloud_fm(client)
+		const events: WatchEvent[] = []
+		await fm.watch("/", (event) => events.push(event), { recursive: true })
+
+		const before = {
+			id: "p1",
+			path: "/photo.png",
+			deleted_at: null,
+			storage_key: "ws/a.png",
+			content_modified_at: "2026-10-08T12:00:00Z",
+			xattrs: {},
+		}
+		// a card dragged elsewhere
+		channels[0]!.emit({ eventType: "UPDATE", old: before, new: { ...before, xattrs: { position: "{}" } } })
+		// the blob replaced in place
+		channels[0]!.emit({
+			eventType: "UPDATE",
+			old: before,
+			new: { ...before, storage_key: "ws/b.png", content_modified_at: "2026-10-08T12:10:00Z" },
+		})
+
+		expect(events).toEqual([
+			{ kind: "modify", ids: ["/photo.png"], content_changed: false },
+			{ kind: "modify", ids: ["/photo.png"], content_changed: true },
+		])
 	})
 
 	test("retry after CHANNEL_ERROR does not throw after-subscribe on leftover topic", async () => {

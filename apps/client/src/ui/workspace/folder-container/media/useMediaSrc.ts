@@ -82,7 +82,11 @@ export function useMediaSrc(
 		}
 	}
 
-	watch(() => [toValue(fileId), toValue(filename)] as const, () => {
+	// the version moves when the file's bytes change under the same id
+	watch(() => {
+		const id = toValue(fileId)
+		return [id, toValue(filename), workspace.value?.media_cache.version(id) ?? 0] as const
+	}, () => {
 		void load()
 	}, { immediate: true })
 

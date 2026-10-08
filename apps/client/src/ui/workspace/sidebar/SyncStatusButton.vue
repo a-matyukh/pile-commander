@@ -12,8 +12,13 @@ const props = defineProps<{
 const link = computed(() => sync_link_of(props.root))
 const status = computed(() => sync_statuses[props.root] ?? null)
 
+/** Synced, but some items failed this pass (they are retried on the next one). */
+const has_failures = computed(() => status.value?.phase === 'idle' && status.value.errors.length > 0)
+
 const icon = computed(() => {
-	switch (status.value?.phase) {
+	if (!status.value) return 'i-lucide-cloud'
+	if (has_failures.value) return 'i-lucide-cloud-alert'
+	switch (status.value.phase) {
 		case 'syncing': return 'i-lucide-refresh-cw'
 		case 'paused': return 'i-lucide-circle-pause'
 		case 'error': return 'i-lucide-cloud-off'
@@ -22,7 +27,9 @@ const icon = computed(() => {
 })
 
 const label = computed(() => {
-	switch (status.value?.phase) {
+	if (!status.value) return 'Waiting to sync'
+	if (has_failures.value) return 'Some items did not sync'
+	switch (status.value.phase) {
 		case 'syncing': return 'Syncing…'
 		case 'paused': return 'Sync paused'
 		case 'error': return 'Sync failed'
@@ -80,9 +87,12 @@ function open_cloud_copy() {
 					{{ status.skipped.length }} {{ status.skipped.length === 1 ? 'item is' : 'items are' }} not synced
 					(names the cloud refuses, files over the plan's limit, files left out).
 				</p>
-				<p v-if="status?.errors.length" class="text-xs text-error">
-					{{ status.errors.length }} {{ status.errors.length === 1 ? 'item' : 'items' }} failed and will be retried.
-				</p>
+				<div v-if="status?.errors.length" class="text-xs text-error">
+					<p>{{ status.errors.length }} {{ status.errors.length === 1 ? 'item' : 'items' }} failed and will be retried:</p>
+					<p v-for="failure in status.errors.slice(0, 3)" :key="failure.relative" class="truncate" :title="failure.message">
+						{{ failure.relative }} — {{ failure.message }}
+					</p>
+				</div>
 				<div class="flex flex-wrap gap-2 pt-1">
 					<UButton
 						v-if="status?.reason === 'mass_delete'"
