@@ -87,6 +87,7 @@ watcher filter, the bridge and the `.pile` export (`workspace_pack.rs`).
 | gone | changed | forget the link |
 | same size and mtime under a new path (unique pair) | — | rename / move, keeping the id |
 | folder gone, a new folder holds all its files unchanged | — | rename / move |
+| empty folder gone, exactly one new folder beside it with the same subfolders | — | rename |
 
 Left out (reported, never deleted): names the cloud refuses
 (`is_cloud_name`), files over the plan's per-file limit, `exclude`, and

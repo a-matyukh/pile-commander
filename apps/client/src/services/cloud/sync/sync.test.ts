@@ -112,6 +112,26 @@ describe('reconcile', () => {
 		])
 	})
 
+	test('an empty folder renamed in place is a move, not a delete and a new folder', () => {
+		const base = { 'New folder 1': base_folder('cf'), Ideas: base_folder('ci') }
+		const local = [local_folder('Wau1'), local_folder('Ideas')]
+		const cloud = [ROOT, cloud_entry('/New folder 1', 'cf', { kind: 'folder' }), cloud_entry('/Ideas', 'ci', { kind: 'folder' })]
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'move', from: 'New folder 1', relative: 'Wau1', cloud_id: 'cf' },
+		])
+	})
+
+	test('an empty folder is not matched when two new folders could be it', () => {
+		const base = { old: base_folder('co') }
+		const local = [local_folder('a'), local_folder('b')]
+		const cloud = [ROOT, cloud_entry('/old', 'co', { kind: 'folder' })]
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'create_folder', relative: 'a' },
+			{ kind: 'create_folder', relative: 'b' },
+			{ kind: 'delete', relative: 'old', cloud_id: 'co' },
+		])
+	})
+
 	test('adopts what the cloud already holds and copies what differs', () => {
 		const local = [local_file('same.md', 10), local_file('other.md', 99)]
 		const cloud = [ROOT, cloud_entry('/same.md', 'c1'), cloud_entry('/other.md', 'c2')]
@@ -367,6 +387,24 @@ describe('run_sync_pass', () => {
 		expect(cloud.fake.has('/b/x.md')).toBe(true)
 		expect(cloud.fake.has('/a')).toBe(false)
 		expect(Object.keys(second.state.entries).sort()).toEqual(['b', 'b/x.md'])
+	})
+
+	test('renaming an empty folder renames it in the cloud too', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/New folder 1')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+		const id = cloud.ids.get('/New folder 1')
+		const remove = vi.spyOn(cloud.fm, 'remove')
+
+		await local.fm.rename('/ws/New folder 1', 'Wau1')
+		const second = await pass(deps, first.state)
+
+		expect(second.report.moved).toBe(1)
+		expect(remove).not.toHaveBeenCalled()
+		expect(cloud.ids.get('/Wau1')).toBe(id)
+		expect(cloud.fake.has('/New folder 1')).toBe(false)
 	})
 
 	test('a file edited on both sides goes up as a conflicted copy', async () => {

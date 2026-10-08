@@ -112,17 +112,24 @@ export function reconcile(
 	for (const from of gone_folders) {
 		const entry = base.get(from)
 		if (!entry || !is_gone(from) || !unchanged_cloud(entry)) continue
-		const files = [...base].filter(([relative, file]) => file.kind === 'file' && relative.startsWith(`${from}/`))
-		if (files.length === 0) continue
+		const inside = [...base].filter(([relative]) => relative.startsWith(`${from}/`))
 		const candidates = [...local.values()].filter(folder =>
 			folder.kind === 'folder'
 			&& !base.has(folder.relative)
-			&& files.every(([relative, file]) => {
+			&& inside.every(([relative, known]) => {
 				const moved = local.get(folder.relative + relative.slice(from.length))
-				return moved?.kind === 'file' && !is_local_change(moved, file)
+				return moved?.kind === known.kind && (known.kind === 'folder' || !is_local_change(moved, known))
 			}))
-		if (candidates.length !== 1) continue
-		const to = candidates[0]!.relative
+		// without files to recognize it by (an empty folder, or only empty
+		// subfolders), a rename is the one new folder next to the old one.
+		// A wrong guess costs little: an empty cloud folder gets renamed
+		// instead of trashed
+		const has_files = inside.some(([, known]) => known.kind === 'file')
+		const matches = has_files
+			? candidates
+			: candidates.filter(folder => parent_relative(folder.relative) === parent_relative(from))
+		if (matches.length !== 1) continue
+		const to = matches[0]!.relative
 		moves.push({ kind: 'move', from, relative: to, cloud_id: entry.cloud_id })
 		moved_to.add(to)
 		rekey(base, from, to)
