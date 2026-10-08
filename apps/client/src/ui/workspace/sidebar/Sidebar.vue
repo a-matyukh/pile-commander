@@ -6,6 +6,9 @@ import cloud from '@/store/cloud'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWorkspaceDialogs } from './workspaceDialogs'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
+import { sync_link_of, unlink_folder } from '@/store/localSync'
+import { is_desktop } from '@/isDesktop'
+import SyncStatusButton from './SyncStatusButton.vue'
 
 const workspace = useWorkspace()
 const dialogs = useWorkspaceDialogs()
@@ -56,6 +59,20 @@ function copy_to_cloud(door: BridgeDoor) {
 	open_bridge({ type: ws.type, id: ws.id, name: ws.name }, door, { fm: ws.file_manager })
 }
 
+/** Auto-sync keeps a folder on disk in step with a cloud copy: desktop folders only */
+const is_syncable = computed(() => is_desktop && is_local_workspace.value && workspace.value?.type === 'local')
+const is_synced = computed(() => {
+	const ws = workspace.value
+	return !!ws && sync_link_of(ws.id) !== null
+})
+
+function set_auto_sync(on: boolean) {
+	const ws = workspace.value
+	if (!ws) return
+	if (on) copy_to_cloud('sync')
+	else void unlink_folder(ws.id)
+}
+
 const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 	[
 		{
@@ -86,6 +103,15 @@ const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 				onSelect: () => copy_to_cloud('device'),
 			}]
 			: []),
+		...(is_syncable.value
+			? [{
+				label: 'Auto-sync',
+				icon: 'i-lucide-refresh-cw',
+				type: 'checkbox' as const,
+				checked: is_synced.value,
+				onUpdateChecked: set_auto_sync,
+			}]
+			: []),
 	],
 ])
 </script>
@@ -106,6 +132,7 @@ const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 					v-if="workspace?.can_write"
 					class="ml-auto flex shrink-0 items-center gap-1"
 				>
+					<SyncStatusButton v-if="is_syncable" :root="workspace.id" />
 					<UDropdownMenu
 						:items="workspace_menu_items"
 						:content="{

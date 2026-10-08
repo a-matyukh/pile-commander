@@ -11,6 +11,7 @@ import bridge, {
 	open_copied,
 	start_copy,
 	submit_pro,
+	sync_with_copied,
 	toggle_exclude,
 } from '@/store/bridge'
 import { is_blocked, selected_bytes, type BridgeFile } from '@/services/cloud/bridge/preflight'
@@ -36,6 +37,7 @@ const title = computed(() => {
 		case 'publish': return 'Publish this workspace'
 		case 'device': return 'Copy to cloud'
 		case 'pile': return 'Import .pile to the cloud'
+		case 'sync': return 'Auto-sync with the cloud'
 		default: return 'Copy to cloud'
 	}
 })
@@ -46,6 +48,7 @@ const lead = computed(() => {
 		case 'publish': return 'To publish a workspace, it has to be in the cloud. Copy it there?'
 		case 'device': return 'Your local workspace will be copied to the cloud.'
 		case 'pile': return 'The archive becomes a new workspace in your cloud.'
+		case 'sync': return 'Your local workspace is uploaded to a new cloud workspace, and changes made here keep going there while the app is open. Edits made in the cloud stay in the cloud.'
 		default: return 'The local workspace is copied into a new cloud workspace.'
 	}
 })
@@ -100,6 +103,10 @@ const fit_line = computed(() => {
 })
 
 const primary_label = computed(() => {
+	if (bridge.door === 'sync') {
+		if (bridge.resumable) return 'Resume upload'
+		return is_wall.value ? 'Sync without heavy files' : 'Start sync'
+	}
 	if (bridge.resumable) return 'Resume copy'
 	if (is_wall.value) return 'Copy without heavy files'
 	return bridge.copied ? 'Copy again' : 'Copy to cloud'
@@ -184,6 +191,10 @@ function send_answer(skip: boolean) {
 						label="Delete the partial copy"
 						@click="delete_partial_copy"
 					/>
+				</p>
+				<p v-else-if="bridge.copied && bridge.door === 'sync'" class="text-sm text-muted">
+					This workspace is already in your cloud.
+					<UButton variant="link" size="xs" class="px-0" label="Sync with that copy instead" @click="sync_with_copied" />
 				</p>
 				<p v-else-if="bridge.copied" class="text-sm text-muted">
 					This workspace is already in your cloud.

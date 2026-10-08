@@ -153,6 +153,14 @@ When writing SQL:
 - `unused_index` on a fresh project is expected; ignore it until there is
   traffic.
 
+## Local folder sync (Auto-sync)
+
+One-way local → cloud sync of desktop workspace folders lives in
+`apps/client/src/services/cloud/sync/` and `store/localSync.ts`; the link
+and base snapshot are `<root>/.pile/sync.json`. `LOCAL_SYNC.md` holds the
+rules, the phase 1 limits and the pending database changes (phase 2) —
+read it before touching sync or the blob upload RPCs.
+
 ## Landing search indexing
 
 `apps/landing` ships closed to search engines. `NUXT_PUBLIC_ALLOW_INDEXING`

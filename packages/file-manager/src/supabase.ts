@@ -2074,6 +2074,43 @@ export async function purge_entry(
 	if (error) throw new Error(`purge_entry failed: ${error.message}`)
 }
 
+/**
+ * Hard-deletes one entry by id once it is in the trash. A path can name
+ * several trashed versions of a file; the local sync knows the exact row
+ */
+export async function purge_entry_id(client: SupabaseClient, entry_id: string): Promise<void> {
+	const { error } = await client.rpc("purge_entry", { p_entry: entry_id })
+	if (error) throw new Error(`purge_entry failed: ${error.message}`)
+}
+
+/** Rows of a workspace listed at once, ordered by id for stable pages */
+const LIST_ENTRIES_PAGE = 1000
+
+/**
+ * Every live entry of a workspace in one paged read (root included, path
+ * "/"). The local sync compares it with a folder on disk; RLS limits it to
+ * workspaces the caller can read
+ */
+export async function list_workspace_entries(
+	client: SupabaseClient,
+	workspace_id: string,
+): Promise<EntryRow[]> {
+	const rows: EntryRow[] = []
+	for (let from = 0; ; from += LIST_ENTRIES_PAGE) {
+		const { data, error } = await client
+			.from("entries")
+			.select(ENTRY_COLUMNS)
+			.eq("workspace_id", workspace_id)
+			.is("deleted_at", null)
+			.order("id")
+			.range(from, from + LIST_ENTRIES_PAGE - 1)
+		if (error) throw new Error(`list_workspace_entries failed: ${error.message}`)
+		const page = (data ?? []) as EntryRow[]
+		rows.push(...page)
+		if (page.length < LIST_ENTRIES_PAGE) return rows
+	}
+}
+
 /** Empties the trash (hard-deletes all deleted entries of the workspace) */
 export async function purge_trash(
 	client: SupabaseClient,
