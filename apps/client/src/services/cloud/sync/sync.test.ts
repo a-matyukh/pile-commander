@@ -1086,7 +1086,7 @@ describe('two-way layout', () => {
 
 	/** A linked folder with a board, synced once; `clock` drives the pass's now. */
 	async function linked_board() {
-		const { local, stat } = make_local()
+		const { local, stat, mtimes } = make_local()
 		local.seed_folder('/ws/board')
 		local.seed_file('/ws/board/a.md', 'a')
 		local.seed_file('/ws/board/b.md', 'b')
@@ -1095,7 +1095,7 @@ describe('two-way layout', () => {
 		const clock = { now: new Date(2026, 9, 8, 14, 30).getTime() }
 		made.deps.now = () => new Date(clock.now)
 		const first = await pass(made.deps, new_state())
-		return { local, cloud, ...made, clock, state: first.state }
+		return { local, cloud, ...made, clock, mtimes, state: first.state }
 	}
 
 	test('a card moved in the cloud moves here, and nothing goes back', async () => {
@@ -1108,6 +1108,25 @@ describe('two-way layout', () => {
 		expect(second.state.entries['board/a.md']?.xattrs).toEqual({ position: '{"x":50,"y":60}' })
 		expect(second.state.version).toBe(2)
 		expect((await run_sync_pass(deps, second.state, { max_file_bytes: 1_000_000 })).kind).toBe('unchanged')
+	})
+
+	test('an app that saves by writing a new file drops the layout: it is restored, not removed in the cloud', async () => {
+		const { local, cloud, deps, state, mtimes } = await linked_board()
+		local.set_xattr('/ws/board/a.md', 'position', '{"x":5,"y":6}')
+		local.set_xattr('/ws/board/a.md', 'size', '{"width":400,"height":300}')
+		const second = await pass(deps, state)
+		expect(cloud.fake.get_xattr('/board/a.md', 'size')).toBe('{"width":400,"height":300}')
+
+		// saved in another app: new bytes, a new file, no xattrs
+		await local.fm.upload_file('/ws/board', 'a.md', new Blob(['a, edited elsewhere']), 'text/markdown')
+		mtimes.set('/ws/board/a.md', 2)
+		const third = await pass(deps, second.state)
+
+		expect(await cloud.fm.read_text_file('/board/a.md')).toBe('a, edited elsewhere')
+		expect(cloud.fake.get_xattr('/board/a.md', 'size')).toBe('{"width":400,"height":300}')
+		expect(local.get_xattr('/ws/board/a.md', 'size')).toBe('{"width":400,"height":300}')
+		expect(local.get_xattr('/ws/board/a.md', 'position')).toBe('{"x":5,"y":6}')
+		expect((await run_sync_pass(deps, third.state, { max_file_bytes: 1_000_000 })).kind).toBe('unchanged')
 	})
 
 	test('ink drawn in the cloud comes down under its cloud id, once, over three cycles', async () => {

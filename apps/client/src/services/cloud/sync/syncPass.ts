@@ -283,6 +283,8 @@ class PassRun {
 	private readonly touched = new Set<string>()
 	/** Entries whose pushed xattrs survive the action (an in-place update, a move). */
 	private readonly keeps_xattrs = new Set<string>()
+	/** Files whose bytes changed here this pass (an `update`): see `merge_entry_xattrs`. */
+	private readonly rewritten_here = new Set<string>()
 	private readonly cloud_by_id: Map<string, CloudEntry>
 	private readonly deps: SyncPassDeps
 	private last_save = 0
@@ -483,6 +485,7 @@ class PassRun {
 	 * name, with a new id, so the layout and the folder's edges are pushed again.
 	 */
 	private async update(relative: string, cloud_id: string): Promise<void> {
+		this.rewritten_here.add(relative)
 		const row = this.cloud_by_id.get(cloud_id)
 		const path = this.paths.get(relative) ?? row?.path
 		if (!row || !path) throw new Error(`cloud entry is gone: ${relative}`)
@@ -820,15 +823,27 @@ class PassRun {
 		for (const relative of linked) {
 			const row = row_of(relative)
 			if (!row) continue
-			const local = layout.xattrs.get(relative) ?? {}
+			const on_disk = layout.xattrs.get(relative) ?? {}
 			const entry = relative === '' ? undefined : this.state.entries[relative]
 			const known = relative === ''
-				? this.state.root_xattrs ?? lift_v1_xattrs(this.state.root_xattrs_hash, local)
-				: entry?.xattrs ?? lift_v1_xattrs(entry?.xattrs_hash, local)
+				? this.state.root_xattrs ?? lift_v1_xattrs(this.state.root_xattrs_hash, on_disk)
+				: entry?.xattrs ?? lift_v1_xattrs(entry?.xattrs_hash, on_disk)
+			// An app that saves by writing a new file (Preview, most editors)
+			// drops the xattrs with the old one. For a file rewritten here, a
+			// missing key was lost, not removed: it is restored, not removed in
+			// the cloud — where a board would fill in defaults and send them back
+			const local = known && this.rewritten_here.has(relative) ? { ...known, ...on_disk } : on_disk
 			const merge = merge_xattrs(known, local, row.xattrs)
 			const path = this.absolute(relative)
-			if (Object.keys(merge.local_sets).length > 0) local_sets.push({ id: path, xattrs: merge.local_sets })
-			for (const name of merge.local_removes) local_removes.push({ path, name })
+			// what to write here is measured against the disk, restored keys included
+			const sets_here: Record<string, string> = {}
+			for (const [name, value] of Object.entries(merge.merged)) {
+				if (on_disk[name] !== value) sets_here[name] = value
+			}
+			if (Object.keys(sets_here).length > 0) local_sets.push({ id: path, xattrs: sets_here })
+			for (const name of Object.keys(on_disk)) {
+				if (!(name in merge.merged)) local_removes.push({ path, name })
+			}
 			if (Object.keys(merge.cloud_sets).length > 0) cloud_sets.push({ id: row.path, xattrs: merge.cloud_sets })
 			for (const name of merge.cloud_removes) cloud_removes.push({ path: row.path, name })
 			merged.set(relative, merge.merged)
