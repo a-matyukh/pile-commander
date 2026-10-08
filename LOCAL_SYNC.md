@@ -125,9 +125,6 @@ Layout:
   says so.
 - **mtime + size detect local edits.** A same-size edit that restores the old
   mtime is missed. A hash would fix that (optional item 4 below).
-- **`bridge_events` is not written for door `sync`.** The `door` check
-  constraint does not list it. `record()` in `store/bridge.ts` returns early;
-  see item 1.
 - **Echo window.** The second listing absorbs a cloud edit made by someone
   else between our write and that listing. The next local edit of that file
   then overwrites it. The window is about a second per pass.
@@ -142,17 +139,11 @@ diff, run `postgres.test.ts` locally. After it, run
 function: anon, a non-member, a viewer and an editor are refused or allowed
 as the table below says.
 
-### 1. `bridge_events.door` accepts `'sync'`
+### 1. `bridge_events.door` accepts `'sync'` — done
 
-```sql
-alter table public.bridge_events drop constraint bridge_events_door_check;
-alter table public.bridge_events add constraint bridge_events_door_check
-    check (door in ('share', 'publish', 'device', 'list', 'tile', 'pile', 'sync'));
-```
-
-Check the real constraint name first (`\d public.bridge_events`). Then
-extend `BridgeEventInput['door']` in `supabase.ts` and drop the early return
-for `sync` in `record()` (`apps/client/src/store/bridge.ts`).
+The live constraint is `bridge_events_door_check`. It lists `'sync'`.
+`BridgeEventInput['door']` includes it, and `record()` in
+`apps/client/src/store/bridge.ts` writes the row.
 
 ### 2. Replace a blob in place (`replace_blob_entry`)
 

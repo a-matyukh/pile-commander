@@ -272,8 +272,12 @@ begin
 
     insert into public.bridge_events (owner_id, step, door, source_type, total_bytes)
     values (c_owner, 'preflight', 'share', 'local', 1000);
+    insert into public.bridge_events (owner_id, step, door, source_type)
+    values (c_owner, 'opened', 'sync', 'local');
     insert into __results values ('bridge_events: owner records own steps',
-        (select count(*) from public.bridge_events where owner_id = c_owner) = 1, null);
+        (select count(*) from public.bridge_events where owner_id = c_owner and door = 'share') = 1, null);
+    insert into __results values ('bridge_events: door sync is accepted',
+        (select count(*) from public.bridge_events where owner_id = c_owner and door = 'sync') = 1, null);
     begin
         insert into public.bridge_events (owner_id, step, door, source_type)
         values (c_other, 'opened', 'list', 'browser');

@@ -33,7 +33,7 @@ import { link_folder } from '@/store/localSync'
  * Where the copy started. `sync` is the first upload of Auto-sync (store/localSync):
  * the folder stays linked to the new cloud workspace afterwards
  */
-export type BridgeDoor = BridgeEventInput['door'] | 'sync'
+export type BridgeDoor = BridgeEventInput['door']
 
 export type BridgeSource = {
 	type: 'local' | 'browser'
@@ -161,8 +161,7 @@ function record(step: BridgeEventInput['step'], extra: Partial<BridgeEventInput>
 	const user = cloud.user
 	const source = bridge.source
 	const door = bridge.door
-	// bridge_events.door does not list 'sync' yet (LOCAL_SYNC.md, database changes)
-	if (!user || !source || door === 'sync') return
+	if (!user || !source) return
 	const preflight = bridge.preflight
 	void record_bridge_event(require_supabase(), user.id, {
 		step,

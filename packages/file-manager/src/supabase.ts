@@ -2001,7 +2001,7 @@ export type BridgeEventInput = {
 		| "completed"
 		| "failed"
 		| "cancelled"
-	door: "share" | "publish" | "device" | "list" | "tile" | "pile"
+	door: "share" | "publish" | "device" | "list" | "tile" | "pile" | "sync"
 	source_type: "local" | "browser"
 	workspace_id?: string | null
 	total_bytes?: number | null

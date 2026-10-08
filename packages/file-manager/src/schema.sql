@@ -478,7 +478,7 @@ create table public.bridge_events (
         'opened', 'preflight', 'wall_shown', 'pro_clicked', 'started',
         'resumed', 'completed', 'failed', 'cancelled'
     )),
-    door text not null check (door in ('share', 'publish', 'device', 'list', 'tile', 'pile')),
+    door text not null check (door in ('share', 'publish', 'device', 'list', 'tile', 'pile', 'sync')),
     source_type text not null check (source_type in ('local', 'browser')),
     workspace_id uuid references public.workspaces (id) on delete set null,
     total_bytes bigint,
