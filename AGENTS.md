@@ -155,11 +155,12 @@ When writing SQL:
 
 ## Local folder sync (Auto-sync)
 
-One-way local → cloud sync of desktop workspace folders lives in
+Two-way sync of desktop workspace folders with their cloud copies lives in
 `apps/client/src/services/cloud/sync/` and `store/localSync.ts`; the link
-and base snapshot are `<root>/.pile/sync.json`. `LOCAL_SYNC.md` holds the
-rules, the phase 1 limits and the pending database changes (phase 2) —
-read it before touching sync or the blob upload RPCs.
+and base snapshot are `<root>/.pile/sync.json` (v2; v1 is still read and
+lifted). `LOCAL_SYNC.md` holds the rules, the safety guarantees, the limits,
+the database changes and the manual check — read it before touching sync,
+the board's sidecars or the blob upload RPCs.
 
 ## Landing search indexing
 
