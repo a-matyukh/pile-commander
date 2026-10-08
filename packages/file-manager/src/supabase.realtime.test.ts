@@ -406,3 +406,51 @@ describe("connection DELETE isolation", () => {
 		stop()
 	})
 })
+
+describe("watch_workspace", () => {
+	const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+	const channel_of = (channels: MockChannel[], kind: string) =>
+		channels.find(channel => channel.topic.includes(`file-manager-${kind}:`))!
+
+	test("joins entries, ink and edges, and wakes on any change from elsewhere", async () => {
+		const { client, channels } = create_mock_realtime_client()
+		const fm = cloud_fm(client)
+		let changes = 0
+		const unwatch = await fm.watch_workspace(() => {
+			changes += 1
+		})
+		expect(channels).toHaveLength(3)
+
+		channel_of(channels, "entries").emit({ eventType: "INSERT", new: { id: "n1", path: "/note.md" }, old: {} })
+		channel_of(channels, "strokes").emit({ eventType: "INSERT", new: { id: "s1", entry_id: "folder" }, old: {} })
+		// an edge this instance never listed: its delete still counts
+		channel_of(channels, "connections").emit({ eventType: "DELETE", new: {}, old: { record_id: "r1", workspace_id: WORKSPACE_ID } })
+		await settle()
+		expect(changes).toBe(3)
+
+		unwatch()
+		await settle()
+		expect(channels).toHaveLength(0)
+	})
+
+	test("its own writes do not wake it; a reconnect after a gap does", async () => {
+		const { client, channels, rpc_calls } = create_mock_realtime_client()
+		const fm = cloud_fm(client)
+		let changes = 0
+		await fm.watch_workspace(() => {
+			changes += 1
+		})
+
+		await fm.create_text_file("/", "Note 1.md")
+		const id = rpc_calls.find(call => call.fn === "create_text_file")!.params.p_id as string
+		const row = { id, path: "/Note 1.md", deleted_at: null }
+		channel_of(channels, "entries").emit({ eventType: "INSERT", new: row, old: {} })
+		channel_of(channels, "entries").emit({ eventType: "UPDATE", new: row, old: row })
+		expect(changes).toBe(0)
+
+		const entries = channel_of(channels, "entries")
+		entries.status("CHANNEL_ERROR")
+		entries.status("SUBSCRIBED")
+		expect(changes).toBe(1)
+	})
+})

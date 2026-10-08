@@ -5,6 +5,9 @@ import createCloudFileManager, {
 	first_embed,
 	inert_document_mime,
 	is_text_mime,
+	list_workspace_connections,
+	list_workspace_entries,
+	list_workspace_strokes,
 	mime_from_name,
 	retry_after_ms,
 } from "./supabase"
@@ -265,5 +268,51 @@ describe("replace_file", () => {
 		} finally {
 			globalThis.fetch = original
 		}
+	})
+})
+
+describe("workspace listings", () => {
+	/** A PostgREST-style builder that serves `total` rows in pages and records the filters. */
+	function paged_client(total: number) {
+		const calls: { table: string; filters: string[]; order: string; range: [number, number] }[] = []
+		const client = {
+			from(table: string) {
+				const call = { table, filters: [] as string[], order: "", range: [0, 0] as [number, number] }
+				const builder = {
+					select() { return builder },
+					eq(column: string, value: string) { call.filters.push(`${column}=${value}`); return builder },
+					is(column: string, value: null) { call.filters.push(`${column} is ${value}`); return builder },
+					order(column: string) { call.order = column; return builder },
+					range(from: number, to: number) {
+						call.range = [from, to]
+						calls.push(call)
+						const rows = Array.from({ length: Math.max(0, Math.min(to + 1, total) - from) }, (_, index) => ({
+							id: `row-${from + index}`,
+						}))
+						return Promise.resolve({ data: rows, error: null })
+					},
+				}
+				return builder
+			},
+		}
+		return { client: client as unknown as SupabaseClient, calls }
+	}
+
+	test("reads every page of live entries", async () => {
+		const { client, calls } = paged_client(1001)
+		const rows = await list_workspace_entries(client, "ws-1")
+		expect(rows).toHaveLength(1001)
+		expect(calls.map(call => call.range)).toEqual([[0, 999], [1000, 1999]])
+		expect(calls[0]!.filters).toEqual(["workspace_id=ws-1", "deleted_at is null"])
+	})
+
+	test("ink and edges of the whole workspace, in stable order", async () => {
+		const strokes = paged_client(3)
+		expect(await list_workspace_strokes(strokes.client, "ws-1")).toHaveLength(3)
+		expect(strokes.calls[0]).toMatchObject({ table: "folder_strokes", filters: ["workspace_id=ws-1"], order: "id" })
+
+		const edges = paged_client(2)
+		expect(await list_workspace_connections(edges.client, "ws-1")).toHaveLength(2)
+		expect(edges.calls[0]).toMatchObject({ table: "folder_connections", filters: ["workspace_id=ws-1"], order: "record_id" })
 	})
 })
