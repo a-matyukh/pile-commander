@@ -102,7 +102,7 @@ async function on_confirm_delete() {
 				Change password
 			</UButton>
 
-			<p v-if="cloud.notice && !is_delete_open" class="text-xs text-green-600 dark:text-green-400">
+			<p v-if="cloud.notice && !is_delete_open" class="text-xs text-green-600">
 				{{ cloud.notice }}
 			</p>
 

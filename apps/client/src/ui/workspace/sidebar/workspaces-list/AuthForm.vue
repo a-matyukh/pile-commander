@@ -91,7 +91,7 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 
 <template>
 	<form
-		class="flex flex-col gap-2 p-2 rounded border border-gray-200 dark:border-gray-700"
+		class="flex flex-col gap-2 p-2 rounded border border-gray-200"
 		@submit.prevent="submit"
 	>
 		<UInput v-model="email" type="email" placeholder="Email" required autocomplete="email" />
@@ -110,7 +110,7 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 			{{ SIGN_UP_PASSWORD_HINT }}
 		</p>
 		<p v-if="email_missing" class="text-xs text-red-500">Enter your email address.</p>
-		<p v-if="cloud.notice" class="text-xs text-green-600 dark:text-green-400">{{ cloud.notice }}</p>
+		<p v-if="cloud.notice" class="text-xs text-green-600">{{ cloud.notice }}</p>
 		<p v-if="cloud.last_error" class="text-xs text-red-500 cursor-pointer" @click="cloud.clear_error()">
 			{{ cloud.last_error }}
 		</p>

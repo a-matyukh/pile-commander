@@ -38,6 +38,7 @@ export default defineConfig({
 		}),
 		ui({
 		router: false,
+		colorMode: false,
 		// WARNING: these auto-imports inject a real import into ANY module that
 		// uses a bare `store`/`cloud`/`is_desktop` identifier the scanner fails to
 		// resolve — notably optional parameters (`cloud?: T`). Such an injection

@@ -17,7 +17,8 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": true
+        "dragDropEnabled": true,
+        "theme": "Light"
       }
     ],
     "security": {

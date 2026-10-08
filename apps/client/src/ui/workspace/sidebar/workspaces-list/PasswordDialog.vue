@@ -80,7 +80,7 @@ async function submit() {
 		:ui="{ footer: 'justify-end' }"
 	>
 		<template #body>
-			<p v-if="done" class="text-sm text-green-600 dark:text-green-400">Password updated.</p>
+			<p v-if="done" class="text-sm text-green-600">Password updated.</p>
 			<form v-else class="flex flex-col gap-2" @submit.prevent="submit">
 				<UInput
 					v-if="!is_recovery"

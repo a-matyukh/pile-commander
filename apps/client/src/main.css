@@ -26,6 +26,10 @@
   --pc-masonry-gap: 12px;
 }
 
+html {
+  color-scheme: light;
+}
+
 html,
 body,
 #app {
