@@ -58,16 +58,9 @@ project's pinned dependencies. Use the locally installed binaries in
 
 ## Updating Bun
 
-Use when the user asks to bump Bun, `packageManager` is stale, or `bun
---version` does not match the pin. Do not pin Bun in GitHub Actions:
-`oven-sh/setup-bun@v2` reads `packageManager` from the root `package.json`.
-
-1. Install the **exact** target version (`curl -fsSL https://bun.com/install | bash -s "bun-vX.Y.Z"`). Do not use `bun upgrade` — it always installs latest. Confirm `bun --version`.
-2. Set root `package.json` `packageManager` to `bun@x.y.z`.
-3. Bump `@types/bun` to `^x.y.z` in `apps/backend` and `packages/file-manager`.
-4. `bun install` so `bun.lock` picks up `@types/bun` / `bun-types`.
-5. Set README Requirements to the same `x.y.z`.
-6. Run `bun test` and the typechecks in the section above.
+When the user asks to bump Bun, `packageManager` is stale, or `bun --version`
+does not match the pin, follow
+[.cursor/skills/update-bun/SKILL.md](.cursor/skills/update-bun/SKILL.md).
 
 ## Database (Supabase)
 

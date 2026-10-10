@@ -20,7 +20,7 @@
     "@tauri-apps/plugin-opener": "^2.0.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.1",
+    "@types/bun": "^1.4.2",
     "@pile-commander/tauri-plugin-xattrs": "workspace:*",
     "@supabase/supabase-js": "^2.0.0",
     "@tauri-apps/api": "^2.2.0",

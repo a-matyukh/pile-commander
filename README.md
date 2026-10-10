@@ -20,7 +20,7 @@ database.
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883?logo=vuedotjs&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)
-![Bun](https://img.shields.io/badge/Bun-1.4.1-black?logo=bun)
+![Bun](https://img.shields.io/badge/Bun-1.4.3-black?logo=bun)
 ![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_RLS-3ecf8e?logo=supabase&logoColor=white)
 
 

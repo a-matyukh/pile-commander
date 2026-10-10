@@ -1,10 +1,11 @@
 {
   "name": "pile-commander",
   "private": true,
-  "packageManager": "bun@1.4.1",
+  "packageManager": "bun@1.4.3",
   "workspaces": ["packages/*", "apps/*"],
   "overrides": {
-    "vue": "3.5.40"
+    "vue": "3.5.40",
+    "bun-types": "1.4.3"
   },
   "scripts": {
     "dev:web": "bun --filter @pile-commander/client dev",
