@@ -5,14 +5,25 @@ import { resolve_unique_filename } from '@/services/naming/uniqueName'
 import { image_to_data_url } from './imageInput'
 import { is_note_name } from './naming'
 import type { NameSources } from './suggestName'
+import { strip_remote_images, strip_think } from './text'
 import type { AiContentPart, AiMessage } from './types'
 
 /** Images in one summary request, the first ones on the board. */
 export const MAX_SUMMARY_IMAGES = 12
-/** Characters of note text in one summary request, all notes together. */
+/** Characters of note text in one summary request, shared across the notes. */
 export const SUMMARY_TEXT_LIMIT = 24_000
 /** A note cut to fit keeps at least this much, or is left out. */
 const MIN_NOTE_PART = 400
+
+/**
+ * How much of the next note to send. The budget is split across the notes
+ * still waiting, so one long note cannot take it all; a slice smaller than
+ * `MIN_NOTE_PART` is not sent.
+ */
+function note_char_share(budget: number, notes_left: number): number {
+	if (notes_left < 1 || budget < MIN_NOTE_PART) return 0
+	return Math.min(budget, Math.max(MIN_NOTE_PART, Math.floor(budget / notes_left)))
+}
 const MAX_LISTED_NAMES = 200
 
 export type SummaryEntry = { id: string; name: string; type: 'file' | 'folder' }
@@ -21,6 +32,8 @@ export type SummarySources = {
 	names: string[]
 	notes: { name: string; text: string }[]
 	images: { name: string; url: string }[]
+	/** notes whose whole text was sent; a shortened one is in `notes` but not here */
+	notes_full: number
 	notes_total: number
 	images_total: number
 	/** the model is known not to take images, so none were read */
@@ -28,10 +41,11 @@ export type SummarySources = {
 }
 
 /**
- * Reads what a summary is made of, in board order: every name, note text up
- * to `SUMMARY_TEXT_LIMIT`, and up to `MAX_SUMMARY_IMAGES` reduced images
- * (none when the model is known to refuse them; an undecodable one is
- * passed over). Nothing is sent from here.
+ * Reads what a summary is made of, in board order: every name, the start of
+ * each note (the text budget is shared, so one long note cannot crowd the
+ * rest out), and up to `MAX_SUMMARY_IMAGES` reduced images (none when the
+ * model is known to refuse them; an undecodable one is passed over).
+ * Nothing is sent from here.
  */
 export async function collect_summary_sources(
 	workspace: Pick<NameSources, 'read_note_content' | 'get_media_src'>,
@@ -42,22 +56,27 @@ export async function collect_summary_sources(
 		names: entries.slice(0, MAX_LISTED_NAMES).map(entry => (entry.type === 'folder' ? `${entry.name}/` : entry.name)),
 		notes: [],
 		images: [],
+		notes_full: 0,
 		notes_total: 0,
 		images_total: 0,
 		images_refused: options.images_refused,
 	}
 	let budget = SUMMARY_TEXT_LIMIT
+	let notes_left = entries.filter(entry => entry.type === 'file' && is_note_name(entry.name)).length
 	let done = 0
 	for (const entry of entries) {
 		if (options.signal?.aborted) break
 		if (entry.type === 'file' && is_note_name(entry.name)) {
+			const share = note_char_share(budget, notes_left)
+			notes_left--
 			sources.notes_total++
-			if (budget >= MIN_NOTE_PART) {
+			if (share > 0) {
 				try {
 					const text = (await workspace.read_note_content(entry.id)).trim()
 					if (text) {
-						const part = text.slice(0, budget)
+						const part = text.slice(0, share)
 						sources.notes.push({ name: entry.name, text: part })
+						if (part.length === text.length) sources.notes_full++
 						budget -= part.length
 					} else {
 						// an empty note has nothing to leave out
@@ -79,17 +98,22 @@ export async function collect_summary_sources(
 	return sources
 }
 
-/** "12 of 40 images and 30 of 52 notes included", or null when everything fit. */
+/**
+ * "12 of 40 images and 30 of 52 notes included", plus ", shortened to fit"
+ * when a note was cut. A shortened note counts as included — its beginning
+ * was sent — but not as included whole. Null when everything fit whole.
+ */
 export function coverage_line(sources: SummarySources): string | null {
 	const parts: string[] = []
 	if (sources.images.length < sources.images_total) {
 		parts.push(`${sources.images.length} of ${sources.images_total} images`)
 	}
-	if (sources.notes.length < sources.notes_total) {
+	const notes_shortened = sources.notes_full < sources.notes.length
+	if (sources.notes.length < sources.notes_total || notes_shortened) {
 		parts.push(`${sources.notes.length} of ${sources.notes_total} notes`)
 	}
 	if (!parts.length) return null
-	const line = `${parts.join(' and ')} included`
+	const line = `${parts.join(' and ')} included${notes_shortened ? ', shortened to fit' : ''}`
 	return sources.images_refused && sources.images_total
 		? `${line}: the model doesn't accept images`
 		: line
@@ -150,7 +174,8 @@ export function summary_note_name(sibling_names: Iterable<string>): string {
 /**
  * Adds the summary as a new note: created where asked, filled, then named
  * `Summary.md` (numbered when taken). A failed rename leaves the saved note
- * under its `Note N.md` name rather than losing it.
+ * under its `Note N.md` name rather than losing it. Reasoning and remote
+ * images are removed first: the model answer is not trusted.
  */
 export async function add_summary_note(
 	workspace: Pick<WorkspaceStore, 'create_note' | 'save_note_content' | 'resolve_folder_data' | 'rename'>,
@@ -160,7 +185,7 @@ export async function add_summary_note(
 ): Promise<void> {
 	const note_id = await workspace.create_note(folder_id, position ?? undefined)
 	if (!note_id) throw new Error('The note could not be created')
-	await workspace.save_note_content(note_id, `${text.trim()}\n`)
+	await workspace.save_note_content(note_id, `${strip_remote_images(strip_think(text)).trim()}\n`)
 	const siblings = (workspace.resolve_folder_data(folder_id)?.children ?? [])
 		.filter(child => child.id !== note_id)
 		.map(child => child.name)

