@@ -11,7 +11,7 @@ import {
 	collect_summary_sources,
 	coverage_line,
 } from '@/services/ai/summarize'
-import { strip_remote_images, strip_think } from '@/services/ai/text'
+import { strip_think, untrusted_markdown } from '@/services/ai/text'
 import { parseNoteMarkdown } from '@/ui/workspace/folder-container/widgets/markdown'
 import AiReachBadge from './AiReachBadge.vue'
 
@@ -28,7 +28,7 @@ const stopped = ref(false)
 const error = ref<string | null>(null)
 let controller: AbortController | null = null
 
-const summary = computed(() => strip_remote_images(strip_think(raw.value)))
+const summary = computed(() => untrusted_markdown(strip_think(raw.value)))
 const summary_html = computed(() => parseNoteMarkdown(summary.value))
 
 async function start() {

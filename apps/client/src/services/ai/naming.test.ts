@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { apply_name_style, build_name_messages, name_target_kind, sanitize_suggested_name } from './naming'
-import { strip_remote_images, strip_think } from './text'
+import { strip_think, untrusted_markdown } from './text'
 import { fit_within } from './imageInput'
 
 describe('strip_think', () => {
@@ -12,42 +12,23 @@ describe('strip_think', () => {
 	})
 })
 
-describe('strip_remote_images', () => {
-	const data_image = '![shot](data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==)'
-
-	test('turns a remote markdown image into its alt text and drops an empty alt', () => {
-		expect(strip_remote_images('See ![beach](https://evil.example/a.png) now')).toBe('See beach now')
-		expect(strip_remote_images('![](https://evil.example/?q=secret)')).toBe('')
-		expect(strip_remote_images('![photo](https://evil.example/a_(1).png "shot")')).toBe('photo')
-		expect(strip_remote_images('![](<https://evil.example/a.png>)')).toBe('')
-		expect(strip_remote_images('![](//evil.example/a.png)')).toBe('')
+describe('untrusted_markdown', () => {
+	test('turns a markdown image into its alt text', () => {
+		expect(untrusted_markdown('See ![beach](https://evil.example/a.png) now')).toBe('See beach now')
+		expect(untrusted_markdown('![](https://evil.example/?q=secret)')).toBe('')
+		expect(untrusted_markdown('![photo](https://evil.example/a_(1).png "shot")')).toBe('photo')
+		expect(untrusted_markdown('![](<https://evil.example/a.png>)')).toBe('')
+		expect(untrusted_markdown('![secret][id]\n\n[id]: https://evil.example/a.png')).toBe('secret\n\n[id]: https://evil.example/a.png')
+		expect(untrusted_markdown('![secret]')).toBe('secret')
+		expect(untrusted_markdown('hello ![](https://evil.example/a.png')).toBe('hello')
 	})
 
-	test('keeps data and blob images, and keeps links', () => {
-		expect(strip_remote_images(data_image)).toBe(data_image)
-		const blob = '<img src="blob:null/8c3d-4b2a" alt="local">'
-		expect(strip_remote_images(blob)).toBe(blob)
-		expect(strip_remote_images('Read [the notes](https://example.com/docs).')).toBe('Read [the notes](https://example.com/docs).')
-	})
-
-	test('removes an img that would load, including a data src paired with a remote srcset', () => {
-		expect(strip_remote_images('Before <img src="https://evil.example/a.png" alt="x"> after')).toBe('Before  after')
-		expect(strip_remote_images('<img src=https://evil.example/a.png>')).toBe('')
-		expect(strip_remote_images('<img src="//evil.example/a.png">')).toBe('')
-		expect(strip_remote_images('<IMG SRC="HTTPS://evil.example/a.png">')).toBe('')
-		expect(strip_remote_images('<img src="https&#58;//evil.example/a.png">')).toBe('')
-		expect(strip_remote_images('<img src="&#104;&#116;&#116;&#112;&#115;&#58;//evil.example/a.png">')).toBe('')
-		expect(strip_remote_images('<img src="https&amp;#58;//evil.example/a.png">')).toBe('')
-		const pixel = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
-		expect(strip_remote_images(`<img src="${pixel}" srcset="https://evil.example/a.png 2x">`)).toBe('')
-		expect(strip_remote_images(`<img src="${pixel}" alt="kept">`)).toBe(`<img src="${pixel}" alt="kept">`)
-	})
-
-	test('drops an image the stream has not closed yet, and a reference image', () => {
-		expect(strip_remote_images('hello ![](https://evil.example/a.png')).toBe('hello')
-		expect(strip_remote_images('hello <img src="https://evil.example/a.png"')).toBe('hello')
-		expect(strip_remote_images('![secret][id]\n\n[id]: https://evil.example/a.png')).toBe('secret\n\n[id]: https://evil.example/a.png')
-		expect(strip_remote_images('![secret]')).toBe('secret')
+	test('keeps links and escapes every tag', () => {
+		expect(untrusted_markdown('Read [the notes](https://example.com/docs).')).toBe('Read [the notes](https://example.com/docs).')
+		expect(untrusted_markdown('<video poster="https://evil.example/a.png">')).toBe('&lt;video poster="https://evil.example/a.png">')
+		expect(untrusted_markdown('<picture><source srcset="https://evil.example/a.png">')).toBe('&lt;picture>&lt;source srcset="https://evil.example/a.png">')
+		expect(untrusted_markdown('<p style="background:url(https://evil.example/a.png)">')).toBe('&lt;p style="background:url(https://evil.example/a.png)">')
+		expect(untrusted_markdown('hello <img src="https://evil.example/a.png"')).toBe('hello &lt;img src="https://evil.example/a.png"')
 	})
 })
 

