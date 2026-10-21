@@ -17,7 +17,7 @@ import type { AiTransport } from './types'
 
 export type NameEntry = { id: string; name: string; type: 'file' | 'folder' }
 
-type NameSources = Pick<WorkspaceStore, 'read_note_content' | 'get_media_src' | 'ensure_preview_folder' | 'resolve_folder_data'>
+export type NameSources = Pick<WorkspaceStore, 'read_note_content' | 'get_media_src' | 'ensure_preview_folder' | 'resolve_folder_data'>
 
 /** Raised for a file that cannot be read for naming; its message is shown as is. */
 export class NameSkipped extends Error {
