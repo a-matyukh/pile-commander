@@ -87,6 +87,7 @@ async function suggest() {
 			if (suggest_controller === controller) stop_suggesting()
 			return
 		}
+		if (suggest_controller !== controller) return
 		const name = await ask_name(target, entry, { signal: controller.signal })
 		if (suggest_controller === controller) suggestion.value = name
 	} catch (error) {

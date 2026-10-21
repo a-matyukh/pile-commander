@@ -21,54 +21,37 @@ async function blob_to_data_url(blob: Blob): Promise<string> {
 	return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`
 }
 
-/** Width and height as shown, EXIF rotation applied; the header is enough, no full decode. */
-function displayed_size(blob: Blob): Promise<{ width: number; height: number }> {
+/**
+ * The bytes go through a blob URL, not the media URL itself: a cross-origin
+ * presigned URL would taint the canvas and block the export.
+ */
+function load_image(blob: Blob): Promise<HTMLImageElement> {
 	const url = URL.createObjectURL(blob)
-	return new Promise<{ width: number; height: number }>((resolve, reject) => {
+	return new Promise<HTMLImageElement>((resolve, reject) => {
 		const image = new Image()
-		image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+		image.onload = () => resolve(image)
 		image.onerror = () => reject(new Error('the image cannot be decoded'))
 		image.src = url
 	}).finally(() => URL.revokeObjectURL(url))
 }
 
 /**
- * Decodes straight to the reduced size, so a batch of 24 MP photos never
- * holds full frames, and turns phone photos upright from their EXIF
- * orientation. A webview that ignores the resize options still gets a
- * correct result: `encode_jpeg` scales whatever it is given.
+ * Draws the loaded image reduced onto a canvas. An <img> already carries
+ * its EXIF orientation (`naturalWidth`/`Height` and `drawImage` both use
+ * it), so phone photos come out upright, from one decode.
  */
-async function decode_reduced(blob: Blob): Promise<ImageBitmap> {
-	const shown = await displayed_size(blob)
-	const { width, height } = fit_within(shown.width, shown.height)
-	return createImageBitmap(blob, {
-		imageOrientation: 'from-image',
-		resizeWidth: width,
-		resizeHeight: height,
-		resizeQuality: 'high',
-	})
-}
-
-async function encode_jpeg(bitmap: ImageBitmap): Promise<Blob> {
-	const { width, height } = fit_within(bitmap.width, bitmap.height)
-	if (typeof OffscreenCanvas !== 'undefined') {
-		const canvas = new OffscreenCanvas(width, height)
-		const context = canvas.getContext('2d')
-		if (!context) throw new Error('no 2d canvas')
-		// jpeg has no alpha: transparent pixels would turn black
-		context.fillStyle = '#fff'
-		context.fillRect(0, 0, width, height)
-		context.drawImage(bitmap, 0, 0, width, height)
-		return canvas.convertToBlob({ type: 'image/jpeg', quality: JPEG_QUALITY })
-	}
+function encode_jpeg(image: HTMLImageElement): Promise<Blob> {
+	const { width, height } = fit_within(image.naturalWidth, image.naturalHeight)
 	const canvas = document.createElement('canvas')
 	canvas.width = width
 	canvas.height = height
 	const context = canvas.getContext('2d')
-	if (!context) throw new Error('no 2d canvas')
+	if (!context) return Promise.reject(new Error('no 2d canvas'))
+	// jpeg has no alpha: transparent pixels would turn black
 	context.fillStyle = '#fff'
 	context.fillRect(0, 0, width, height)
-	context.drawImage(bitmap, 0, 0, width, height)
+	context.imageSmoothingQuality = 'high'
+	context.drawImage(image, 0, 0, width, height)
 	return new Promise((resolve, reject) => {
 		canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('jpeg encoding failed'))), 'image/jpeg', JPEG_QUALITY)
 	})
@@ -86,21 +69,14 @@ export async function image_to_data_url(
 	name: string,
 ): Promise<string | null> {
 	const media = await workspace.get_media_src(id, name)
-	let bitmap: ImageBitmap
 	try {
 		const response = await fetch(media.url)
-		if (!response.ok) throw new Error(`fetch failed: ${response.status}`)
-		bitmap = await decode_reduced(await response.blob())
+		if (!response.ok) return null
+		const image = await load_image(await response.blob())
+		return await blob_to_data_url(await encode_jpeg(image))
 	} catch {
 		return null
 	} finally {
 		media.revoke?.()
-	}
-	try {
-		return await blob_to_data_url(await encode_jpeg(bitmap))
-	} catch {
-		return null
-	} finally {
-		bitmap.close()
 	}
 }
