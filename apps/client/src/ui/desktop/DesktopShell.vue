@@ -23,6 +23,7 @@ import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
 import UpdateBanner from './UpdateBanner.vue'
 import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
+import AiConsentDialog from '@/ui/ai/AiConsentDialog.vue'
 import { desktops_enabled } from '@/store/experiments'
 
 // App root: two render modes. fullscreen = the classic single-workspace app;
@@ -188,6 +189,7 @@ onUnmounted(() => {
 		<QuotaWallDialog />
 		<BridgeDialog />
 		<PasswordDialog />
+		<AiConsentDialog />
 		<UpdateBanner />
 	</UApp>
 </template>

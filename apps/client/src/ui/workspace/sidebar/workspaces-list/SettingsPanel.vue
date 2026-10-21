@@ -4,6 +4,7 @@ import cloud from '@/store/cloud'
 import { desktops_enabled } from '@/store/experiments'
 import { supabase } from '@/services/cloud/client'
 import { mark_desktops_opt_in } from '@/services/cloud/desktopsExperiment'
+import AiSettingsSection from '@/ui/ai/AiSettingsSection.vue'
 
 // No VITE_LANDING_URL, no link (same rule as AuthForm): a dead link would be
 // worse than plain text
@@ -30,6 +31,8 @@ function set_desktops(enabled: boolean) {
 
 <template>
 	<div class="flex flex-col gap-3 p-2">
+		<AiSettingsSection />
+
 		<section class="flex flex-col gap-2">
 			<h3 class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
 				<UIcon name="i-lucide:flask-conical" class="size-3.5 shrink-0" />

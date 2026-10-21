@@ -32,6 +32,7 @@ pub enum AiErrorKind {
     InvalidUrl,
     InvalidInput,
     Connect,
+    Certificate,
     Timeout,
     Network,
     Unauthorized,
@@ -67,7 +68,7 @@ impl AiError {
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum AiEvent {
     Delta { text: String },
-    Done,
+    Done { truncated: bool },
     Error(AiError),
 }
 
@@ -82,15 +83,27 @@ fn error_chain(err: &dyn Error) -> String {
     message
 }
 
-fn request_error(error: reqwest::Error) -> AiError {
-    let kind = if error.is_connect() {
+/// native-tls names a refused certificate in text only; a self-signed one on
+/// a home server is the usual case.
+fn request_error_kind(message: &str, is_connect: bool, is_timeout: bool) -> AiErrorKind {
+    if message.to_ascii_lowercase().contains("certificate") {
+        AiErrorKind::Certificate
+    } else if is_connect {
         AiErrorKind::Connect
-    } else if error.is_timeout() {
+    } else if is_timeout {
         AiErrorKind::Timeout
     } else {
         AiErrorKind::Network
-    };
-    AiError::new(kind, error_chain(&error.without_url()))
+    }
+}
+
+fn request_error(error: reqwest::Error) -> AiError {
+    let (is_connect, is_timeout) = (error.is_connect(), error.is_timeout());
+    let message = error_chain(&error.without_url());
+    AiError::new(
+        request_error_kind(&message, is_connect, is_timeout),
+        message,
+    )
 }
 
 fn stalled() -> AiError {
@@ -370,29 +383,41 @@ impl SseParser {
 #[derive(Debug, PartialEq)]
 enum Chunk {
     Delta(String),
+    /// the model hit its token limit (`finish_reason: "length"`)
+    Truncated,
     Done,
     Failed(String),
-    Skip,
 }
 
-fn interpret(data: &str) -> Chunk {
+/// One event's data. A chunk can carry both the last text and the finish
+/// reason, so it yields up to two items.
+fn interpret(data: &str) -> Vec<Chunk> {
     if data.trim() == "[DONE]" {
-        return Chunk::Done;
+        return vec![Chunk::Done];
     }
     let Ok(value) = serde_json::from_str::<Value>(data) else {
-        return Chunk::Skip;
+        return Vec::new();
     };
     // OpenRouter reports an upstream failure mid-stream this way
     if let Some(error) = value.get("error") {
-        return Chunk::Failed(error_text(error));
+        return vec![Chunk::Failed(error_text(error))];
     }
-    match value
+    let mut chunks = Vec::new();
+    if let Some(text) = value
         .pointer("/choices/0/delta/content")
         .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
     {
-        Some(text) if !text.is_empty() => Chunk::Delta(text.to_owned()),
-        _ => Chunk::Skip,
+        chunks.push(Chunk::Delta(text.to_owned()));
     }
+    if value
+        .pointer("/choices/0/finish_reason")
+        .and_then(Value::as_str)
+        == Some("length")
+    {
+        chunks.push(Chunk::Truncated);
+    }
+    chunks
 }
 
 /// The webview's chat completion request, passed through as is (messages may
@@ -444,14 +469,14 @@ fn with_key(request: reqwest::RequestBuilder, key: Option<&str>) -> reqwest::Req
 
 /// Streams one chat completion, handing each text delta to `emit`. Returns
 /// once the provider says it is done, the body ends, or `emit` reports the
-/// listener is gone.
+/// listener is gone; `true` when the answer was cut at the token limit.
 async fn run_chat(
     client: reqwest::Client,
     url: Url,
     body: Vec<u8>,
     key: Option<String>,
     mut emit: impl FnMut(String) -> bool,
-) -> Result<(), AiError> {
+) -> Result<bool, AiError> {
     let key = key.as_deref();
     let request = with_key(client.post(url), key)
         .header(CONTENT_TYPE, "application/json")
@@ -466,6 +491,7 @@ async fn run_chat(
 
     let mut stream = response.bytes_stream();
     let mut parser = SseParser::default();
+    let mut truncated = false;
     loop {
         let next = tokio::time::timeout(STALL_TIMEOUT, stream.next())
             .await
@@ -476,21 +502,23 @@ async fn run_chat(
             None => parser.finish(),
         };
         for data in events {
-            match interpret(&data) {
-                Chunk::Delta(text) => {
-                    if !emit(text) {
-                        return Ok(());
+            for chunk in interpret(&data) {
+                match chunk {
+                    Chunk::Delta(text) => {
+                        if !emit(text) {
+                            return Ok(truncated);
+                        }
+                    }
+                    Chunk::Truncated => truncated = true,
+                    Chunk::Done => return Ok(truncated),
+                    Chunk::Failed(message) => {
+                        return Err(AiError::new(AiErrorKind::Provider, scrub(&message, key)))
                     }
                 }
-                Chunk::Done => return Ok(()),
-                Chunk::Failed(message) => {
-                    return Err(AiError::new(AiErrorKind::Provider, scrub(&message, key)))
-                }
-                Chunk::Skip => {}
             }
         }
         if ended {
-            return Ok(());
+            return Ok(truncated);
         }
     }
 }
@@ -614,7 +642,7 @@ pub async fn ai_chat_stream(
         tokio::select! {
             result = chat => {
                 let _ = on_event.send(match result {
-                    Ok(()) => AiEvent::Done,
+                    Ok(truncated) => AiEvent::Done { truncated },
                     Err(error) => AiEvent::Error(error),
                 });
             }
@@ -792,18 +820,45 @@ mod tests {
     fn chunks_are_read_as_deltas_done_or_errors() {
         assert_eq!(
             interpret(r#"{"choices":[{"delta":{"content":"Hi"}}]}"#),
-            Chunk::Delta("Hi".into())
+            vec![Chunk::Delta("Hi".into())]
         );
-        assert_eq!(
-            interpret(r#"{"choices":[{"delta":{"role":"assistant"}}]}"#),
-            Chunk::Skip
-        );
-        assert_eq!(interpret(" [DONE] "), Chunk::Done);
+        assert!(interpret(r#"{"choices":[{"delta":{"role":"assistant"}}]}"#).is_empty());
+        assert_eq!(interpret(" [DONE] "), vec![Chunk::Done]);
         assert_eq!(
             interpret(r#"{"error":{"message":"upstream failed"}}"#),
-            Chunk::Failed("upstream failed".into())
+            vec![Chunk::Failed("upstream failed".into())]
         );
-        assert_eq!(interpret("garbage"), Chunk::Skip);
+        assert!(interpret("garbage").is_empty());
+    }
+
+    #[test]
+    fn a_length_finish_marks_the_answer_truncated() {
+        assert_eq!(
+            interpret(r#"{"choices":[{"delta":{"content":"end"},"finish_reason":"length"}]}"#),
+            vec![Chunk::Delta("end".into()), Chunk::Truncated]
+        );
+        assert!(interpret(r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#).is_empty());
+    }
+
+    #[test]
+    fn a_refused_certificate_is_told_apart_from_a_refused_connection() {
+        let kind = |message: &str| request_error_kind(message, true, false);
+        assert_eq!(
+            kind("error sending request: The certificate for this server is invalid"),
+            AiErrorKind::Certificate
+        );
+        assert_eq!(
+            kind("error trying to connect: certificate verify failed: self signed certificate"),
+            AiErrorKind::Certificate
+        );
+        assert_eq!(
+            kind("tcp connect error: Connection refused"),
+            AiErrorKind::Connect
+        );
+        assert_eq!(
+            request_error_kind("operation timed out", false, true),
+            AiErrorKind::Timeout
+        );
     }
 
     #[test]
@@ -916,7 +971,7 @@ mod tests {
             b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n\
 data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n\
 data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n\
-data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n\
+data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"length\"}]}\n\n\
 data: [DONE]\n\n",
         );
 
@@ -932,7 +987,7 @@ data: [DONE]\n\n",
             },
         ));
 
-        result.unwrap();
+        assert!(result.unwrap(), "the length finish reaches the caller");
         assert_eq!(text, "Hello");
         let head = server.join().unwrap();
         assert!(
