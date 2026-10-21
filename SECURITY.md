@@ -306,6 +306,79 @@ show only these intentional INFOs. Anything else is a regression.
 
 ---
 
+## AI provider
+
+The desktop app talks to a provider from Rust (`apps/client/src-tauri/src/ai.rs`).
+The web app uses `fetch` from the page. Neither path is a backend route.
+Results are ordinary renames and `.md` notes; nothing is written to the database.
+
+- **The key does not come back to JS.** On desktop it is stored in the OS
+  credential store (macOS Keychain, Windows Credential Manager, Linux Secret
+  Service) under the service `app.pilecommander.ai`, with the account set to
+  the provider origin. The commands are set, delete and "is a key stored";
+  none of them returns the key. Rust attaches `Authorization` itself. On the
+  web the key is in `sessionStorage` for that tab only, under the same origin,
+  and is dropped when the tab closes. It is not written to `localStorage`.
+  If the system has no password storage, or the user refuses the prompt, the
+  key is not stored and there is no fallback to a file. The sentences are
+  "Couldn't use the key: this system has no password storage available." and
+  "Pile Commander wasn't allowed to use the password storage." Confirm both
+  on a Linux machine before release; the wording is unit-tested, a real
+  Secret Service is not.
+- **A key is sent only over https, or to this computer.** Plain http is
+  accepted for loopback (`localhost`, `127.0.0.1`, `::1`) and for a private
+  address (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `100.64/10`,
+  IPv6 unique-local and link-local, `*.local`). The key is stored and
+  attached for https and for loopback http only. Plain http to another
+  machine on the local network is allowed, and the key is neither saved nor
+  sent. A public host over http is rejected. A bare name (`homeserver`) and
+  MagicDNS are not treated as the local network, because the address cannot
+  be told from the text.
+- **Nothing is sent to a cloud provider without a yes.** The first request
+  to an origin asks to send file names and note text. A request that actually
+  carries images asks separately. A shared cloud workspace asks once, for
+  that workspace, before another member's files can go out. This computer
+  and the local network do not ask. The demo and a viewer have no AI actions.
+- **Other script in the window cannot read the desktop key, and can still
+  spend it.** On desktop the key never enters JS, so a script cannot read it.
+  On the web it sits in `sessionStorage`, so script in the app origin can.
+  Either way, script that runs in the window can call the same chat path and
+  spend credits. There is no further confirmation after the consent above.
+- **A model answer is untrusted.** Before it is shown or saved, every `<` is
+  escaped, so a tag is text: a `video` poster, a `picture` source, a CSS
+  `url()`, an unclosed tag. Markdown images are reduced to their alt text.
+  Links are left, and load only on a click.
+- **The desktop webview has no CSP.** `tauri.conf.json` sets
+  `app.security.csp` to `null`. The limits above are enforced in Rust and in
+  the client, not by a page policy. This is older than the AI work and is
+  left as it is.
+- **A local rename or move does not replace another file whose name matches
+  ignoring case and Unicode composition.** `Beach.jpg` is the same name as
+  `beach.jpg`, and one NFC `й` is the same as the NFD form. The check runs
+  in the desktop file manager before `rename`. A rename, and a move whose
+  target folder is the source folder, may change only the case of the file's
+  own name. A move into another folder has no such exception: a file already
+  there with that name is a different file.
+
+### Web CSP and a custom provider address
+
+`apps/client/vercel.json` sends two policies. The enforcing
+`Content-Security-Policy` is only `object-src`, `base-uri` and
+`frame-ancestors`. It does not set `connect-src`, so a fetch to a provider
+is not blocked today. The full policy, including `connect-src`, is
+`Content-Security-Policy-Report-Only`. `https://api.openai.com` and
+`https://openrouter.ai` are in that `connect-src`.
+
+A provider address the user types is not in the list. While the full policy
+stays Report-Only, the browser still connects and may file a report. If
+`connect-src` is ever enforced, that custom origin is blocked on the web.
+It is left out on purpose: opening `connect-src` to every `https` host would
+drop the restriction for the whole app. Custom addresses keep working in the
+desktop app, which has no CSP. Local http providers are already unreachable
+from the https web app (mixed content).
+
+---
+
 ## Known and deliberately not closed
 
 ### Postgres jsonb is outside the byte quota
@@ -363,7 +436,9 @@ deferred). Done work is in the invariants above.
 - Enforcing CSP. `vercel.json` still ships the full policy as Report-Only:
   promoting it needs a production run first, since a missed origin
   white-screens the app. The enforced header is the three directives above
-  plus HSTS.
+  plus HSTS. The Report-Only `connect-src` now also names
+  `https://api.openai.com` and `https://openrouter.ai`. A custom AI origin
+  is intentionally not listed; see "Web CSP and a custom provider address".
 - `hub_publications.fork_count` counts every fork, not unique forkers, and
   is not rate-limited.
 - `private.*` grants: the backend-only ones are revoked from
@@ -474,7 +549,11 @@ deferred). Done work is in the invariants above.
   redirect allowlist, Send Email Hook → `POST /auth/send-email` (Plunk;
   enable the hook only after the Plunk env is set).
 - Full enforcing CSP after the Report-Only run confirms the origins
-  (Supabase, backend, B2, model-viewer decoders).
+  (Supabase, backend, B2, model-viewer decoders, `api.openai.com`,
+  `openrouter.ai`). A custom AI origin stays out of `connect-src`; see
+  "Web CSP and a custom provider address".
+- Linux AI key, before release: save a key where Secret Service is running,
+  and confirm the "no password storage" sentence where it is not.
 
 ### Tests
 

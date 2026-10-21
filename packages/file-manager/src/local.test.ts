@@ -294,7 +294,6 @@ describe("createLocalFileManager", () => {
 		const fm = createLocalFileManager()
 		const patch = await fm.move("/home/user/report.pdf", "/home/archive", "report (1).pdf")
 
-		expect(basename).not.toHaveBeenCalled()
 		expect(fs_rename).toHaveBeenCalledWith(
 			"/home/user/report.pdf",
 			"/home/archive/report (1).pdf",
@@ -334,6 +333,21 @@ describe("createLocalFileManager", () => {
 
 		await expect(fm.move("/home/user/IMG_1.jpg", "/home/archive", "Мой зонт.jpg".normalize("NFC"))).rejects.toThrow("already exists")
 		await expect(fm.move("/home/user/IMG_1.jpg", "/home/archive", "мой зонт.jpg".normalize("NFC"))).rejects.toThrow("already exists")
+		expect(fs_rename).not.toHaveBeenCalled()
+	})
+
+	test("a move inside the same folder may change case, and still refuses a neighbour", async () => {
+		readDir.mockResolvedValue([
+			{ name: "orange bag.jpg", isDirectory: false, isFile: true, isSymlink: false },
+			{ name: "beach.jpg", isDirectory: false, isFile: true, isSymlink: false },
+		])
+		const fm = createLocalFileManager()
+
+		await fm.move("/home/user/orange bag.jpg", "/home/user", "Orange bag.jpg")
+		expect(fs_rename).toHaveBeenCalledWith("/home/user/orange bag.jpg", "/home/user/Orange bag.jpg")
+
+		fs_rename.mockClear()
+		await expect(fm.move("/home/user/orange bag.jpg", "/home/user", "Beach.jpg")).rejects.toThrow("already exists")
 		expect(fs_rename).not.toHaveBeenCalled()
 	})
 
