@@ -5,8 +5,10 @@ import { is_desktop } from '@/isDesktop'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { ai_transport } from '@/services/ai/client'
 import { explain_ai_error } from '@/services/ai/errors'
-import { may_carry_key, type AiReach } from '@/services/ai/locality'
+import { may_carry_key } from '@/services/ai/locality'
+import { NAME_STYLES, type NameStyle } from '@/services/ai/naming'
 import { AI_PRESETS, ai_preset, preset_for_url, type AiPresetId } from '@/services/ai/presets'
+import AiReachBadge from './AiReachBadge.vue'
 
 const transport = ai_transport()
 
@@ -16,14 +18,9 @@ const preset_items = AI_PRESETS.map(preset => ({
 	disabled: !is_desktop && preset.desktop_only,
 }))
 
-const REACH_BADGES: Record<AiReach, { label: string; icon: string; color: 'success' | 'info' | 'warning' }> = {
-	local: { label: 'This computer', icon: 'i-lucide:lock', color: 'success' },
-	network: { label: 'Local network', icon: 'i-lucide:house', color: 'info' },
-	cloud: { label: 'Cloud', icon: 'i-lucide:cloud', color: 'warning' },
-}
+const name_style_items = NAME_STYLES.map(style => ({ ...style }))
 
 const preset = computed(() => ai_preset(ai_settings.value.preset))
-const badge = computed(() => (ai_base_check.value.ok ? REACH_BADGES[ai_base_check.value.reach] : null))
 const key_allowed = computed(() => ai_base_check.value.ok && may_carry_key(ai_base_check.value.url))
 
 const key_input = ref('')
@@ -38,6 +35,7 @@ const test_result = ref<{ ok: boolean; text: string } | null>(null)
 function select_preset(id: AiPresetId) {
 	const next = ai_preset(id)
 	ai_settings.value = {
+		...ai_settings.value,
 		preset: id,
 		base_url: id === 'custom' ? ai_settings.value.base_url : next.base_url,
 		model: id === ai_settings.value.preset ? ai_settings.value.model : '',
@@ -169,15 +167,7 @@ watch(() => ai_settings.value.model, () => {
 						class="min-w-0 flex-1"
 						@update:model-value="(value) => select_preset(value as AiPresetId)"
 					/>
-					<UBadge
-						v-if="badge"
-						:label="badge.label"
-						:icon="badge.icon"
-						:color="badge.color"
-						variant="subtle"
-						size="sm"
-						class="shrink-0"
-					/>
+					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
 				</div>
 			</UFormField>
 
@@ -252,6 +242,16 @@ watch(() => ai_settings.value.model, () => {
 					class="w-full"
 					@update:model-value="(value) => set_model(value as string | undefined)"
 					@create="add_model"
+				/>
+			</UFormField>
+
+			<UFormField label="Suggested names" size="sm">
+				<USelect
+					:model-value="ai_settings.name_style"
+					:items="name_style_items"
+					size="sm"
+					class="w-full"
+					@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
 				/>
 			</UFormField>
 

@@ -1,8 +1,8 @@
 import { is_desktop } from '@/isDesktop'
 import { ai_settings, record_vision } from '@/store/ai'
 import { desktop_transport } from './desktopTransport'
-import { is_no_vision_error } from './errors'
-import type { AiMessage, AiTransport, ChatResult, StreamOptions } from './types'
+import { explain_ai_error, is_no_vision_error } from './errors'
+import { AiError, type AiMessage, type AiTransport, type ChatResult, type StreamOptions } from './types'
 import { web_transport } from './webTransport'
 
 export function ai_transport(): AiTransport {
@@ -39,4 +39,13 @@ export async function ai_chat(
 		if (images && is_no_vision_error(error)) record_vision(base_url, model, false)
 		throw error
 	}
+}
+
+/** The sentence for a failed `ai_chat`; a 401 tells a missing key from a rejected one. */
+export async function explain_chat_error(error: unknown, transport: AiTransport = ai_transport()): Promise<string> {
+	const { base_url, model } = ai_settings.value
+	const has_key = error instanceof AiError && error.kind === 'unauthorized'
+		? await transport.has_key(base_url).catch(() => undefined)
+		: undefined
+	return explain_ai_error(error, { base_url, model, operation: 'chat', has_key, web: !is_desktop })
 }

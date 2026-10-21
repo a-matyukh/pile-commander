@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import { ai_consent_request, answer_ai_consent } from '@/store/aiConsent'
 
+// The modal is raised (z-[60]): it opens over the dialog that asked for it,
+// whose portal sits later in <body> and would otherwise cover it.
+
 const lines = computed(() => {
 	const host = ai_consent_request.host
 	return ai_consent_request.needs.map((need) => {
@@ -22,7 +25,7 @@ const lines = computed(() => {
 		:open="ai_consent_request.open"
 		:title="`Send to ${ai_consent_request.host}?`"
 		description="The provider is in the cloud. You'll be asked once for each of these."
-		:ui="{ footer: 'justify-end' }"
+		:ui="{ overlay: 'z-[60]', content: 'z-[60]', footer: 'justify-end' }"
 		@update:open="(value: boolean) => { if (!value) answer_ai_consent(false) }"
 	>
 		<template #body>

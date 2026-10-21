@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { ai_settings, ai_vision, vision_support } from '@/store/ai'
-import { ai_chat } from './client'
+import { ai_chat, explain_chat_error } from './client'
 import { AiError, type AiMessage, type AiTransport } from './types'
 
 const base_url = 'http://localhost:11434/v1'
@@ -31,7 +31,7 @@ const fails = (error: unknown) => transport(async () => {
 })
 
 beforeEach(() => {
-	ai_settings.value = { preset: 'ollama', base_url, model }
+	ai_settings.value = { preset: 'ollama', base_url, model, name_style: 'spaces' }
 	ai_vision.value = {}
 })
 
@@ -76,6 +76,23 @@ describe('vision support', () => {
 		await ai_chat(with_image, {}, answers)
 		expect(vision_support(base_url, 'llama3.2')).toBeNull()
 		expect(vision_support('http://localhost:1234/v1', model)).toBeNull()
+	})
+})
+
+describe('explain_chat_error', () => {
+	const unauthorized = new AiError({ kind: 'unauthorized', status: 401, message: '' })
+	const with_key = (has_key: boolean): AiTransport => ({ ...answers, has_key: async () => has_key })
+
+	test('a 401 without a saved key asks for one', async () => {
+		ai_settings.value = { preset: 'openrouter', base_url: 'https://openrouter.ai/api/v1', model: 'm', name_style: 'spaces' }
+		expect(await explain_chat_error(unauthorized, with_key(false))).toBe('This provider needs an API key.')
+		expect(await explain_chat_error(unauthorized, with_key(true))).toBe('The provider rejected the API key.')
+	})
+
+	test('other errors do not look the key up', async () => {
+		const transport = { ...answers, has_key: vi.fn(async () => true) }
+		await explain_chat_error(new AiError({ kind: 'timeout', status: null, message: '' }), transport)
+		expect(transport.has_key).not.toHaveBeenCalled()
 	})
 })
 

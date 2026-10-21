@@ -107,6 +107,7 @@ defineExpose({ open_rename, open_remove })
 		<RenameDialog
 			ref="rename_dialog"
 			:initial_name="node.name"
+			:entry_type="node.type"
 			@confirm="emit('confirmRename', $event)"
 		/>
 

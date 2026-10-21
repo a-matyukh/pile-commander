@@ -3,11 +3,13 @@ import { useStorage } from '@vueuse/core'
 import { is_desktop } from '@/isDesktop'
 import { check_base_url } from '@/services/ai/locality'
 import { ai_preset, type AiPresetId } from '@/services/ai/presets'
+import type { NameStyle } from '@/services/ai/naming'
 
 export type AiSettings = {
 	preset: AiPresetId
 	base_url: string
 	model: string
+	name_style: NameStyle
 }
 
 export type AiConsents = {
@@ -27,7 +29,7 @@ const default_preset: AiPresetId = is_desktop ? 'ollama' : 'openrouter'
  */
 export const ai_settings = useStorage<AiSettings>(
 	'pile_commander_ai_settings',
-	{ preset: default_preset, base_url: ai_preset(default_preset).base_url, model: '' },
+	{ preset: default_preset, base_url: ai_preset(default_preset).base_url, model: '', name_style: 'spaces' },
 	undefined,
 	{ mergeDefaults: true },
 )
