@@ -28,7 +28,9 @@ const to_rename = computed(() => rows.value.filter((row) => {
 	const name = planned.value.get(row.entry.id)
 	return name !== undefined && name !== row.entry.name
 }))
-const answered = computed(() => rows.value.filter(row => !['waiting', 'asking'].includes(row.status)).length)
+const answered = computed(() => rows.value.filter(row => !['waiting', 'preparing', 'asking'].includes(row.status)).length)
+/** rows read so far; null once everything is read and the model is being asked */
+const prepared = ref<number | null>(0)
 
 async function start() {
 	controller?.abort()
@@ -39,13 +41,20 @@ async function start() {
 	rows.value = bulk_rename_request.entries.map(new_row)
 	phase.value = 'working'
 	notice.value = null
+	prepared.value = 0
 
 	const outcome = await suggest_batch({
 		workspace: ws,
 		rows: rows.value,
 		concurrency: ai_base_check.value.ok && ai_base_check.value.reach === 'cloud' ? 3 : 1,
 		signal: own.signal,
-		confirm: sends_images => ensure_ai_consent(ws, { sends_images }),
+		confirm: (sends_images) => {
+			if (controller === own) prepared.value = null
+			return ensure_ai_consent(ws, { sends_images })
+		},
+		on_prepared: (done) => {
+			if (controller === own) prepared.value = done
+		},
 	})
 	if (controller !== own) return
 	controller = null
@@ -102,6 +111,7 @@ function on_open_change(open: boolean) {
 function status_text(row: BulkRow): string {
 	switch (row.status) {
 		case 'waiting': return 'Waiting…'
+		case 'preparing': return 'Reading…'
 		case 'asking': return 'Asking…'
 		case 'same': return 'Keeps its name'
 		case 'stopped': return row.reason ?? 'Stopped'
@@ -127,7 +137,8 @@ watch(() => bulk_rename_request.run, () => {
 			<div class="flex flex-col gap-3">
 				<div class="flex items-center gap-2 text-xs text-muted">
 					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
-					<span v-if="phase === 'working'">{{ answered }} of {{ rows.length }} answered</span>
+					<span v-if="phase === 'working' && prepared !== null">Preparing {{ prepared }} of {{ rows.length }}…</span>
+					<span v-else-if="phase === 'working'">{{ answered }} of {{ rows.length }} answered</span>
 					<span v-else-if="phase === 'review'">Uncheck what to keep. Nothing is renamed until you confirm.</span>
 				</div>
 
@@ -154,7 +165,7 @@ watch(() => bulk_rename_request.run, () => {
 							:class="['failed', 'rename_failed'].includes(row.status) ? 'text-error' : 'text-muted'"
 							:title="status_text(row)"
 						>
-							<UIcon v-if="row.status === 'asking'" name="i-lucide:loader-circle" class="size-3.5 shrink-0 animate-spin" />
+							<UIcon v-if="row.status === 'asking' || row.status === 'preparing'" name="i-lucide:loader-circle" class="size-3.5 shrink-0 animate-spin" />
 							{{ status_text(row) }}
 						</span>
 					</li>

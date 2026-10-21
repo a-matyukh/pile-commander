@@ -224,7 +224,12 @@ type WorkspaceStore = {
 	uncombine_folder(folder_id: string): Promise<void>
 	create_text_file(folder_id: string, position?: Position): Promise<void>
 	create_markdown_file(folder_id: string, position?: Position): Promise<void>
-	rename(id: string, new_name: string): Promise<void>
+	/**
+	 * `report: false` throws a failed rename to the caller instead of
+	 * setting `last_error` (which the window shows as a toast): a batch
+	 * reports its failures itself.
+	 */
+	rename(id: string, new_name: string, options?: { report?: boolean }): Promise<void>
 	move(id: string, target_folder_id: string, new_index: number, source_folder_id?: string, source_index?: number): Promise<string | undefined>
 	remove(id: string): Promise<void>
 

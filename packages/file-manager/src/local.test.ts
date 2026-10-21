@@ -223,12 +223,54 @@ describe("createLocalFileManager", () => {
 	})
 
 	test("rename moves an item within the same parent directory", async () => {
+		readDir.mockResolvedValue([{ name: "old.txt", isDirectory: false, isFile: true, isSymlink: false }])
 		const fm = createLocalFileManager()
 		const patch = await fm.rename("/home/user/old.txt", "new.txt")
 
 		expect(dirname).toHaveBeenCalledWith("/home/user/old.txt")
 		expect(fs_rename).toHaveBeenCalledWith("/home/user/old.txt", "/home/user/new.txt")
 		expect(patch).toEqual({ id: "/home/user/new.txt", name: "new.txt" })
+	})
+
+	test("rename never replaces another file, whatever the case of its name", async () => {
+		readDir.mockResolvedValue([
+			{ name: "IMG_1.jpg", isDirectory: false, isFile: true, isSymlink: false },
+			{ name: "beach.jpg", isDirectory: false, isFile: true, isSymlink: false },
+		])
+		const fm = createLocalFileManager()
+
+		await expect(fm.rename("/home/user/IMG_1.jpg", "Beach.jpg")).rejects.toThrow("already exists")
+		await expect(fm.rename("/home/user/IMG_1.jpg", "beach.jpg")).rejects.toThrow("already exists")
+		expect(fs_rename).not.toHaveBeenCalled()
+	})
+
+	test("rename never replaces a file whose name is the same letters composed differently", async () => {
+		// "й" decomposed (NFD), as old HFS disks, zips and some clouds write it
+		readDir.mockResolvedValue([
+			{ name: "IMG_1.jpg", isDirectory: false, isFile: true, isSymlink: false },
+			{ name: "Мой зонт.jpg".normalize("NFD"), isDirectory: false, isFile: true, isSymlink: false },
+		])
+		const fm = createLocalFileManager()
+
+		await expect(fm.rename("/home/user/IMG_1.jpg", "Мой зонт.jpg".normalize("NFC"))).rejects.toThrow("already exists")
+		await expect(fm.rename("/home/user/IMG_1.jpg", "мой зонт.jpg".normalize("NFC"))).rejects.toThrow("already exists")
+		expect(fs_rename).not.toHaveBeenCalled()
+	})
+
+	test("a file listed decomposed is not a clash with itself", async () => {
+		readDir.mockResolvedValue([{ name: "мой зонт.jpg".normalize("NFD"), isDirectory: false, isFile: true, isSymlink: false }])
+		const fm = createLocalFileManager()
+		await fm.rename(`/home/user/${"мой зонт.jpg".normalize("NFC")}`, "Мой зонт.jpg")
+
+		expect(fs_rename).toHaveBeenCalled()
+	})
+
+	test("rename to the same name in another case is a case change, not a clash", async () => {
+		readDir.mockResolvedValue([{ name: "orange bag.jpg", isDirectory: false, isFile: true, isSymlink: false }])
+		const fm = createLocalFileManager()
+		await fm.rename("/home/user/orange bag.jpg", "Orange bag.jpg")
+
+		expect(fs_rename).toHaveBeenCalledWith("/home/user/orange bag.jpg", "/home/user/Orange bag.jpg")
 	})
 
 	test("move relocates an item to another folder", async () => {

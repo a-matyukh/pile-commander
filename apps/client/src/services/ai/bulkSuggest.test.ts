@@ -124,6 +124,35 @@ describe('suggest_batch', () => {
 		expect(rows[0]).toMatchObject({ status: 'same', checked: false })
 	})
 
+	test('reports reading progress, all of it before the consent', async () => {
+		const rows = [entry('Note 1.md'), entry('IMG_1.jpg'), entry('Note 2.md')].map(new_row)
+		const events: string[] = []
+		await suggest_batch({
+			workspace,
+			rows,
+			concurrency: 1,
+			signal: new AbortController().signal,
+			confirm: async () => {
+				events.push('consent')
+				return true
+			},
+			on_prepared: (done, total) => events.push(`${done}/${total}`),
+			transport: transport(async () => 'x'),
+		})
+		expect(events).toEqual(['1/3', '2/3', '3/3', 'consent'])
+	})
+
+	test('a model that hangs stops the batch instead of timing out on every row', async () => {
+		const rows = [entry('Note 1.md'), entry('Note 2.md')].map(new_row)
+		const t = transport(async () => {
+			throw new AiError({ kind: 'timeout', status: null, message: 'the provider stopped responding' })
+		})
+		const outcome = await run(rows, t).done
+		expect(t.calls).toBe(1)
+		expect(outcome.stop_reason).toBeTruthy()
+		expect(rows.map(r => r.status)).toEqual(['failed', 'stopped'])
+	})
+
 	test('a stop marks the rows not asked yet', async () => {
 		const controller = new AbortController()
 		const rows = [entry('Note 1.md'), entry('Note 2.md'), entry('Note 3.md')].map(new_row)

@@ -32,25 +32,31 @@ export async function suggest_batch(input: {
 	concurrency: number
 	signal: AbortSignal
 	confirm: (sends_images: boolean) => Promise<boolean>
+	/** called as each row has been read, before anything is sent */
+	on_prepared?: (done: number, total: number) => void
 	transport?: AiTransport
 }): Promise<BatchOutcome> {
 	const { workspace, rows, signal, transport } = input
 	const targets = new Map<BulkRow, NameTarget>()
 
+	let prepared = 0
 	for (const row of rows) {
 		if (signal.aborted) break
+		row.status = 'preparing'
 		try {
 			const target = await collect_name_target(workspace, row.entry)
 			if (target.kind === 'image' && vision_refused()) {
 				row.status = 'skipped'
 				row.reason = NO_VISION
 			} else {
+				row.status = 'waiting'
 				targets.set(row, target)
 			}
 		} catch (error) {
 			row.status = error instanceof NameSkipped ? 'skipped' : 'failed'
 			row.reason = error instanceof Error ? error.message : String(error)
 		}
+		input.on_prepared?.(++prepared, rows.length)
 	}
 	const mark_unasked_stopped = () => {
 		for (const row of targets.keys()) {
@@ -58,7 +64,9 @@ export async function suggest_batch(input: {
 		}
 	}
 	if (signal.aborted) {
-		mark_unasked_stopped()
+		for (const row of rows) {
+			if (row.status === 'waiting' || row.status === 'preparing') row.status = 'stopped'
+		}
 		return { consented: true, stop_reason: null }
 	}
 	if (!targets.size) return { consented: true, stop_reason: null }

@@ -26,6 +26,23 @@ import type { CreateFolderOptions, CreateTextFileOptions, FileManager, FolderChi
 const STROKES_FILE = "strokes.json"
 const CONNECTIONS_FILE = "connections.json"
 
+/**
+ * POSIX rename silently replaces an existing target, and the default macOS
+ * and Windows file systems ignore case and Unicode composition, so
+ * `Beach.jpg` would replace `beach.jpg`, and an NFC `й` an NFD one. A rename
+ * onto any other entry's name, so compared, is refused; the entry's own
+ * name in another case is a plain case change.
+ */
+async function refuse_taken_name(parent: string, old_name: string, new_name: string) {
+	const fold = (name: string) => name.normalize("NFC").toLowerCase()
+	const wanted = fold(new_name)
+	const own = old_name.normalize("NFC")
+	const entries = await readDir(parent)
+	if (entries.some(entry => entry.name.normalize("NFC") !== own && fold(entry.name) === wanted)) {
+		throw new Error(`"${new_name}" already exists in this folder`)
+	}
+}
+
 function is_pile_path(path: string): boolean {
 	return path.split(/[/\\]/).includes(PILE_DIR_NAME)
 }
@@ -165,6 +182,7 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 		async rename(path: string, new_name: string) {
 			const parent = await dirname(path)
 			const new_path = await join(parent, new_name)
+			await refuse_taken_name(parent, await basename(path), new_name)
 			await fs_rename(path, new_path)
 			try {
 				await rebase_connections_sidecars(new_path, path, new_path)
