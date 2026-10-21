@@ -11,6 +11,8 @@ import {
 
 const KEY_PREFIX = 'pile_commander_ai_key:'
 const MODELS_TIMEOUT_MS = 20_000
+/** As `STALL_TIMEOUT` in Rust: the wait for the response and between chunks. */
+const STALL_TIMEOUT_MS = 180_000
 const DETAIL_LIMIT = 600
 
 /**
@@ -81,6 +83,10 @@ async function status_error(response: Response, key: string | null): Promise<AiE
 	})
 }
 
+function stall_error(): AiError {
+	return new AiError({ kind: 'timeout', status: null, message: 'the provider stopped responding' })
+}
+
 /** fetch rejects with a bare TypeError for offline, DNS, CORS and TLS alike. */
 function fetch_error(error: unknown): unknown {
 	if (error instanceof DOMException && (error.name === 'AbortError')) return error
@@ -123,31 +129,52 @@ export const web_transport: AiTransport = {
 	async chat(base_url: string, request: ChatRequest, options: StreamOptions = {}): Promise<ChatResult> {
 		const url = parse(base_url)
 		const key = stored_key(url)
-		let response: Response
-		try {
-			response = await fetch(endpoint(url, 'chat/completions'), {
-				method: 'POST',
-				headers: headers(key, true),
-				body: JSON.stringify({ ...request, stream: true }),
-				signal: options.signal,
-			})
-		} catch (error) {
-			throw fetch_error(error)
-		}
-		if (!response.ok) throw await status_error(response, key)
-		if (!response.body) throw new AiError({ kind: 'network', status: null, message: 'the response has no body' })
+		const { signal } = options
+		if (signal?.aborted) throw signal.reason
 
-		const reader = response.body.getReader()
-		const parser = new SseParser()
-		let text = ''
-		let truncated = false
+		// the caller's stop and the stall timer both end the request
+		const controller = new AbortController()
+		const forward_stop = () => controller.abort(signal?.reason)
+		signal?.addEventListener('abort', forward_stop, { once: true })
+		let stalled = false
+		let timer: ReturnType<typeof setTimeout> | undefined
+		const arm_stall_timer = () => {
+			clearTimeout(timer)
+			timer = setTimeout(() => {
+				stalled = true
+				controller.abort()
+			}, STALL_TIMEOUT_MS)
+		}
+		const failure = (error: unknown) => (stalled ? stall_error() : fetch_error(error))
+
+		let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
 		try {
+			arm_stall_timer()
+			let response: Response
+			try {
+				response = await fetch(endpoint(url, 'chat/completions'), {
+					method: 'POST',
+					headers: headers(key, true),
+					body: JSON.stringify({ ...request, stream: true }),
+					signal: controller.signal,
+				})
+			} catch (error) {
+				throw failure(error)
+			}
+			if (!response.ok) throw await status_error(response, key)
+			if (!response.body) throw new AiError({ kind: 'network', status: null, message: 'the response has no body' })
+
+			reader = response.body.getReader()
+			const parser = new SseParser()
+			let text = ''
+			let truncated = false
 			for (;;) {
+				arm_stall_timer()
 				let next: Awaited<ReturnType<typeof reader.read>>
 				try {
 					next = await reader.read()
 				} catch (error) {
-					throw fetch_error(error)
+					throw failure(error)
 				}
 				const events = next.done ? parser.finish() : parser.push(next.value)
 				for (const data of events) {
@@ -167,7 +194,9 @@ export const web_transport: AiTransport = {
 				if (next.done) return { text, truncated }
 			}
 		} finally {
-			reader.cancel().catch(() => {})
+			clearTimeout(timer)
+			signal?.removeEventListener('abort', forward_stop)
+			reader?.cancel().catch(() => {})
 		}
 	},
 

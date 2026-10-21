@@ -108,7 +108,9 @@ export function explain_ai_error(error: unknown, context: AiErrorContext): strin
 		case 'rate_limited':
 			return with_detail('Too many requests, or the account is out of credits. Try again later.', error.message)
 		case 'keyring':
-			return with_detail('Couldn\'t save the key: this system\'s password storage isn\'t available.', error.message)
+			return 'Couldn\'t use the key: this system has no password storage available.'
+		case 'keyring_denied':
+			return 'Pile Commander wasn\'t allowed to use the password storage. Try again and choose Allow when the system asks.'
 		case 'invalid_url':
 		case 'invalid_input':
 			return error.message

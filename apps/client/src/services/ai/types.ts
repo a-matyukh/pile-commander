@@ -23,7 +23,10 @@ export type AiErrorKind =
 	| 'bad_request'
 	| 'http'
 	| 'provider'
+	/** no usable password storage on this system */
 	| 'keyring'
+	/** the user refused the system's prompt for the password storage */
+	| 'keyring_denied'
 
 export type AiErrorPayload = {
 	kind: AiErrorKind

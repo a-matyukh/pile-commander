@@ -52,8 +52,13 @@ export function ai_preset(id: AiPresetId): AiPreset {
 	return AI_PRESETS.find(preset => preset.id === id) ?? AI_PRESETS[AI_PRESETS.length - 1]!
 }
 
-/** The preset an address belongs to, so errors can name the right app. */
-export function preset_for_url(base_url: string): AiPresetId {
+/**
+ * The preset an address belongs to, so errors can name the right app. The
+ * browser offers no desktop-only preset, so such an address is custom there.
+ */
+export function preset_for_url(base_url: string, options: { web?: boolean } = {}): AiPresetId {
 	const normalized = base_url.trim().replace(/\/+$/, '')
-	return AI_PRESETS.find(preset => preset.base_url && preset.base_url === normalized)?.id ?? 'custom'
+	const preset = AI_PRESETS.find(candidate => candidate.base_url && candidate.base_url === normalized)
+	if (!preset || (options.web && preset.desktop_only)) return 'custom'
+	return preset.id
 }

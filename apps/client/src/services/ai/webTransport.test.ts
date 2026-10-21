@@ -116,6 +116,62 @@ describe('chat', () => {
 		expect(error.name).toBe('AbortError')
 	})
 
+	/** A fetch that, like the real one, fails its promise and body when the signal aborts. */
+	function hanging_fetch(first_chunk: string | null) {
+		fetch_mock.mockImplementation((_, init) => new Promise((resolve, reject) => {
+			const signal = init!.signal!
+			if (first_chunk === null) {
+				signal.addEventListener('abort', () => reject(signal.reason))
+				return
+			}
+			const body = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode(first_chunk))
+					signal.addEventListener('abort', () => controller.error(signal.reason))
+				},
+			})
+			resolve(new Response(body, { status: 200 }))
+		}))
+	}
+
+	describe('a silent provider', () => {
+		beforeEach(() => {
+			vi.useFakeTimers()
+		})
+		afterEach(() => {
+			vi.useRealTimers()
+		})
+
+		test('times out after three minutes without a response', async () => {
+			hanging_fetch(null)
+			const result = web_transport.chat(base_url, request).catch(e => e)
+			await vi.advanceTimersByTimeAsync(179_000)
+			await vi.advanceTimersByTimeAsync(2_000)
+			expect(await result).toMatchObject({ kind: 'timeout' })
+		})
+
+		test('times out after three minutes of silence mid-stream, keeping the clock reset by each chunk', async () => {
+			hanging_fetch('data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n')
+			const deltas: string[] = []
+			const result = web_transport.chat(base_url, request, { on_delta: text => deltas.push(text) }).catch(e => e)
+			await vi.advanceTimersByTimeAsync(170_000)
+			expect(deltas).toEqual(['Hel'])
+			await vi.advanceTimersByTimeAsync(20_000)
+			expect(await result).toMatchObject({ kind: 'timeout' })
+		})
+
+		test('a stop mid-stream is an AbortError, not a timeout', async () => {
+			hanging_fetch('data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n')
+			const controller = new AbortController()
+			const result = web_transport.chat(base_url, request, { signal: controller.signal }).catch(e => e)
+			await vi.advanceTimersByTimeAsync(1_000)
+			controller.abort()
+			const error = await result
+			expect(error).toBeInstanceOf(DOMException)
+			expect(error.name).toBe('AbortError')
+		})
+	})
+
 	test('plain http is refused before any request', async () => {
 		await expect(web_transport.chat('http://localhost:11434/v1', request)).rejects.toMatchObject({ kind: 'invalid_url' })
 		expect(fetch_mock).not.toHaveBeenCalled()

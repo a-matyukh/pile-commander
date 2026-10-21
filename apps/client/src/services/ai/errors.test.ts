@@ -66,8 +66,11 @@ describe('explain_ai_error', () => {
 		expect(explain_ai_error(error('unauthorized', '', 401), { ...openai, has_key: true })).toBe('The provider rejected the API key.')
 	})
 
-	test('a system without password storage', () => {
-		expect(explain_ai_error(error('keyring', 'Platform secure storage failure'), ollama))
-			.toContain('password storage isn\'t available')
+	test('a system without password storage, and a refused prompt, without the raw error', () => {
+		const missing = explain_ai_error(error('keyring', 'Platform secure storage failure: no secret service'), ollama)
+		expect(missing).toBe('Couldn\'t use the key: this system has no password storage available.')
+		const denied = explain_ai_error(error('keyring_denied', 'Platform secure storage failure: Error { code: -128 }'), ollama)
+		expect(denied).toContain('choose Allow')
+		expect(denied).not.toContain('-128')
 	})
 })

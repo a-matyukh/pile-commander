@@ -41,7 +41,10 @@ pub enum AiErrorKind {
     BadRequest,
     Http,
     Provider,
+    /// no usable password storage on this system
     Keyring,
+    /// the user refused the system's prompt for the password storage
+    KeyringDenied,
 }
 
 /// What the client gets on failure. `message` is the provider's own text
@@ -110,8 +113,30 @@ fn stalled() -> AiError {
     AiError::new(AiErrorKind::Timeout, "the provider stopped responding")
 }
 
+/// The user said no to the system's access prompt. keyring reports it as a
+/// generic platform failure, and macOS localizes the text, so the Security
+/// framework code is read from the debug form: errSecUserCanceled (-128),
+/// errSecAuthFailed (-25293), errSecInteractionNotAllowed (-25308). A
+/// dismissed Secret Service prompt says so in its debug form.
+fn is_access_denied(debug: &str) -> bool {
+    let has_code = |code: &str| {
+        debug
+            .match_indices(code)
+            .any(|(at, _)| !debug[at + code.len()..].starts_with(|c: char| c.is_ascii_digit()))
+    };
+    ["code: -128", "code: -25293", "code: -25308"]
+        .into_iter()
+        .any(has_code)
+        || debug.to_ascii_lowercase().contains("dismissed")
+}
+
 fn keyring_error(error: keyring::Error) -> AiError {
-    AiError::new(AiErrorKind::Keyring, error_chain(&error))
+    let kind = if is_access_denied(&format!("{error:?}")) {
+        AiErrorKind::KeyringDenied
+    } else {
+        AiErrorKind::Keyring
+    };
+    AiError::new(kind, error_chain(&error))
 }
 
 /// How far a request to a host travels, judged from the address alone.
@@ -914,6 +939,29 @@ mod tests {
         let scrubbed = scrub(&text, Some(key));
         assert!(!scrubbed.contains("sk-01"), "{scrubbed}");
         assert_eq!(scrubbed.chars().count(), DETAIL_LIMIT);
+    }
+
+    #[test]
+    fn a_refused_keychain_prompt_is_told_apart_from_missing_storage() {
+        let denied = |code: i32| {
+            let error = keyring::Error::PlatformFailure(
+                format!("Error {{ code: {code}, message: \"Отменено\" }}").into(),
+            );
+            keyring_error(error).kind
+        };
+        assert_eq!(denied(-128), AiErrorKind::KeyringDenied);
+        assert_eq!(denied(-25293), AiErrorKind::KeyringDenied);
+        assert_eq!(denied(-25308), AiErrorKind::KeyringDenied);
+        assert_eq!(denied(-25291), AiErrorKind::Keyring);
+        assert_eq!(denied(-1280), AiErrorKind::Keyring);
+        assert_eq!(
+            keyring_error(keyring::Error::NoStorageAccess("no secret service".into())).kind,
+            AiErrorKind::Keyring
+        );
+        assert_eq!(
+            keyring_error(keyring::Error::PlatformFailure("Prompt dismissed".into())).kind,
+            AiErrorKind::KeyringDenied
+        );
     }
 
     #[test]

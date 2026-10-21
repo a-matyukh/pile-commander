@@ -45,7 +45,7 @@ function select_preset(id: AiPresetId) {
 }
 
 function set_base_url(value: string) {
-	ai_settings.value = { ...ai_settings.value, base_url: value, preset: preset_for_url(value) }
+	ai_settings.value = { ...ai_settings.value, base_url: value, preset: preset_for_url(value, { web: !is_desktop }) }
 }
 
 function set_model(value: string | undefined) {
