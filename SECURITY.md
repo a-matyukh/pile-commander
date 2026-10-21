@@ -374,8 +374,13 @@ stays Report-Only, the browser still connects and may file a report. If
 `connect-src` is ever enforced, that custom origin is blocked on the web.
 It is left out on purpose: opening `connect-src` to every `https` host would
 drop the restriction for the whole app. Custom addresses keep working in the
-desktop app, which has no CSP. Local http providers are already unreachable
-from the https web app (mixed content).
+desktop app, which has no CSP. Plain http to a private address such as
+`192.168.x.x` is blocked as mixed content from the https page.
+`http://localhost` and `127.0.0.1` are not: Chrome and Firefox allow them,
+and only Safari blocks them. Local providers are still unavailable on the
+web, because the Ollama and LM Studio presets are turned off there, and
+without `OLLAMA_ORIGINS` the request fails CORS. Turning that on is not
+part of this stage.
 
 ---
 
