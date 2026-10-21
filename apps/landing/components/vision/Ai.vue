@@ -1,5 +1,6 @@
-<!-- AI tools: a prompt typed into the folder turns into idea cards on the
-     board. The other actions are static chips — named, not working.
+<!-- AI ideas: a prompt typed into the folder turns into idea cards on the
+     board. Sorting is a static chip — named, not working. Naming and
+     summaries shipped and live on the home page (HomeAiNamingScene).
      SSR, no-JS and reduced motion get the finished frame. -->
 <script setup lang="ts">
 const PROMPT = "Ideas for the harbor moodboard";
@@ -153,8 +154,6 @@ const palette = ["#b45309", "#e7d3b0", "#0e7490", "#1e3a5f"];
         Generate ideas
       </li>
       <li class="action">Sort into folders</li>
-      <li class="action">Summarize</li>
-      <li class="action action-extra">Name files</li>
     </ul>
 
     <div class="prompt">
@@ -584,7 +583,6 @@ p {
 
 /* Narrow cards: fewer words, same story. */
 @container (max-width: 520px) {
-  .action-extra,
   .idea-copy,
   .file-note,
   .idea-palette {
