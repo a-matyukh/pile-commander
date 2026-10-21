@@ -12,6 +12,8 @@ import { useColorSubmenu } from './useColorSubmenu'
 import { ai_available } from '@/store/ai'
 import { open_bulk_rename } from '@/store/aiBulkRename'
 import { name_target_kind } from '@/services/ai/naming'
+import { open_summary } from '@/store/aiSummary'
+import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 function toBulkItem(widget: FolderContainerWidgetChild): BulkRemoveItem {
 	return {
@@ -154,10 +156,29 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		open_bulk_rename(ws, folder_id, nameableEntries.value)
 	}
 
-	const aiItems = computed<DropdownMenuItem[]>(() =>
-		ai_available(workspace.value) && nameableEntries.value.length > 0
-			? [{ label: 'Suggest names', onSelect: openBulkRename }]
-			: [])
+	function openSummary() {
+		const ws = workspace.value
+		const container = scope.container.value
+		if (!ws || !container) return
+		const selected = new Set(selectedIds.value)
+		// container.children is board order; selectedChildren follows click order
+		const widgets = container.children.filter(child => selected.has(child.id))
+		open_summary({
+			workspace: ws,
+			folder_id: container.id,
+			board_name: container.name,
+			entries: summary_entries(widgets),
+			position: summary_position(widgets),
+		})
+	}
+
+	const aiItems = computed<DropdownMenuItem[]>(() => {
+		if (!ai_available(workspace.value)) return []
+		return [
+			...(nameableEntries.value.length > 0 ? [{ label: 'Suggest names', onSelect: openBulkRename }] : []),
+			{ label: 'Summarize', onSelect: openSummary },
+		]
+	})
 
 	const selectionMenuItems = computed<DropdownMenuItem[][]>(() => [
 		...(colorMenuItem.value ? [[colorMenuItem.value]] : []),

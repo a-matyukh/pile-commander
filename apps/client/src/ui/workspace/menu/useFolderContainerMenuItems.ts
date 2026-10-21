@@ -18,6 +18,9 @@ import { useCanvasToolbarPrefs } from '@/ui/workspace/folder-container/canvas/us
 import { useColorSubmenu } from './useColorSubmenu'
 import { useCreateChildItems } from './useCreateChildItems'
 import { useFolderViewMenuItems } from './useFolderViewMenuItems'
+import { ai_available } from '@/store/ai'
+import { open_summary } from '@/store/aiSummary'
+import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 type FolderContainerMenuOptions = {
 	position?: MaybeRefOrGetter<Position | null | undefined>
@@ -129,6 +132,25 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 
 		void ws.change_grid_size(scope.folderId.value, parsed)
 	}
+
+	/** The whole board; the note goes where the menu was opened. */
+	const summarizeItems = computed<DropdownMenuItem[]>(() => {
+		const ws = workspace.value
+		const container = scope.container.value
+		if (!ws || !container?.children.length || !ai_available(ws) || toValue(options?.loading)) return []
+		return [{
+			label: 'Summarize board',
+			onSelect() {
+				open_summary({
+					workspace: ws,
+					folder_id: container.id,
+					board_name: container.name,
+					entries: summary_entries(container.children),
+					position: toValue(options?.position) ?? summary_position(container.children),
+				})
+			},
+		}]
+	})
 
 	const isMdUp = useMediaQuery('(min-width: 768px)')
 
@@ -320,6 +342,7 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 				},
 				...(backgroundItem ? [backgroundItem as DropdownMenuItem] : []),
 			],
+			summarizeItems.value,
 			// extra sections (e.g. desktop management on the desktop surface)
 			...(scope.menuSections?.value ?? []),
 		]
