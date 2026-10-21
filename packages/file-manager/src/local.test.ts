@@ -274,6 +274,7 @@ describe("createLocalFileManager", () => {
 	})
 
 	test("move relocates an item to another folder", async () => {
+		readDir.mockResolvedValue([])
 		const fm = createLocalFileManager()
 		const patch = await fm.move("/home/user/report.pdf", "/home/archive")
 
@@ -289,6 +290,7 @@ describe("createLocalFileManager", () => {
 	})
 
 	test("move uses a custom name when provided", async () => {
+		readDir.mockResolvedValue([])
 		const fm = createLocalFileManager()
 		const patch = await fm.move("/home/user/report.pdf", "/home/archive", "report (1).pdf")
 
@@ -301,6 +303,38 @@ describe("createLocalFileManager", () => {
 			id: "/home/archive/report (1).pdf",
 			name: "report (1).pdf",
 		})
+	})
+
+	test("move never replaces another file, whatever the case of its name", async () => {
+		readDir.mockResolvedValue([
+			{ name: "beach.jpg", isDirectory: false, isFile: true, isSymlink: false },
+		])
+		const fm = createLocalFileManager()
+
+		await expect(fm.move("/home/user/IMG_1.jpg", "/home/archive", "Beach.jpg")).rejects.toThrow("already exists")
+		await expect(fm.move("/home/user/IMG_1.jpg", "/home/archive", "beach.jpg")).rejects.toThrow("already exists")
+		expect(fs_rename).not.toHaveBeenCalled()
+	})
+
+	test("move never replaces a file that already has this exact name", async () => {
+		readDir.mockResolvedValue([
+			{ name: "report.pdf", isDirectory: false, isFile: true, isSymlink: false },
+		])
+		const fm = createLocalFileManager()
+
+		await expect(fm.move("/home/user/report.pdf", "/home/archive")).rejects.toThrow("already exists")
+		expect(fs_rename).not.toHaveBeenCalled()
+	})
+
+	test("move never replaces a file whose name is the same letters composed differently", async () => {
+		readDir.mockResolvedValue([
+			{ name: "Мой зонт.jpg".normalize("NFD"), isDirectory: false, isFile: true, isSymlink: false },
+		])
+		const fm = createLocalFileManager()
+
+		await expect(fm.move("/home/user/IMG_1.jpg", "/home/archive", "Мой зонт.jpg".normalize("NFC"))).rejects.toThrow("already exists")
+		await expect(fm.move("/home/user/IMG_1.jpg", "/home/archive", "мой зонт.jpg".normalize("NFC"))).rejects.toThrow("already exists")
+		expect(fs_rename).not.toHaveBeenCalled()
 	})
 
 	test("copy_file copies into the target folder", async () => {
