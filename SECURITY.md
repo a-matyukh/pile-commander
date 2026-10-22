@@ -366,8 +366,9 @@ Results are ordinary renames and `.md` notes; nothing is written to the database
 `Content-Security-Policy` is only `object-src`, `base-uri` and
 `frame-ancestors`. It does not set `connect-src`, so a fetch to a provider
 is not blocked today. The full policy, including `connect-src`, is
-`Content-Security-Policy-Report-Only`. `https://api.openai.com` and
-`https://openrouter.ai` are in that `connect-src`.
+`Content-Security-Policy-Report-Only`. `https://api.openai.com`,
+`https://openrouter.ai` and `https://api.fireworks.ai` are in that
+`connect-src`.
 
 A provider address the user types is not in the list. While the full policy
 stays Report-Only, the browser still connects and may file a report. If
@@ -442,7 +443,8 @@ deferred). Done work is in the invariants above.
   promoting it needs a production run first, since a missed origin
   white-screens the app. The enforced header is the three directives above
   plus HSTS. The Report-Only `connect-src` now also names
-  `https://api.openai.com` and `https://openrouter.ai`. A custom AI origin
+  `https://api.openai.com`, `https://openrouter.ai` and
+  `https://api.fireworks.ai`. A custom AI origin
   is intentionally not listed; see "Web CSP and a custom provider address".
 - `hub_publications.fork_count` counts every fork, not unique forkers, and
   is not rate-limited.
@@ -555,7 +557,7 @@ deferred). Done work is in the invariants above.
   enable the hook only after the Plunk env is set).
 - Full enforcing CSP after the Report-Only run confirms the origins
   (Supabase, backend, B2, model-viewer decoders, `api.openai.com`,
-  `openrouter.ai`). A custom AI origin stays out of `connect-src`; see
+  `openrouter.ai`, `api.fireworks.ai`). A custom AI origin stays out of `connect-src`; see
   "Web CSP and a custom provider address".
 - Linux AI key, before release: save a key where Secret Service is running,
   and confirm the "no password storage" sentence where it is not.

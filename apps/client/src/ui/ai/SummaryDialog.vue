@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ai_base_check, ai_settings, vision_support } from '@/store/ai'
+import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { close_summary, summary_request } from '@/store/aiSummary'
 import { ai_chat, explain_chat_error } from '@/services/ai/client'
@@ -143,7 +144,7 @@ watch(() => summary_request.run, () => {
 	<UModal
 		:open="summary_request.open"
 		:title="`Summarize “${summary_request.board_name}”`"
-		:description="`${summary_request.entries.length} ${summary_request.entries.length === 1 ? 'item' : 'items'} · ${ai_settings.model}`"
+		:description="`${summary_request.entries.length} ${summary_request.entries.length === 1 ? 'item' : 'items'} · ${model_label(ai_settings.model)}`"
 		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
 		@update:open="on_open_change"
 	>
@@ -152,7 +153,7 @@ watch(() => summary_request.run, () => {
 				<div class="flex flex-wrap items-center gap-2 text-xs text-muted">
 					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
 					<span v-if="phase === 'reading'">Reading {{ read }} of {{ summary_request.entries.length }}…</span>
-					<span v-else-if="phase === 'writing' && !summary">Asking {{ ai_settings.model }}…</span>
+					<span v-else-if="phase === 'writing' && !summary">Asking {{ model_label(ai_settings.model) }}…</span>
 					<span v-if="coverage">{{ coverage }}</span>
 				</div>
 

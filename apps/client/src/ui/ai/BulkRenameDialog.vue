@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ai_base_check, ai_settings } from '@/store/ai'
+import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { bulk_rename_request, close_bulk_rename } from '@/store/aiBulkRename'
 import { new_row, planned_names, rename_entry, type BulkRow } from '@/services/ai/bulkRename'
@@ -129,7 +130,7 @@ watch(() => bulk_rename_request.run, () => {
 	<UModal
 		:open="bulk_rename_request.open"
 		title="Suggest names"
-		:description="`${rows.length} ${rows.length === 1 ? 'item' : 'items'} · ${ai_settings.model}`"
+		:description="`${rows.length} ${rows.length === 1 ? 'item' : 'items'} · ${model_label(ai_settings.model)}`"
 		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
 		@update:open="on_open_change"
 	>

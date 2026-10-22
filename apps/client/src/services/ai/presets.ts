@@ -1,4 +1,4 @@
-export type AiPresetId = 'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'custom'
+export type AiPresetId = 'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'fireworks' | 'custom'
 
 export type AiPreset = {
 	id: AiPresetId
@@ -40,6 +40,13 @@ export const AI_PRESETS: readonly AiPreset[] = [
 		desktop_only: false,
 	},
 	{
+		id: 'fireworks',
+		label: 'Fireworks',
+		base_url: 'https://api.fireworks.ai/inference/v1',
+		key_hint: 'fireworks.ai → API Keys. Open models such as DeepSeek, Qwen and Llama.',
+		desktop_only: false,
+	},
+	{
 		id: 'custom',
 		label: 'Custom address',
 		base_url: '',
@@ -61,4 +68,13 @@ export function preset_for_url(base_url: string, options: { web?: boolean } = {}
 	const preset = AI_PRESETS.find(candidate => candidate.base_url && candidate.base_url === normalized)
 	if (!preset || (options.web && preset.desktop_only)) return 'custom'
 	return preset.id
+}
+
+/**
+ * A model id as people read it: Fireworks lists `accounts/fireworks/models/
+ * deepseek-v3`, where only the last part names the model. The id itself is
+ * what is sent.
+ */
+export function model_label(id: string): string {
+	return id.replace(/^accounts\/[^/]+\/models\//, '')
 }

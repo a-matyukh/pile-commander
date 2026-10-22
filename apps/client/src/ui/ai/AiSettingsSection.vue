@@ -7,7 +7,7 @@ import { ai_transport } from '@/services/ai/client'
 import { explain_ai_error } from '@/services/ai/errors'
 import { may_carry_key } from '@/services/ai/locality'
 import { NAME_STYLES, type NameStyle } from '@/services/ai/naming'
-import { AI_PRESETS, ai_preset, preset_for_url, type AiPresetId } from '@/services/ai/presets'
+import { AI_PRESETS, ai_preset, model_label, preset_for_url, type AiPresetId } from '@/services/ai/presets'
 import AiReachBadge from './AiReachBadge.vue'
 
 const transport = ai_transport()
@@ -29,6 +29,14 @@ const key_busy = ref(false)
 const key_error = ref<string | null>(null)
 
 const models = ref<string[]>([])
+// Shown by name (`deepseek-v3`, not `accounts/fireworks/models/deepseek-v3`);
+// the saved model stays listed before the provider has been asked.
+const model_items = computed(() => {
+	const ids = models.value.includes(ai_settings.value.model) || !ai_settings.value.model
+		? models.value
+		: [ai_settings.value.model, ...models.value]
+	return ids.map(id => ({ label: model_label(id), value: id }))
+})
 const testing = ref(false)
 const test_result = ref<{ ok: boolean; text: string } | null>(null)
 
@@ -111,7 +119,7 @@ async function test_connection() {
 		test_result.value = {
 			ok: !missing,
 			text: missing
-				? `Connected, but “${model}” isn't among the ${ids.length} models of this provider.`
+				? `Connected, but “${model_label(model)}” isn't among the ${ids.length} models of this provider.`
 				: `Connected: ${ids.length} ${ids.length === 1 ? 'model' : 'models'} available.`,
 		}
 	} catch (error) {
@@ -232,29 +240,6 @@ watch(() => ai_settings.value.model, () => {
 				In the browser the key is kept for this tab only and never stored.
 			</p>
 
-			<UFormField label="Model" size="sm">
-				<UInputMenu
-					:model-value="ai_settings.model || undefined"
-					:items="models"
-					create-item
-					placeholder="e.g. gemma3 or openai/gpt-4o-mini"
-					size="sm"
-					class="w-full"
-					@update:model-value="(value) => set_model(value as string | undefined)"
-					@create="add_model"
-				/>
-			</UFormField>
-
-			<UFormField label="Suggested names" size="sm">
-				<USelect
-					:model-value="ai_settings.name_style"
-					:items="name_style_items"
-					size="sm"
-					class="w-full"
-					@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
-				/>
-			</UFormField>
-
 			<div class="flex flex-col gap-1.5">
 				<UButton
 					label="Test connection"
@@ -275,6 +260,30 @@ watch(() => ai_settings.value.model, () => {
 					{{ test_result.text }}
 				</p>
 			</div>
+
+			<UFormField label="Model" size="sm">
+				<UInputMenu
+					:model-value="ai_settings.model || undefined"
+					:items="model_items"
+					value-key="value"
+					create-item
+					placeholder="e.g. gemma3 or openai/gpt-4o-mini"
+					size="sm"
+					class="w-full"
+					@update:model-value="(value) => set_model(value as string | undefined)"
+					@create="add_model"
+				/>
+			</UFormField>
+
+			<UFormField label="Suggested names" size="sm">
+				<USelect
+					:model-value="ai_settings.name_style"
+					:items="name_style_items"
+					size="sm"
+					class="w-full"
+					@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
+				/>
+			</UFormField>
 		</div>
 	</section>
 </template>

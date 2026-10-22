@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { ai_available, ai_base_check, ai_settings, vision_support } from '@/store/ai'
+import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { explain_chat_error } from '@/services/ai/client'
 import { is_abort_error } from '@/services/ai/errors'
@@ -172,7 +173,7 @@ defineExpose({ open })
 
 				<div v-if="suggesting" class="flex items-center gap-2 text-xs text-muted">
 					<UIcon name="i-lucide:loader-circle" class="size-3.5 animate-spin" />
-					<span>Asking {{ ai_settings.model }}…</span>
+					<span>Asking {{ model_label(ai_settings.model) }}…</span>
 					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
 				</div>
 				<div v-else-if="suggestion" class="flex items-center gap-2 text-xs">
