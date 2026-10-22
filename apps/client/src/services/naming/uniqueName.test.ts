@@ -38,6 +38,22 @@ describe('uniqueName', () => {
 		expect(resolve_unique_filename('Note 1.md', ['Note 1.md'])).toBe('Note 2.md')
 	})
 
+	test('resolve_unique_filename can ignore case, as macOS and Windows file systems do', () => {
+		expect(resolve_unique_filename('Beach.jpg', ['beach.jpg'])).toBe('Beach.jpg')
+		expect(resolve_unique_filename('Beach.jpg', ['beach.jpg'], { ignore_case: true })).toBe('Beach (1).jpg')
+		expect(resolve_unique_filename('Beach.jpg', ['beach.jpg', 'beach (1).JPG'], { ignore_case: true })).toBe('Beach (2).jpg')
+		expect(resolve_unique_filename('Note 1.md', ['note 1.md'], { ignore_case: true })).toBe('Note 2.md')
+	})
+
+	test('resolve_unique_filename with ignore_case also ignores Unicode composition (NFC vs NFD)', () => {
+		const nfc = 'Пляж и мой зонт.jpg'.normalize('NFC')
+		const nfd = 'Пляж и мой зонт.jpg'.normalize('NFD')
+		expect(nfc).not.toBe(nfd)
+		expect(resolve_unique_filename(nfc, [nfd], { ignore_case: true })).toBe('Пляж и мой зонт (1).jpg'.normalize('NFC'))
+		expect(resolve_unique_filename('Café.jpg'.normalize('NFC'), ['café.jpg'.normalize('NFD')], { ignore_case: true }))
+			.toBe('Café (1).jpg'.normalize('NFC'))
+	})
+
 	test('resolve_unique_filename appends (n) for other collisions', () => {
 		expect(resolve_unique_filename('photo.png', ['photo.png'])).toBe('photo (1).png')
 		expect(resolve_unique_filename('photo.png', ['photo.png', 'photo (1).png'])).toBe('photo (2).png')

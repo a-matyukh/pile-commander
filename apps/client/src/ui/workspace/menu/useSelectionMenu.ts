@@ -9,6 +9,11 @@ import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { clipboardIdsForMenu } from './clipboardIdsForMenu'
 import { selectionCanSetSharedBackground } from './canHaveWidgetBackground'
 import { useColorSubmenu } from './useColorSubmenu'
+import { ai_available } from '@/store/ai'
+import { open_bulk_rename } from '@/store/aiBulkRename'
+import { name_target_kind } from '@/services/ai/naming'
+import { open_summary } from '@/store/aiSummary'
+import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 function toBulkItem(widget: FolderContainerWidgetChild): BulkRemoveItem {
 	return {
@@ -135,8 +140,49 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		ws.exit_selection_mode()
 	}
 
+	/** Selected notes, folders and images: what a name can be suggested for. */
+	const nameableEntries = computed(() => selectedChildren.value
+		.map(child => ({
+			id: child.id,
+			name: child.name,
+			type: (child.type === 'folder_container' || child.type === 'folder_cover' ? 'folder' : 'file') as 'file' | 'folder',
+		}))
+		.filter(entry => name_target_kind(entry) !== null))
+
+	function openBulkRename() {
+		const ws = workspace.value
+		const folder_id = scope.container.value?.id
+		if (!ws || !folder_id) return
+		open_bulk_rename(ws, folder_id, nameableEntries.value)
+	}
+
+	function openSummary() {
+		const ws = workspace.value
+		const container = scope.container.value
+		if (!ws || !container) return
+		const selected = new Set(selectedIds.value)
+		// container.children is board order; selectedChildren follows click order
+		const widgets = container.children.filter(child => selected.has(child.id))
+		open_summary({
+			workspace: ws,
+			folder_id: container.id,
+			board_name: container.name,
+			entries: summary_entries(widgets),
+			position: summary_position(widgets),
+		})
+	}
+
+	const aiItems = computed<DropdownMenuItem[]>(() => {
+		if (!ai_available(workspace.value)) return []
+		return [
+			...(nameableEntries.value.length > 0 ? [{ label: 'Suggest names', onSelect: openBulkRename }] : []),
+			{ label: 'Summarize', onSelect: openSummary },
+		]
+	})
+
 	const selectionMenuItems = computed<DropdownMenuItem[][]>(() => [
 		...(colorMenuItem.value ? [[colorMenuItem.value]] : []),
+		...(aiItems.value.length ? [aiItems.value] : []),
 		clipboardItems.value,
 		[{
 			label: 'Remove',

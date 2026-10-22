@@ -3,6 +3,7 @@ use std::io::{ErrorKind, Result as IoResult};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
+mod ai;
 mod presigned_put;
 mod workspace_pack;
 
@@ -89,6 +90,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(OpenedPaths(Mutex::new(vec![])))
         .manage(presigned_put::Uploads::default())
+        .manage(ai::Ai::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -104,6 +106,12 @@ pub fn run() {
             presigned_put::put_presigned_chunk,
             presigned_put::put_presigned_finish,
             presigned_put::put_presigned_abort,
+            ai::ai_key_set,
+            ai::ai_key_delete,
+            ai::ai_key_status,
+            ai::ai_list_models,
+            ai::ai_chat_stream,
+            ai::ai_cancel,
         ])
         .setup(|app| {
             #[cfg(desktop)]

@@ -2006,7 +2006,7 @@ export async function createWorkspaceStore(
 		}
 	}
 	},
-			async rename(id: string, new_name: string) {
+			async rename(id: string, new_name: string, options?: { report?: boolean }) {
 				assert_can_write()
 				const name = new_name.trim()
 				if (!name) return
@@ -2029,6 +2029,7 @@ export async function createWorkspaceStore(
 				try {
 					result = await fm.rename(id, name)
 				} catch (error) {
+					if (options?.report === false) throw error
 					report_error(this, error)
 					return
 				}

@@ -26,6 +26,26 @@ import type { CreateFolderOptions, CreateTextFileOptions, FileManager, FolderChi
 const STROKES_FILE = "strokes.json"
 const CONNECTIONS_FILE = "connections.json"
 
+/**
+ * POSIX rename silently replaces an existing target, and the default macOS
+ * and Windows file systems ignore case and Unicode composition, so
+ * `Beach.jpg` would replace `beach.jpg`, and an NFC `й` an NFD one. A name
+ * that folds onto another entry is refused. `keep` is the entry's own name
+ * when it already sits in `parent` (a rename, or a move back into that
+ * same folder): compared in NFC, a case-only change is not a clash with
+ * itself. A move into another folder passes no `keep`, because a file
+ * there with the same name is a different file.
+ */
+async function refuse_taken_name(parent: string, new_name: string, keep?: string) {
+	const fold = (name: string) => name.normalize("NFC").toLowerCase()
+	const wanted = fold(new_name)
+	const own = keep?.normalize("NFC")
+	const entries = await readDir(parent)
+	if (entries.some(entry => entry.name.normalize("NFC") !== own && fold(entry.name) === wanted)) {
+		throw new Error(`"${new_name}" already exists in this folder`)
+	}
+}
+
 function is_pile_path(path: string): boolean {
 	return path.split(/[/\\]/).includes(PILE_DIR_NAME)
 }
@@ -165,6 +185,7 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 		async rename(path: string, new_name: string) {
 			const parent = await dirname(path)
 			const new_path = await join(parent, new_name)
+			await refuse_taken_name(parent, new_name, await basename(path))
 			await fs_rename(path, new_path)
 			try {
 				await rebase_connections_sidecars(new_path, path, new_path)
@@ -174,8 +195,15 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 			return { id: new_path, name: await basename(new_path) }
 		},
 		async move(path: string, target_folder_id: string, new_name?: string) {
-			const name = new_name ?? await basename(path)
+			const current = await basename(path)
+			const name = new_name ?? current
 			const new_path = await join(target_folder_id, name)
+			const source_folder = await dirname(path)
+			await refuse_taken_name(
+				target_folder_id,
+				name,
+				source_folder === target_folder_id ? current : undefined,
+			)
 			await fs_rename(path, new_path)
 			try {
 				await rebase_connections_sidecars(new_path, path, new_path)

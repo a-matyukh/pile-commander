@@ -18,8 +18,8 @@ const directions = [
   },
   {
     scene: "ai",
-    title: "AI tools",
-    body: "Ask a folder for ideas and get them back as cards on the board. Sorting, naming and summaries come next — help that works on the pile you already have.",
+    title: "AI: ideas and sorting",
+    body: "Ask a folder for ideas and get them back as cards on the board, and let a model sort a pile into folders. Naming files and summaries are already in the app.",
   },
   {
     scene: "desktop",

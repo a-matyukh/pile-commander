@@ -30,9 +30,10 @@ tauri-plugin-xattrs = { path = "../../../packages/tauri-plugin-xattrs" }
 reqwest = { version = "0.12.28", default-features = false, features = ["native-tls", "stream"] }
 bytes = "1"
 futures-util = { version = "0.3", default-features = false }
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["sync", "time", "macros"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 trash = "5"
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

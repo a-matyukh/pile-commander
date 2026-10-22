@@ -35,15 +35,27 @@ export function resolve_markdown_file_name(existing_names: Iterable<string>): st
 	return resolve_numbered_filename('New markdown file', '.md', existing_names)
 }
 
+/**
+ * `ignore_case` compares names the way the default macOS and Windows file
+ * systems do, where a rename onto an equal name replaces the other file:
+ * `Beach.jpg` equals `beach.jpg`, and a letter written as one code point
+ * equals the same letter decomposed (NFC vs NFD).
+ */
 export function resolve_unique_filename(
 	name: string,
 	existing_names: Iterable<string>,
+	options: { ignore_case?: boolean } = {},
 ): string {
-	const taken = new Set(existing_names)
-	if (!taken.has(name)) return name
+	const key = (candidate: string) => (options.ignore_case ? candidate.normalize('NFC').toLowerCase() : candidate)
+	const taken = new Set([...existing_names].map(key))
+	const is_free = (candidate: string) => !taken.has(key(candidate))
+	if (is_free(name)) return name
 
 	if (NOTE_FILENAME_PATTERN.test(name)) {
-		return resolve_note_filename(taken)
+		for (let n = 1; ; n++) {
+			const candidate = `Note ${n}.md`
+			if (is_free(candidate)) return candidate
+		}
 	}
 
 	const dot = name.lastIndexOf('.')
@@ -52,6 +64,6 @@ export function resolve_unique_filename(
 
 	for (let n = 1; ; n++) {
 		const candidate = `${base} (${n})${ext}`
-		if (!taken.has(candidate)) return candidate
+		if (is_free(candidate)) return candidate
 	}
 }
