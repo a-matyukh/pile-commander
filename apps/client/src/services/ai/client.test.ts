@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { ai_settings, ai_vision, vision_support } from '@/store/ai'
+import { ai_reasoning_off_refused, ai_settings, ai_vision, reasoning_off_refused, vision_support } from '@/store/ai'
 import { ai_chat, explain_chat_error } from './client'
-import { AiError, type AiMessage, type AiTransport } from './types'
+import { AiError, type AiMessage, type AiTransport, type ChatRequest } from './types'
 
 const base_url = 'http://localhost:11434/v1'
 const model = 'gemma3'
@@ -33,6 +33,7 @@ const fails = (error: unknown) => transport(async () => {
 beforeEach(() => {
 	ai_settings.value = { preset: 'ollama', base_url, model, name_style: 'spaces' }
 	ai_vision.value = {}
+	ai_reasoning_off_refused.value = {}
 })
 
 describe('vision support', () => {
@@ -109,4 +110,50 @@ test('sends the configured model and passes deltas through', async () => {
 	expect(sent).toEqual({ base_url, model })
 	expect(deltas).toEqual(['a', 'b'])
 	expect(result).toEqual({ text: 'ab', truncated: true })
+})
+
+describe('no_reasoning', () => {
+	const sent: ChatRequest[] = []
+	const recording = (chat: (request: ChatRequest) => Promise<{ text: string; truncated: boolean }>) =>
+		transport(async (_, request) => {
+			sent.push(request)
+			return chat(request)
+		})
+	const refusal = new AiError({
+		kind: 'bad_request',
+		status: 400,
+		message: 'Unsupported parameter: \'reasoning_effort\' is not supported with this model.',
+	})
+
+	beforeEach(() => {
+		sent.length = 0
+	})
+
+	test('asks the model to skip reasoning only when told to', async () => {
+		const ok = recording(async () => ({ text: 'name', truncated: false }))
+		await ai_chat(text_only, { no_reasoning: true }, ok)
+		await ai_chat(text_only, {}, ok)
+		expect(sent.map(request => request.reasoning_effort)).toEqual(['none', undefined])
+	})
+
+	test('a provider that refuses it gets the request again without it, and never again', async () => {
+		const strict = recording(async (request) => {
+			if (request.reasoning_effort) throw refusal
+			return { text: 'name', truncated: false }
+		})
+		expect((await ai_chat(text_only, { no_reasoning: true }, strict)).text).toBe('name')
+		expect(reasoning_off_refused(base_url, model)).toBe(true)
+		await ai_chat(text_only, { no_reasoning: true }, strict)
+		expect(sent.map(request => request.reasoning_effort)).toEqual(['none', undefined, undefined])
+	})
+
+	test('another bad request is not retried', async () => {
+		const bad = new AiError({ kind: 'bad_request', status: 400, message: 'context length exceeded' })
+		const failing = recording(async () => {
+			throw bad
+		})
+		await expect(ai_chat(text_only, { no_reasoning: true }, failing)).rejects.toBe(bad)
+		expect(sent).toHaveLength(1)
+		expect(reasoning_off_refused(base_url, model)).toBe(false)
+	})
 })

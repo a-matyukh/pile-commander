@@ -60,16 +60,24 @@ export async function collect_name_target(workspace: NameSources, entry: NameEnt
 
 type AskOptions = { signal?: AbortSignal; transport?: AiTransport }
 
+export const TRUNCATED_NAME = 'The model ran out of length while thinking. Pick a model without reasoning, or try again.'
+
 /**
  * Asks the configured model to name a collected target. Collecting comes
  * first and separately, so consent is asked only for what can actually go.
  */
 export async function ask_name(target: NameTarget, entry: NameEntry, options: AskOptions = {}): Promise<string> {
 	const style = ai_settings.value.name_style
-	const result = await ai_chat(build_name_messages(target, style), { signal: options.signal, temperature: 0.3 }, options.transport)
+	const result = await ai_chat(
+		build_name_messages(target, style),
+		{ signal: options.signal, temperature: 0.3, no_reasoning: true },
+		options.transport,
+	)
 	const name = sanitize_suggested_name(result.text, entry.name, entry.type, style)
-	if (!name) throw new NameSkipped('The model didn\'t suggest a usable name')
-	return name
+	if (name) return name
+	// A reasoning model can spend the whole length limit thinking and never answer.
+	if (result.truncated) throw new NameSkipped(TRUNCATED_NAME)
+	throw new NameSkipped('The model didn\'t suggest a usable name')
 }
 
 /** Collects and asks in one go, for callers that have consent already. */

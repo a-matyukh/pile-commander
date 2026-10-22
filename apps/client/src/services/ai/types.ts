@@ -58,6 +58,11 @@ export type ChatRequest = {
 	messages: AiMessage[]
 	max_tokens?: number
 	temperature?: number
+	/**
+	 * `none` asks a reasoning model (qwen3, deepseek-r1, gpt-5.1) to answer
+	 * without thinking first. Ollama and others take it; some refuse it.
+	 */
+	reasoning_effort?: 'none'
 }
 
 export type ChatResult = {

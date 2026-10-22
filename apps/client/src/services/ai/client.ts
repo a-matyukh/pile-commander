@@ -1,8 +1,8 @@
 import { is_desktop } from '@/isDesktop'
-import { ai_settings, record_vision } from '@/store/ai'
+import { ai_settings, reasoning_off_refused, record_reasoning_off_refused, record_vision } from '@/store/ai'
 import { desktop_transport } from './desktopTransport'
-import { explain_ai_error, is_no_vision_error } from './errors'
-import { AiError, type AiMessage, type AiTransport, type ChatResult, type StreamOptions } from './types'
+import { explain_ai_error, is_no_vision_error, is_reasoning_off_refusal } from './errors'
+import { AiError, type AiMessage, type AiTransport, type ChatRequest, type ChatResult, type StreamOptions } from './types'
 import { web_transport } from './webTransport'
 
 export function ai_transport(): AiTransport {
@@ -17,11 +17,19 @@ function has_images(messages: AiMessage[]): boolean {
 export type AiChatOptions = StreamOptions & {
 	max_tokens?: number
 	temperature?: number
+	/**
+	 * A short answer (a name) that needs no thinking: a reasoning model is
+	 * asked to skip it, or it can think for minutes and hit the length
+	 * limit before answering.
+	 */
+	no_reasoning?: boolean
 }
 
 /**
  * One chat completion with the configured provider and model. A request
- * that carried images records whether the model took them.
+ * that carried images records whether the model took them. A provider that
+ * refuses `reasoning_effort` gets the request again without it, once, and
+ * is not sent it again for that model.
  */
 export async function ai_chat(
 	messages: AiMessage[],
@@ -29,10 +37,19 @@ export async function ai_chat(
 	transport: AiTransport = ai_transport(),
 ): Promise<ChatResult> {
 	const { base_url, model } = ai_settings.value
-	const { max_tokens, temperature, ...stream } = options
+	const { max_tokens, temperature, no_reasoning, ...stream } = options
 	const images = has_images(messages)
+	const request: ChatRequest = { model: model.trim(), messages, max_tokens, temperature }
+	const skip_reasoning = no_reasoning && !reasoning_off_refused(base_url, model)
 	try {
-		const result = await transport.chat(base_url, { model: model.trim(), messages, max_tokens, temperature }, stream)
+		let result: ChatResult
+		try {
+			result = await transport.chat(base_url, skip_reasoning ? { ...request, reasoning_effort: 'none' } : request, stream)
+		} catch (error) {
+			if (!skip_reasoning || !is_reasoning_off_refusal(error)) throw error
+			record_reasoning_off_refused(base_url, model)
+			result = await transport.chat(base_url, request, stream)
+		}
 		if (images) record_vision(base_url, model, true)
 		return result
 	} catch (error) {

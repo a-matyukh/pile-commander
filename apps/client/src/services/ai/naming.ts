@@ -48,7 +48,9 @@ const STYLE_RULES: Record<NameStyle, string> = {
 function system_prompt(style: NameStyle): string {
 	return [
 		'You name files and folders in a visual file manager.',
-		`Reply with the name only: 2 to 6 words, ${STYLE_RULES[style]}, in the language of the content.`,
+		`Reply with the name only: 2 to 6 words, ${STYLE_RULES[style]}.`,
+		// small models drift to English unless told plainly
+		'Write the name in the same language as the content: Russian content gets a Russian name.',
 		'No file extension, no quotes, no explanation.',
 	].join(' ')
 }

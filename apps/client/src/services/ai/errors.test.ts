@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { explain_ai_error, is_no_vision_error } from './errors'
+import { explain_ai_error, is_no_vision_error, is_reasoning_off_refusal } from './errors'
 import { AiError, type AiErrorKind } from './types'
 
 const error = (kind: AiErrorKind, message: string, status: number | null = null) =>
@@ -72,5 +72,15 @@ describe('explain_ai_error', () => {
 		const denied = explain_ai_error(error('keyring_denied', 'Platform secure storage failure: Error { code: -128 }'), ollama)
 		expect(denied).toContain('choose Allow')
 		expect(denied).not.toContain('-128')
+	})
+})
+
+describe('is_reasoning_off_refusal', () => {
+	test('a 400 about reasoning_effort, and nothing else', () => {
+		const error = (kind: AiErrorKind, status: number | null, message: string) => new AiError({ kind, status, message })
+		expect(is_reasoning_off_refusal(error('bad_request', 400, 'Unrecognized request argument supplied: reasoning_effort'))).toBe(true)
+		expect(is_reasoning_off_refusal(error('bad_request', 400, 'Unsupported value: \'reasoning_effort\' does not support \'none\''))).toBe(true)
+		expect(is_reasoning_off_refusal(error('bad_request', 400, 'image too large'))).toBe(false)
+		expect(is_reasoning_off_refusal(error('rate_limited', 429, 'reasoning tokens exhausted'))).toBe(false)
 	})
 })

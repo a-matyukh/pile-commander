@@ -20,6 +20,16 @@ export function is_no_vision_error(error: unknown): boolean {
 	return IMAGE_WORDS.test(error.message) && REFUSAL_WORDS.test(error.message)
 }
 
+/**
+ * A 400 about the `reasoning_effort` field itself: the model takes no such
+ * parameter (OpenAI's non-reasoning models) or not the value `none`.
+ */
+export function is_reasoning_off_refusal(error: unknown): boolean {
+	return error instanceof AiError
+		&& (error.kind === 'bad_request' || (error.kind === 'http' && error.status === 422))
+		&& /reasoning/i.test(error.message)
+}
+
 /** A provider message that talks about images being refused, whatever the status. */
 function mentions_image_refusal(message: string): boolean {
 	return IMAGE_WORDS.test(message) && REFUSAL_WORDS.test(message)

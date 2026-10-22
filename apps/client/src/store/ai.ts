@@ -68,6 +68,23 @@ export function record_vision(base_url: string, model: string, supported: boolea
 	ai_vision.value = { ...ai_vision.value, [key]: supported }
 }
 
+/**
+ * Provider + model pairs that refused `reasoning_effort: "none"`, so a
+ * request for a short answer no longer sends it there. Only a refusal is
+ * kept; acceptance is the default.
+ */
+export const ai_reasoning_off_refused = useStorage<Record<string, true>>('pile_commander_ai_reasoning_off_refused', {})
+
+export function reasoning_off_refused(base_url: string, model: string): boolean {
+	return ai_reasoning_off_refused.value[vision_key(base_url, model)] === true
+}
+
+export function record_reasoning_off_refused(base_url: string, model: string) {
+	const key = vision_key(base_url, model)
+	if (ai_reasoning_off_refused.value[key]) return
+	ai_reasoning_off_refused.value = { ...ai_reasoning_off_refused.value, [key]: true }
+}
+
 export const ai_base_check = computed(() => check_base_url(ai_settings.value.base_url, { web: !is_desktop }))
 
 /** A provider address that passes the checks and a model to ask. */

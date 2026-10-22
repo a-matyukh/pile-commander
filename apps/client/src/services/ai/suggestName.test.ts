@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import { ai_settings, ai_vision, vision_support } from '@/store/ai'
-import { collect_name_target, NameSkipped, suggest_name } from './suggestName'
+import { collect_name_target, NameSkipped, suggest_name, TRUNCATED_NAME } from './suggestName'
 import type { AiMessage, AiTransport } from './types'
 
 vi.mock('./imageInput', () => ({
@@ -109,5 +109,30 @@ describe('suggest_name', () => {
 			{ id: '/w/n.md', name: 'n.md', type: 'file' },
 			{ transport: answering('<think>never finished') },
 		)).rejects.toBeInstanceOf(NameSkipped)
+	})
+})
+
+describe('a reasoning model', () => {
+	const entry = { id: '/w/Note 1.md', name: 'Note 1.md', type: 'file' as const }
+	const ws = () => workspace({ '/w/Note 1.md': 'Идеи для продукта' })
+	const replying = (text: string, truncated: boolean, seen: unknown[] = []): AiTransport => ({
+		...answering(text),
+		chat: async (_, request) => {
+			seen.push(request.reasoning_effort)
+			return { text, truncated }
+		},
+	})
+
+	test('a name is asked for without reasoning', async () => {
+		const seen: unknown[] = []
+		await suggest_name(ws(), entry, { transport: replying('idei-dlya-produkta', false, seen) })
+		expect(seen).toEqual(['none'])
+	})
+
+	test('thinking cut off by the length limit says so', async () => {
+		await expect(suggest_name(ws(), entry, { transport: replying('<think>Wait, maybe', true) }))
+			.rejects.toThrow(TRUNCATED_NAME)
+		await expect(suggest_name(ws(), entry, { transport: replying('', false) }))
+			.rejects.toThrow('didn\'t suggest a usable name')
 	})
 })
