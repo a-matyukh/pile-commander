@@ -167,6 +167,8 @@ export function useCanvasFlow(options: {
 	 * Chrome Select / shell clicks write workspace.selection; Vue Flow multi-drag
 	 * reads node.selected. Keep widgetNodes.selected in sync so getDragItems
 	 * includes the whole group even when the selection tool is not active.
+	 * A drag that starts outside that group is solo: Canvas turns draggable off
+	 * on the other selected nodes before Vue Flow samples the drag set.
 	 */
 	watch(
 		() => workspace.value?.selection.slice() ?? [],

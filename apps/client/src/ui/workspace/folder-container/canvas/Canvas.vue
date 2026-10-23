@@ -5,6 +5,7 @@ import {
 	SelectionMode,
 	type VueFlowStore,
 	type EdgeMouseEvent,
+	type NodeDragEvent,
 } from '@vue-flow/core'
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type Ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
@@ -32,6 +33,12 @@ import { useCanvasNodes } from './useCanvasNodes'
 import { useCanvasConnections } from './useCanvasConnections'
 import { useCanvasStrokes } from './useCanvasStrokes'
 import { useCanvasFlow, type FlowEdgeLike } from './useCanvasFlow'
+import {
+	draggedNodeParticipatesInGroup,
+	lockSoloDrag,
+	restoreDraggable,
+	type DraggableSnapshot,
+} from './canvasSoloDrag'
 import { useCanvasToolState } from './useCanvasToolState'
 import { useCanvasToolShortcuts } from './useCanvasToolShortcuts'
 import { useCanvasGestures } from './useCanvasGestures'
@@ -281,6 +288,7 @@ const {
 	setViewport,
 	fitView,
 	userSelectionRect,
+	nodes,
 } = useVueFlow(flowId)
 
 provide(canvasZoomKey, () => viewport.value.zoom || 1)
@@ -443,6 +451,62 @@ const {
 	removeNodes,
 })
 
+/**
+ * Vue Flow drags every selected node plus the one under the pointer.
+ * Match the board: a grab outside a 2+ selection moves only that node.
+ * Mutate store nodes in place — replacing `:nodes` would reset live positions.
+ */
+let soloDragSnapshot: DraggableSnapshot | null = null
+
+function releaseSoloDragLock() {
+	if (!soloDragSnapshot) return
+	restoreDraggable(nodes.value, soloDragSnapshot)
+	soloDragSnapshot = null
+}
+
+function endSoloDragPointerWatch() {
+	window.removeEventListener('pointerup', onSoloDragPointerEnd, true)
+	window.removeEventListener('pointercancel', onSoloDragPointerEnd, true)
+}
+
+function onSoloDragPointerEnd() {
+	endSoloDragPointerWatch()
+	releaseSoloDragLock()
+}
+
+function onFlowPointerDown(event: PointerEvent) {
+	if (event.button !== 0) return
+	const target = event.target
+	if (!(target instanceof Element)) return
+	if (target.closest('.nodrag')) return
+	const nodeEl = target.closest('.vue-flow__node')
+	if (!(nodeEl instanceof HTMLElement)) return
+	const id = nodeEl.dataset.id
+	if (!id) return
+	const graphNodes = nodes.value
+	const grabbed = graphNodes.find(node => node.id === id)
+	if (!grabbed?.draggable) return
+	if (draggedNodeParticipatesInGroup(id, graphNodes)) return
+	releaseSoloDragLock()
+	const snapshot = lockSoloDrag(graphNodes, id)
+	if (snapshot.size === 0) return
+	soloDragSnapshot = snapshot
+	endSoloDragPointerWatch()
+	window.addEventListener('pointerup', onSoloDragPointerEnd, true)
+	window.addEventListener('pointercancel', onSoloDragPointerEnd, true)
+}
+
+function onFlowNodeDragStart(event: NodeDragEvent) {
+	// getDragItems has already snapshotted the solo set.
+	releaseSoloDragLock()
+	onNodeDragStart(event)
+}
+
+onUnmounted(() => {
+	endSoloDragPointerWatch()
+	releaseSoloDragLock()
+})
+
 onInit((vueFlowStore) => {
 	flowStore.value = vueFlowStore
 	void nextTick(() => {
@@ -551,6 +615,7 @@ function onSectionPointerDown(event: PointerEvent) {
 				class="canvas-flow-wrapper"
 				:class="{ 'canvas-flow-wrapper--pen': tool === 'pen' && !lineDraw.armed.value }"
 				:style="flowWrapperStyle"
+				@pointerdown.capture="onFlowPointerDown"
 			>
 				<VueFlow
 					:id="flowId"
@@ -566,6 +631,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:zoom-on-double-click="false"
 					:default-edge-options="{ type: 'labeled', interactionWidth: 20 }"
 					:nodes-draggable="(isHandTool || isSelectTool) && can_write"
+					:select-nodes-on-drag="!isSelectTool"
 					:nodes-selectable="isSelectTool"
 					:elements-selectable="isSelectTool || isHandTool"
 					:nodes-connectable="isConnectTool && can_write"
@@ -589,7 +655,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					@edge-double-click="onEdgeDoubleClick"
 					@pane-click="onPaneClick"
 					@nodes-change="onNodesChange"
-					@node-drag-start="onNodeDragStart"
+					@node-drag-start="onFlowNodeDragStart"
 					@node-drag="onNodeDrag"
 					@node-drag-stop="onNodeDragStop"
 					@node-click="onNodeClick"
