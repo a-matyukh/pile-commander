@@ -674,7 +674,10 @@ watch(
 								class="workspace-tab flex min-w-0 cursor-pointer items-center gap-1 border-e border-default px-2 select-none max-md:border-e-0"
 								:class="[
 									tab.id === workspace?.active_tab_id
-										? 'workspace-tab--active bg-default text-default max-md:bg-transparent'
+										? [
+											'workspace-tab--active text-default',
+											(workspace?.tabs.length ?? 0) > 1 ? 'bg-default' : '',
+										]
 										: 'text-muted hover:bg-default/60',
 									has_multi_selection && tab.id === workspace?.active_tab_id
 										? 'max-w-none'
