@@ -16,6 +16,7 @@
   "dependencies": {
     "@google/model-viewer": "^4.3.1",
     "@iconify-json/fa": "^1.2.2",
+    "@iconify-json/famicons": "^1.2.2",
     "@iconify-json/la": "^1.2.1",
     "@iconify-json/lsicon": "^1.2.5",
     "@iconify-json/lucide": "^1.2.126",

@@ -22,6 +22,7 @@
       "dependencies": {
         "@google/model-viewer": "^4.3.1",
         "@iconify-json/fa": "^1.2.2",
+        "@iconify-json/famicons": "^1.2.2",
         "@iconify-json/la": "^1.2.1",
         "@iconify-json/lsicon": "^1.2.5",
         "@iconify-json/lucide": "^1.2.126",
@@ -272,6 +273,8 @@
     "@google/model-viewer": ["@google/model-viewer@4.3.1", "", { "dependencies": { "@monogrid/gainmap-js": "^3.1.0", "lit": "^3.2.1" }, "peerDependencies": { "three": "^0.183.0" } }, "sha512-GP+inXhAtY31E8rILVmByA6z8CZZjdlNajddppyI1/j1eIaSQiZcMRaUqTFe7+jv4mzRzwKIOiKBud0apiv+WQ=="],
 
     "@iconify-json/fa": ["@iconify-json/fa@1.2.2", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-Rw0L97uO3W0Gy2rq4cM/TH3QjzuPuRca1F2steumZ57zOeheGQdiqo50O6KHjm+WgImmV92IFPUTU6eiaJsrTw=="],
+
+    "@iconify-json/famicons": ["@iconify-json/famicons@1.2.2", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-mFgrUk2CYKeFe9EHh6XWdtVDkX344OTb3E6X7RaOp6iwW9saJH/kknNFZRZ2UFQCcFl3RNSTN6IRpCRsRppFxw=="],
 
     "@iconify-json/la": ["@iconify-json/la@1.2.1", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-7VUpZ+E7PfBpCXmAzLEGRR0LqCyFQRJiJTriO/vIZtQ1BLJ4xiDlIQ8gCCQvyTnKPG4IrvencwAxXpJGhk4pYg=="],
 

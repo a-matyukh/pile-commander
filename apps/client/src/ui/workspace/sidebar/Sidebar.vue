@@ -171,7 +171,12 @@ const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 							content: 'min-w-32',
 						}"
 					>
-						<UButton icon="material-symbols:share-outline" color="neutral" variant="ghost" size="xs" label="Share" />
+						<UButton
+							icon="famicons:share-outline"
+							color="neutral"
+							variant="ghost"
+							aria-label="Share"
+						/>
 					</UDropdownMenu>
 					<UButton
 						v-if="workspace.type === 'cloud'"

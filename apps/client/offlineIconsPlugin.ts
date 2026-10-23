@@ -18,6 +18,7 @@ export const ICON_COLLECTIONS = [
 	'fa',
 	'ri',
 	'la',
+	'famicons',
 ] as const
 
 type IconCollection = (typeof ICON_COLLECTIONS)[number]
