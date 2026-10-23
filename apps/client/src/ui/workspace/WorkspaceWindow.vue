@@ -665,14 +665,16 @@ watch(
 							</UTooltip>
 						<div
 							v-if="workspace"
-							class="workspace-tabs flex min-w-0 self-stretch items-stretch gap-0 border-s border-default max-md:border-s-0"
+							class="workspace-tabs flex min-w-0 self-stretch items-stretch gap-0"
+							:class="workspace.tabs.length > 1 ? 'border-s border-default max-md:border-s-0' : ''"
 							role="tablist"
 						>
 							<div
 								v-for="tab in workspace.tabs"
 								:key="tab.id"
-								class="workspace-tab flex min-w-0 cursor-pointer items-center gap-1 border-e border-default px-2 select-none max-md:border-e-0"
+								class="workspace-tab flex min-w-0 cursor-pointer items-center gap-1 px-2 select-none"
 								:class="[
+									(workspace?.tabs.length ?? 0) > 1 ? 'border-e border-default max-md:border-e-0' : '',
 									tab.id === workspace?.active_tab_id
 										? [
 											'workspace-tab--active text-default',
