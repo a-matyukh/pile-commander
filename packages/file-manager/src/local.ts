@@ -19,7 +19,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { basename, dirname, join } from "@tauri-apps/api/path"
 import * as xattrs from "@pile-commander/tauri-plugin-xattrs"
 import { PILE_DIR_NAME } from "./pile-attrs"
-import { resolve_folder_connections } from "./connectionPaths"
+import { reprefix_path, resolve_folder_connections } from "./connectionPaths"
 import type { CreateFolderOptions, CreateTextFileOptions, FileManager, FolderChild, FolderConnection, FolderStroke, Unwatch, UploadProgressCallback, WatchEvent, WatchEventKind } from "./types"
 
 /** Sidecar dir files holding per-folder canvas entities — never shown in listings. */
@@ -400,10 +400,7 @@ function createLocalConnectionsStore(): FileManager["connections"] {
 }
 
 function rebase_connection_endpoint(endpoint: string, old_root: string, new_root: string): string {
-	if (endpoint === old_root) return new_root
-	const sep = old_root.includes("\\") ? "\\" : "/"
-	if (endpoint.startsWith(old_root + sep)) return new_root + endpoint.slice(old_root.length)
-	return endpoint
+	return reprefix_path(endpoint, old_root, new_root) ?? endpoint
 }
 
 function rebase_connection(connection: FolderConnection, old_root: string, new_root: string): FolderConnection {

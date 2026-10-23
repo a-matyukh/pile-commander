@@ -29,6 +29,29 @@ describe("resolve_connection_endpoint", () => {
 			"/Users/amatyukh/Desktop/My desktop/test",
 		)).toBe("/Users/amatyukh/Desktop/My desktop/test/test/a.txt")
 	})
+
+	test("rebases an NFC folder prefix onto the NFD folder id", () => {
+		const nfc = "Конвейер".normalize("NFC")
+		const nfd = "Конвейер".normalize("NFD")
+		const folder = `/Users/amatyukh/Desktop/${nfd}`
+		expect(resolve_connection_endpoint(
+			`/Users/amatyukh/Desktop/${nfc}/Питч`,
+			folder,
+		)).toBe(`${folder}/Питч`)
+	})
+
+	test("keeps an NFD filename when only the folder prefix differed", () => {
+		const nfc = "Конвейер".normalize("NFC")
+		const nfd = "Конвейер".normalize("NFD")
+		const folder = `/Users/amatyukh/Desktop/${nfd}`
+		const file = `Па${"й".normalize("NFD")}.md`
+		const resolved = resolve_connection_endpoint(
+			`/Users/amatyukh/Desktop/${nfc}/${file}`,
+			folder,
+		)
+		expect(resolved).toBe(`${folder}/${file}`)
+		expect(resolved.endsWith(file.normalize("NFC"))).toBe(false)
+	})
 })
 
 describe("resolve_folder_connection", () => {
@@ -44,6 +67,29 @@ describe("resolve_folder_connection", () => {
 			from: "/Users/amatyukh/Desktop/My desktop/test/a.txt",
 			to: "/Users/amatyukh/Desktop/My desktop/test/b.txt",
 			is_animated: false,
+		})
+	})
+
+	test("remints a deterministic id when only the folder's Unicode form changed", () => {
+		const nfc = "Конвейер".normalize("NFC")
+		const nfd = "Конвейер".normalize("NFD")
+		const folder = `/Users/amatyukh/Desktop/${nfd}`
+		const from = `/Users/amatyukh/Desktop/${nfc}/Питч`
+		const to = `/Users/amatyukh/Desktop/${nfc}/Note 4.md`
+		expect(resolve_folder_connection({
+			id: `${from}:right-${to}:left`,
+			from,
+			to,
+			from_handle: "right",
+			to_handle: "left",
+			is_animated: true,
+		}, folder)).toEqual({
+			id: `${folder}/Питч:right-${folder}/Note 4.md:left`,
+			from: `${folder}/Питч`,
+			to: `${folder}/Note 4.md`,
+			from_handle: "right",
+			to_handle: "left",
+			is_animated: true,
 		})
 	})
 

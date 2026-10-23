@@ -20,11 +20,46 @@ function is_under(endpoint: string, folder_id: string, sep: string): boolean {
 }
 
 /**
+ * Replace `root` at the start of `path` with `next`.
+ *
+ * A prefix that matches only after NFC (й vs и + breve) still counts: the
+ * cut is walked code point by code point because the two forms have different
+ * lengths. The suffix is copied unchanged, so a filename's own composition
+ * stays as it was stored.
+ * Returns null when `path` is not under `root`.
+ */
+export function reprefix_path(path: string, root: string, next: string): string | null {
+	const sep = path_sep(root)
+	if (path === root) return next
+
+	const prefix = root.endsWith(sep) ? root : root + sep
+	if (path.startsWith(prefix)) return next + path.slice(root.length)
+
+	if (path.normalize("NFC") === root.normalize("NFC")) return next
+
+	// The separator cannot compose with the previous character, so there is
+	// a cut of `path` whose NFC form is exactly `prefix`.
+	const prefix_nfc = prefix.normalize("NFC")
+	let acc = ""
+	for (const ch of path) {
+		acc += ch
+		const acc_nfc = acc.normalize("NFC")
+		if (acc_nfc === prefix_nfc) {
+			const rest = path.slice(acc.length)
+			return root.endsWith(sep) ? next + rest : next + sep + rest
+		}
+		if (acc_nfc.length > prefix_nfc.length) return null
+	}
+	return null
+}
+
+/**
  * Map a connection endpoint onto the folder's current path.
  *
  * Handles absolute paths that still live under `folder_id`, relative paths
  * (from a relativized sidecar), and stale absolute paths left behind when
  * the folder was moved without a prefix rewrite (Finder, cross-window drop).
+ * NFC and NFD spellings of the same folder prefix are the same path.
  */
 export function resolve_connection_endpoint(endpoint: string, folder_id: string): string {
 	const sep = path_sep(folder_id)
@@ -33,6 +68,9 @@ export function resolve_connection_endpoint(endpoint: string, folder_id: string)
 	if (!is_absolute(endpoint)) {
 		return `${folder_id}${sep}${endpoint.replace(/^[/\\]+/, "")}`
 	}
+
+	const composed = reprefix_path(endpoint, folder_id, folder_id)
+	if (composed !== null) return composed
 
 	const name = folder_basename(folder_id)
 	if (!name) return endpoint

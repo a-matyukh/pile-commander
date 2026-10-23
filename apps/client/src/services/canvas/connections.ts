@@ -1,6 +1,5 @@
-import type { FolderConnection } from '@pile-commander/file-manager'
+import { reprefix_path, type FolderConnection } from '@pile-commander/file-manager'
 import type { Connection, ConnectionMarker, HandlePosition } from '@/domain/Widget'
-import { path_separator } from '../workspace/paths'
 
 const HANDLE_POSITIONS = new Set<HandlePosition>(['top', 'right', 'bottom', 'left'])
 const CONNECTION_MARKERS = new Set<ConnectionMarker>(['arrow', 'arrowclosed'])
@@ -82,14 +81,7 @@ export function make_connection_id(
 
 /** Rewrites a widget path after rename/move (`old_id` and descendant paths). */
 export function rename_endpoint_id(id: string, old_id: string, new_id: string): string {
-	if (id === old_id) return new_id
-
-	const sep = path_separator(old_id)
-	const prefix = old_id + sep
-	if (id.startsWith(prefix)) {
-		return new_id + id.slice(old_id.length)
-	}
-	return id
+	return reprefix_path(id, old_id, new_id) ?? id
 }
 
 export function rename_connection(

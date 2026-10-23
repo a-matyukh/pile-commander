@@ -48,7 +48,7 @@ export {
 	type ApplyPileAttrsResult,
 	type ApplyPileAttrsOptions,
 } from './pile-attrs'
-export { resolve_connection_endpoint } from './connectionPaths'
+export { resolve_connection_endpoint, reprefix_path } from './connectionPaths'
 export {
 	default as createCloudFileManager,
 	type CloudFileManager,

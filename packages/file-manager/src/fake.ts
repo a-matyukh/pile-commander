@@ -10,7 +10,7 @@ import type {
 	WatchEvent,
 	Xattr,
 } from "./types"
-import { resolve_folder_connections } from "./connectionPaths"
+import { reprefix_path, resolve_folder_connections } from "./connectionPaths"
 
 type Entry = {
 	type: "file" | "folder"
@@ -118,9 +118,7 @@ export function createFakeFileManager(): FakeFileManager {
 	// Mirrors rebase_connection in local.ts (kept separate: local.ts pulls in
 	// Tauri modules, the fake must stay runtime-agnostic)
 	function rebase_endpoint(endpoint: string, old_root: string, new_root: string): string {
-		if (endpoint === old_root) return new_root
-		if (endpoint.startsWith(old_root + "/")) return new_root + endpoint.slice(old_root.length)
-		return endpoint
+		return reprefix_path(endpoint, old_root, new_root) ?? endpoint
 	}
 
 	function rebase_connection(connection: FolderConnection, old_root: string, new_root: string): FolderConnection {

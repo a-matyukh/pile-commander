@@ -103,4 +103,12 @@ describe('canvas connections', () => {
 		expect(rename_endpoint_id('/ws/docs', '/ws/docs', '/ws/papers')).toBe('/ws/papers')
 		expect(rename_endpoint_id('/ws/other', '/ws/docs', '/ws/papers')).toBe('/ws/other')
 	})
+
+	test('rename_endpoint_id rewrites a prefix that matches only as NFC', () => {
+		const nfc = 'Конвейер'.normalize('NFC')
+		const nfd = 'Конвейер'.normalize('NFD')
+		const file = `Па${'й'.normalize('NFD')}.md`
+		expect(rename_endpoint_id(`/ws/${nfc}/Питч`, `/ws/${nfd}`, '/moved')).toBe('/moved/Питч')
+		expect(rename_endpoint_id(`/ws/${nfc}/${file}`, `/ws/${nfd}`, '/moved')).toBe(`/moved/${file}`)
+	})
 })

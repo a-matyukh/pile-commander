@@ -940,6 +940,46 @@ describe("local connections store (.pile/connections.json)", () => {
 		expect(written).not.toBeNull()
 		expect(JSON.parse(written!)).toEqual([healed])
 	})
+
+	test("list_connections heals an NFC folder prefix onto the NFD folder id", async () => {
+		const nfc = "Конвейер".normalize("NFC")
+		const nfd = "Конвейер".normalize("NFD")
+		const folder = `/Users/amatyukh/Desktop/${nfd}`
+		const from = `/Users/amatyukh/Desktop/${nfc}/Питч`
+		const to = `/Users/amatyukh/Desktop/${nfc}/Note 4.md`
+		const stale = JSON.stringify([{
+			id: `${from}:right-${to}:left`,
+			from,
+			to,
+			from_handle: "right",
+			to_handle: "left",
+			is_animated: true,
+		}])
+		readTextFile.mockImplementation((path: string) =>
+			path === `${folder}/.pile/connections.json`
+				? Promise.resolve(stale)
+				: Promise.reject(new Error("no such file")),
+		)
+		let written: string | null = null
+		writeTextFile.mockImplementation((path: string, contents: string) => {
+			if (path === `${folder}/.pile/connections.json.tmp`) written = contents
+			return Promise.resolve()
+		})
+
+		const fm = createLocalFileManager()
+		const listed = await fm.connections.list_connections(folder)
+		const healed = {
+			id: `${folder}/Питч:right-${folder}/Note 4.md:left`,
+			from: `${folder}/Питч`,
+			to: `${folder}/Note 4.md`,
+			from_handle: "right",
+			to_handle: "left",
+			is_animated: true,
+		}
+		expect(listed).toEqual([healed])
+		expect(written).not.toBeNull()
+		expect(JSON.parse(written!)).toEqual([healed])
+	})
 })
 
 describe("map_tauri_watch_event", () => {
