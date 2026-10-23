@@ -6,6 +6,7 @@ import {
 	find_child_entry,
 } from '@/services/workspace/mutations'
 import { find_tree_node } from '@/services/workspace/tree'
+import { sort_entries_by_order_then_name } from '@/services/workspace/folderContainer'
 import { parent_folder_id_from_node_id, path_separator } from '@/services/workspace/paths'
 import { make_connection_id } from '@/services/canvas/connections'
 import { resolve_unique_filename } from '@/services/naming/uniqueName'
@@ -73,7 +74,7 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 	const local_pair = source_store.type === 'local' && target_store.type === 'local'
 	const direct = !options.force_generic && (same_workspace || local_pair)
 
-	const existing_ids = (folder_data.children ?? []).map(c => c.id)
+	const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 	const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 	const created_ids: string[] = []
 	const created_entries: EntryWithXattrs[] = []

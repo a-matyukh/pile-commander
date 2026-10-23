@@ -649,6 +649,42 @@ describe('createWorkspaceStore: clipboard', () => {
 		expect(store.opened_folder.children.some(c => c.id === '/ws/note (1).txt')).toBe(true)
 	})
 
+	test('duplicate_entries keeps sidebar order instead of readdir order', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/ws')
+		fake.seed_folder('/ws/docs')
+		fake.seed_folder('/ws/pics')
+		fake.seed_file('/ws/note.txt')
+		// Seed order is docs, pics, note. Sidebar order puts note first and pics last.
+		fake.set_xattr('/ws/note.txt', 'order', '0')
+		fake.set_xattr('/ws/docs', 'order', '1')
+		fake.set_xattr('/ws/pics', 'order', '2')
+
+		const store = await createWorkspaceStore(
+			{ id: '/ws', type: 'local', name: 'ws' },
+			fake.fm,
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+		expect(store.opened_folder.children.map(c => c.id)).toEqual([
+			'/ws/docs',
+			'/ws/pics',
+			'/ws/note.txt',
+		])
+
+		await store.duplicate_entries(['/ws/note.txt'])
+
+		expect(fake.get_xattr('/ws/note.txt', 'order')).toBe('0')
+		expect(fake.get_xattr('/ws/docs', 'order')).toBe('1')
+		expect(fake.get_xattr('/ws/pics', 'order')).toBe('2')
+		expect(fake.get_xattr('/ws/note (1).txt', 'order')).toBe('3')
+		expect(tree_ids(store)).toEqual([
+			'/ws/note.txt',
+			'/ws/docs',
+			'/ws/pics',
+			'/ws/note (1).txt',
+		])
+	})
+
 	test('duplicate_entries offsets position xattr so the copy is not stacked', async () => {
 		const { fake, store } = await makeStore()
 		fake.set_xattr('/ws/note.txt', 'position', JSON.stringify({ x: 40, y: 60 }))

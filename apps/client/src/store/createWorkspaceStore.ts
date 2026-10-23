@@ -77,6 +77,7 @@ import { user_message_for_watch_error } from './helpers/watchSubscribeError'
 import { read_paths_as_files } from '@/services/workspace/pathsToFiles'
 import { find_widget, widget_folder_data } from './helpers/widgetHelpers'
 import { persist_children_order } from './helpers/persistChildrenOrder'
+import { sort_entries_by_order_then_name } from '@/services/workspace/folderContainer'
 import {
 	move_folder_canvas_connections,
 	prune_folder_canvas_connections,
@@ -1798,7 +1799,7 @@ export async function createWorkspaceStore(
 					return
 				}
 
-				const existing_ids = (folder_data.children ?? []).map(c => c.id)
+				const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 				const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 				const created_ids: string[] = []
 
@@ -1867,7 +1868,7 @@ export async function createWorkspaceStore(
 					return
 				}
 
-			const existing_ids = (folder_data.children ?? []).map(c => c.id)
+			const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 			const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 			const created_ids: string[] = []
 

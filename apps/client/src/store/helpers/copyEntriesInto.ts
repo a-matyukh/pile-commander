@@ -5,6 +5,7 @@ import {
 	type WorkspaceState,
 } from '@/services/workspace/mutations'
 import { find_tree_node, is_descendant } from '@/services/workspace/tree'
+import { sort_entries_by_order_then_name } from '@/services/workspace/folderContainer'
 import { resolve_unique_filename } from '@/services/naming/uniqueName'
 import { persist_children_order } from './persistChildrenOrder'
 import { copy_folder_canvas_connections, type CanvasPersistStore } from './persistCanvas'
@@ -59,7 +60,9 @@ export async function copy_entries_into(
 		return []
 	}
 
-	const existing_ids = (folder_data.children ?? []).map(c => c.id)
+	// Cache order is readdir order; the sidebar shows order xattrs. Snapshot
+	// that visible order so a duplicate does not rewrite it.
+	const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 	const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 	const created_ids: string[] = []
 	const created_entries: EntryWithXattrs[] = []
