@@ -144,7 +144,7 @@ function send_answer(skip: boolean) {
 		<template #body>
 			<div v-if="bridge.step === 'auth'" class="flex flex-col gap-2">
 				<p class="text-sm text-muted">
-					{{ lead }} Sign in or create an account first. Your local workspace stays unchanged.
+					{{ lead }} Sign in first. Your local workspace stays unchanged.
 				</p>
 				<AuthForm initial_mode="sign_up" />
 			</div>

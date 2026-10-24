@@ -3,6 +3,11 @@ import { ref, watch } from 'vue'
 import cloud from '@/store/cloud'
 import { SIGN_UP_PASSWORD_HINT, SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
 
+/** Flip to false to reopen registration. Mid-November is approximate, not a cutoff. */
+const SIGN_UP_CLOSED = true
+const SIGN_UP_CLOSED_NOTICE =
+	'Registration is closed for technical work until around mid-November. It will open again after that.'
+
 const props = withDefaults(defineProps<{
 	initial_email?: string
 	initial_mode?: 'sign_in' | 'sign_up'
@@ -11,7 +16,11 @@ const props = withDefaults(defineProps<{
 	initial_mode: 'sign_in',
 })
 
-const mode = ref<'sign_in' | 'sign_up'>(props.initial_mode)
+function resolved_mode(value: 'sign_in' | 'sign_up'): 'sign_in' | 'sign_up' {
+	return SIGN_UP_CLOSED ? 'sign_in' : value
+}
+
+const mode = ref<'sign_in' | 'sign_up'>(resolved_mode(props.initial_mode))
 const email = ref(props.initial_email ?? '')
 const password = ref('')
 const is_submitting = ref(false)
@@ -24,7 +33,7 @@ watch(() => props.initial_email, (value) => {
 })
 
 watch(() => props.initial_mode, (value) => {
-	mode.value = value
+	mode.value = resolved_mode(value)
 })
 
 watch(password, (value) => {
@@ -63,7 +72,7 @@ async function submit() {
 	password_too_short.value = false
 	is_submitting.value = true
 	try {
-		if (mode.value === 'sign_in') {
+		if (mode.value === 'sign_in' || SIGN_UP_CLOSED) {
 			await cloud.sign_in(email.value, password.value)
 		} else {
 			await cloud.sign_up(email.value, password.value, props.redirect_to)
@@ -74,6 +83,7 @@ async function submit() {
 }
 
 function toggle_mode() {
+	if (SIGN_UP_CLOSED) return
 	mode.value = mode.value === 'sign_in' ? 'sign_up' : 'sign_in'
 	password_too_short.value = false
 	email_missing.value = false
@@ -132,8 +142,14 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 			and the
 			<a :href="`${landing_url}/privacy`" target="_blank" rel="noopener noreferrer" class="underline">Privacy Policy</a>.
 		</p>
-		<button type="button" class="text-xs opacity-60 hover:opacity-100 cursor-pointer" @click="toggle_mode">
+		<button
+			v-if="!SIGN_UP_CLOSED"
+			type="button"
+			class="text-xs opacity-60 hover:opacity-100 cursor-pointer"
+			@click="toggle_mode"
+		>
 			{{ mode === 'sign_in' ? 'No account yet? Sign up' : 'Have an account? Sign in' }}
 		</button>
+		<p v-else class="text-xs opacity-60">{{ SIGN_UP_CLOSED_NOTICE }}</p>
 	</form>
 </template>
