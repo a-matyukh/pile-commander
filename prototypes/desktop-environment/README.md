@@ -18,8 +18,12 @@ could express it belong on a workspace. The record of the experiment is
 
 Double-click `index.html`. It is one page of HTML, CSS and JavaScript with
 no build, no network and no modules, so it runs from `file://`. Fake state
-is kept in `localStorage` under `desktop-env-prototype`. Reset, in the top
-right, puts the original desks back.
+is kept in `localStorage` under `desktop-env-prototype`. Reset, at the
+right end of the taskbar, puts the original desks back. It is hidden while
+a window is fullscreen.
+
+A new empty window is Alt+N. In a browser, Cmd+N belongs to the browser
+and opens a browser window; Alt+N is the shortcut that reaches this page.
 
 This is not the product. There is no cloud, no real files and no sync.
 Icons, windows and menus are fake data you can move around.

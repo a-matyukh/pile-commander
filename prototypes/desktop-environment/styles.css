@@ -26,7 +26,6 @@ button { cursor: pointer; }
 	flex-shrink: 0;
 	background: #f3f4f6;
 	border-bottom: 1px solid #e2e4ea;
-	padding-right: 72px;
 }
 
 .tab {
@@ -319,10 +318,7 @@ button { cursor: pointer; }
 .sub { margin: 2px 0 2px 12px; }
 
 .reset {
-	position: fixed;
-	top: 8px;
-	right: 8px;
-	z-index: 50;
+	margin-left: auto;
 	padding: 4px 8px;
 	border: 1px solid #e2e4ea;
 	border-radius: 7px;

@@ -277,7 +277,6 @@ function html() {
 		+ (full ? '' : taskbarHtml(desktop, focus))
 		+ '</div></div>'
 		+ menuHtml(desktop)
-		+ '<button class="reset" type="button" data-action="reset">Reset</button>'
 }
 
 function tabsHtml() {
@@ -332,13 +331,14 @@ function windowHtml(win) {
 	var style = full
 		? ''
 		: 'left:' + win.x + 'px;top:' + win.y + 'px;width:' + win.w + 'px;height:' + win.h + 'px;z-index:' + win.z + ';'
+	var fullLabel = full ? 'Exit fullscreen' : 'Fullscreen'
 	var html = '<section class="window' + (full ? ' is-full' : '') + '" data-window="' + esc(win.id) + '" style="' + style + '">'
 	html += '<header class="chrome" data-chrome>'
 	html += '<span class="chrome-title">' + esc(win.title) + '</span>'
 	html += '<span class="controls">'
-	html += '<button class="win-btn full" type="button" data-action="fullscreen" data-id="' + esc(win.id) + '" aria-label="' + (full ? 'Exit fullscreen' : 'Fullscreen') + '">' + (full ? '–' : '+') + '</button>'
-	html += '<button class="win-btn min" type="button" data-action="minimize" data-id="' + esc(win.id) + '" aria-label="Minimize">_</button>'
-	html += '<button class="win-btn close" type="button" data-action="close" data-id="' + esc(win.id) + '" aria-label="Close">×</button>'
+	html += '<button class="win-btn full" type="button" data-action="fullscreen" data-id="' + esc(win.id) + '" aria-label="' + fullLabel + '" title="' + fullLabel + '">' + (full ? '–' : '+') + '</button>'
+	html += '<button class="win-btn min" type="button" data-action="minimize" data-id="' + esc(win.id) + '" aria-label="Minimize" title="Minimize">_</button>'
+	html += '<button class="win-btn close" type="button" data-action="close" data-id="' + esc(win.id) + '" aria-label="Close" title="Close">×</button>'
 	html += '</span></header>'
 	html += '<div class="body">' + bodyHtml(win) + '</div>'
 	if (!full) {
@@ -366,7 +366,7 @@ function bodyHtml(win) {
 		return '<aside class="side"><p class="side-title">' + esc(entry.title) + '</p><p class="side-owner">' + esc(entry.owner) + '</p>' + folders + '</aside>'
 			+ '<div class="files">' + files + '</div>'
 	}
-	return '<div class="empty-win"><p>Empty window</p><p class="muted">Open a workspace from Start, or press Cmd+N / Alt+N.</p></div>'
+	return '<div class="empty-win"><p>Empty window</p><p class="muted">Open a workspace from Start, or press Alt+N. In a browser, Cmd+N is taken by the browser itself.</p></div>'
 }
 
 function taskbarHtml(desktop, focus) {
@@ -376,9 +376,10 @@ function taskbarHtml(desktop, focus) {
 		var on = win.id === focus
 		html += '<div class="task-win' + (on ? ' is-on' : '') + '">'
 		html += '<span data-action="task" data-id="' + esc(win.id) + '">' + esc(win.title) + '</span>'
-		html += '<button class="task-x" type="button" data-action="close" data-id="' + esc(win.id) + '" aria-label="Close window">×</button>'
+		html += '<button class="task-x" type="button" data-action="close" data-id="' + esc(win.id) + '" aria-label="Close window" title="Close">×</button>'
 		html += '</div>'
 	})
+	html += '<button class="reset" type="button" data-action="reset">Reset</button>'
 	html += '</div>'
 	return html
 }
@@ -446,8 +447,28 @@ function anchor(el) {
 	return { x: rect.left, y: rect.bottom + 4 }
 }
 
+function clampMenu() {
+	var menu = document.querySelector('.menu')
+	if (!menu) return
+	var margin = 8
+	var rect = menu.getBoundingClientRect()
+	var x = rect.left
+	var y = rect.top
+	var maxX = window.innerWidth - margin - rect.width
+	var maxY = window.innerHeight - margin - rect.height
+	if (x > maxX) x = maxX
+	if (y > maxY) y = maxY
+	if (x < margin) x = margin
+	if (y < margin) y = margin
+	menu.style.left = x + 'px'
+	menu.style.top = y + 'px'
+	menu.style.right = 'auto'
+	menu.style.bottom = 'auto'
+}
+
 function render() {
 	document.getElementById('app').innerHTML = html()
+	clampMenu()
 	var input = document.querySelector('[data-rename]')
 	if (input) {
 		input.focus()
