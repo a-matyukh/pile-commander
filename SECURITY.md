@@ -146,9 +146,9 @@ show only these intentional INFOs. Anything else is a regression.
   insert commits, so concurrent uploads cannot overshoot.
 - **Metered and capped.** `billing_accounts`: `quota_bytes`, `max_file_bytes`,
   `max_hub_listings`, and the row fences `max_entries` / `max_strokes` /
-  `max_connections` / `max_desktops` (trash included; null = unlimited;
-  free seeds 20000 / 20000 / 20000 / 20, pro is larger but finite). CHECKs
-  cap `xattrs` (64 KB), `desktops.windows` (1 MB), names (255), stroke
+  `max_connections` (trash included; null = unlimited; free seeds
+  20000 / 20000 / 20000, pro is larger but finite). CHECKs cap `xattrs`
+  (64 KB), names (255), stroke
   `points` (32 KiB), `position` (512 B), `color` (64), connection `props`
   (8 KiB) / `id` (2048) / `label` (500), `updated_by_client` (64), and
   telemetry mimes. Strokes and connections are also capped at 5000 per
@@ -390,15 +390,15 @@ part of this stage.
 ### Postgres jsonb is outside the byte quota
 
 `billing_accounts.quota_bytes` still counts `entries.size_bytes` only
-(files and text). Folders, ink, edges and desktops are not in that 100 MB
+(files and text). Folders, ink and edges are not in that 100 MB
 on purpose — drawing must not fill the storage bar. They are bounded
 separately, as abuse fences rather than advertised plan limits:
 
 - `max_entries` (free 20000, pro 200000) covers every entries row of the
-  owner's workspaces, trash included. `create_workspace` and
-  `get_or_create_system_workspace` take the same gate as a folder insert.
-- `max_strokes` / `max_connections` / `max_desktops` (free 20000 / 20000 /
-  20) plus 5000 strokes or edges per folder. Owner-wide counts run in
+  owner's workspaces, trash included. `create_workspace` takes the same
+  gate as a folder insert.
+- `max_strokes` / `max_connections` (free 20000 / 20000) plus 5000 strokes
+  or edges per folder. Owner-wide counts run in
   security-definer asserts so an editor cannot under-count via RLS, and
   take an advisory lock per owner (not `billing_accounts FOR UPDATE`) so a
   text save does not queue behind a stroke.
@@ -431,8 +431,8 @@ deferred). Done work is in the invariants above.
 
 ### Schema and RPC
 
-- Soft-delete workspaces. `DELETE workspaces` (and deleting a desktop with
-  its cascade) is instant and irreversible; `GC_MIN_AGE_HOURS` only delays
+- Soft-delete workspaces. `DELETE workspaces` is instant and irreversible;
+  `GC_MIN_AGE_HOURS` only delays
   blob drain, not the row.
 - `remove_xattr` is still a client read-modify-write on `entries.xattrs`
   (`set_xattr` merges server-side through `merge_entry_xattrs`); an RPC with

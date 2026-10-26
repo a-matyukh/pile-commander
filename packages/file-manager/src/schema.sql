@@ -63,8 +63,8 @@
 --    slug. Delisting Hub leaves the public URL intact; the preview blob is
 --    queued for GC. Free may list at most billing_accounts.max_hub_listings
 --    boards (a hidden row still occupies a slot).
---    Owner quota is sum(entries.size_bytes) across all workspaces
---    including the system workspace (desktop board files) and trash.
+--    Owner quota is sum(entries.size_bytes) across all workspaces, trash
+--    included.
 --    Egress is separate fair use, not quota: egress_daily counts bytes the
 --    backend presigned for non-members of the owner's public boards
 --    (billing_accounts.egress_bytes_month / max_public_file_bytes), and
@@ -112,13 +112,6 @@
 --    objects (entry_derivatives, deriv/<workspace_id>/<blob_uuid>/…) take
 --    the same queue once no entry references their blob.
 --
--- 10. Desktops: cloud desktops sync meta+windows via the desktops table
---    (owner-only RLS). A desktop's board has two item kinds: folders are
---    real workspaces (workspaces.desktop_id, publishable/sharable as
---    usual), files are entries under /desktop-<id> in the owner's hidden
---    system workspace (workspaces.is_system, one per user). The desktop
---    itself is private — no publish/share paths exist for it.
---
 -- This file and rpc.sql ARE the source of truth: the schema is applied to the
 -- Supabase project directly and there is no migrations folder in the repo
 -- (AGENTS.md). Applying a change through MCP apply_migration leaves an entry
@@ -134,82 +127,6 @@ create extension if not exists ltree with schema extensions;
 create schema if not exists private;
 
 -- ----------------------------------------------------------------------------
--- desktops: cloud-synced desktops (meta + windows). Children live elsewhere:
--- board folders are real workspaces (workspaces.desktop_id below), board
--- files are entries under /desktop-<id> in the owner's hidden system
--- workspace (workspaces.is_system). Desktops themselves are private:
--- no publish, no share
--- ----------------------------------------------------------------------------
-
-create table public.desktops (
-    id uuid primary key default gen_random_uuid(),
-    -- defaulted so client inserts stay minimal; the RLS insert policy still
-    -- requires owner_id = auth.uid()
-    owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
-    name text not null check (char_length(name) <= 255),
-
-    -- presentation (background/grid/snap) and the serialized AppWindow[]
-    -- array — client-shaped payloads, opaque to the DB. Size-capped: these
-    -- columns are outside the byte quota, so without a ceiling they are free
-    -- storage (see private.plan_defaults for the metered limits)
-    xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 65536),
-    windows jsonb not null default '[]' check (pg_column_size(windows) <= 1048576),
-
-    position integer not null default 0,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
-
-create or replace function public.desktops_touch()
-returns trigger
-language plpgsql
-set search_path = public, extensions
-as $$
-begin
-    NEW.updated_at := now();
-    return NEW;
-end
-$$;
-
-create trigger desktops_touch
-    before update on public.desktops
-    for each row execute function public.desktops_touch();
-
--- Row ceiling for client INSERTs (desktops are written directly via
--- PostgREST). assert_owner_desktops is security definer so the count is
--- not RLS-filtered
-create or replace function public.desktops_count_guard()
-returns trigger
-language plpgsql
-set search_path = public, extensions
-as $$
-begin
-    perform private.assert_owner_desktops(NEW.owner_id, 1);
-    return NEW;
-end
-$$;
-
-create trigger desktops_count_guard
-    before insert on public.desktops
-    for each row execute function public.desktops_count_guard();
-
--- desktop list per user and the owner FK cascade
-create index desktops_owner_idx on public.desktops (owner_id);
-
--- ----------------------------------------------------------------------------
--- desktops_opt_ins: accounts that turned the desktops experiment on
--- (prototypes/desktop-environment/DESKTOPS_EXPERIMENT.md). One row per account with the
--- first opt-in time; the switch going off never clears it. Written only by
--- mark_desktops_opt_in, read only by desktops_experiment_report (admins).
--- Private, not a profiles column: profiles rows with a username are public
--- (/<username> pages), and who tries an experiment is nobody else's business
--- ----------------------------------------------------------------------------
-create table private.desktops_opt_ins (
-    user_id uuid primary key references auth.users (id) on delete cascade,
-    opted_in_at timestamptz not null default now()
-);
-
--- ----------------------------------------------------------------------------
 -- workspaces
 -- ----------------------------------------------------------------------------
 
@@ -218,22 +135,11 @@ create table public.workspaces (
     owner_id uuid not null references auth.users (id) on delete cascade,
     name text not null check (char_length(name) <= 255),
 
-    -- a folder child of a cloud desktop's board (null = regular workspace).
-    -- Shown in the workspace lists and publishable like any other workspace;
-    -- deleting the desktop cascades here. A workspace pins to at most one
-    -- desktop (cross-desktop links are a future aliases feature)
-    desktop_id uuid references public.desktops (id) on delete cascade,
-
     -- presentation attrs of the workspace-as-board-tile (position/size/color),
     -- same flat names as entries.xattrs so the board renders both tile kinds
     -- with one code path. Readable by anon when the workspace is public —
     -- never put anything private here. Size-capped like entries.xattrs
     xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 65536),
-
-    -- the hidden system workspace holds desktop board FILES (/desktop-<id>/):
-    -- one per user, created by get_or_create_system_workspace, filtered out
-    -- of workspace lists; public/remove/share are forbidden for it
-    is_system boolean not null default false,
 
     -- public link: set only via set_workspace_public (not client UPDATE).
     -- Slug is unique per owner: the URL is /<username>/<slug>, so two users
@@ -249,21 +155,16 @@ create table public.workspaces (
     created_at timestamptz not null default now()
 );
 
--- the board query (workspaces where desktop_id = ...)
-create index workspaces_desktop_idx on public.workspaces (desktop_id) where desktop_id is not null;
 -- "my workspaces", owner_usage, readable/writable_workspace_ids, owner FK cascade
 create index workspaces_owner_idx on public.workspaces (owner_id);
-
--- one system workspace per user; makes concurrent get_or_create_system_workspace safe
-create unique index workspaces_system_unique on public.workspaces (owner_id) where is_system;
 
 create unique index workspaces_slug_per_owner
     on public.workspaces (owner_id, slug)
     where slug is not null;
 
 -- The owner may change only name and xattrs. is_public/slug/published_at/
--- allow_fork change only via set_workspace_public/private, is_system/
--- desktop_id only via the RPCs above (security definer bypasses this).
+-- allow_fork change only via set_workspace_public/private (security definer
+-- bypasses this).
 revoke update on public.workspaces from authenticated, anon;
 grant update (name, xattrs) on public.workspaces to authenticated;
 
@@ -339,7 +240,7 @@ create table public.profiles (
 
 -- Plan numbers live here so signup, backfill, and later paid rows do not
 -- drift across backend/UI constants. Free is the only seed for beta.
--- max_entries / max_strokes / max_connections / max_desktops are abuse
+-- max_entries / max_strokes / max_connections are abuse
 -- fences, not the byte quota: folders, ink and edges cost nothing against
 -- quota_bytes, so without them fork/copy loops and canvas jsonb could grow
 -- the tables without limit (null = unlimited). Both free and pro seed
@@ -359,7 +260,6 @@ returns table (
     max_entries int,
     max_strokes int,
     max_connections int,
-    max_desktops int,
     egress_bytes_month bigint,
     max_public_file_bytes bigint,
     download_bytes_month bigint
@@ -377,7 +277,6 @@ begin
             20000,
             20000,
             20000,
-            20,
             (20::bigint * 1024 * 1024 * 1024),
             (10 * 1024 * 1024)::bigint,
             (20::bigint * 1024 * 1024 * 1024);
@@ -396,7 +295,6 @@ begin
             200000,
             100000,
             100000,
-            50,
             (20::bigint * 1024 * 1024 * 1024),
             (10 * 1024 * 1024)::bigint,
             (20::bigint * 1024 * 1024 * 1024);
@@ -425,10 +323,9 @@ create table public.billing_accounts (
     -- (null = unlimited). Free seeds 20000, pro 200000 — abuse fences
     max_entries int check (max_entries is null or max_entries >= 0),
     -- canvas jsonb outside quota_bytes (null = unlimited). Free 20000 /
-    -- 20000 / 20, pro 100000 / 100000 / 50
+    -- 20000, pro 100000 / 100000
     max_strokes int check (max_strokes is null or max_strokes >= 0),
     max_connections int check (max_connections is null or max_connections >= 0),
-    max_desktops int check (max_desktops is null or max_desktops >= 0),
     -- public-link fair use (null = unlimited): bytes presigned for
     -- non-members per UTC month, and the largest original they get signed
     egress_bytes_month bigint check (egress_bytes_month is null or egress_bytes_month > 0),
@@ -639,7 +536,6 @@ begin
      where i.email = v_email
        and i.expires_at > now()
        and w.owner_id <> p_user
-       and not w.is_system
     on conflict do nothing;
     delete from public.workspace_invites
      where email = v_email;
@@ -656,11 +552,11 @@ begin
     insert into public.profiles (id) values (new.id);
     insert into public.billing_accounts (
         owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, max_entries,
-        max_strokes, max_connections, max_desktops,
+        max_strokes, max_connections,
         egress_bytes_month, max_public_file_bytes, download_bytes_month
     )
     select new.id, 'free', 'active', d.quota_bytes, d.max_file_bytes, d.max_hub_listings, d.max_entries,
-           d.max_strokes, d.max_connections, d.max_desktops,
+           d.max_strokes, d.max_connections,
            d.egress_bytes_month, d.max_public_file_bytes, d.download_bytes_month
       from private.plan_defaults('free') d;
 
@@ -682,11 +578,11 @@ on conflict (id) do nothing;
 
 insert into public.billing_accounts (
     owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, max_entries,
-    max_strokes, max_connections, max_desktops,
+    max_strokes, max_connections,
     egress_bytes_month, max_public_file_bytes, download_bytes_month
 )
 select u.id, 'free', 'active', d.quota_bytes, d.max_file_bytes, d.max_hub_listings, d.max_entries,
-       d.max_strokes, d.max_connections, d.max_desktops,
+       d.max_strokes, d.max_connections,
        d.egress_bytes_month, d.max_public_file_bytes, d.download_bytes_month
   from auth.users u
   cross join private.plan_defaults('free') d
@@ -1574,19 +1470,6 @@ as $$
     );
 $$;
 
-create or replace function private.is_desktop_owner(p_desktop_id uuid)
-returns boolean
-language sql
-security definer
-stable
-set search_path = public, extensions
-as $$
-    select exists (
-        select 1 from public.desktops
-        where id = p_desktop_id and owner_id = auth.uid()
-    );
-$$;
-
 create or replace function private.is_workspace_editor(p_workspace_id uuid)
 returns boolean
 language sql
@@ -1666,7 +1549,7 @@ as $$
 $$;
 
 -- Serialize structural operations on one workspace, including direct INSERTs
--- and workspace/desktop/account cascades. NO KEY UPDATE permits FK KEY SHARE
+-- and workspace/account cascades. NO KEY UPDATE permits FK KEY SHARE
 -- locks used by ordinary text saves; FOR UPDATE here would deadlock against a
 -- save holding the owner's billing lock. Lock order: workspace → ticket/billing
 -- → entries. Payload/xattr UPDATEs do not acquire this workspace lock.
@@ -1697,8 +1580,8 @@ revoke execute on function private.lock_entry_workspace(uuid) from public, anon,
 
 -- ----------------------------------------------------------------------------
 -- Owner quota. workspace_usage (rpc.sql) stays the per-board counter.
--- owner_usage sums every workspace of the owner: live + trash + system
--- (cloud desktop files). assert_owner_quota serializes on the billing row.
+-- owner_usage sums every workspace of the owner: live + trash.
+-- assert_owner_quota serializes on the billing row.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.owner_usage(p_owner uuid)
@@ -1798,8 +1681,8 @@ begin
 end
 $$;
 
--- Row ceilings (billing_accounts.max_entries / max_strokes / max_connections
--- / max_desktops). Trash is included: a trashed row still occupies the table
+-- Row ceilings (billing_accounts.max_entries / max_strokes / max_connections).
+-- Trash is included: a trashed row still occupies the table
 -- for 30 days. Security definer so an editor's RLS cannot under-count the
 -- owner's other workspaces. Advisory lock is per owner, not billing_accounts
 -- FOR UPDATE — a shrinking text save must not queue behind a stroke insert.
@@ -1893,33 +1776,6 @@ begin
 end
 $$;
 
-create or replace function private.assert_owner_desktops(p_owner uuid, p_delta int)
-returns void
-language plpgsql
-security definer
-set search_path = public, extensions
-as $$
-declare
-    v_max int;
-    v_count bigint;
-begin
-    if p_owner is null or coalesce(p_delta, 0) <= 0 then
-        return;
-    end if;
-    perform pg_advisory_xact_lock(hashtextextended(p_owner::text, 42));
-    select b.max_desktops into v_max from public.billing_accounts b where b.owner_id = p_owner;
-    if v_max is null then
-        return;
-    end if;
-    select count(*) into v_count from public.desktops d where d.owner_id = p_owner;
-    if v_count + p_delta > v_max then
-        raise exception 'desktops_limit_exceeded: % of % desktops, need % more',
-            v_count, v_max, p_delta
-            using errcode = 'P0001';
-    end if;
-end
-$$;
-
 create or replace function private.assert_owner_quota(
     p_workspace uuid,
     p_delta_bytes bigint,
@@ -1952,7 +1808,6 @@ $$;
 -- RLS
 -- ----------------------------------------------------------------------------
 
-alter table public.desktops enable row level security;
 alter table public.workspaces enable row level security;
 alter table public.workspace_members enable row level security;
 alter table public.workspace_invites enable row level security;
@@ -1972,20 +1827,6 @@ alter table public.entry_contents enable row level security;
 alter table public.folder_strokes enable row level security;
 alter table public.folder_connections enable row level security;
 
--- desktops are strictly owner-scoped (private: no public/member path at all)
-create policy desktops_select on public.desktops
-    for select using (owner_id = (select auth.uid()));
-
-create policy desktops_insert on public.desktops
-    for insert with check (owner_id = (select auth.uid()));
-
-create policy desktops_update on public.desktops
-    for update using (owner_id = (select auth.uid()))
-    with check (owner_id = (select auth.uid()));
-
-create policy desktops_delete on public.desktops
-    for delete using (owner_id = (select auth.uid()));
-
 create policy workspaces_select on public.workspaces
     for select using (
         owner_id = (select auth.uid())
@@ -1997,20 +1838,15 @@ create policy workspaces_insert on public.workspaces
     for insert with check (
         owner_id = (select auth.uid())
         and not is_public      -- is_public/slug are set only by set_workspace_public
-        and not is_system      -- the system workspace is created only by get_or_create_system_workspace
         and slug is null
-        -- a board child pins to the caller's own desktop
-        and (desktop_id is null or private.is_desktop_owner(desktop_id))
     );
 
 create policy workspaces_update on public.workspaces
     for update using (owner_id = (select auth.uid()))
     with check (owner_id = (select auth.uid()));
 
--- the system workspace dies only with the account (owner_id cascade), never
--- by a client delete
 create policy workspaces_delete on public.workspaces
-    for delete using (owner_id = (select auth.uid()) and not is_system);
+    for delete using (owner_id = (select auth.uid()));
 
 create policy members_select on public.workspace_members
     for select using (
@@ -2468,8 +2304,6 @@ grant usage on schema public to anon, authenticated, service_role;
 -- direct client calls are impossible through PostgREST regardless
 grant usage on schema private to authenticated, anon, service_role;
 
-grant select, insert, update, delete on public.desktops to authenticated;
-
 grant select, insert, delete on public.workspaces to authenticated;
 grant select on public.workspaces to anon;  -- public workspaces (is_public)
 
@@ -2541,8 +2375,6 @@ grant select on public.folder_connections to anon;  -- public workspaces serve e
 -- Trigger functions are never called by clients; they fire regardless of
 -- EXECUTE, so nothing is lost by revoking it (PUBLIC included — new functions
 -- default to EXECUTE for PUBLIC)
-revoke execute on function public.desktops_touch() from public, anon, authenticated;
-revoke execute on function public.desktops_count_guard() from public, anon, authenticated;
 revoke execute on function public.entries_derive_paths() from public, anon, authenticated;
 revoke execute on function public.entries_touch() from public, anon, authenticated;
 revoke execute on function public.entries_count_guard() from public, anon, authenticated;
