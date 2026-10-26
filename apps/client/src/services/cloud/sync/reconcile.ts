@@ -243,14 +243,16 @@ export function reconcile(
 			return !is_content_change(row, base.get(relative)!)
 		})
 	const hidden_inside = options.folders_with_hidden ?? new Set<string>()
-	const removable_here = (folder: string): boolean =>
-		!hidden_inside.has(folder) && [...local.values()].every((entry) => {
+	const children_allow_removal = (folder: string): boolean =>
+		[...local.values()].every((entry) => {
 			if (!entry.relative.startsWith(`${folder}/`)) return true
 			const known = base.get(entry.relative)
 			if (!known || known.kind !== entry.kind) return false
 			if (entry.kind === 'file' && is_local_change(entry, known)) return false
 			return !cloud_by_id.has(known.cloud_id)
 		})
+	const removable_here = (folder: string): boolean =>
+		!hidden_inside.has(folder) && children_allow_removal(folder)
 	const untouched_since_link = (row: CloudEntry) =>
 		options.adopt_before !== undefined
 		&& row.modified_at !== null
@@ -268,6 +270,7 @@ export function reconcile(
 	const clashed = new Set<string>()
 	const trashed_in_cloud: string[] = []
 	const trashed_here: string[] = []
+	const kept_for_hidden: string[] = []
 	let deletes = 0
 	let local_deletes = 0
 
@@ -336,6 +339,10 @@ export function reconcile(
 					trashed_here.push(relative)
 				} else {
 					structure.push({ kind: 'create_folder', relative })
+					// hidden files, not a visible edit: the folder comes back empty
+					if (hidden_inside.has(relative) && children_allow_removal(relative)) {
+						kept_for_hidden.push(relative)
+					}
 				}
 				continue
 			}
@@ -398,5 +405,6 @@ export function reconcile(
 		deletes,
 		local_deletes,
 		base_files,
+		kept_for_hidden,
 	}
 }

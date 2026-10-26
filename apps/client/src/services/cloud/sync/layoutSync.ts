@@ -13,6 +13,26 @@ import type { ConnectionBase, StrokeBase } from './types'
 
 export const RACE_WINDOW_MS = 10_000
 
+/**
+ * Set on a cloud folder recreated because the synced computer still holds
+ * hidden files. Not a layout key: it never comes down into the local `.pile`
+ * and never goes back up from it, or the mark would travel in a circle.
+ */
+export const SYNC_KEPT_HIDDEN = 'sync_kept_hidden'
+
+export function sync_kept_hidden_value(at: Date): string {
+	return JSON.stringify({ at: at.toISOString() })
+}
+
+function without_kept_hidden(
+	xattrs: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> | undefined {
+	if (!xattrs || !Object.prototype.hasOwnProperty.call(xattrs, SYNC_KEPT_HIDDEN)) return xattrs
+	const rest = { ...xattrs }
+	delete rest[SYNC_KEPT_HIDDEN]
+	return rest
+}
+
 // ---- xattrs ----------------------------------------------------------------
 
 export type XattrsMerge = {
@@ -34,6 +54,9 @@ export function merge_xattrs(
 	local: Readonly<Record<string, string>>,
 	cloud: Readonly<Record<string, string>>,
 ): XattrsMerge {
+	base = without_kept_hidden(base)
+	local = without_kept_hidden(local) ?? {}
+	cloud = without_kept_hidden(cloud) ?? {}
 	const result: XattrsMerge = { merged: {}, local_sets: {}, local_removes: [], cloud_sets: {}, cloud_removes: [] }
 	for (const name of new Set([...Object.keys(local), ...Object.keys(cloud), ...Object.keys(base ?? {})])) {
 		const here = local[name]

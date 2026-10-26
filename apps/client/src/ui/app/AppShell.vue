@@ -12,6 +12,7 @@ import WorkspaceWindow from '@/ui/workspace/WorkspaceWindow.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
 import UpdateBanner from '@/ui/app/UpdateBanner.vue'
+import SyncKeptHiddenToast from '@/ui/workspace/sidebar/SyncKeptHiddenToast.vue'
 import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
 import AiConsentDialog from '@/ui/ai/AiConsentDialog.vue'
 import BulkRenameDialog from '@/ui/ai/BulkRenameDialog.vue'
@@ -70,6 +71,7 @@ onUnmounted(() => {
 				Drop a folder to open, a .pile to import, or files into the workspace
 			</div>
 		</Teleport>
+		<SyncKeptHiddenToast />
 		<WorkspaceWindow />
 		<QuotaWallDialog />
 		<BridgeDialog />

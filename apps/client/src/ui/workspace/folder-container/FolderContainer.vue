@@ -2,6 +2,7 @@
 import { onErrorCaptured, ref } from 'vue'
 import { useFolderContainerScope } from './useFolderContainerScope'
 import FolderViewRouter from './FolderViewRouter.vue'
+import SyncKeptHiddenHint from './SyncKeptHiddenHint.vue'
 
 const renderError = ref<Error | null>(null)
 
@@ -20,9 +21,10 @@ const { container } = useFolderContainerScope()
 			<pre class="mt-2 text-xs">{{ renderError.message }}</pre>
 		</div>
 		<template v-else>
-		<article>
-			<FolderViewRouter :view="container.view" />
-		</article>
+			<SyncKeptHiddenHint />
+			<article>
+				<FolderViewRouter :view="container.view" />
+			</article>
 		</template>
 	</main>
 </template>

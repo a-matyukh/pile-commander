@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import store from '@/store'
 import cloud from '@/store/cloud'
+import { kept_hidden_status } from '@/services/cloud/sync/keptHidden'
 import { sync_link_of, sync_now, sync_statuses, unlink_folder } from '@/store/localSync'
 
 const props = defineProps<{
@@ -90,6 +91,9 @@ function open_cloud_copy() {
 				<p v-if="status?.conflicts.length" class="text-xs">
 					{{ status.conflicts.length }} {{ status.conflicts.length === 1 ? 'file was' : 'files were' }} changed on both sides.
 					The cloud version kept the name; yours is beside it as a conflicted copy: {{ status.conflicts.slice(-3).join(', ') }}
+				</p>
+				<p v-if="status?.kept_for_hidden.length" class="text-xs">
+					{{ kept_hidden_status(status.kept_for_hidden) }}
 				</p>
 				<p v-if="status?.skipped.length" class="text-xs text-muted">
 					{{ status.skipped.length }} {{ status.skipped.length === 1 ? 'item is' : 'items are' }} not synced

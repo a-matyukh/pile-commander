@@ -124,7 +124,25 @@ writes' own echoes wake finds nothing to do.
   litter: they are skipped too, and they do not protect a folder from deletion.
   - A folder that still holds a real hidden name (not OS litter) is not moved
     to the system trash as a whole. Its visible unchanged files go one by one,
-    and the folder comes back to the cloud empty.
+    and the folder comes back to the cloud empty. A visible file that is new
+    or edited here is a different case: the folder comes back with that file,
+    and nothing below is said.
+    On the computer, that empty return is said once per pass, in a neutral
+    toast, and kept in the sync status next to conflicts until a later pass
+    no longer sees that folder here: it stayed because it holds hidden files
+    (like `.git`) that are never synced, it is back in the cloud empty, and
+    deleting it on this computer removes it in the cloud too. macOS says "this Mac"; Windows and Linux say "this computer".
+    The recreated cloud folder gets `sync_kept_hidden` (`{ "at": "<ISO>" }`).
+    There is no device name: the app does not know one, and no plugin is added
+    to learn it. The key is not layout. `merge_xattrs` ignores it in both
+    directions, so it is not downloaded into the local `.pile` and not
+    uploaded from a `.pile` that already has it. A stray local copy is
+    dropped on the next pass so it cannot travel back up. The mark is left
+    on the cloud folder; it is harmless once the folder is in use. While the
+    folder has no visible child, the web and the desktop app show a hint
+    (readers and touch screens included; not the dismissible empty-pane
+    hint): it stayed on a computer that syncs it, and deleting it there
+    removes it here. A visible child hides the hint.
   - Deleting that folder here sends it to the cloud trash together with its
     hidden children (30 days).
   - Renaming a cloud file or folder to a hidden name is, on this device, a
