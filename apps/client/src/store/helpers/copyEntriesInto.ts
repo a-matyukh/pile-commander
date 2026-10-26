@@ -2,6 +2,7 @@ import type { EntryWithXattrs, FileManager, FolderWithChildrenXattrs, Xattr } fr
 import {
 	apply_entry_created,
 	find_child_entry,
+	note_hidden_names,
 	type WorkspaceState,
 } from '@/services/workspace/mutations'
 import { find_tree_node, is_descendant } from '@/services/workspace/tree'
@@ -65,72 +66,78 @@ export async function copy_entries_into(
 	const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 	const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 	const created_ids: string[] = []
+	const created_names: string[] = []
 	const created_entries: EntryWithXattrs[] = []
 	// copied id → created id, for the edge clone below
 	const id_map = new Map<string, string>()
 
-	for (const id of entry_ids) {
-		if (target_folder_id === id || is_descendant(store.tree, id, target_folder_id)) {
-			continue
-		}
+	try {
+		for (const id of entry_ids) {
+			if (target_folder_id === id || is_descendant(store.tree, id, target_folder_id)) {
+				continue
+			}
 
-		const node = find_tree_node(store.tree, id)
-		const folder_entry = find_child_entry(store.folders, id)
-		const base_name = node?.name ?? folder_entry?.name
-		if (!base_name) continue
+			const node = find_tree_node(store.tree, id)
+			const folder_entry = find_child_entry(store.folders, id)
+			const base_name = node?.name ?? folder_entry?.name
+			if (!base_name) continue
 
-		const name = resolve_unique_filename(base_name, existing)
-		existing.add(name)
+			const name = resolve_unique_filename(base_name, existing)
+			existing.add(name)
 
-		let copied
-		try {
-			copied = await fm.copy_entry(id, target_folder_id, name)
-		} catch (error) {
-			report_error(store, error)
-			return created_ids
-		}
-
-		let xattrs: Xattr[] = []
-		try {
-			xattrs = await fm.list_xattrs(copied.id)
-		} catch (error) {
-			report_error(store, error)
-		}
-
-		xattrs = offset_position_xattrs(xattrs)
-		const position = xattrs.find(a => a.name === 'position')
-		if (position) {
+			let copied
 			try {
-				await fm.set_xattr(copied.id, 'position', position.value)
+				copied = await fm.copy_entry(id, target_folder_id, name)
+			} catch (error) {
+				report_error(store, error)
+				return created_ids
+			}
+
+			let xattrs: Xattr[] = []
+			try {
+				xattrs = await fm.list_xattrs(copied.id)
 			} catch (error) {
 				report_error(store, error)
 			}
+
+			xattrs = offset_position_xattrs(xattrs)
+			const position = xattrs.find(a => a.name === 'position')
+			if (position) {
+				try {
+					await fm.set_xattr(copied.id, 'position', position.value)
+				} catch (error) {
+					report_error(store, error)
+				}
+			}
+
+			const entry: EntryWithXattrs = {
+				id: copied.id,
+				name: copied.name,
+				type: copied.type,
+				xattrs,
+			}
+			apply_entry_created(store, target_folder_id, entry, { notice: false })
+			created_ids.push(copied.id)
+			created_names.push(copied.name)
+			created_entries.push(entry)
+			id_map.set(id, copied.id)
 		}
 
-		const entry: EntryWithXattrs = {
-			id: copied.id,
-			name: copied.name,
-			type: copied.type,
-			xattrs,
-		}
-		apply_entry_created(store, target_folder_id, entry)
-		created_ids.push(copied.id)
-		created_entries.push(entry)
-		id_map.set(id, copied.id)
+		if (created_ids.length === 0) return created_ids
+
+		// Edges between the copied entries live in the source folder's canvas —
+		// clone them onto the copies so a connected pair stays connected.
+		await copy_folder_canvas_connections(store, store, id_map, target_folder_id)
+
+		await persist_children_order(store, fm, target_folder_id, [
+			...existing_ids,
+			...created_ids,
+		])
+
+		await store.prefetch_preview_folders(created_entries)
+
+		return created_ids
+	} finally {
+		note_hidden_names(store, created_names)
 	}
-
-	if (created_ids.length === 0) return created_ids
-
-	// Edges between the copied entries live in the source folder's canvas —
-	// clone them onto the copies so a connected pair stays connected.
-	await copy_folder_canvas_connections(store, store, id_map, target_folder_id)
-
-	await persist_children_order(store, fm, target_folder_id, [
-		...existing_ids,
-		...created_ids,
-	])
-
-	await store.prefetch_preview_folders(created_entries)
-
-	return created_ids
 }

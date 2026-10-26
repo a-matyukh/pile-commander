@@ -4,6 +4,7 @@ import {
 	apply_entry_created,
 	apply_entry_removed,
 	find_child_entry,
+	note_hidden_names,
 } from '@/services/workspace/mutations'
 import { find_tree_node } from '@/services/workspace/tree'
 import { sort_entries_by_order_then_name } from '@/services/workspace/folderContainer'
@@ -77,6 +78,7 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 	const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 	const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 	const created_ids: string[] = []
+	const created_names: string[] = []
 	const created_entries: EntryWithXattrs[] = []
 	// source id → created id, in each store's coordinates (edge clone below)
 	const id_map = new Map<string, string>()
@@ -150,8 +152,9 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 				type: copied.type,
 				xattrs,
 			}
-		apply_entry_created(target_store, target_folder_id, entry)
+		apply_entry_created(target_store, target_folder_id, entry, { notice: false })
 		created_ids.push(copied.id)
+		created_names.push(copied.name)
 		created_entries.push(entry)
 		id_map.set(id, copied.id)
 
@@ -179,6 +182,7 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 		}
 	}
 	} finally {
+		note_hidden_names(target_store, created_names)
 		target_store.import_progress = null
 	}
 

@@ -1805,63 +1805,69 @@ export async function createWorkspaceStore(
 				const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 				const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 				const created_ids: string[] = []
+				const created_names: string[] = []
 
-				for (let index = 0; index < paths.length; index++) {
-					const source_path = paths[index]!
-					let base_name: string
-					try {
-						base_name = await basename(source_path)
-					} catch (error) {
-						report_error(this, error)
-						return
-					}
-
-					const name = resolve_unique_filename(base_name, existing)
-					existing.add(name)
-
-					let node
-					try {
-						node = await fm.copy_file(source_path, folder_id, name)
-					} catch (error) {
-						report_error(this, error)
-						return
-					}
-
-					const xattrs: { name: string; value: string }[] = []
-					if (position) {
-						const staggered = {
-							x: position.x + index * 24,
-							y: position.y + index * 24,
-						}
-						xattrs.push({ name: 'position', value: JSON.stringify(staggered) })
-					}
-
-					for (const { name: xattr_name, value } of xattrs) {
+				try {
+					for (let index = 0; index < paths.length; index++) {
+						const source_path = paths[index]!
+						let base_name: string
 						try {
-							await fm.set_xattr(node.id, xattr_name, value)
+							base_name = await basename(source_path)
 						} catch (error) {
 							report_error(this, error)
+							return
 						}
+
+						const name = resolve_unique_filename(base_name, existing)
+						existing.add(name)
+
+						let node
+						try {
+							node = await fm.copy_file(source_path, folder_id, name)
+						} catch (error) {
+							report_error(this, error)
+							return
+						}
+
+						const xattrs: { name: string; value: string }[] = []
+						if (position) {
+							const staggered = {
+								x: position.x + index * 24,
+								y: position.y + index * 24,
+							}
+							xattrs.push({ name: 'position', value: JSON.stringify(staggered) })
+						}
+
+						for (const { name: xattr_name, value } of xattrs) {
+							try {
+								await fm.set_xattr(node.id, xattr_name, value)
+							} catch (error) {
+								report_error(this, error)
+							}
+						}
+
+						apply_entry_created(this, folder_id, {
+							id: node.id,
+							name: node.name,
+							type: 'file',
+							xattrs: [...xattrs],
+						}, { notice: false })
+						created_ids.push(node.id)
+						created_names.push(node.name)
 					}
 
-					apply_entry_created(this, folder_id, {
-						id: node.id,
-						name: node.name,
-						type: 'file',
-						xattrs: [...xattrs],
-					})
-					created_ids.push(node.id)
+					if (created_ids.length === 0) return
+
+					await persist_children_order(this, fm, folder_id, [
+						...existing_ids,
+						...created_ids,
+					])
+
+					const last_id = created_ids[created_ids.length - 1]
+					if (last_id) this.select(last_id)
+				} finally {
+					note_hidden_names(this, created_names)
 				}
-
-				if (created_ids.length === 0) return
-
-				await persist_children_order(this, fm, folder_id, [
-					...existing_ids,
-					...created_ids,
-				])
-
-				const last_id = created_ids[created_ids.length - 1]
-				if (last_id) this.select(last_id)
 			},
 			async import_files(folder_id: string, files: File[], position?: Position) {
 				assert_can_write()

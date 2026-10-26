@@ -54,6 +54,12 @@ describe('uniqueName', () => {
 			.toBe('Café (1).jpg'.normalize('NFC'))
 	})
 
+	test('resolve_unique_filename keeps a leading dot so the copy stays hidden', () => {
+		expect(resolve_unique_filename('.git', ['.git'])).toBe('.git (1)')
+		expect(resolve_unique_filename('.env', ['.env'])).toBe('.env (1)')
+		expect(resolve_unique_filename('.env.local', ['.env.local'])).toBe('.env (1).local')
+	})
+
 	test('resolve_unique_filename appends (n) for other collisions', () => {
 		expect(resolve_unique_filename('photo.png', ['photo.png'])).toBe('photo (1).png')
 		expect(resolve_unique_filename('photo.png', ['photo.png', 'photo (1).png'])).toBe('photo (2).png')
