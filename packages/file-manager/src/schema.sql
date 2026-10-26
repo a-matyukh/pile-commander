@@ -198,7 +198,7 @@ create index desktops_owner_idx on public.desktops (owner_id);
 
 -- ----------------------------------------------------------------------------
 -- desktops_opt_ins: accounts that turned the desktops experiment on
--- (DESKTOPS_EXPERIMENT.md in the repo root). One row per account with the
+-- (prototypes/desktop-environment/DESKTOPS_EXPERIMENT.md). One row per account with the
 -- first opt-in time; the switch going off never clears it. Written only by
 -- mark_desktops_opt_in, read only by desktops_experiment_report (admins).
 -- Private, not a profiles column: profiles rows with a username are public

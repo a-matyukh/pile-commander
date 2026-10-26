@@ -3379,7 +3379,7 @@ revoke execute on function private.prune_entry_derivatives(int) from public, ano
 grant execute on function private.prune_entry_derivatives(int) to service_role;
 
 -- ----------------------------------------------------------------------------
--- Desktops experiment (DESKTOPS_EXPERIMENT.md): the opt-in mark and the admin
+-- Desktops experiment (prototypes/desktop-environment/DESKTOPS_EXPERIMENT.md): the opt-in mark and the admin
 -- report. The report reads only what cloud accounts already store — no event
 -- log, no client analytics (the privacy page promises no trackers). Local and
 -- browser desktops never reach the server, so they are not in it.
