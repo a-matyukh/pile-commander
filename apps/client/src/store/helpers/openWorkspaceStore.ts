@@ -8,13 +8,12 @@ import {
 	cloud_failure_message,
 	require_supabase,
 } from '@/services/cloud/client'
-import { require_browser_storage } from '@/services/desktop/browserDesktopFolders'
+import { require_browser_storage } from '@/services/workspace/browserStorage'
 import { createWorkspaceStore } from '../createWorkspaceStore'
 
 /**
  * Builds a live workspace store for the given list item: file manager,
- * access check, read-only gating. Shared by the fullscreen load path
- * (store.load_workspace) and the per-window loader (workspaceRegistry).
+ * access check, read-only gating.
  */
 export async function open_workspace_store(
 	item: WorkspacesListItem,

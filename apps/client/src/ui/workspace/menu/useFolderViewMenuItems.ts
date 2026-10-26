@@ -36,8 +36,6 @@ export function useFolderViewMenuItems() {
 	}
 
 	const viewItems = computed<DropdownMenuItem[]>(() => {
-		// the desktop surface fixes its pane to the board view
-		if (scope.fixedView) return []
 		const disabled = workspace.value?.can_write === false
 		return [{
 			label: 'View',

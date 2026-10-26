@@ -8,7 +8,6 @@ import ColorPickerMenuSlot from './ColorPickerMenuSlot.vue'
 import PresetColorsMenuSlot from './PresetColorsMenuSlot.vue'
 import { useNodeMenu } from './useNodeMenu'
 import { useColorSubmenu } from './useColorSubmenu'
-import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
@@ -47,14 +46,12 @@ const previewToggleLabel = computed(() =>
 
 const requireWorkspace = useRequireWorkspace()
 const workspace = useWorkspace()
-const { fixedView } = useFolderContainerScope()
 const readonly = computed(() => workspace.value?.can_write === false)
 
-// Tabs live in the window header strip. Hide the new-tab item on the
-// desktop surface (no window tabs) and on narrow screens (same breakpoint
-// as the sidebar's md: drawer switch in WorkspaceWindow).
+// Tabs live in the window header strip. Hide the new-tab item on narrow
+// screens (same breakpoint as the sidebar's md: drawer switch).
 const isMdUp = useMediaQuery('(min-width: 768px)')
-const showOpenInNewTab = computed(() => isMdUp.value && !fixedView)
+const showOpenInNewTab = computed(() => isMdUp.value)
 
 const colorSubmenuOptions = computed(() => {
 	const child = openedChild.value

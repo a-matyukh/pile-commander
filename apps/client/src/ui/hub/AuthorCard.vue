@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { navigate_public, open_public_window } from '@/services/navigatePublic'
+import { navigate_public } from '@/services/navigatePublic'
 import cloud from '@/store/cloud'
-import desktops from '@/store/desktops'
-import { useWindowContext } from '@/ui/window/windowContext'
 import type { HubTab } from './hubCatalog'
 import { hub_open, hub_tab } from './hubUi'
 
@@ -18,7 +16,6 @@ const props = withDefaults(
 	{ variant: 'card' },
 )
 
-const window_ctx = useWindowContext()
 const title = computed(() => props.display_name || props.username)
 const publications_label = computed(() =>
 	props.publication_count === 1 ? 'publication' : 'publications',
@@ -27,14 +24,6 @@ const publications_label = computed(() =>
 function open_hub(tab: HubTab = 'workspaces') {
 	hub_tab.value = tab
 	hub_open.value = true
-	if (window_ctx) {
-		desktops.set_window_content(window_ctx.window_id, { kind: 'hub' })
-		if (window_ctx.state.value === 'fullscreen' && window.location.pathname !== '/hub') {
-			history.pushState(null, '', '/hub')
-		}
-		return
-	}
-	// fullscreen: leaving the profile page for the in-place Hub
 	cloud.profile_view = null
 	cloud.profile_not_found = null
 	navigate_public('/hub')
@@ -43,13 +32,6 @@ function open_hub(tab: HubTab = 'workspaces') {
 function open() {
 	if (props.variant !== 'card' || !props.username) return
 	hub_open.value = false
-	if (desktops.mode === 'desktops') {
-		open_public_window(
-			{ kind: 'profile', username: props.username },
-			`/${props.username}`,
-		)
-		return
-	}
 	navigate_public(`/${props.username}`)
 }
 </script>

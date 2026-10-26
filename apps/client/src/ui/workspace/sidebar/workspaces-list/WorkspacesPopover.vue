@@ -4,25 +4,15 @@ import type { TabsItem } from '@nuxt/ui'
 import WorkspacesList from './WorkspacesList.vue'
 import AccountPanel from './AccountPanel.vue'
 import SettingsPanel from './SettingsPanel.vue'
-import DesktopUpdateControls from '@/ui/desktop/DesktopUpdateControls.vue'
-import desktops from '@/store/desktops'
-import { useWindowContext } from '@/ui/window/windowContext'
+import DesktopUpdateControls from '@/ui/app/DesktopUpdateControls.vue'
 
-const props = withDefaults(
-	defineProps<{
-		/**
-		 * `replace` — open into the current window / fullscreen app (header button).
-		 * `new-window` — always open a new desktop window (Start menu).
-		 */
-		open_as?: 'replace' | 'new-window'
-		content?: {
-			side?: 'top' | 'right' | 'bottom' | 'left'
-			align?: 'start' | 'center' | 'end'
-			onOpenAutoFocus?: (event: Event) => void
-		}
-	}>(),
-	{ open_as: 'replace' },
-)
+defineProps<{
+	content?: {
+		side?: 'top' | 'right' | 'bottom' | 'left'
+		align?: 'start' | 'center' | 'end'
+		onOpenAutoFocus?: (event: Event) => void
+	}
+}>()
 
 const emit = defineEmits<{
 	/** Fullscreen app has no window to replace; the host shows Hub in-place. */
@@ -31,7 +21,6 @@ const emit = defineEmits<{
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
-const window_ctx = useWindowContext()
 const tab = ref('workspaces')
 
 const tab_items: TabsItem[] = [
@@ -47,14 +36,6 @@ function on_opened() {
 
 function open_hub() {
 	open.value = false
-	if (props.open_as === 'new-window') {
-		desktops.open_window({ kind: 'hub' })
-		return
-	}
-	if (window_ctx) {
-		desktops.set_window_content(window_ctx.window_id, { kind: 'hub' })
-		return
-	}
 	emit('hub')
 }
 </script>
@@ -85,7 +66,7 @@ function open_hub() {
 							/>
 						</template>
 						<template #workspaces>
-							<WorkspacesList :open_as="open_as" @opened="on_opened" @account="tab = 'account'" />
+							<WorkspacesList @opened="on_opened" @account="tab = 'account'" />
 						</template>
 						<template #account>
 							<AccountPanel :show_desktop_update="false" />

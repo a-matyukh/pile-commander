@@ -4,7 +4,6 @@ import type { ShapeTemplate } from '@/domain/shapes'
 import type { LinePlug, LineAxis } from '@/services/board/shapes'
 import type { EntryContentCaches } from '@/ui/workspace/folder-container/textContentCache'
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
-import type { AppWindow } from './Desktop'
 import { Color, Connection, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
 
@@ -16,16 +15,6 @@ type LoadWorkspaceOptions = {
 	 * outsiders read the board once, without realtime.
 	 */
 	public_readonly?: boolean
-	/**
-	 * Desktops mode: open as a new floating window (Start menu / folder drop).
-	 * Default when neither this nor `replace_window_id` is set.
-	 */
-	as_new_window?: boolean
-	/**
-	 * Desktops mode: load the workspace into this existing window
-	 * (header Workspaces button — replace in place).
-	 */
-	replace_window_id?: string
 }
 
 export
@@ -54,21 +43,6 @@ type Store = {
 	load_workspace(ws: WorkspacesListItem, opts?: LoadWorkspaceOptions): Promise<void>
 	/** Closes the open workspace (e.g. after its cloud workspace was removed). */
 	close_workspace(): void
-	/** Unloads the workspace from a desktop window without closing the window. */
-	eject_workspace(window_id: string): void
-	/**
-	 * fullscreen app mode → desktops mode, moving the open view into a window.
-	 * Reuses a window that already shows that view. `minimize` puts that
-	 * window on the taskbar instead of leaving it floating.
-	 * No-op (returns null) while the desktops experiment is off.
-	 */
-	enter_desktops_mode(opts?: { minimize?: boolean }): AppWindow | null
-	/**
-	 * desktops mode → fullscreen app mode (the experiment switch turned off):
-	 * the focused workspace window's live store becomes the fullscreen
-	 * workspace. Desktops and their windows are kept as they are.
-	 */
-	exit_desktops_mode(): void
 	workspace: WorkspaceStore | null
 
 	bookmarks: WorkspacesList

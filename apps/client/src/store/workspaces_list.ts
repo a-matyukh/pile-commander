@@ -1,6 +1,6 @@
 import { WorkspacesList, WorkspacesListItem } from "@/domain/WorkspacesList"
 import { is_desktop } from "@/isDesktop"
-import { browser_entry_exists } from "@/services/desktop/browserDesktopFolders"
+import { browser_entry_exists } from "@/services/workspace/browserStorage"
 import { normalize_workspace_id } from "@/services/workspace/paths"
 import { useStorage } from '@vueuse/core'
 
@@ -100,8 +100,7 @@ const sync_cloud_workspaces_list = (existing_ids: Set<string>) => {
 	for (const listener of synced_listeners) listener()
 }
 
-// ---- cloud list sync wiring (registry pattern: both cloud.ts and
-// desktopChildren.ts point here, avoiding an import cycle between them) ----
+// ---- cloud list sync wiring (cloud.ts registers here, avoiding an import cycle) ----
 
 const synced_listeners = new Set<() => void>()
 

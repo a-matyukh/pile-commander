@@ -3,11 +3,6 @@ import { computed } from 'vue'
 import { entry_clipboard } from '@/store/entryClipboard'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 
-withDefaults(defineProps<{
-	/** Lift the banner above the desktop taskbar (`h-12`). */
-	above_taskbar?: boolean
-}>(), { above_taskbar: false })
-
 const requireWorkspace = useRequireWorkspace()
 const ws = requireWorkspace()
 
@@ -50,7 +45,6 @@ function pasteHere() {
 	<div
 		v-if="visible"
 		class="clipboard-banner board-no-drag"
-		:class="{ 'clipboard-banner--above-taskbar': above_taskbar }"
 		@click.stop
 		@pointerdown.stop
 	>
@@ -90,11 +84,6 @@ function pasteHere() {
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 	user-select: none;
 	-webkit-user-select: none;
-}
-
-.clipboard-banner--above-taskbar {
-	/* taskbar is h-12; keep the same 0.5rem gap above it */
-	bottom: 3.5rem;
 }
 
 .clipboard-banner__label {

@@ -24,10 +24,6 @@ import InviteView from '@/ui/workspace/InviteView.vue'
 import { hub_open } from '@/ui/hub/hubUi'
 import { resolveExternalDropPosition } from '@/ui/workspace/folder-container/externalDropPosition'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
-import WindowControls from '@/ui/window/WindowControls.vue'
-import { useWindowContext } from '@/ui/window/windowContext'
-import desktops from '@/store/desktops'
-import { desktops_enabled } from '@/store/experiments'
 import bridge, { take_bridge_intent } from '@/store/bridge'
 import type { WorkspaceTab } from '@/domain/Store'
 import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
@@ -36,8 +32,7 @@ const workspace = useWorkspace()
 const scope = createScopeFromStore()
 provideFolderContainerScope(scope)
 provideBoardPlacement()
-// every window mounts this listener; only the focused one may act
-// (in desktops mode store.workspace is the focused window's store)
+// the workspace window mounts this listener
 useClipboardShortcuts(
 	workspace,
 	() => workspace.value === store.workspace,
@@ -70,37 +65,13 @@ const props = withDefaults(
 	{ embedded: false },
 )
 
-// App fullscreen root (no enclosing window) or a fullscreen-state window:
-// WindowControls live in this header. Floating windows carry them in their
-// own chrome instead (Window.vue). Hidden on phones/tablets — desktops-mode
-// chrome is for mouse/trackpad, even when the viewport is iPad-landscape wide.
-const window_context = useWindowContext()
-const window_load_error = computed(() => window_context?.load_error.value ?? null)
-const is_local_window_workspace = computed(() => {
-	const content = window_context?.content.value
-	return content?.kind === 'workspace' && content.item.type === 'local'
-})
-const is_slug_window = computed(() => window_context?.content.value.kind === 'slug')
 const isCoarsePointer = useMediaQuery('(pointer: coarse)')
-// The fullscreen app root shows them only with the desktops experiment on
-// (store/experiments.ts): its Toggle fullscreen button is the way into
-// desktops mode.
-const show_window_controls = computed(
-	() => !isCoarsePointer.value && (window_context
-		? window_context.state.value === 'fullscreen'
-		: desktops_enabled.value),
-)
 
 const toast = useToast()
 const dragOver = ref(false)
 const importProgress = computed(() => workspace.value?.import_progress ?? null)
 
-// Fullscreen: store.is_workspace_loading. Desktops: Window.vue's loading ref
-// (load_workspace returns before the store exists, so the global flag never
-// flips). Shown both for the first open and when replacing the current workspace.
-const workspace_loading = computed(() =>
-	store.is_workspace_loading || !!window_context?.loading.value,
-)
+const workspace_loading = computed(() => store.is_workspace_loading)
 
 // Header spinner next to the folder title: shown only when opening a folder
 // takes a while (warm cloud reads are ~100ms, cold ones reach seconds) —
@@ -185,8 +156,6 @@ const is_public_route = public_route.kind !== 'app'
 // Gallery routes (/hub, /<username>) render a standalone page: no sidebar,
 // no workspace panel — just the header and the view. Opening a workspace from
 // a gallery card (profile → publication) flips to the regular workspace layout.
-// Embedded windows keep the in-app chrome even when the address bar still
-// holds /hub or /username (window-fullscreen keeps the public path).
 const gallery_mode = ref(
 	!props.embedded && (
 		public_route.kind === 'hub'
@@ -194,40 +163,27 @@ const gallery_mode = ref(
 		|| public_route.kind === 'invite'
 	),
 )
-// Embedded windows load their workspace asynchronously via the registry;
-// the workspaces modal must not flash over the loading state
 const wsListOpen = ref(!props.embedded && !workspace.value && !is_public_route)
 /** Sign-in / My account modal on public and gallery routes — separate from the workspaces popover. */
 const accountOpen = ref(false)
 
 // Public /<username>/<slug> page: the sidebar (workspace tree) stays for
 // navigation. Sign in opens the account modal (AuthForm lives inside).
-// publication_view is a global singleton — in desktops mode only the slug
-// window shows the public chrome.
-const is_public_window = computed(
-	() => !window_context || window_context.content.value.kind === 'slug',
-)
-const public_view = computed(() => (is_public_window.value ? cloud.publication_view : null))
-const public_not_found = computed(() => (is_public_window.value ? cloud.public_not_found : null))
+const public_view = computed(() => cloud.publication_view)
+const public_not_found = computed(() => cloud.public_not_found)
 const public_mode = computed(() => !!public_view.value || !!public_not_found.value)
 /** Public URL view or a privately shared viewer — mutations are gated in the store. */
 const view_only = computed(() => !!workspace.value && !workspace.value.can_write)
 
 /** Fullscreen app: Hub replaces the folder panel, header popover stays. */
 const app_hub_open = ref(false)
-// Fullscreen in-app navigation (Hub cards) fills cloud.profile_view without a
-// window to host it — the fullscreen root derives the profile view from the store.
-const showing_profile = computed(() =>
-	window_context
-		? window_context.content.value.kind === 'profile'
-		: !!cloud.profile_view || !!cloud.profile_not_found,
-)
-/** Fullscreen in-place Hub, or a window whose content is `{ kind: 'hub' }`. */
+const showing_profile = computed(() => !!cloud.profile_view || !!cloud.profile_not_found)
+/** In-place Hub, from the header or from a public route. */
 const showing_hub = computed(
 	() =>
 		!showing_profile.value
 		&& !public_mode.value
-		&& (app_hub_open.value || hub_open.value || window_context?.content.value.kind === 'hub'),
+		&& (app_hub_open.value || hub_open.value),
 )
 /** Hub or profile: no sidebar, no folder tabs — just the header and the view. */
 const showing_catalog = computed(
@@ -354,30 +310,12 @@ function open_app_hub() {
 	cloud.profile_view = null
 	cloud.profile_not_found = null
 	app_hub_open.value = true
-	// shared flag so exiting fullscreen can open a Hub window
 	hub_open.value = true
 	void cloud.fetch_hub()
 }
 
 function back_to_hub() {
-	if (window_context) {
-		cloud.publication_view = null
-		cloud.public_not_found = null
-		desktops.set_window_content(window_context.window_id, { kind: 'hub' })
-		if (window_context.state.value === 'fullscreen' && window.location.pathname !== '/hub') {
-			history.pushState(null, '', '/hub')
-		}
-		return
-	}
 	open_app_hub()
-}
-
-function retry_window_load() {
-	window_context?.retry_load()
-}
-
-function close_window() {
-	if (window_context) desktops.close_window(window_context.window_id)
 }
 
 function prevent_open_autofocus(event: Event) {
@@ -567,9 +505,6 @@ watch(
 							variant="outline"
 							@click="open_sign_in"
 						/>
-						<!-- Public gallery for anonymous visitors: no app window chrome
-						     (the fullscreen button would yank them into desktops mode) -->
-						<WindowControls v-if="show_window_controls && cloud.user" />
 					</div>
 				</header>
 				<div class="min-h-0 flex-1 overflow-y-auto">
@@ -587,12 +522,10 @@ watch(
 					</template>
 				</UModal>
 			</div>
-			<!-- panel sizes are persisted per window in desktops mode — a shared
-			     key would make every window fight over the same sidebar width -->
 			<UDashboardGroup
 				v-else
 				storage="local"
-				:storage-key="window_context ? `workspace-${window_context.window_id}` : 'workspace'"
+				storage-key="workspace"
 				unit="rem"
 				:ui="dashboard_group_ui"
 			>
@@ -624,7 +557,6 @@ watch(
 								<div class="flex shrink-0 items-center gap-1">
 									<WorkspacesPopover
 										v-model:open="wsListOpen"
-										open_as="replace"
 										:content="{ side: 'bottom', align: 'start', onOpenAutoFocus: prevent_open_autofocus }"
 										@hub="open_app_hub"
 										@opened="app_hub_open = false"
@@ -745,7 +677,7 @@ watch(
 							<FolderChrome :view="folderView" />
 						</span>
 							<div
-								v-if="show_view_only || public_mode || show_window_controls || show_touch_select"
+								v-if="show_view_only || public_mode || show_touch_select"
 								class="workspace-window-controls ml-auto flex shrink-0 items-center justify-end gap-2 self-stretch pl-3"
 							>
 								<UBadge
@@ -807,7 +739,6 @@ watch(
 									label="Select"
 									@click="workspace?.enter_selection_mode()"
 								/>
-								<WindowControls v-if="show_window_controls" />
 							</div>
 						</header>
 					<div class="relative min-h-0 flex-1">
@@ -821,30 +752,6 @@ watch(
 								is not a published workspace (anymore)
 							</p>
 							<UButton label="Open the app" color="neutral" variant="outline" @click="go_home" />
-						</div>
-						<div
-							v-else-if="window_load_error && !showing_catalog"
-							class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-error"
-						>
-							<p>{{ window_load_error }}</p>
-							<div class="flex gap-2">
-								<UButton size="xs" variant="soft" label="Retry" @click="retry_window_load" />
-								<UButton
-									v-if="is_slug_window"
-									size="xs"
-									color="neutral"
-									variant="ghost"
-									label="Back to Hub"
-									@click="back_to_hub"
-								/>
-								<UButton
-									v-if="is_local_window_workspace"
-									size="xs"
-									variant="ghost"
-									label="Close window"
-									@click="close_window"
-								/>
-							</div>
 						</div>
 						<template v-else>
 							<HubView v-if="showing_hub" class="h-full overflow-y-auto" />

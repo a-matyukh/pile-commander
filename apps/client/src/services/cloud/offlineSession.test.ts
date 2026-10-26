@@ -10,8 +10,6 @@ import {
 	is_transient_empty_session,
 	read_cached_session_user,
 } from './client'
-import { cloud_board_epoch, request_cloud_board_reload } from '@/store/cloudBoardReload'
-
 const SUPABASE_URL = 'https://abcd.supabase.co'
 
 function memory_storage(seed: Record<string, string> = {}) {
@@ -107,13 +105,5 @@ describe('supabase fetch timeout', () => {
 		} finally {
 			globalThis.fetch = original
 		}
-	})
-})
-
-describe('cloud board reload', () => {
-	it('bumps the epoch so a failed board can open again', () => {
-		const before = cloud_board_epoch.value
-		request_cloud_board_reload()
-		expect(cloud_board_epoch.value).toBe(before + 1)
 	})
 })

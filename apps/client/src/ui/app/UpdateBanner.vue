@@ -5,18 +5,12 @@ import updater, {
 	install_update,
 	dismiss_update,
 } from '@/store/updater'
-import desktops from '@/store/desktops'
 
 const visible = computed(() => {
 	if (updater.dismissed && updater.status !== 'downloading') return false
 	return updater.status === 'available'
 		|| updater.status === 'downloading'
 		|| updater.status === 'error'
-})
-
-const above_taskbar = computed(() => {
-	if (desktops.mode !== 'desktops') return false
-	return !desktops.selected_desktop?.windows.some(w => w.state === 'fullscreen')
 })
 
 const progress_label = computed(() => {
@@ -54,7 +48,6 @@ async function on_retry() {
 	<div
 		v-if="visible"
 		class="update-banner"
-		:class="{ 'update-banner--above-taskbar': above_taskbar }"
 		role="status"
 	>
 		<UIcon
@@ -110,10 +103,6 @@ async function on_retry() {
 	transform: translateX(-50%);
 	user-select: none;
 	-webkit-user-select: none;
-}
-
-.update-banner--above-taskbar {
-	bottom: 3.75rem;
 }
 
 .update-banner__label {

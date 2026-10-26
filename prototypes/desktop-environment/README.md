@@ -44,5 +44,4 @@ windows.
 
 ![The Start menu](screenshots/start-menu.png)
 
-Last commit that still contains the real feature: filled in by the stage 2
-commit (the parent of that commit).
+Last commit that still contains the real feature: `99b1c7b29823f8c3c0d7a0811ae6fff4679f296e`.

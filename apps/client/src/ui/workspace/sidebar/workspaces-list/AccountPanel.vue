@@ -5,7 +5,7 @@ import ProfileDialog from '@/ui/workspace/sidebar/ProfileDialog.vue'
 import cloud from '@/store/cloud'
 import { CLOUD_UNAVAILABLE, cloud_status_message } from '@/services/cloud/client'
 import { format_bytes } from '@/utils/format_bytes'
-import DesktopUpdateControls from '@/ui/desktop/DesktopUpdateControls.vue'
+import DesktopUpdateControls from '@/ui/app/DesktopUpdateControls.vue'
 
 withDefaults(defineProps<{
 	/** False when the host already shows Check for updates in a pinned footer. */

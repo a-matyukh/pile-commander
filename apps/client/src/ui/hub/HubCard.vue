@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { getCurrentInstance, ref, watch } from 'vue'
-import { navigate_public, open_public_window } from '@/services/navigatePublic'
-import desktops from '@/store/desktops'
+import { navigate_public } from '@/services/navigatePublic'
 import { hub_open } from './hubUi'
 import HubReportButton from './HubReportButton.vue'
 
@@ -40,15 +39,6 @@ function on_tag(event: MouseEvent, tag: string) {
 
 function open() {
 	hub_open.value = false
-	if (desktops.mode === 'desktops') {
-		open_public_window({
-			kind: 'slug',
-			username: props.username,
-			slug: props.slug,
-			name: props.name,
-		}, `/${props.username}/${props.slug}`)
-		return
-	}
 	navigate_public(`/${props.username}/${props.slug}`)
 }
 

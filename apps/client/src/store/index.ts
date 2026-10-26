@@ -2,7 +2,6 @@ import { reactive, ref } from 'vue'
 import { basename } from '@tauri-apps/api/path'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import type { ImportProgress, LoadWorkspaceOptions, Store, WorkspaceStore } from '../domain/Store'
-import { focused_window, same_window_content } from '@/domain/Desktop'
 import { is_desktop } from '@/isDesktop'
 import { createFileManager, download_blob } from '@pile-commander/file-manager'
 import { create_window_manager } from '../services/window/WindowManager'
@@ -24,13 +23,8 @@ import { createWorkspaceStore } from './createWorkspaceStore'
 import { report_error } from './helpers/reportError'
 import { normalize_workspace_id } from '../services/workspace/paths'
 import { open_workspace_store } from './helpers/openWorkspaceStore'
-import desktops from './desktops'
-import { workspace_registry } from './workspaceRegistry'
 import { is_workspace_available } from './isWorkspaceAvailable'
 import cloud from './cloud'
-import { reset_address_to_root, window_content_from_fullscreen } from '@/services/publicRoute'
-import { hub_open } from '@/ui/hub/hubUi'
-import { desktops_enabled } from './experiments'
 
 export { createWorkspaceStore }
 
@@ -139,16 +133,6 @@ const store: Store = {
 		const item: WorkspacesListItem = ws.type === 'local'
 			? { ...ws, id: normalize_workspace_id(ws.id) }
 			: ws
-		// Desktops mode: Start / drop → new window; header list → replace in place.
-		// Window.vue loads the registry store when content changes.
-		if (desktops.mode === 'desktops' && !opts?.public_readonly) {
-			if (opts?.replace_window_id) {
-				desktops.replace_window_workspace(opts.replace_window_id, item)
-				return
-			}
-			desktops.open_workspace_window(item)
-			return
-		}
 		// re-entrant calls (double click on a workspace button) would dispose
 		// and recreate the store mid-flight — duplicate realtime subscription
 		if (this.is_workspace_loading) return
@@ -171,108 +155,12 @@ const store: Store = {
 	},
 
 	get workspace() {
-		if (desktops.mode === 'desktops') {
-			return workspace_registry.focused_workspace()
-		}
 		return fullscreen_workspace.value
 	},
 
 	close_workspace() {
 		this.workspace?.dispose()
-		if (desktops.mode === 'desktops') {
-			const desktop = desktops.selected_desktop
-			const focused = desktop
-				? focused_window(desktop, w => w.content.kind === 'workspace')
-				: null
-			if (focused) {
-				workspace_registry.dispose_for_window(focused.id)
-				desktops.close_window(focused.id)
-			}
-			return
-		}
 		fullscreen_workspace.value = null
-	},
-
-	eject_workspace(window_id: string) {
-		const window = desktops.desktops
-			.flatMap(desktop => desktop.windows)
-			.find(w => w.id === window_id)
-		workspace_registry.dispose_for_window(window_id)
-		if (window?.content.kind === 'slug') {
-			cloud.publication_view = null
-			cloud.public_not_found = null
-		}
-		desktops.set_window_content(window_id, { kind: 'empty' })
-	},
-
-	/**
-	 * fullscreen app mode → desktops mode: public views become the matching
-	 * window (slug / profile / hub); a regular workspace keeps its live store.
-	 * A window already showing that view is reused — entering again must not
-	 * stack a second copy. The address bar resets to `/`.
-	 * `minimize` drops that one window onto the taskbar in the same turn.
-	 */
-	enter_desktops_mode(opts?: { minimize?: boolean }) {
-		if (!desktops_enabled.value) return null
-		const workspace = fullscreen_workspace.value
-		const content = window_content_from_fullscreen({
-			publication: cloud.publication_view
-				? { username: cloud.publication_view.username, slug: cloud.publication_view.slug }
-				: null,
-			public_not_found: cloud.public_not_found,
-			profile_username: cloud.profile_view?.profile.username ?? null,
-			profile_not_found: cloud.profile_not_found,
-			hub_open: hub_open.value,
-			pathname: window.location.pathname,
-			workspace: workspace
-				? { id: workspace.uid, type: workspace.type, name: workspace.name }
-				: null,
-		})
-		desktops.enter_desktops()
-		reset_address_to_root()
-		if (!content) {
-			workspace?.dispose()
-			fullscreen_workspace.value = null
-			return null
-		}
-		const existing = desktops.selected_desktop?.windows.find(w =>
-			same_window_content(w.content, content),
-		) ?? null
-		const opened = existing ?? desktops.open_window(content)
-		if (workspace && (content.kind === 'workspace' || content.kind === 'slug')) {
-			workspace_registry.adopt(opened.id, workspace)
-		} else {
-			workspace?.dispose()
-		}
-		fullscreen_workspace.value = null
-		if (opts?.minimize) {
-			// another fullscreen window would keep covering the desktop
-			if (opened.state !== 'fullscreen') desktops.focus_window(opened.id)
-			desktops.hide_window(opened.id)
-		} else if (existing) {
-			// green "Desktops": show this window on the desktop, don't add one
-			if (opened.state === 'fullscreen') desktops.toggle_fullscreen(opened.id)
-			if (opened.state === 'minimized') desktops.restore_window(opened.id)
-			else desktops.focus_window(opened.id)
-		}
-		return opened
-	},
-
-	exit_desktops_mode() {
-		if (desktops.mode !== 'desktops') return
-		const desktop = desktops.selected_desktop
-		const focused = desktop
-			? focused_window(desktop, w => w.content.kind === 'workspace')
-			: null
-		// the focused workspace stays open, now as the fullscreen app
-		const kept = focused ? workspace_registry.release(focused.id) : null
-		// the other windows reload their stores when desktops mode comes back
-		for (const d of desktops.desktops) {
-			for (const w of d.windows) workspace_registry.dispose_for_window(w.id)
-		}
-		fullscreen_workspace.value?.dispose()
-		fullscreen_workspace.value = kept
-		desktops.exit_to_fullscreen()
 	},
 }
 
