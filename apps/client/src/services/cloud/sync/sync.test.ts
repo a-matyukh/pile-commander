@@ -10,6 +10,8 @@ import {
 import { derived_uuid, hash_value } from './hash'
 import { merge_xattrs } from './layoutSync'
 import { choose_sync_folder, type SyncFolderDeps } from './syncToFolder'
+import { read_local_layout, scan_local } from './localScan'
+import { is_local_name } from './paths'
 import { reconcile, type ReconcileOptions } from './reconcile'
 import { create_sync_engine, type SyncStatus } from './syncEngine'
 import { is_sync_state_path, new_sync_state, parse_sync_state } from './stateFile'
@@ -233,11 +235,130 @@ describe('reconcile, cloud → here', () => {
 		])
 	})
 
+	test('a folder that holds a hidden name is not trashed whole and comes back empty', () => {
+		const base = { project: base_folder('cp'), 'project/a.txt': base_file('ca') }
+		const local = [local_folder('project'), local_file('project/a.txt')]
+		const plan = reconcile(base, local, [ROOT], {
+			...OPTIONS,
+			folders_with_hidden: new Set(['project']),
+		})
+		expect(plan.actions).toEqual([
+			{ kind: 'create_folder', relative: 'project' },
+			{ kind: 'local_trash', relative: 'project/a.txt' },
+		])
+	})
+
+	test('a hidden cloud child does not block deleting the folder here', () => {
+		const base = { docs: base_folder('cd'), 'docs/a.txt': base_file('ca') }
+		const cloud = [
+			ROOT,
+			cloud_entry('/docs', 'cd', { kind: 'folder', name: 'docs' }),
+			cloud_entry('/docs/a.txt', 'ca'),
+			cloud_entry('/docs/.DS_Store', 'junk', { name: '.DS_Store' }),
+		]
+		const plan = reconcile(base, [], cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'delete', relative: 'docs', cloud_id: 'cd' }])
+	})
+
+	test('renaming a cloud file to a hidden name trashes an unchanged file and uploads an edit', () => {
+		const base = { 'notes.txt': base_file('cn') }
+		const cloud = [ROOT, cloud_entry('/.notes.txt', 'cn', { name: '.notes.txt' })]
+		expect(reconcile(base, [local_file('notes.txt')], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'local_trash', relative: 'notes.txt' },
+		])
+		expect(reconcile(base, [local_file('notes.txt', 11)], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'upload', relative: 'notes.txt' },
+		])
+	})
+
+	test('renaming a file here to a hidden name deletes the cloud copy', () => {
+		const base = { 'notes.txt': base_file('cn') }
+		const cloud = [ROOT, cloud_entry('/notes.txt', 'cn')]
+		const plan = reconcile(base, [], cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'delete', relative: 'notes.txt', cloud_id: 'cn' }])
+	})
+
+	test('renaming a cloud folder to a hidden name trashes it here, unless it holds a hidden name', () => {
+		const base = { References: base_folder('cr'), 'References/a.txt': base_file('ca') }
+		const local = [local_folder('References'), local_file('References/a.txt')]
+		const cloud = [
+			ROOT,
+			cloud_entry('/.References', 'cr', { kind: 'folder', name: '.References' }),
+			cloud_entry('/.References/a.txt', 'ca', { name: 'a.txt' }),
+		]
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'local_trash', relative: 'References' },
+		])
+		const kept = reconcile(base, local, cloud, {
+			...OPTIONS,
+			folders_with_hidden: new Set(['References']),
+		})
+		expect(kept.actions).toEqual([
+			{ kind: 'create_folder', relative: 'References' },
+			{ kind: 'local_trash', relative: 'References/a.txt' },
+		])
+	})
+
+	test('a hidden name is not a local name', () => {
+		expect(is_local_name('.env')).toBe(false)
+		expect(is_local_name('.git')).toBe(false)
+		expect(is_local_name('note.txt')).toBe(true)
+	})
+
 	test('a cloud name this device cannot write stays in the cloud', () => {
 		const cloud = [ROOT, cloud_entry('/back\\slash.md', 'c1'), cloud_entry('/fine.md', 'c2')]
 		expect(reconcile({}, [], cloud, OPTIONS).actions).toEqual([
 			{ kind: 'download', relative: 'fine.md', cloud_id: 'c2' },
 		])
+	})
+})
+
+describe('scan_local', () => {
+	test('skips hidden names and marks the folders that hold them', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/project')
+		local.seed_file('/ws/project/a.txt', 'a')
+		local.seed_folder('/ws/project/.git')
+		local.seed_file('/ws/project/.git/HEAD', 'ref')
+		local.seed_file('/ws/.env', 'SECRET=1')
+
+		const scanned = await scan_local(local.fm, '/ws', stat)
+
+		expect(scanned.entries.map(entry => entry.relative).sort()).toEqual(['project', 'project/a.txt'])
+		expect([...scanned.folders_with_hidden].sort()).toEqual(['', 'project'])
+
+		local.set_xattr('/ws/.env', 'position', '{"x":1}')
+		local.seed_connections('/ws', [{
+			id: 'to-env',
+			from: '/ws/project/a.txt',
+			to: '/ws/.env',
+			is_animated: false,
+		}])
+		const layout = await read_local_layout(local.fm, '/ws', [''])
+		expect(layout.xattrs.has('.env')).toBe(false)
+		expect(layout.folders.get('')?.connections).toEqual([])
+	})
+
+	test('OS junk does not protect a folder deleted in the cloud', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/docs')
+		local.seed_file('/ws/docs/a.txt', 'a')
+		local.seed_file('/ws/docs/.DS_Store', 'junk')
+		local.seed_file('/ws/docs/.localized', '')
+		local.seed_file('/ws/docs/._a.txt', 'appledouble')
+
+		const scanned = await scan_local(local.fm, '/ws', stat)
+
+		expect(scanned.entries.map(entry => entry.relative).sort()).toEqual(['docs', 'docs/a.txt'])
+		expect(scanned.folders_with_hidden.has('docs')).toBe(false)
+
+		const plan = reconcile(
+			{ docs: base_folder('cd'), 'docs/a.txt': base_file('ca') },
+			[local_folder('docs'), local_file('docs/a.txt')],
+			[ROOT],
+			{ ...OPTIONS, folders_with_hidden: scanned.folders_with_hidden },
+		)
+		expect(plan.actions).toEqual([{ kind: 'local_trash', relative: 'docs' }])
 	})
 })
 

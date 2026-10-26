@@ -4,7 +4,7 @@ import { show_hidden_files } from '@/store/showHiddenFiles'
 import { path_separator, rename_ids_in_array } from './paths'
 import { rename_ids_in_set } from './tree'
 import { maybe_sync_tree_from_folders } from './batchFsUpdate'
-import { is_hidden_entry_name } from './folderContainer'
+import { is_hidden_entry_name } from './hiddenName'
 import { rekey_pending_entry_xattrs } from './xattrs'
 
 /**

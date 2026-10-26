@@ -14,7 +14,7 @@ import {
 	stroke_hash,
 } from './layoutSync'
 import { read_local_layout, scan_local, type LocalFolderLayout, type LocalLayout, type LocalStat } from './localScan'
-import { base_name, cloud_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
+import { base_name, cloud_relative, is_hidden_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
 import { partition_local, reconcile, type ReconcileOptions } from './reconcile'
 import { SYNC_STATE_VERSION, type BaseEntry, type BaseFolderLayout, type CloudEntry, type ConnectionBase, type LocalEntry, type SkipReason, type StrokeBase, type SyncAction, type SyncState } from './types'
 
@@ -220,7 +220,8 @@ export async function run_sync_pass(
 		adopt_before: state.adopt_before,
 	}
 	const scanned = await scan_local(deps.local_fm, deps.root, deps.stat)
-	const { local, skipped, skips } = partition_local(scanned, reconcile_options)
+	reconcile_options.folders_with_hidden = scanned.folders_with_hidden
+	const { local, skipped, skips } = partition_local(scanned.entries, reconcile_options)
 	const skipped_report = skips.flatMap(action => action.kind === 'skip' ? [{ relative: action.relative, reason: action.reason }] : [])
 	const early_layout = await read_local_layout(deps.local_fm, deps.root, folders_of(local))
 	if (!options.check_cloud && !has_local_changes(state, local, skipped, early_layout)) {
@@ -228,7 +229,7 @@ export async function run_sync_pass(
 	}
 
 	const cloud_before = await deps.list_cloud()
-	const plan = reconcile(state.entries, scanned, cloud_before, reconcile_options)
+	const plan = reconcile(state.entries, scanned.entries, cloud_before, reconcile_options)
 	const too_many = (deletes: number) => deletes >= MASS_DELETE_MIN && deletes * 2 > plan.base_files
 	if (!options.allow_cloud_deletes && too_many(plan.deletes)) {
 		return { kind: 'mass_delete', side: 'cloud', deletes: plan.deletes, base_files: plan.base_files }
@@ -804,7 +805,7 @@ class PassRun {
 					folder,
 					known,
 					edges_by_folder.get(row.id) ?? [],
-					end => here(end) && in_cloud.has(end),
+					end => here(end) && in_cloud.has(end) && !is_hidden_relative(end),
 				)
 				this.state.layout[relative] = { strokes, connections }
 			} catch (error) {

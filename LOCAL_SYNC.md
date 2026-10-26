@@ -118,6 +118,21 @@ writes' own echoes wake finds nothing to do.
   or to another device carries the file but is not linked.
 - **`.pile` is never synced.** The watcher filter, listings, the bridge and
   the `.pile` export (`workspace_pack.rs`) all skip it.
+- **Names starting with a dot are never synced** (`.git`, `.env`, `.vscode`,
+  and everything inside them). Show hidden files does not change this.
+  `.DS_Store`, `.localized`, AppleDouble `._*` files and `Thumbs.db` are OS
+  litter: they are skipped too, and they do not protect a folder from deletion.
+  - A folder that still holds a real hidden name (not OS litter) is not moved
+    to the system trash as a whole. Its visible unchanged files go one by one,
+    and the folder comes back to the cloud empty.
+  - Deleting that folder here sends it to the cloud trash together with its
+    hidden children (30 days).
+  - Renaming a cloud file or folder to a hidden name is, on this device, a
+    cloud deletion: an unchanged file or folder goes to the system trash (a
+    folder that itself holds a hidden name does not go whole); a file edited
+    here is uploaded again under the visible name.
+  - Renaming a file or folder here to a hidden name deletes the cloud copy.
+    A large batch still asks before a mass delete.
 - **Reading a v1 file.** It is still read, and its first pass lifts it:
   - where the ink and xattrs here still match the hashes v1 last pushed,
     they become the base (ink under `derived_uuid`);

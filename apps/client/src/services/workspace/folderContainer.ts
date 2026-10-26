@@ -1,12 +1,8 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
 import { show_hidden_files } from '@/store/showHiddenFiles'
+import { is_hidden_entry_name } from './hiddenName'
 import { find_entry_owner_folder, xattrs_map } from './xattrs'
-
-/** A name the folder views and the sidebar hide while Show hidden files is off. */
-export function is_hidden_entry_name(name: string): boolean {
-	return name.startsWith('.')
-}
 
 /**
  * Visible drag order plus any hidden children the list left out, in their
