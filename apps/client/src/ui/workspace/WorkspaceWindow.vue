@@ -27,6 +27,8 @@ import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import bridge, { take_bridge_intent } from '@/store/bridge'
 import type { WorkspaceTab } from '@/domain/Store'
 import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
+import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
+import { traffic_inset_target } from '@/services/window/trafficInset'
 
 const workspace = useWorkspace()
 const scope = createScopeFromStore()
@@ -194,6 +196,18 @@ const show_view_only = computed(() => view_only.value && !showing_catalog.value)
 // Below md: overlay drawer (browser, Tauri, and phone). Wider: inline sidebar.
 const isNarrowViewport = useMediaQuery('(max-width: 767px)')
 const useDrawerSidebar = computed(() => isNarrowViewport.value)
+const overlay = use_overlay_titlebar()
+/** Empty header space drags the window. Web and embedded previews stay put. */
+const window_drag = computed(() => overlay.enabled && !props.embedded)
+const gallery_header = computed(() => gallery_mode.value && !public_mode.value)
+const traffic_inset = computed(() => traffic_inset_target({
+	enabled: window_drag.value,
+	fullscreen: overlay.fullscreen.value,
+	gallery: gallery_header.value,
+	sidebar_inline: !gallery_header.value && !showing_catalog.value && !useDrawerSidebar.value,
+	sidebar_collapsed: sidebarCollapsed.value,
+	drawer_open: !gallery_header.value && !showing_catalog.value && useDrawerSidebar.value && sidebarOpen.value,
+}))
 // Touch phones/tablets: Select lives on the right of the header (window
 // controls are hidden there). Folder previews do not get this button.
 const show_touch_select = computed(
@@ -464,7 +478,11 @@ watch(
 	<UApp>
 		<div
 			class="relative h-full min-h-0 min-w-0"
-			:class="{ 'folder-drop-over': dragOver, 'min-h-svh': !embedded }"
+			:class="{
+				'folder-drop-over': dragOver,
+				'min-h-svh': !embedded,
+				'traffic-inset-header': traffic_inset === 'header',
+			}"
 			@dragover.prevent="on_browser_dragover"
 			@dragleave="on_browser_dragleave"
 			@drop.prevent="on_browser_drop"
@@ -480,7 +498,10 @@ watch(
 				</div>
 			</Teleport>
 			<div v-if="gallery_mode && !public_mode" class="flex h-full flex-col" :class="{ 'min-h-svh': !embedded }">
-				<header class="workspace-header flex shrink-0 items-center gap-2 border-b border-default px-4">
+				<header
+					class="workspace-header flex shrink-0 items-center gap-2 border-b border-default px-4"
+					:data-tauri-drag-region="window_drag ? '' : undefined"
+				>
 					<a href="/" class="text-sm font-semibold text-default">Pile Commander</a>
 					<a
 						v-if="public_route.kind === 'profile'"
@@ -548,11 +569,14 @@ watch(
 					:max-size="28"
 				:ui="sidebar_ui"
 				>
-					<Sidebar />
+					<Sidebar :traffic-inset="traffic_inset === 'sidebar'" :window-drag="window_drag" />
 				</UDashboardSidebar>
 				<UDashboardPanel :ui="dashboard_panel_ui">
 					<div class="workspace-panel flex h-full flex-col" :class="{ 'min-h-svh': !embedded }">
-						<header class="workspace-header flex shrink-0 items-center gap-1 border-b border-default px-2">
+						<header
+							class="workspace-header flex shrink-0 items-center gap-1 border-b border-default px-2"
+							:data-tauri-drag-region="window_drag ? '' : undefined"
+						>
 							<template v-if="!workspace?.selection_mode">
 								<div class="flex shrink-0 items-center gap-1">
 									<WorkspacesPopover
@@ -790,6 +814,11 @@ watch(
 	position: relative;
 	z-index: 2;
 	overflow: visible;
+}
+
+/* The header is the left edge: keep its controls clear of the traffic lights. */
+.traffic-inset-header .workspace-header {
+	padding-left: var(--pc-traffic-inset);
 }
 
 /* Desktop / fine pointer: show chrome while the cursor is over the open folder panel. */

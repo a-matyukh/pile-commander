@@ -24,6 +24,9 @@
   --pc-edit-shadow: rgba(100, 100, 111, 0.2) 0 7px 29px 0;
   --pc-masonry-unit: 80px;
   --pc-masonry-gap: 12px;
+
+  /* macOS overlay title bar: traffic lights, then the same gap they have from the window edge. */
+  --pc-traffic-inset: 88px;
 }
 
 html {

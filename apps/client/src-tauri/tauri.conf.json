@@ -18,7 +18,13 @@
         "resizable": true,
         "fullscreen": false,
         "dragDropEnabled": true,
-        "theme": "Light"
+        "theme": "Light",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 25
+        }
       }
     ],
     "security": {

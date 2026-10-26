@@ -11,6 +11,16 @@ import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import SyncStatusButton from './SyncStatusButton.vue'
 
+const props = withDefaults(
+	defineProps<{
+		/** macOS overlay title bar: keep the workspace name clear of the traffic lights. */
+		trafficInset?: boolean
+		/** macOS overlay title bar: empty header space drags the window. */
+		windowDrag?: boolean
+	}>(),
+	{ trafficInset: false, windowDrag: false },
+)
+
 const workspace = useWorkspace()
 const dialogs = useWorkspaceDialogs()
 
@@ -145,7 +155,11 @@ const workspace_menu_items = computed<DropdownMenuItem[][]>(() => [
 <template>
 	<div class="sidebar flex min-h-0 w-full flex-1 flex-col overflow-hidden">
 		<nav>
-			<div class="sidebar-header flex items-stretch gap-1 border-b border-default pr-1">
+			<div
+				class="sidebar-header flex items-stretch gap-1 border-b border-default pr-1"
+				:class="{ 'sidebar-header--traffic': props.trafficInset }"
+				:data-tauri-drag-region="props.windowDrag ? '' : undefined"
+			>
 				<UButton
 					v-if="workspace"
 					class="h-full rounded-none"
@@ -208,6 +222,9 @@ nav {
 }
 .sidebar-header {
 	height: 45px;
+}
+.sidebar-header--traffic {
+	padding-left: var(--pc-traffic-inset);
 }
 .sidebar {
 	background-color: var(--pc-gray-surface);
