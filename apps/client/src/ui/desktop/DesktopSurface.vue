@@ -73,21 +73,6 @@ function retry_cloud_board() {
 }
 provideWorkspaceStore(children_workspace)
 
-// Board-level clipboard shortcuts (cut/copy of selected widgets, paste of the
-// board's own clipboard). Selection actions: the focused window's listener
-// wins while it has a selection — clicking board widgets clears window
-// selections. Paste: exactly one handler may fire, and the focused window
-// owns it; the board pastes via keyboard only when no window is focused
-// (the banner's "Paste here" stays available regardless).
-useClipboardShortcuts(children_workspace, (action) => {
-	const board = children_store.value
-	if (!board) return false
-	const focused = workspace_registry.focused_workspace()
-	if (action === 'paste') return !focused
-	if (focused && focused.selection.length > 0) return false
-	return board.selection.length > 0 || !focused
-})
-
 function apply_desktop_background(value: string) {
 	desktops.update_desktop_xattrs(props.desktop.id, {
 		background: value.trim() || undefined,
@@ -157,21 +142,41 @@ function local_tile_at(node_id: string): BridgeSource | null {
 	}
 }
 
-provideFolderContainerScope(
-	createScopeFromStore({
-		fixedView: 'board',
-		backgroundOverride: {
-			current: desktop_background,
-			apply: apply_desktop_background,
-		},
-		// cloud desktop boards: workspace tiles get the workspace menu
-		// (open/rename/publish/share/remove) instead of the folder menu
-		workspaceTileAt: (id) => desktop_children.workspace_tile_at(id),
-		localTileAt: local_tile_at,
-		// same-setup provideWorkspaceStore is invisible to inject() here —
-		// pass the workspace explicitly or the scope reads the global store
-		workspace: children_workspace,
-	}),
+const board_scope = createScopeFromStore({
+	fixedView: 'board',
+	backgroundOverride: {
+		current: desktop_background,
+		apply: apply_desktop_background,
+	},
+	// cloud desktop boards: workspace tiles get the workspace menu
+	// (open/rename/publish/share/remove) instead of the folder menu
+	workspaceTileAt: (id) => desktop_children.workspace_tile_at(id),
+	localTileAt: local_tile_at,
+	// same-setup provideWorkspaceStore is invisible to inject() here —
+	// pass the workspace explicitly or the scope reads the global store
+	workspace: children_workspace,
+})
+provideFolderContainerScope(board_scope)
+
+// Board-level clipboard shortcuts (cut/copy of selected widgets, paste of the
+// board's own clipboard). Selection actions: the focused window's listener
+// wins while it has a selection — clicking board widgets clears window
+// selections. Paste: exactly one handler may fire, and the focused window
+// owns it; the board pastes via keyboard only when no window is focused
+// (the banner's "Paste here" stays available regardless).
+// Placed after board_scope: the scope reads desktop_background, which is
+// declared above, and the shortcut must use the same visible children.
+useClipboardShortcuts(
+	children_workspace,
+	(action) => {
+		const board = children_store.value
+		if (!board) return false
+		const focused = workspace_registry.focused_workspace()
+		if (action === 'paste') return !focused
+		if (focused && focused.selection.length > 0) return false
+		return board.selection.length > 0 || !focused
+	},
+	() => board_scope.container.value?.children,
 )
 // normally provided by WorkspaceWindow — the surface plays that role for the
 // desktop board (shape placement state for Board + FolderContainerCtxMenu)
@@ -191,6 +196,18 @@ watch(
 			icon: 'mdi:alert-circle-outline',
 		})
 		children_store.value?.clear_error()
+	},
+)
+watch(
+	() => children_store.value?.hidden_notice,
+	(message) => {
+		if (!message) return
+		toast.add({
+			title: message,
+			color: 'neutral',
+			icon: 'i-lucide:eye-off',
+		})
+		children_store.value?.clear_hidden_notice()
 	},
 )
 

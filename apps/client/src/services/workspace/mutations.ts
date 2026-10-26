@@ -1,8 +1,10 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
+import { show_hidden_files } from '@/store/showHiddenFiles'
 import { path_separator, rename_ids_in_array } from './paths'
 import { rename_ids_in_set } from './tree'
 import { maybe_sync_tree_from_folders } from './batchFsUpdate'
+import { is_hidden_entry_name } from './folderContainer'
 import { rekey_pending_entry_xattrs } from './xattrs'
 
 /**
@@ -31,6 +33,21 @@ export type WorkspaceState = {
 		folder_id: string
 		back_stack: string[]
 	}[]
+	/**
+	 * Set when a create or rename produced a dot name while Show hidden files
+	 * is off. The window toasts it and clears it. Absent on plain mutation
+	 * fixtures that do not surface UI notices.
+	 */
+	hidden_notice?: string | null
+}
+
+export function note_hidden_name(state: WorkspaceState, name: string): void {
+	if (!('hidden_notice' in state)) return
+	if (show_hidden_files.value) return
+	if (!is_hidden_entry_name(name)) return
+	// One notice per burst: a later hidden name in the same batch keeps the first.
+	if (state.hidden_notice) return
+	state.hidden_notice = `${name} is hidden. Turn on Show hidden files in Settings.`
 }
 
 /** Finds the child entry for `id` in any cached folder. */
@@ -76,6 +93,7 @@ export function apply_entry_created(
 	}
 
 	maybe_sync_tree_from_folders(state)
+	note_hidden_name(state, entry.name)
 }
 
 /** Removes every trace of an entry from the workspace state. */

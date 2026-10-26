@@ -127,6 +127,12 @@ type WorkspaceStore = {
 	/** Message of the last failed fs operation; UI may show and reset it. */
 	last_error: string | null
 	clear_error(): void
+	/**
+	 * A dot-named entry was just created or renamed while Show hidden files
+	 * is off. The window shows it as a neutral toast and clears it.
+	 */
+	hidden_notice: string | null
+	clear_hidden_notice(): void
 
 	/** Stops the FS watcher. Called when replacing or unloading the workspace. */
 	dispose(): void

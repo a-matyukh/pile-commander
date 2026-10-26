@@ -38,7 +38,11 @@ provideFolderContainerScope(scope)
 provideBoardPlacement()
 // every window mounts this listener; only the focused one may act
 // (in desktops mode store.workspace is the focused window's store)
-useClipboardShortcuts(workspace, () => workspace.value === store.workspace)
+useClipboardShortcuts(
+	workspace,
+	() => workspace.value === store.workspace,
+	() => scope.container.value?.children,
+)
 
 const folderView = computed(() => scope.container.value?.view ?? 'list')
 const has_multi_selection = computed(() => {
@@ -502,6 +506,18 @@ watch(
 		})
 		workspace.value?.clear_error()
 		store.clear_error()
+	},
+)
+watch(
+	() => workspace.value?.hidden_notice,
+	(message) => {
+		if (!message) return
+		toast.add({
+			title: message,
+			color: 'neutral',
+			icon: 'i-lucide:eye-off',
+		})
+		workspace.value?.clear_hidden_notice()
 	},
 )
 </script>

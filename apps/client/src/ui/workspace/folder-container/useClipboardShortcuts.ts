@@ -14,6 +14,19 @@ function isModKey(event: KeyboardEvent): boolean {
 }
 
 /**
+ * Ids from `selection` that are on screen. `visible_children` is the same
+ * list the Cut/Copy menu uses (`container.children`), so a hidden file that
+ * is still selected cannot be copied, cut, or duplicated from the keyboard.
+ */
+export function visible_selection_ids(
+	selection: readonly string[],
+	visible_children: readonly { id: string }[] | undefined,
+): string[] {
+	const child_ids = new Set((visible_children ?? []).map(child => child.id))
+	return selection.filter(id => child_ids.has(id))
+}
+
+/**
  * File clipboard shortcuts: Ctrl/Cmd+C/X/V/D. The clipboard itself is global
  * (entry_clipboard), so entries travel between desktop boards and workspace
  * windows; `is_active` decides which mounted instance answers. Selection
@@ -25,6 +38,7 @@ function isModKey(event: KeyboardEvent): boolean {
 export function useClipboardShortcuts(
 	workspace: MaybeRefOrGetter<WorkspaceStore | null>,
 	is_active: (action: 'paste' | 'selection') => boolean,
+	visible_children: MaybeRefOrGetter<readonly { id: string }[] | undefined>,
 ) {
 	function onKeyDown(event: KeyboardEvent) {
 		const ws = toValue(workspace)
@@ -47,8 +61,7 @@ export function useClipboardShortcuts(
 		}
 		if (!is_active('selection')) return
 
-		const child_ids = new Set((ws.opened_folder.children ?? []).map(c => c.id))
-		const ids = ws.selection.filter(id => child_ids.has(id))
+		const ids = visible_selection_ids(ws.selection, toValue(visible_children))
 		if (ids.length === 0) return
 
 		event.preventDefault()

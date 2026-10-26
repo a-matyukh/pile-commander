@@ -2,6 +2,7 @@
 import store from '@/store'
 import cloud from '@/store/cloud'
 import { desktops_enabled } from '@/store/experiments'
+import { show_hidden_files } from '@/store/showHiddenFiles'
 import { supabase } from '@/services/cloud/client'
 import { mark_desktops_opt_in } from '@/services/cloud/desktopsExperiment'
 import AiSettingsSection from '@/ui/ai/AiSettingsSection.vue'
@@ -12,6 +13,10 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 	?.trim()
 	.replace(/\/$/, '') || null
 const feedback_url = landing_url ? `${landing_url}/feedback` : null
+
+function set_show_hidden(enabled: boolean) {
+	show_hidden_files.value = enabled
+}
 
 function set_desktops(enabled: boolean) {
 	desktops_enabled.value = enabled
@@ -32,6 +37,19 @@ function set_desktops(enabled: boolean) {
 <template>
 	<div class="flex flex-col gap-3 p-2">
 		<AiSettingsSection />
+
+		<section class="flex flex-col gap-2">
+			<h3 class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
+				<UIcon name="i-lucide:eye-off" class="size-3.5 shrink-0" />
+				Files
+			</h3>
+			<USwitch
+				:model-value="show_hidden_files"
+				label="Show hidden files"
+				size="sm"
+				@update:model-value="set_show_hidden"
+			/>
+		</section>
 
 		<section class="flex flex-col gap-2">
 			<h3 class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">

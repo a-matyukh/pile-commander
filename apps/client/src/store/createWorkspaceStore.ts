@@ -1,4 +1,4 @@
-import { markRaw, reactive } from 'vue'
+import { markRaw, reactive, watch } from 'vue'
 import makeSelection from './selection'
 import makeClipboard from './clipboard'
 import {
@@ -17,6 +17,7 @@ import {
 	apply_entry_removed,
 	apply_id_changed,
 	find_child_entry,
+	note_hidden_name,
 	type WorkspaceState,
 } from '../services/workspace/mutations'
 import { path_separator } from '../services/workspace/paths'
@@ -39,7 +40,9 @@ import {
 	to_folder_container,
 	collect_preview_folder_ids,
 	children_orders_match,
+	complete_visible_order,
 } from '../services/workspace/folderContainer'
+import { show_hidden_files } from './showHiddenFiles'
 import { persist_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -423,6 +426,7 @@ export async function createWorkspaceStore(
 		// (when assigned into the root store), those closures would mutate the
 		// raw object and Vue would never see cache replacements — e.g. a board
 		// would stop updating after the first watch refresh.
+		let stop_show_hidden_watch = () => {}
 		const workspace: WorkspaceStore = reactive({
 			id: root_folder_id,
 			uid: ws.id,
@@ -436,6 +440,10 @@ export async function createWorkspaceStore(
 		clear_error() {
 			this.last_error = null
 		},
+		hidden_notice: null as string | null,
+		clear_hidden_notice() {
+			this.hidden_notice = null
+		},
 
 		import_progress: null as ImportProgress | null,
 
@@ -444,6 +452,7 @@ export async function createWorkspaceStore(
 			stop_watching()
 			stop_watching_strokes()
 			stop_watching_connections()
+			stop_show_hidden_watch()
 			media_cache.clear()
 			// the entry clipboard is global and intentionally survives disposal:
 			// entries cut here stay pasteable through the still-live file manager
@@ -1354,22 +1363,15 @@ export async function createWorkspaceStore(
 				if (!folder_data) return
 
 				const children = folder_data.children ?? []
-				if (ordered_ids.length !== children.length) {
-					return
-				}
-				const ids = new Set(children.map(c => c.id))
-				if (!ordered_ids.every(id => ids.has(id))) {
-					return
-				}
-				if (children_orders_match(children, ordered_ids)) {
-					return
-				}
+				const full_order = complete_visible_order(children, ordered_ids)
+				if (!full_order) return
+				if (children_orders_match(children, full_order)) return
 
 				const persisted = await persist_children_order(
 					this,
 					fm,
 					folder_id,
-					ordered_ids,
+					full_order,
 				)
 				if (!persisted) {
 					return
@@ -2037,6 +2039,7 @@ export async function createWorkspaceStore(
 
 		rekey_entry_content_caches(content_caches, id, result.id)
 		apply_id_changed(this, id, result.id, result.name)
+		note_hidden_name(this, result.name)
 		await rename_folder_canvas_connections(this, id, result.id)
 	},
 
@@ -2084,11 +2087,21 @@ export async function createWorkspaceStore(
 						return
 					}
 
+					const folder_data = this.resolve_folder_data(target_folder_id)
+					const full_order = complete_visible_order(
+						folder_data?.children ?? [],
+						list.map(n => n.id),
+					)
+					if (!full_order) {
+						revert_to_folders()
+						return
+					}
+
 					const persisted = await persist_children_order(
 						this,
 						fm,
 						target_folder_id,
-						list.map(n => n.id),
+						full_order,
 					)
 					if (!persisted) {
 						revert_to_folders()
@@ -2241,6 +2254,10 @@ export async function createWorkspaceStore(
 			open(widget: FolderContainerWidgetChild) {
 				widget.type === 'file' ? this.open_file(widget.id) : this.open_folder(widget.id)
 			},
+		})
+
+		stop_show_hidden_watch = watch(show_hidden_files, () => {
+			sync_tree_from_folders(workspace)
 		})
 
 		await start_watching(workspace, root_folder_id)

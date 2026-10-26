@@ -136,6 +136,24 @@ describe('useCanvasConnections', () => {
 		})
 	})
 
+	test('hides an edge to a dotfile that is not in the container and restores it', async () => {
+		const ws = makeWorkspace({
+			'/a': [
+				conn({ id: 'to-env', from: '/a/note.txt', to: '/a/.env' }),
+				conn({ id: 'visible', from: '/a/note.txt', to: '/a/pic.png' }),
+			],
+		})
+		const { edges, containerRef } = setup(ws, '/a', ['/a/note.txt', '/a/pic.png'])
+		await nextTick()
+
+		expect(edges.value.map(e => e.id)).toEqual(['visible'])
+		expect(ws.connections_for('/a').map(c => c.id)).toEqual(['to-env', 'visible'])
+
+		containerRef.value = makeContainer(['/a/note.txt', '/a/pic.png', '/a/.env'])
+		await nextTick()
+		expect(edges.value.map(e => e.id)).toEqual(['to-env', 'visible'])
+	})
+
 	test('hides orphan edges at render time until both endpoints exist', async () => {
 		const ws = makeWorkspace({
 			'/a': [
