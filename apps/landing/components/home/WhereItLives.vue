@@ -17,7 +17,7 @@ const places = [
     where: "Any browser",
     price: "Free, no account",
     points: [
-      "Desktops saved in this browser",
+      "Workspaces saved in this browser",
       "A demo workspace to try everything",
       "Nothing to install",
     ],
@@ -28,7 +28,7 @@ const places = [
     where: "Desktop app or browser",
     price: "Free plan: 100 MB",
     points: [
-      "The same desktops on every device",
+      "The same workspaces on every device",
       "Invites, live editing, publishing, the Hub",
       "Trash that keeps things for 30 days",
     ],
@@ -41,7 +41,7 @@ const places = [
   <FeatureSection
     eyebrow="Where it lives"
     title="On your disk, in your browser, or in the cloud."
-    lede="Pick per desktop. You only need an account for the cloud."
+    lede="Pick per workspace. You only need an account for the cloud."
   >
     <div class="grid gap-4 md:grid-cols-3">
       <article

@@ -28,7 +28,6 @@ useSeoMeta({
     <HomeWhatLivesHere />
     <HomeCanvasTools />
     <HomeAiTools />
-    <HomeDesks />
     <HomeSharePublish />
     <HomeWhereItLives />
     <HomeFolderSync />

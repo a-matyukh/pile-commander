@@ -34,7 +34,7 @@ const facts = [
   {
     icon: "i-lucide-hard-drive",
     title: "Local",
-    body: "The desktop app works right in your ordinary file system — the same folders you see in Finder or Explorer; Tauri only provides the bridge to them through its plugins. The browser version keeps its desktops in IndexedDB.",
+    body: "The desktop app works right in your ordinary file system — the same folders you see in Finder or Explorer; Tauri only provides the bridge to them through its plugins. The browser version keeps its workspaces in IndexedDB.",
   },
   {
     icon: "i-lucide-cloud",

@@ -21,7 +21,7 @@ const facts = [
   {
     icon: "i-lucide-refresh-cw",
     title: "Synced — or not",
-    body: "Cloud desktops follow you to every device; local and browser desktops stay on the one you use.",
+    body: "A cloud workspace follows you to every device. Folders on disk and workspaces saved in a browser stay where they are.",
   },
 ];
 

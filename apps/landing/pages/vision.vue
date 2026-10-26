@@ -2,10 +2,10 @@
 useSeoMeta({
   title: "Vision",
   description:
-    "Long-term directions for Pile Commander: a 3D view of a folder, AI tools, and a desktop environment for Linux.",
+    "Long-term directions for Pile Commander: a 3D view of a folder and AI tools.",
   ogTitle: "Vision — Pile Commander",
   ogDescription:
-    "Where the pile is going: a 3D view, AI tools, and a Linux desktop.",
+    "Where the pile is going: a 3D view and AI tools.",
   ogImage: "/app-icon.png",
   twitterCard: "summary",
 });
@@ -20,11 +20,6 @@ const directions = [
     scene: "ai",
     title: "AI: ideas and sorting",
     body: "Ask a folder for ideas and get them back as cards on the board, and let a model sort a pile into folders. Naming files and summaries are already in the app.",
-  },
-  {
-    scene: "desktop",
-    title: "A desktop for Linux",
-    body: "A desktop environment for Linux, in the spirit of COSMIC and Omarchy: the desktop itself is a board, workspaces are your piles, and folders open as tiled windows right next to the terminal.",
   },
 ];
 </script>
@@ -49,7 +44,6 @@ const directions = [
           <div class="aspect-[16/9] overflow-hidden rounded-xl">
             <VisionSpace v-if="item.scene === 'space'" />
             <VisionAi v-else-if="item.scene === 'ai'" />
-            <VisionDesktop v-else />
           </div>
           <h2 class="mt-4 px-2 text-lg font-semibold text-slate-900 sm:px-3">{{ item.title }}</h2>
           <p class="mt-2 px-2 pb-2 text-sm leading-relaxed text-slate-600 sm:px-3">{{ item.body }}</p>
