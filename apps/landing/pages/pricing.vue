@@ -19,7 +19,7 @@ const localFeatures = [
 ];
 
 const cloudFeatures = [
-  "100 MB in the cloud (workspaces, desktop files, and trash)",
+  "100 MB in the cloud (workspaces and trash)",
   "Files up to 25 MB",
   "Your own cloud workspaces",
   "Invite people and join other workspaces",
@@ -41,7 +41,7 @@ const notes = [
   {
     icon: "i-lucide-infinity",
     title: "Free stays",
-    body: "Free is a lasting plan, not a beta trial. 100 MB across workspaces, desktops, and trash; one original up to 25 MB.",
+    body: "Free is a lasting plan, not a beta trial. 100 MB across workspaces and trash; one original up to 25 MB.",
   },
 ];
 </script>
