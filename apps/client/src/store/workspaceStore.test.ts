@@ -1453,6 +1453,39 @@ describe('createWorkspaceStore: import_files progress', () => {
 			.toEqual(expect.arrayContaining(['one.txt', 'two.txt']))
 	})
 
+	test('sets one hidden notice after a batch of dotfiles, not during each upload', async () => {
+		show_hidden_files.value = false
+		const { fake, store } = await makeStore()
+		const during: (string | null)[] = []
+		const original = fake.fm.upload_file.bind(fake.fm)
+		fake.fm.upload_file = async (folder_id, filename, data, mime, onProgress) => {
+			during.push(store.hidden_notice)
+			return original(folder_id, filename, data, mime, onProgress)
+		}
+
+		await store.import_files('/ws', [
+			new File(['a'], '.env'),
+			new File(['b'], '.gitignore'),
+		])
+
+		expect(during).toEqual([null, null])
+		expect(store.hidden_notice).toBe('2 files are hidden. Turn on Show hidden files in Settings.')
+		expect(store.opened_folder.children.map(c => c.name)).toEqual(
+			expect.arrayContaining(['.env', '.gitignore']),
+		)
+		store.dispose()
+	})
+
+	test('a single hidden import names that file', async () => {
+		show_hidden_files.value = false
+		const { store } = await makeStore()
+
+		await store.import_files('/ws', [new File(['a'], '.env')])
+
+		expect(store.hidden_notice).toBe('.env is hidden. Turn on Show hidden files in Settings.')
+		store.dispose()
+	})
+
 	test('clears import_progress when an upload fails', async () => {
 		const { fake, store } = await makeStore()
 		fake.fail_once('upload_file')

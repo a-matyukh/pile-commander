@@ -50,6 +50,20 @@ export function note_hidden_name(state: WorkspaceState, name: string): void {
 	state.hidden_notice = `${name} is hidden. Turn on Show hidden files in Settings.`
 }
 
+/** One notice for a whole import. A single hidden name uses the same wording as a rename. */
+export function note_hidden_names(state: WorkspaceState, names: readonly string[]): void {
+	const hidden = names.filter(name => is_hidden_entry_name(name))
+	if (hidden.length === 0) return
+	if (hidden.length === 1) {
+		note_hidden_name(state, hidden[0]!)
+		return
+	}
+	if (!('hidden_notice' in state)) return
+	if (show_hidden_files.value) return
+	if (state.hidden_notice) return
+	state.hidden_notice = `${hidden.length} files are hidden. Turn on Show hidden files in Settings.`
+}
+
 /** Finds the child entry for `id` in any cached folder. */
 export function find_child_entry(
 	folders: Record<string, FolderWithChildrenXattrs>,
@@ -67,6 +81,7 @@ export function apply_entry_created(
 	state: WorkspaceState,
 	folder_id: string,
 	entry: EntryWithXattrs,
+	options?: { notice?: boolean },
 ): void {
 	const folder_data = state.folders[folder_id]
 	if (!folder_data) return
@@ -93,7 +108,7 @@ export function apply_entry_created(
 	}
 
 	maybe_sync_tree_from_folders(state)
-	note_hidden_name(state, entry.name)
+	if (options?.notice !== false) note_hidden_name(state, entry.name)
 }
 
 /** Removes every trace of an entry from the workspace state. */

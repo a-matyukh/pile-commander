@@ -18,6 +18,7 @@ import {
 	apply_id_changed,
 	find_child_entry,
 	note_hidden_name,
+	note_hidden_names,
 	type WorkspaceState,
 } from '../services/workspace/mutations'
 import { path_separator } from '../services/workspace/paths'
@@ -1873,6 +1874,7 @@ export async function createWorkspaceStore(
 			const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 			const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
 			const created_ids: string[] = []
+			const created_names: string[] = []
 
 			try {
 				for (let index = 0; index < files.length; index++) {
@@ -1923,8 +1925,9 @@ export async function createWorkspaceStore(
 						name: node.name,
 						type: 'file',
 						xattrs: [...xattrs],
-					})
+					}, { notice: false })
 					created_ids.push(node.id)
+					created_names.push(node.name)
 				}
 
 				if (created_ids.length === 0) return
@@ -1937,6 +1940,10 @@ export async function createWorkspaceStore(
 				const last_id = created_ids[created_ids.length - 1]
 				if (last_id) this.select(last_id)
 			} finally {
+				// After every file, including a failed upload: the window clears
+				// a notice as soon as it shows it, so a per-file notice would toast
+				// once per hidden import.
+				note_hidden_names(this, created_names)
 				this.import_progress = null
 			}
 		},
