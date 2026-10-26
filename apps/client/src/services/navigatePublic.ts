@@ -1,8 +1,8 @@
-import { apply_public_route, resolve_public_route } from '@/services/publicRoute'
+import { apply_public_route, resolve_public_route, type ApplyPublicRouteDeps } from '@/services/publicRoute'
 import cloud_store from '@/store/cloud'
 import app_store from '@/store'
 
-export function public_route_deps() {
+export function public_route_deps(): ApplyPublicRouteDeps {
 	return {
 		is_cloud_configured: cloud_store.is_configured,
 		open_demo_workspace: () => { void app_store.open_demo_workspace() },

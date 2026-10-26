@@ -31,8 +31,14 @@ async function bootstrap() {
 	strip_empty_location_hash()
 
 	// Leftover keys from the removed desktops experiment. Nothing reads them.
-	localStorage.removeItem('desktops_state')
-	localStorage.removeItem('pile_commander_experimental_desktops')
+	// localStorage throws when the browser blocks storage; that must not
+	// stop the app from mounting.
+	try {
+		localStorage.removeItem('desktops_state')
+		localStorage.removeItem('pile_commander_experimental_desktops')
+	} catch {
+		// storage blocked: nothing to clean
+	}
 
 	if (is_desktop) {
 		void check_for_updates().catch((error) => {
