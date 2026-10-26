@@ -16,7 +16,12 @@ watch(
 		for (const row of rows) {
 			if (row.pass === 0 || row.folders.length === 0 || toasted.get(row.root) === row.pass) continue
 			toasted.set(row.root, row.pass)
-			toast.add({ title: kept_hidden_toast(row.folders), color: 'neutral' })
+			toast.add({
+				title: kept_hidden_toast(row.folders),
+				color: 'neutral',
+				duration: 0, // reka-ui starts no close timer when duration <= 0
+				progress: false, // no countdown bar for a toast that waits to be closed
+			})
 		}
 	},
 )
