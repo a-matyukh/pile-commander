@@ -1,4 +1,11 @@
+import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
+
 /** '/'-separated paths under the synced root: '' is the root itself. */
+
+/** True when any segment of a relative path is hidden from the folder list. */
+export function is_hidden_relative(relative: string): boolean {
+	return relative.split('/').some(is_hidden_entry_name)
+}
 
 export function parent_relative(relative: string): string {
 	const index = relative.lastIndexOf('/')
@@ -50,7 +57,7 @@ const UNWRITABLE_NAMES = new Set(['.pile', '.DS_Store', 'Thumbs.db', '.', '..', 
 /** A cloud name this device can create as a file or folder name. */
 export function is_local_name(name: string): boolean {
 	// eslint-disable-next-line no-control-regex
-	return !UNWRITABLE_NAMES.has(name) && !/[\\/\x00-\x1f\x7f]/.test(name)
+	return !is_hidden_entry_name(name) && !UNWRITABLE_NAMES.has(name) && !/[\\/\x00-\x1f\x7f]/.test(name)
 }
 
 /** The relative path of a cloud path ('/' is the root, '' here). */

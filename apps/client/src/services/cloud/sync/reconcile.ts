@@ -1,4 +1,4 @@
-import { base_name, cloud_relative, depth, is_local_name, is_within, parent_relative } from './paths'
+import { base_name, cloud_relative, depth, is_hidden_relative, is_local_name, is_within, parent_relative } from './paths'
 import type { BaseEntry, CloudEntry, LocalEntry, SkipReason, SyncAction, SyncPlan } from './types'
 
 export type ReconcileOptions = {
@@ -8,6 +8,11 @@ export type ReconcileOptions = {
 	max_file_bytes: number
 	/** See SyncState.adopt_before. */
 	adopt_before?: number
+	/**
+	 * Visible folders that contain a hidden name. They are not trashed whole:
+	 * the hidden copy never went to the cloud.
+	 */
+	folders_with_hidden?: ReadonlySet<string>
 }
 
 /** Why a local entry takes no part in this pass, or null. */
@@ -91,6 +96,14 @@ export function reconcile(
 	options: ReconcileOptions,
 ): SyncPlan {
 	const base = new Map(Object.entries(base_record))
+	// Hidden paths leave the link before move detection. A `.vscode` of empty
+	// folders would otherwise match a new neighbour as a rename.
+	const forgotten: SyncAction[] = []
+	for (const relative of [...base.keys()]) {
+		if (!is_hidden_relative(relative)) continue
+		forgotten.push({ kind: 'forget', relative })
+		base.delete(relative)
+	}
 	const base_files = [...base.values()].filter(entry => entry.kind === 'file').length
 
 	const { local: scanned, skipped, skips } = partition_local(local_entries, options)
@@ -104,11 +117,13 @@ export function reconcile(
 	}
 	const is_gone = (relative: string) => !local.has(relative) && !is_blocked(relative)
 
-	// every row by id (existence); the rows this device can hold, by path
-	const cloud_by_id = new Map(cloud_entries.map(row => [row.id, row]))
+	// A hidden path is a cloud deletion on this device: it is not in cloud_by_id,
+	// so a rename to `.notes.txt` follows the existing "deleted in the cloud" branch.
+	const visible_cloud = cloud_entries.filter(row => row.path === '/' || !is_hidden_relative(cloud_relative(row.path)))
+	const cloud_by_id = new Map(visible_cloud.map(row => [row.id, row]))
 	const cloud_at = new Map<string, CloudEntry>()
 	const unwritable = new Set<string>()
-	for (const row of [...cloud_entries].sort((a, b) => by_depth(cloud_relative(a.path), cloud_relative(b.path)))) {
+	for (const row of [...visible_cloud].sort((a, b) => by_depth(cloud_relative(a.path), cloud_relative(b.path)))) {
 		if (row.path === '/') continue
 		const relative = cloud_relative(row.path)
 		const parent = parent_relative(relative)
@@ -221,13 +236,14 @@ export function reconcile(
 	// ---- 3. per entry --------------------------------------------------------
 	const linked = new Map([...base].map(([relative, entry]) => [entry.cloud_id, relative]))
 	const deletable_in_cloud = (folder: CloudEntry): boolean =>
-		cloud_entries.every((row) => {
+		visible_cloud.every((row) => {
 			if (!row.path.startsWith(`${folder.path}/`)) return true
 			const relative = linked.get(row.id)
 			if (relative === undefined || !is_gone(relative)) return false
 			return !is_content_change(row, base.get(relative)!)
 		})
-	const removable_here = (folder: string): boolean =>
+	const hidden_inside = options.folders_with_hidden ?? new Set<string>()
+	const children_allow_removal = (folder: string): boolean =>
 		[...local.values()].every((entry) => {
 			if (!entry.relative.startsWith(`${folder}/`)) return true
 			const known = base.get(entry.relative)
@@ -235,6 +251,8 @@ export function reconcile(
 			if (entry.kind === 'file' && is_local_change(entry, known)) return false
 			return !cloud_by_id.has(known.cloud_id)
 		})
+	const removable_here = (folder: string): boolean =>
+		!hidden_inside.has(folder) && children_allow_removal(folder)
 	const untouched_since_link = (row: CloudEntry) =>
 		options.adopt_before !== undefined
 		&& row.modified_at !== null
@@ -252,6 +270,7 @@ export function reconcile(
 	const clashed = new Set<string>()
 	const trashed_in_cloud: string[] = []
 	const trashed_here: string[] = []
+	const kept_for_hidden: string[] = []
 	let deletes = 0
 	let local_deletes = 0
 
@@ -320,6 +339,10 @@ export function reconcile(
 					trashed_here.push(relative)
 				} else {
 					structure.push({ kind: 'create_folder', relative })
+					// hidden files, not a visible edit: the folder comes back empty
+					if (hidden_inside.has(relative) && children_allow_removal(relative)) {
+						kept_for_hidden.push(relative)
+					}
 				}
 				continue
 			}
@@ -378,9 +401,10 @@ export function reconcile(
 
 	structure.sort((a, b) => by_depth((a as { relative: string }).relative, (b as { relative: string }).relative))
 	return {
-		actions: [...skips, ...replaced, ...structure, ...content, ...removals],
+		actions: [...forgotten, ...skips, ...replaced, ...structure, ...content, ...removals],
 		deletes,
 		local_deletes,
 		base_files,
+		kept_for_hidden,
 	}
 }

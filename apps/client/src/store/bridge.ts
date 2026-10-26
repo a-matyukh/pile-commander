@@ -12,7 +12,7 @@ import {
 } from '@pile-commander/file-manager'
 import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
-import { require_browser_storage } from '@/services/desktop/browserDesktopFolders'
+import { require_browser_storage } from '@/services/workspace/browserStorage'
 import type { CopyTreeProgress } from '@/services/cloud/bridge/copyTree'
 import { preflight_tree, type BridgePreflight } from '@/services/cloud/bridge/preflight'
 import {

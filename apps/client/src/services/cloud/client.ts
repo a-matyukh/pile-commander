@@ -23,7 +23,6 @@ export const is_cloud_configured = Boolean(url && key)
 export const SUPABASE_FETCH_TIMEOUT_MS = 8_000
 
 export const CLOUD_WORKSPACE_OFFLINE = 'This cloud workspace needs a connection.'
-export const CLOUD_DESKTOP_OFFLINE = 'This cloud desktop needs a connection.'
 /** Account panel and the cloud list: the network is down, the app is not. */
 export const CLOUD_UNAVAILABLE = 'Can\'t reach the cloud right now. Local workspaces still work.'
 

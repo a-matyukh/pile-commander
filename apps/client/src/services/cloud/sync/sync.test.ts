@@ -8,8 +8,10 @@ import {
 	type FileManager,
 } from '@pile-commander/file-manager'
 import { derived_uuid, hash_value } from './hash'
-import { merge_xattrs } from './layoutSync'
+import { merge_xattrs, SYNC_KEPT_HIDDEN, sync_kept_hidden_value } from './layoutSync'
 import { choose_sync_folder, type SyncFolderDeps } from './syncToFolder'
+import { read_local_layout, scan_local } from './localScan'
+import { is_local_name } from './paths'
 import { reconcile, type ReconcileOptions } from './reconcile'
 import { create_sync_engine, type SyncStatus } from './syncEngine'
 import { is_sync_state_path, new_sync_state, parse_sync_state } from './stateFile'
@@ -233,11 +235,133 @@ describe('reconcile, cloud → here', () => {
 		])
 	})
 
+	test('a folder that holds a hidden name is not trashed whole and comes back empty', () => {
+		const base = { project: base_folder('cp'), 'project/a.txt': base_file('ca') }
+		const local = [local_folder('project'), local_file('project/a.txt')]
+		const plan = reconcile(base, local, [ROOT], {
+			...OPTIONS,
+			folders_with_hidden: new Set(['project']),
+		})
+		expect(plan.actions).toEqual([
+			{ kind: 'create_folder', relative: 'project' },
+			{ kind: 'local_trash', relative: 'project/a.txt' },
+		])
+		expect(plan.kept_for_hidden).toEqual(['project'])
+	})
+
+	test('a hidden cloud child does not block deleting the folder here', () => {
+		const base = { docs: base_folder('cd'), 'docs/a.txt': base_file('ca') }
+		const cloud = [
+			ROOT,
+			cloud_entry('/docs', 'cd', { kind: 'folder', name: 'docs' }),
+			cloud_entry('/docs/a.txt', 'ca'),
+			cloud_entry('/docs/.DS_Store', 'junk', { name: '.DS_Store' }),
+		]
+		const plan = reconcile(base, [], cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'delete', relative: 'docs', cloud_id: 'cd' }])
+	})
+
+	test('renaming a cloud file to a hidden name trashes an unchanged file and uploads an edit', () => {
+		const base = { 'notes.txt': base_file('cn') }
+		const cloud = [ROOT, cloud_entry('/.notes.txt', 'cn', { name: '.notes.txt' })]
+		expect(reconcile(base, [local_file('notes.txt')], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'local_trash', relative: 'notes.txt' },
+		])
+		expect(reconcile(base, [local_file('notes.txt', 11)], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'upload', relative: 'notes.txt' },
+		])
+	})
+
+	test('renaming a file here to a hidden name deletes the cloud copy', () => {
+		const base = { 'notes.txt': base_file('cn') }
+		const cloud = [ROOT, cloud_entry('/notes.txt', 'cn')]
+		const plan = reconcile(base, [], cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'delete', relative: 'notes.txt', cloud_id: 'cn' }])
+	})
+
+	test('renaming a cloud folder to a hidden name trashes it here, unless it holds a hidden name', () => {
+		const base = { References: base_folder('cr'), 'References/a.txt': base_file('ca') }
+		const local = [local_folder('References'), local_file('References/a.txt')]
+		const cloud = [
+			ROOT,
+			cloud_entry('/.References', 'cr', { kind: 'folder', name: '.References' }),
+			cloud_entry('/.References/a.txt', 'ca', { name: 'a.txt' }),
+		]
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'local_trash', relative: 'References' },
+		])
+		const kept = reconcile(base, local, cloud, {
+			...OPTIONS,
+			folders_with_hidden: new Set(['References']),
+		})
+		expect(kept.actions).toEqual([
+			{ kind: 'create_folder', relative: 'References' },
+			{ kind: 'local_trash', relative: 'References/a.txt' },
+		])
+		expect(kept.kept_for_hidden).toEqual(['References'])
+	})
+
+	test('a hidden name is not a local name', () => {
+		expect(is_local_name('.env')).toBe(false)
+		expect(is_local_name('.git')).toBe(false)
+		expect(is_local_name('note.txt')).toBe(true)
+	})
+
 	test('a cloud name this device cannot write stays in the cloud', () => {
 		const cloud = [ROOT, cloud_entry('/back\\slash.md', 'c1'), cloud_entry('/fine.md', 'c2')]
 		expect(reconcile({}, [], cloud, OPTIONS).actions).toEqual([
 			{ kind: 'download', relative: 'fine.md', cloud_id: 'c2' },
 		])
+	})
+})
+
+describe('scan_local', () => {
+	test('skips hidden names and marks the folders that hold them', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/project')
+		local.seed_file('/ws/project/a.txt', 'a')
+		local.seed_folder('/ws/project/.git')
+		local.seed_file('/ws/project/.git/HEAD', 'ref')
+		local.seed_file('/ws/.env', 'SECRET=1')
+
+		const scanned = await scan_local(local.fm, '/ws', stat)
+
+		expect(scanned.entries.map(entry => entry.relative).sort()).toEqual(['project', 'project/a.txt'])
+		expect([...scanned.folders_with_hidden].sort()).toEqual(['', 'project'])
+
+		local.set_xattr('/ws/.env', 'position', '{"x":1}')
+		local.seed_connections('/ws', [{
+			id: 'to-env',
+			from: '/ws/project/a.txt',
+			to: '/ws/.env',
+			is_animated: false,
+		}])
+		const layout = await read_local_layout(local.fm, '/ws', [''])
+		expect(layout.xattrs.has('.env')).toBe(false)
+		expect(layout.folders.get('')?.connections).toEqual([])
+	})
+
+	test('OS junk does not protect a folder deleted in the cloud', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/docs')
+		local.seed_file('/ws/docs/a.txt', 'a')
+		local.seed_file('/ws/docs/.DS_Store', 'junk')
+		local.seed_file('/ws/docs/.localized', '')
+		local.seed_file('/ws/docs/._a.txt', 'appledouble')
+
+		const scanned = await scan_local(local.fm, '/ws', stat)
+
+		expect(scanned.entries.map(entry => entry.relative).sort()).toEqual(['docs', 'docs/a.txt'])
+		expect(scanned.folders_with_hidden.has('docs')).toBe(false)
+
+		const plan = reconcile(
+			{ docs: base_folder('cd'), 'docs/a.txt': base_file('ca') },
+			[local_folder('docs'), local_file('docs/a.txt')],
+			[ROOT],
+			{ ...OPTIONS, folders_with_hidden: scanned.folders_with_hidden },
+		)
+		expect(plan.actions).toEqual([{ kind: 'local_trash', relative: 'docs' }])
+		expect(plan.kept_for_hidden).toEqual([])
 	})
 })
 
@@ -426,8 +550,74 @@ async function local_text(local: FakeFileManager, path: string): Promise<string>
 
 /** The pass found nothing to do on either side. */
 function expect_quiet(report: SyncReport) {
-	expect(report).toMatchObject({ uploaded: 0, updated: 0, downloaded: 0, moved: 0, deleted: 0, trashed: 0, conflicts: [], errors: [] })
+	expect(report).toMatchObject({ uploaded: 0, updated: 0, downloaded: 0, moved: 0, deleted: 0, trashed: 0, conflicts: [], kept_for_hidden: [], errors: [] })
 }
+
+describe('a folder deleted in the cloud that still holds hidden files', () => {
+	const marked_at = sync_kept_hidden_value(new Date(2026, 9, 8, 14, 30))
+
+	test('a folder with .git comes back empty, marked, and is named in the report', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/project')
+		local.seed_file('/ws/project/a.txt', 'a')
+		local.seed_folder('/ws/project/.git')
+		local.seed_file('/ws/project/.git/HEAD', 'ref')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+
+		const first = await pass(deps, new_state())
+		expect(first.report.kept_for_hidden).toEqual([])
+		expect(cloud.fake.get_xattr('/project', SYNC_KEPT_HIDDEN)).toBeNull()
+
+		await cloud.fm.remove('/project')
+		const second = await cloud_pass(deps, first.state)
+
+		expect(second.report.kept_for_hidden).toEqual(['project'])
+		expect(cloud.fake.get_xattr('/project', SYNC_KEPT_HIDDEN)).toBe(marked_at)
+		expect(cloud.fake.has('/project/a.txt')).toBe(false)
+		expect(local.has('/ws/project/.git/HEAD')).toBe(true)
+		expect(local.has('/ws/project/a.txt')).toBe(false)
+		expect(local.get_xattr('/ws/project', SYNC_KEPT_HIDDEN)).toBeNull()
+	})
+
+	test('a folder with only .DS_Store is trashed and not marked', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/docs')
+		local.seed_file('/ws/docs/a.txt', 'a')
+		local.seed_file('/ws/docs/.DS_Store', 'junk')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+
+		const first = await pass(deps, new_state())
+		await cloud.fm.remove('/docs')
+		const second = await cloud_pass(deps, first.state)
+
+		expect(second.report.kept_for_hidden).toEqual([])
+		expect(cloud.fake.has('/docs')).toBe(false)
+		expect(local.has('/ws/docs')).toBe(false)
+	})
+
+	test('the mark on a cloud folder does not land in the local layout, and a local copy is not uploaded', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/board')
+		local.seed_file('/ws/board/a.md', 'a')
+		const cloud = make_cloud()
+		const { deps } = make_deps(local, stat, cloud)
+		const first = await pass(deps, new_state())
+
+		cloud.fake.set_xattr('/board', SYNC_KEPT_HIDDEN, '{"at":"from-cloud"}')
+		const downloaded = await cloud_pass(deps, first.state)
+		expect(local.get_xattr('/ws/board', SYNC_KEPT_HIDDEN)).toBeNull()
+		expect(cloud.fake.get_xattr('/board', SYNC_KEPT_HIDDEN)).toBe('{"at":"from-cloud"}')
+		expect(downloaded.state.entries.board?.xattrs?.[SYNC_KEPT_HIDDEN]).toBeUndefined()
+
+		local.set_xattr('/ws/board', SYNC_KEPT_HIDDEN, '{"at":"from-mac"}')
+		const uploaded = await pass(deps, downloaded.state)
+		expect(cloud.fake.get_xattr('/board', SYNC_KEPT_HIDDEN)).toBe('{"at":"from-cloud"}')
+		expect(local.get_xattr('/ws/board', SYNC_KEPT_HIDDEN)).toBeNull()
+		expect(uploaded.state.entries.board?.xattrs?.[SYNC_KEPT_HIDDEN]).toBeUndefined()
+	})
+})
 
 describe('run_sync_pass', () => {
 	test('pushes a folder, then stays quiet until something changes here', async () => {
@@ -641,7 +831,7 @@ describe('run_sync_pass', () => {
 
 		for (let index = 1; index <= MASS_DELETE_MIN; index++) await local.fm.remove(`/ws/${index}.md`)
 		const paused = await run_sync_pass(deps, second.state, { max_file_bytes: 1_000_000 })
-		expect(paused).toEqual({ kind: 'mass_delete', side: 'cloud', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN })
+		expect(paused).toEqual({ kind: 'mass_delete', side: 'cloud', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN, local_folders: [] })
 		expect(cloud.fake.has('/1.md')).toBe(true)
 
 		const confirmed = await pass(deps, second.state, { allow_cloud_deletes: true })
@@ -856,6 +1046,69 @@ describe('sync engine', () => {
 			vi.useRealTimers()
 		}
 	})
+
+	test('a kept folder leaves the status once the local scan no longer sees it', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+		try {
+			const { local, stat } = make_local()
+			for (const name of ['project', 'notes']) {
+				local.seed_folder(`/ws/${name}`)
+				local.seed_file(`/ws/${name}/a.txt`, 'a')
+				local.seed_folder(`/ws/${name}/.git`)
+				local.seed_file(`/ws/${name}/.git/HEAD`, 'ref')
+			}
+			const cloud = make_cloud()
+			const { deps } = make_deps(local, stat, cloud)
+			let saved: SyncState = new_state()
+			let on_change = () => {}
+			let on_cloud_change = () => {}
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => saved,
+				save_state: async (state) => {
+					saved = state
+				},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				watch: async (callback) => {
+					on_change = callback
+					return () => {}
+				},
+				watch_cloud: async (callback) => {
+					on_cloud_change = callback
+					return () => {}
+				},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+
+			await engine.start()
+			await vi.waitFor(() => expect(statuses.at(-1)?.phase).toBe('idle'))
+
+			await cloud.fm.remove('/project')
+			await cloud.fm.remove('/notes')
+			on_cloud_change()
+			await vi.advanceTimersByTimeAsync(150)
+			await vi.waitFor(() => expect([...(statuses.at(-1)?.kept_for_hidden ?? [])].sort()).toEqual(['notes', 'project']))
+
+			on_change()
+			await vi.advanceTimersByTimeAsync(150)
+			await vi.waitFor(() => expect(statuses.at(-1)?.phase).toBe('idle'))
+			expect([...(statuses.at(-1)?.kept_for_hidden ?? [])].sort()).toEqual(['notes', 'project'])
+
+			await local.fm.remove('/ws/project')
+			on_change()
+			await vi.advanceTimersByTimeAsync(150)
+			await vi.waitFor(() => expect(statuses.at(-1)?.kept_for_hidden).toEqual(['notes']))
+
+			await local.fm.remove('/ws/notes')
+			on_change()
+			await vi.advanceTimersByTimeAsync(150)
+			await vi.waitFor(() => expect(statuses.at(-1)?.kept_for_hidden).toEqual([]))
+			engine.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
 })
 
 describe('two-way pass', () => {
@@ -985,7 +1238,7 @@ describe('two-way pass', () => {
 
 		for (let index = 0; index < MASS_DELETE_MIN; index++) await cloud.fm.remove(`/${index}.md`)
 		const paused = await run_sync_pass(deps, first.state, { max_file_bytes: 1_000_000, check_cloud: true })
-		expect(paused).toEqual({ kind: 'mass_delete', side: 'local', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN })
+		expect(paused).toEqual({ kind: 'mass_delete', side: 'local', deletes: MASS_DELETE_MIN, base_files: MASS_DELETE_MIN, local_folders: [] })
 		expect(trashed).toEqual([])
 
 		// confirming the cloud side does not confirm this one
@@ -1056,6 +1309,19 @@ describe('merge_xattrs', () => {
 		expect(merge.merged).toEqual({ position: 'moved here', size: 'resized there', view: 'canvas', color: 'red' })
 		expect(merge.local_sets).toEqual({ size: 'resized there', view: 'canvas' })
 		expect(merge.cloud_sets).toEqual({ position: 'moved here', color: 'red' })
+	})
+
+	test('sync_kept_hidden is neither downloaded nor uploaded', () => {
+		const merge = merge_xattrs(
+			{ view: 'list' },
+			{ view: 'board', [SYNC_KEPT_HIDDEN]: '{"at":"from-mac"}' },
+			{ view: 'list', [SYNC_KEPT_HIDDEN]: '{"at":"from-cloud"}' },
+		)
+		expect(merge.merged).toEqual({ view: 'board' })
+		expect(merge.local_sets).toEqual({})
+		expect(merge.cloud_sets).toEqual({ view: 'board' })
+		expect(merge.local_removes).toEqual([])
+		expect(merge.cloud_removes).toEqual([])
 	})
 
 	test('a key removed on one side is removed on the other', () => {

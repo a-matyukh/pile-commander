@@ -1,10 +1,17 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { WorkspaceTree, WorkspaceTreeNode } from '@/domain/WorkspaceTree'
+import { show_hidden_files } from '@/store/showHiddenFiles'
 import { sort_entries_by_order_then_name } from './folderContainer'
+import { is_hidden_entry_name } from './hiddenName'
 import {
 	parent_folder_id_from_node_id,
 	rename_ids_in_set,
 } from './paths'
+
+function listed_entries(entries: EntryWithXattrs[]): EntryWithXattrs[] {
+	if (show_hidden_files.value) return entries
+	return entries.filter(entry => !is_hidden_entry_name(entry.name))
+}
 
 export type TreeProjectionState = {
 	id: string
@@ -108,7 +115,7 @@ function project_entry(
 		name: entry.name,
 		type: 'folder',
 		children_loaded: true,
-		children: sort_entries_by_order_then_name(cached!.children ?? []).map(child =>
+		children: sort_entries_by_order_then_name(listed_entries(cached!.children ?? [])).map(child =>
 			project_entry(child, folders, tree_loaded_folder_ids),
 		),
 	}
@@ -118,7 +125,7 @@ function project_entry(
 export function project_tree(state: TreeProjectionState): WorkspaceTree {
 	const root = state.folders[state.id]
 	if (!root) return []
-	return sort_entries_by_order_then_name(root.children ?? []).map(entry =>
+	return sort_entries_by_order_then_name(listed_entries(root.children ?? [])).map(entry =>
 		project_entry(entry, state.folders, state.tree_loaded_folder_ids),
 	)
 }

@@ -1,5 +1,7 @@
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi, afterEach } from 'vitest'
+import { nextTick } from 'vue'
 import { createWorkspaceStore } from './index'
+import { show_hidden_files } from './showHiddenFiles'
 import { createFakeFileManager } from '@pile-commander/file-manager'
 import { refresh_cached_folder } from './helpers/refreshCachedFolder'
 import { shape_template_svg, prepare_svg_for_preview } from '@/services/board/shapes'
@@ -853,6 +855,10 @@ describe('createWorkspaceStore: error reporting', () => {
 })
 
 describe('createWorkspaceStore: reorder_children', () => {
+	afterEach(() => {
+		show_hidden_files.value = false
+	})
+
 	test('writes order xattrs and reorders children and tree', async () => {
 		const { fake, store } = await makeStore()
 		const new_order = ['/ws/pics', '/ws/docs', '/ws/note.txt']
@@ -864,6 +870,72 @@ describe('createWorkspaceStore: reorder_children', () => {
 		expect(fake.get_xattr('/ws/note.txt', 'order')).toBe('2')
 		expect(store.opened_folder.children.map(c => c.id)).toEqual(new_order)
 		expect(tree_ids(store)).toEqual(new_order)
+	})
+
+	test('keeps a hidden dotfile when the visible order is saved', async () => {
+		show_hidden_files.value = false
+		const fake = createFakeFileManager()
+		fake.seed_folder('/ws')
+		fake.seed_folder('/ws/docs')
+		fake.seed_folder('/ws/pics')
+		fake.seed_file('/ws/note.txt')
+		fake.seed_folder('/ws/.git')
+		const store = await createWorkspaceStore(
+			{ id: '/ws', type: 'local', name: 'ws' },
+			fake.fm,
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		expect(store.opened_folder.children.map(c => c.name)).toContain('.git')
+		expect(tree_ids(store)).toEqual(['/ws/docs', '/ws/note.txt', '/ws/pics'])
+
+		await store.reorder_children('/ws', ['/ws/pics', '/ws/docs', '/ws/note.txt'])
+
+		expect(fake.get_xattr('/ws/pics', 'order')).toBe('0')
+		expect(fake.get_xattr('/ws/docs', 'order')).toBe('1')
+		expect(fake.get_xattr('/ws/note.txt', 'order')).toBe('2')
+		expect(fake.get_xattr('/ws/.git', 'order')).toBe('3')
+		expect(store.opened_folder.children.map(c => c.id)).toEqual([
+			'/ws/pics',
+			'/ws/docs',
+			'/ws/note.txt',
+			'/ws/.git',
+		])
+		expect(tree_ids(store)).toEqual(['/ws/pics', '/ws/docs', '/ws/note.txt'])
+
+		await store.reorder_children('/ws', ['/ws/pics', '/ws/docs'])
+		expect(fake.get_xattr('/ws/pics', 'order')).toBe('0')
+
+		const pics = store.tree.find(node => node.id === '/ws/pics')!
+		const from = store.tree.indexOf(pics)
+		store.tree.splice(from, 1)
+		store.tree.push(pics)
+		await store.move('/ws/pics', '/ws', store.tree.length - 1, '/ws', from)
+
+		expect(store.opened_folder.children.map(c => c.id)).toEqual([
+			'/ws/docs',
+			'/ws/note.txt',
+			'/ws/pics',
+			'/ws/.git',
+		])
+		expect(tree_ids(store)).not.toContain('/ws/.git')
+
+		show_hidden_files.value = true
+		await nextTick()
+		expect(tree_ids(store)).toContain('/ws/.git')
+		store.dispose()
+	})
+
+	test('rename to a dot name sets a hidden notice and keeps the file in the cache', async () => {
+		show_hidden_files.value = false
+		const { store } = await makeStore()
+
+		await store.rename('/ws/note.txt', '.env')
+
+		expect(store.hidden_notice).toBe('.env is hidden. Turn on Show hidden files in Settings.')
+		expect(store.opened_folder.children.some(child => child.name === '.env')).toBe(true)
+		expect(tree_ids(store)).not.toContain('/ws/.env')
+		store.dispose()
 	})
 })
 
@@ -1379,6 +1451,39 @@ describe('createWorkspaceStore: import_files progress', () => {
 		expect(store.import_progress).toBeNull()
 		expect(store.opened_folder.children.map(c => c.name))
 			.toEqual(expect.arrayContaining(['one.txt', 'two.txt']))
+	})
+
+	test('sets one hidden notice after a batch of dotfiles, not during each upload', async () => {
+		show_hidden_files.value = false
+		const { fake, store } = await makeStore()
+		const during: (string | null)[] = []
+		const original = fake.fm.upload_file.bind(fake.fm)
+		fake.fm.upload_file = async (folder_id, filename, data, mime, onProgress) => {
+			during.push(store.hidden_notice)
+			return original(folder_id, filename, data, mime, onProgress)
+		}
+
+		await store.import_files('/ws', [
+			new File(['a'], '.env'),
+			new File(['b'], '.gitignore'),
+		])
+
+		expect(during).toEqual([null, null])
+		expect(store.hidden_notice).toBe('2 files are hidden. Turn on Show hidden files in Settings.')
+		expect(store.opened_folder.children.map(c => c.name)).toEqual(
+			expect.arrayContaining(['.env', '.gitignore']),
+		)
+		store.dispose()
+	})
+
+	test('a single hidden import names that file', async () => {
+		show_hidden_files.value = false
+		const { store } = await makeStore()
+
+		await store.import_files('/ws', [new File(['a'], '.env')])
+
+		expect(store.hidden_notice).toBe('.env is hidden. Turn on Show hidden files in Settings.')
+		store.dispose()
 	})
 
 	test('clears import_progress when an upload fails', async () => {

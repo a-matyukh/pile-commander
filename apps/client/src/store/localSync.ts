@@ -175,6 +175,7 @@ function start_engine(link: SyncLink): void {
 			}, { recursive: true, delayMs: 500 })
 		},
 		on_status: (status) => {
+			// The whole status, including folders kept for hidden files.
 			sync_statuses[link.root] = status
 		},
 	})

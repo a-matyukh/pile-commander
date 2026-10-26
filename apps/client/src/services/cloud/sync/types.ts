@@ -151,4 +151,10 @@ export type SyncPlan = {
 	local_deletes: number
 	/** Base files before the pass. */
 	base_files: number
+	/**
+	 * Folders deleted in the cloud that stay here only because they hold a
+	 * hidden name (not because a visible file here is new or edited). The
+	 * pass still recreates them with `create_folder`.
+	 */
+	kept_for_hidden: string[]
 }

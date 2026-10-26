@@ -97,7 +97,7 @@ useSeoMeta({
       </li>
       <li>
         <strong>Running into a limit.</strong> Free is 100 MB across your
-        workspaces, desktops, and trash, one file up to 25 MB, and 3 Hub
+        workspaces and trash, one file up to 25 MB, and 3 Hub
         listings. A public link also has a monthly fair-use budget for what it
         serves to visitors. Details on
         <NuxtLink to="/pricing">Pricing</NuxtLink>.

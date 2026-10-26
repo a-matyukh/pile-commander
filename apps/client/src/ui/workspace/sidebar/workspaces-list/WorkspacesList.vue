@@ -7,24 +7,11 @@ import { computed, ref } from 'vue'
 import { useStorage } from '@vueuse/core'
 
 import type { AccordionItem, DropdownMenuItem } from '@nuxt/ui'
-import type { LoadWorkspaceOptions } from '@/domain/Store'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import cloud from '@/store/cloud'
 import { CLOUD_UNAVAILABLE, cloud_status_message } from '@/services/cloud/client'
 import { import_pile_to_cloud, open_bridge } from '@/store/bridge'
 import { sync_workspace_to_folder, synced_folder_of } from '@/store/localSync'
-import { useWindowContext } from '@/ui/window/windowContext'
-
-const props = withDefaults(
-	defineProps<{
-		/**
-		 * `replace` — open into the current window / fullscreen app (header button).
-		 * `new-window` — always open a new desktop window (Start menu).
-		 */
-		open_as?: 'replace' | 'new-window'
-	}>(),
-	{ open_as: 'replace' },
-)
 
 const emit = defineEmits<{
 	/** Fired after the user chooses a workspace (or open/import/demo) so the host can close the menu. */
@@ -32,8 +19,6 @@ const emit = defineEmits<{
 	/** Unsigned-in Cloud section: host should switch to the My account tab. */
 	account: []
 }>()
-
-const window_ctx = useWindowContext()
 
 const items = ref<AccordionItem[]>([
 	{
@@ -107,18 +92,11 @@ const public_workspaces = computed(() =>
 const cloud_notice = computed(() => cloud_status_message(cloud.last_error))
 const cloud_offline = computed(() => cloud_notice.value === CLOUD_UNAVAILABLE)
 
-/** Options for store.load_workspace depending on which menu opened this list. */
-function load_opts(): LoadWorkspaceOptions {
-	if (props.open_as === 'new-window') return { as_new_window: true }
-	if (window_ctx) return { replace_window_id: window_ctx.window_id }
-	return {}
-}
-
 async function open_workspace(ws: WorkspacesListItem) {
 	cloud.publication_view = null
 	cloud.public_not_found = null
 	emit('opened')
-	await store.load_workspace(ws, load_opts())
+	await store.load_workspace(ws)
 }
 
 async function open_cloud(ws: WorkspacesListItem) {
@@ -133,17 +111,17 @@ async function open_cloud(ws: WorkspacesListItem) {
 
 async function open_local() {
 	emit('opened')
-	await store.open_local_workspace(undefined, load_opts())
+	await store.open_local_workspace()
 }
 
 async function open_demo() {
 	emit('opened')
-	await store.open_demo_workspace(load_opts())
+	await store.open_demo_workspace()
 }
 
 async function import_pack() {
 	emit('opened')
-	await store.import_workspace_pack(undefined, load_opts())
+	await store.import_workspace_pack()
 }
 
 /** Local workspaces in the lists copy into the cloud whole, through the bridge dialog */
@@ -168,7 +146,7 @@ async function sync_to_folder(ws: WorkspacesListItem) {
 	emit('opened')
 	try {
 		const root = await sync_workspace_to_folder({ id: ws.id, name: ws.name })
-		if (root) await store.open_local_workspace(root, load_opts())
+		if (root) await store.open_local_workspace(root)
 	} catch (error) {
 		store.last_error = error instanceof Error ? error.message : String(error)
 	}

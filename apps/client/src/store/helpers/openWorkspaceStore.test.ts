@@ -16,7 +16,7 @@ const cloud = vi.hoisted(() => ({
 	access_calls: 0,
 }))
 
-vi.mock('@/services/desktop/browserDesktopFolders', () => ({
+vi.mock('@/services/workspace/browserStorage', () => ({
 	require_browser_storage: () => {
 		if (!storage.current) throw new Error('Browser storage (IndexedDB) is unavailable in this browser')
 		return storage.current

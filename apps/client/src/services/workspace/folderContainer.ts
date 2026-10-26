@@ -1,6 +1,33 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
+import { show_hidden_files } from '@/store/showHiddenFiles'
+import { is_hidden_entry_name } from './hiddenName'
 import { find_entry_owner_folder, xattrs_map } from './xattrs'
+
+/**
+ * Visible drag order plus any hidden children the list left out, in their
+ * current order. Returns null when an id is unknown or a non-hidden child
+ * is missing — that is an incomplete reorder, not a hidden-file omission.
+ */
+export function complete_visible_order(
+	children: EntryWithXattrs[],
+	ordered_ids: string[],
+): string[] | null {
+	if (new Set(ordered_ids).size !== ordered_ids.length) return null
+
+	const by_id = new Map(children.map(child => [child.id, child]))
+	if (!ordered_ids.every(id => by_id.has(id))) return null
+
+	const ordered = new Set(ordered_ids)
+	const missing = children.filter(child => !ordered.has(child.id))
+	if (missing.some(child => !is_hidden_entry_name(child.name))) return null
+	if (missing.length === 0) return ordered_ids
+
+	return [
+		...ordered_ids,
+		...sort_entries_by_order_then_name(missing).map(child => child.id),
+	]
+}
 
 function pick<T extends Record<string, unknown>>(obj: T, keys: (keyof T)[]): Partial<T> {
 	const result: Partial<T> = {}
@@ -118,7 +145,9 @@ export function to_folder_container(
 	const attrs = xattrs_map(folder.xattrs)
 	const view = (attrs.view as FolderContainerWidget['view']) ?? 'list'
 
-	const raw_children = folder.children ?? []
+	const raw_children = (folder.children ?? []).filter(entry =>
+		show_hidden_files.value || !is_hidden_entry_name(entry.name),
+	)
 	const attrs_by_id = new Map<string, Record<string, unknown>>()
 	for (const entry of raw_children) {
 		attrs_by_id.set(entry.id, xattrs_map(entry.xattrs))

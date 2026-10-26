@@ -166,7 +166,7 @@ function stopCompare() {
 
     <p class="mt-4 inline-flex items-start gap-2 rounded-lg bg-[var(--pc-gray-header)] px-3 py-2 text-sm text-slate-600">
       <UIcon name="i-lucide-monitor-down" class="mt-0.5 size-4 shrink-0 text-pc-500" />
-      Opening folders from your disk needs the desktop app. In the browser you get a demo and browser desktops.
+      Opening folders from your disk needs the desktop app. In the browser you get a demo and workspaces saved in that browser.
     </p>
 
     <UModal

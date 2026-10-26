@@ -81,7 +81,7 @@ begin
     insert into private.admins (user_id) values (c_admin);
 
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
-    v_ws := private.create_workspace('rls-suite', null);
+    v_ws := private.create_workspace('rls-suite');
     select e.id into v_root from public.entries e where e.workspace_id = v_ws and e.parent_id is null;
     perform private.add_workspace_member(v_ws, 'rls-editor@example.invalid', 'editor');
     perform private.add_workspace_member(v_ws, 'rls-viewer@example.invalid', 'viewer');
@@ -90,7 +90,7 @@ begin
         (select egress_bytes_month = 20::bigint * 1024 * 1024 * 1024 and max_public_file_bytes = 10 * 1024 * 1024
                 and download_bytes_month = 20::bigint * 1024 * 1024 * 1024
                 and max_entries = 20000 and max_strokes = 20000
-                and max_connections = 20000 and max_desktops = 20
+                and max_connections = 20000
            from public.billing_accounts where owner_id = c_owner), null);
 
     -- ------------------------------------------------------------------
@@ -218,7 +218,7 @@ begin
 
     -- a second workspace with the same layout: paths, and so deterministic
     -- edge ids, repeat across workspaces
-    v_ws2 := public.create_workspace('rls-suite-2', null);
+    v_ws2 := public.create_workspace('rls-suite-2');
     select e.id into v_root2 from public.entries e where e.workspace_id = v_ws2 and e.parent_id is null;
     insert into public.entries (workspace_id, parent_id, name, kind) values (v_ws2, v_root2, 'docs', 'folder');
     v_json := public.create_text_file(
@@ -267,7 +267,7 @@ begin
            from public.plan_limits('pro')), null);
     insert into __results values ('plan_defaults: pro row fences are finite',
         (select max_entries = 200000 and max_strokes = 100000
-                and max_connections = 100000 and max_desktops = 50
+                and max_connections = 100000
            from private.plan_defaults('pro')), null);
 
     insert into public.bridge_events (owner_id, step, door, source_type, total_bytes)
@@ -397,15 +397,6 @@ begin
 
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_old := private.get_or_create_system_workspace();
-    begin
-        perform public.add_workspace_member(v_old, 'rls-system@example.invalid', 'viewer');
-        insert into __results values ('invites: system workspace refused', false, 'accepted');
-    exception when others then
-        insert into __results values ('invites: system workspace refused',
-            sqlerrm like '%cannot be shared%', sqlerrm);
-        execute 'set local role authenticated';
-    end;
 
     begin
         perform public.add_workspace_member(v_ws, 'rls-editor@example.invalid', 'editor');
@@ -1538,7 +1529,7 @@ begin
         execute 'set local role authenticated';
     end;
     begin
-        perform public.create_workspace('over-limit-board', null);
+        perform public.create_workspace('over-limit-board');
         insert into __results values ('limits: max_entries in create_workspace', false, 'accepted');
     exception when others then
         insert into __results values ('limits: max_entries in create_workspace', sqlerrm like '%entries_limit_exceeded%', sqlerrm);
@@ -1581,25 +1572,10 @@ begin
     end;
     execute 'reset role';
 
-    update public.billing_accounts
-       set max_desktops = (select count(*) from public.desktops d where d.owner_id = c_owner)
-     where owner_id = c_owner;
-    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
-    execute 'set local role authenticated';
-    begin
-        insert into public.desktops (name) values ('over-limit-desk');
-        insert into __results values ('limits: max_desktops on insert', false, 'accepted');
-    exception when others then
-        insert into __results values ('limits: max_desktops on insert', sqlerrm like '%desktops_limit_exceeded%', sqlerrm);
-        execute 'set local role authenticated';
-    end;
-    execute 'reset role';
-
     update public.billing_accounts b
        set max_entries = d.max_entries,
            max_strokes = d.max_strokes,
-           max_connections = d.max_connections,
-           max_desktops = d.max_desktops
+           max_connections = d.max_connections
       from private.plan_defaults('free') d
      where b.owner_id = c_owner;
 
@@ -1659,43 +1635,6 @@ begin
             jsonb_build_object(v_gc_a, true, v_gc_b, true, 'missing', false), null);
     execute 'reset role';
 
-    -- ------------------------------------------------------------------
-    -- desktops experiment: the opt-in mark and the admin-only report
-    -- ------------------------------------------------------------------
-    perform set_config('request.jwt.claims', '', true);
-    execute 'set local role anon';
-    begin
-        perform public.mark_desktops_opt_in();
-        insert into __results values ('anon: mark_desktops_opt_in revoked', false, 'accepted');
-    exception when others then
-        insert into __results values ('anon: mark_desktops_opt_in revoked', true, sqlerrm);
-        execute 'set local role anon';
-    end;
-    execute 'reset role';
-
-    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
-    execute 'set local role authenticated';
-    perform public.mark_desktops_opt_in();
-    perform public.mark_desktops_opt_in();
-    begin
-        perform * from public.desktops_experiment_report();
-        insert into __results values ('owner: desktops_experiment_report refused', false, 'accepted');
-    exception when others then
-        insert into __results values ('owner: desktops_experiment_report refused',
-            sqlerrm like '%not an admin%', sqlerrm);
-        execute 'set local role authenticated';
-    end;
-    execute 'reset role';
-    insert into __results values ('owner: opt-in mark is one row, however often it is sent',
-        (select count(*) from private.desktops_opt_ins where user_id = c_owner) = 1, null);
-
-    perform set_config('request.jwt.claims', json_build_object('sub', c_admin, 'role', 'authenticated')::text, true);
-    execute 'set local role authenticated';
-    insert into __results values ('admin: desktops_experiment_report counts the opt-in',
-        (select r.opted_in_users >= 1 from public.desktops_experiment_report() r), null);
-    execute 'reset role';
-    perform set_config('request.jwt.claims', '', true);
-
     -- Function grants. EXECUTE defaults to PUBLIC on every new function, and
     -- `drop function` + `create` RESETS it — several functions in rpc.sql are
     -- recreated that way, so a backend-only path can reopen to anon without
@@ -1715,7 +1654,6 @@ begin
             ('private.lock_entry_workspace(uuid)', false, false),
             ('private.purge_expired_entries()', false, false),
             ('public.entries_tree_lock()', false, false),
-            ('public.desktops_count_guard()', false, false),
             ('private.blob_references(text[])', false, false),
             ('public.blob_references(text[])', false, false),
             ('private.assert_upload_access(uuid, uuid, text)', false, false),
@@ -1777,10 +1715,6 @@ begin
             ('public.claim_workspace_invites()', false, true),
             ('public.merge_entry_xattrs(uuid, jsonb, text)', false, true),
             ('public.report_hub_listing(uuid, text)', false, true),
-            ('public.mark_desktops_opt_in()', false, true),
-            ('private.mark_desktops_opt_in()', false, true),
-            ('public.desktops_experiment_report()', false, true),
-            ('private.desktops_experiment_report()', false, true),
             ('public.owner_usage()', false, true)
           ) as g(signature, anon_may, authenticated_may)
     loop

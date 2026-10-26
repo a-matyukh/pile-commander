@@ -90,18 +90,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 	const toolbarPrefs = useCanvasToolbarPrefs()
 
 	const colorSubmenuOptions = computed(() => {
-		const override = scope.backgroundOverride
-		if (override) {
-			return {
-				label: 'Background',
-				entityId: scope.folderId.value,
-				mode: 'background' as const,
-				currentColor: override.current.value,
-				includeCustomValue: true,
-				apply: override.apply,
-				disabled: false,
-			}
-		}
 		if (!workspace.value) return null
 
 		return {
@@ -158,12 +146,7 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 		const loading = toValue(options?.loading) ?? false
 		const readonly = workspace.value?.can_write === false
 		const mutations_disabled = loading || readonly
-		// desktop surface without backgroundOverride: the folder background is
-		// hidden — the desktop owns the surface fill. With override, this same
-		// submenu writes desktop.xattrs.background.
-		const backgroundItem = scope.fixedView && !scope.backgroundOverride
-			? null
-			: colorMenuItem.value
+		const backgroundItem = colorMenuItem.value
 		// Hotkey hints only make sense with a physical keyboard (desktop/web).
 		const kbdHint = (key: string) => (isMdUp.value ? [key] : undefined)
 
@@ -343,11 +326,7 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 				...(backgroundItem ? [backgroundItem as DropdownMenuItem] : []),
 			],
 			summarizeItems.value,
-			// extra sections (e.g. desktop management on the desktop surface)
-			...(scope.menuSections?.value ?? []),
 		]
-		// fixedView drops the view switcher — never render empty groups as
-		// stray separators
 		return groups.filter(group => group.length > 0)
 	})
 

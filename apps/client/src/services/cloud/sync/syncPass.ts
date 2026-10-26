@@ -11,10 +11,12 @@ import {
 	merge_connections,
 	merge_strokes,
 	merge_xattrs,
+	SYNC_KEPT_HIDDEN,
+	sync_kept_hidden_value,
 	stroke_hash,
 } from './layoutSync'
 import { read_local_layout, scan_local, type LocalFolderLayout, type LocalLayout, type LocalStat } from './localScan'
-import { base_name, cloud_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
+import { base_name, cloud_relative, is_hidden_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
 import { partition_local, reconcile, type ReconcileOptions } from './reconcile'
 import { SYNC_STATE_VERSION, type BaseEntry, type BaseFolderLayout, type CloudEntry, type ConnectionBase, type LocalEntry, type SkipReason, type StrokeBase, type SyncAction, type SyncState } from './types'
 
@@ -92,22 +94,27 @@ export type SyncReport = {
 	trashed: number
 	/** Relative paths whose local version went up as a conflicted copy. */
 	conflicts: string[]
+	/** Folders recreated empty because they still hold hidden files here. */
+	kept_for_hidden: string[]
 	skipped: { relative: string; reason: SkipReason }[]
 	/** Actions that failed this pass; they are retried on the next one. */
 	errors: { relative: string; message: string }[]
 }
 
+/** Folders the local scan still saw. The status drops a kept folder once it is gone. */
+type LocalFolders = { local_folders: readonly string[] }
+
 export type SyncPassResult =
 	/** Nothing changed here since the last pass, and the cloud was not asked. */
-	| { kind: 'unchanged'; skipped: SyncReport['skipped'] }
-	| { kind: 'done'; state: SyncState; report: SyncReport }
+	| ({ kind: 'unchanged'; skipped: SyncReport['skipped'] } & LocalFolders)
+	| ({ kind: 'done'; state: SyncState; report: SyncReport } & LocalFolders)
 	/**
 	 * The pass would trash much of one side: a folder emptied or unmounted
 	 * here (`cloud`), or a cloud workspace emptied elsewhere (`local`)
 	 */
-	| { kind: 'mass_delete'; side: 'cloud' | 'local'; deletes: number; base_files: number }
+	| ({ kind: 'mass_delete'; side: 'cloud' | 'local'; deletes: number; base_files: number } & LocalFolders)
 	/** The plan refused a file; what synced before it is kept in `state`. */
-	| { kind: 'plan_limit'; state: SyncState; report: SyncReport; info: PlanLimitInfo; file: string }
+	| ({ kind: 'plan_limit'; state: SyncState; report: SyncReport; info: PlanLimitInfo; file: string } & LocalFolders)
 
 /** A pass that would trash at least this many files and over half of one side asks first. */
 export const MASS_DELETE_MIN = 20
@@ -220,24 +227,26 @@ export async function run_sync_pass(
 		adopt_before: state.adopt_before,
 	}
 	const scanned = await scan_local(deps.local_fm, deps.root, deps.stat)
-	const { local, skipped, skips } = partition_local(scanned, reconcile_options)
+	const local_folders = scanned.entries.filter(entry => entry.kind === 'folder').map(entry => entry.relative)
+	reconcile_options.folders_with_hidden = scanned.folders_with_hidden
+	const { local, skipped, skips } = partition_local(scanned.entries, reconcile_options)
 	const skipped_report = skips.flatMap(action => action.kind === 'skip' ? [{ relative: action.relative, reason: action.reason }] : [])
 	const early_layout = await read_local_layout(deps.local_fm, deps.root, folders_of(local))
 	if (!options.check_cloud && !has_local_changes(state, local, skipped, early_layout)) {
-		return { kind: 'unchanged', skipped: skipped_report }
+		return { kind: 'unchanged', skipped: skipped_report, local_folders }
 	}
 
 	const cloud_before = await deps.list_cloud()
-	const plan = reconcile(state.entries, scanned, cloud_before, reconcile_options)
+	const plan = reconcile(state.entries, scanned.entries, cloud_before, reconcile_options)
 	const too_many = (deletes: number) => deletes >= MASS_DELETE_MIN && deletes * 2 > plan.base_files
 	if (!options.allow_cloud_deletes && too_many(plan.deletes)) {
-		return { kind: 'mass_delete', side: 'cloud', deletes: plan.deletes, base_files: plan.base_files }
+		return { kind: 'mass_delete', side: 'cloud', deletes: plan.deletes, base_files: plan.base_files, local_folders }
 	}
 	if (!options.allow_local_deletes && too_many(plan.local_deletes)) {
-		return { kind: 'mass_delete', side: 'local', deletes: plan.local_deletes, base_files: plan.base_files }
+		return { kind: 'mass_delete', side: 'local', deletes: plan.local_deletes, base_files: plan.base_files, local_folders }
 	}
 
-	const run = new PassRun(deps, state, local, cloud_before)
+	const run = new PassRun(deps, state, local, cloud_before, plan.kept_for_hidden)
 	const stop = await run.apply(plan.actions)
 	const cloud_after = await deps.list_cloud()
 	run.refresh(cloud_after)
@@ -255,8 +264,8 @@ export async function run_sync_pass(
 		version: SYNC_STATE_VERSION,
 		last_synced_at: (deps.now?.() ?? new Date()).getTime(),
 	}
-	if (stop) return { kind: 'plan_limit', state: next, report: run.report, ...stop }
-	return { kind: 'done', state: next, report: run.report }
+	if (stop) return { kind: 'plan_limit', state: next, report: run.report, local_folders, ...stop }
+	return { kind: 'done', state: next, report: run.report, local_folders }
 }
 
 /** Carries out one plan on both sides and keeps the base in step. */
@@ -270,6 +279,7 @@ class PassRun {
 		deleted: 0,
 		trashed: 0,
 		conflicts: [],
+		kept_for_hidden: [],
 		skipped: [],
 		errors: [],
 	}
@@ -287,10 +297,18 @@ class PassRun {
 	private readonly rewritten_here = new Set<string>()
 	private readonly cloud_by_id: Map<string, CloudEntry>
 	private readonly deps: SyncPassDeps
+	private readonly kept_for_hidden: ReadonlySet<string>
 	private last_save = 0
 
-	constructor(deps: SyncPassDeps, state: SyncState, local: ReadonlyMap<string, LocalEntry>, cloud: readonly CloudEntry[]) {
+	constructor(
+		deps: SyncPassDeps,
+		state: SyncState,
+		local: ReadonlyMap<string, LocalEntry>,
+		cloud: readonly CloudEntry[],
+		kept_for_hidden: readonly string[],
+	) {
 		this.deps = deps
+		this.kept_for_hidden = new Set(kept_for_hidden)
 		this.local = new Map(local)
 		this.state = { ...state, entries: { ...state.entries }, layout: { ...state.layout } }
 		this.cloud_by_id = new Map(cloud.map(entry => [entry.id, entry]))
@@ -368,7 +386,13 @@ class PassRun {
 		switch (action.kind) {
 			case 'create_folder': {
 				const parent = this.parent_path(action.relative)
-				const created = await this.deps.cloud_fm.create_folder(parent, base_name(action.relative))
+				const kept = this.kept_for_hidden.has(action.relative)
+				const created = await this.deps.cloud_fm.create_folder(
+					parent,
+					base_name(action.relative),
+					kept ? { xattrs: { [SYNC_KEPT_HIDDEN]: sync_kept_hidden_value(this.now) } } : undefined,
+				)
+				if (kept) this.report.kept_for_hidden.push(action.relative)
 				this.landed(action.relative, created.id)
 				return
 			}
@@ -804,7 +828,7 @@ class PassRun {
 					folder,
 					known,
 					edges_by_folder.get(row.id) ?? [],
-					end => here(end) && in_cloud.has(end),
+					end => here(end) && in_cloud.has(end) && !is_hidden_relative(end),
 				)
 				this.state.layout[relative] = { strokes, connections }
 			} catch (error) {

@@ -58,9 +58,11 @@ export function resolve_unique_filename(
 		}
 	}
 
+	// A leading dot is the hidden-name mark, not an extension: ".git" copies
+	// as ".git (1)", and ".env.local" as ".env (1).local".
 	const dot = name.lastIndexOf('.')
-	const base = dot === -1 ? name : name.slice(0, dot)
-	const ext = dot === -1 ? '' : name.slice(dot)
+	const base = dot <= 0 ? name : name.slice(0, dot)
+	const ext = dot <= 0 ? '' : name.slice(dot)
 
 	for (let n = 1; ; n++) {
 		const candidate = `${base} (${n})${ext}`

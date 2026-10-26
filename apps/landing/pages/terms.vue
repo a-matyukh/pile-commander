@@ -11,7 +11,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Terms of use"
-    updated="16 September 2026"
+    updated="26 October 2026"
     note="The cloud service is in beta. These terms will be revised before general availability."
   >
     <p>
@@ -79,7 +79,7 @@ useSeoMeta({
 
     <h2>Limits and fair use</h2>
     <p>
-      Free gives one account 100 MB across its workspaces, desktops, and trash;
+      Free gives one account 100 MB across its workspaces and trash;
       a single file up to 25 MB; and 3 Hub listings. Serving a public workspace
       to people who are not its members is metered per month against the
       owner’s allowance, and requests are rate-limited.

@@ -1,6 +1,7 @@
 import type { FileManager } from '@pile-commander/file-manager'
 import { MAX_TEXT_CONTENT_BYTES, PILE_DIR_NAME, is_text_mime } from '@pile-commander/file-manager'
 import { get_file_extension, get_media_kind } from '@/services/board/media'
+import { is_hidden_entry_name, is_os_junk_name } from '@/services/workspace/hiddenName'
 import { upload_mime } from '@/services/workspace/entryBytes'
 import { run_pool } from './pool'
 
@@ -46,9 +47,6 @@ export type BridgePreflight = {
 	/** Default exclusion: blocked files, then the largest until the rest fits. */
 	suggested_exclude: string[]
 }
-
-/** OS litter that never belongs in a workspace. */
-const JUNK_NAMES = new Set(['.DS_Store', 'Thumbs.db'])
 
 const TEXT_EXTENSIONS = new Set([
 	'.md',
@@ -121,7 +119,7 @@ export async function preflight_tree(
 	for (let index = 0; index < queue.length; index++) {
 		const folder = queue[index]!
 		for (const child of await fm.FolderChildren(folder.id)) {
-			if (child.name === PILE_DIR_NAME || JUNK_NAMES.has(child.name)) continue
+			if (child.name === PILE_DIR_NAME || is_os_junk_name(child.name) || is_hidden_entry_name(child.name)) continue
 			const relative = folder.relative ? `${folder.relative}/${child.name}` : child.name
 			const bad_name = folder.bad_name || !is_cloud_name(child.name)
 			if (child.type === 'folder') {

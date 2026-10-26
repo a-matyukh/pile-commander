@@ -58,19 +58,13 @@ import {
 	wait_for_jwt_ready,
 	with_jwt_clock_retry,
 } from '@/services/cloud/client'
-import { request_cloud_board_reload } from './cloudBoardReload'
 import store from '@/store'
-import desktops from '@/store/desktops'
-import { workspace_registry } from '@/store/workspaceRegistry'
 import {
 	register_cloud_workspaces_refetch,
 	remove_workspace_from_lists,
 	rename_in_workspaces_lists,
 	sync_cloud_workspaces_list,
 } from './workspaces_list'
-import { reset_system_workspace_cache } from '@/services/cloud/systemWorkspace'
-import { mark_desktops_opt_in } from '@/services/cloud/desktopsExperiment'
-import { desktops_enabled } from '@/store/experiments'
 import { owned_hub_hidden, owned_hub_listed, owned_public_slugs, owned_shared_out, publication_view_ids } from './helpers/publicationMapping'
 import {
 	invite_emails_match,
@@ -186,7 +180,7 @@ export type CloudStore = {
 	 * Call once at bootstrap.
 	 */
 	init(): Promise<void>
-	/** Post-login loads (workspaces/profile/desktops); waits out JWT clock skew */
+	/** Post-login loads (workspaces/profile); waits out JWT clock skew */
 	load_after_sign_in(): Promise<void>
 	sign_up(email: string, password: string, redirect_to?: string): Promise<void>
 	sign_in(email: string, password: string): Promise<void>
@@ -220,8 +214,6 @@ export type CloudStore = {
 	open(item: WorkspacesListItem): Promise<void>
 	/** Opens the public workspace (/<username>/<slug> route). False = not found */
 	open_public(username: string, slug: string): Promise<boolean>
-	/** Same as open_public, but loads into the window's registry store */
-	open_public_for_window(window_id: string, username: string, slug: string): Promise<boolean>
 	/** Switches from the public-URL view to the same workspace with write access */
 	open_source_for_edit(): Promise<void>
 	/** Opens the profile page (/<username> route) */
@@ -343,7 +335,6 @@ const cloud: CloudStore = {
 				setTimeout(() => {
 					if (this.user?.id !== user_id) return
 					void this.load_after_sign_in()
-					request_cloud_board_reload()
 					if (this.profile_view) {
 						this.profile_view.can_edit_any = this.profile_view.profile.id === user_id
 					}
@@ -369,11 +360,6 @@ const cloud: CloudStore = {
 			// keep the /invite/:token card so signing out to switch accounts
 			// does not flash “no longer valid”
 			if (this.invite_view) this.invite_view = { ...this.invite_view, error: null }
-			// the next session may belong to a different account
-			reset_system_workspace_cache()
-			// cloud desktops leave with the session: windows closed, children
-			// stores disposed, selection falls back to a local desktop
-			desktops.teardown_cloud_desktops()
 			// authenticated cloud workspace; keep public-URL views (publication_view)
 			if (store.workspace?.type === 'cloud' && !this.publication_view) {
 				store.close_workspace()
@@ -386,7 +372,6 @@ const cloud: CloudStore = {
 			window.addEventListener('online', () => {
 				if (!this.user) return
 				void this.load_after_sign_in()
-				request_cloud_board_reload()
 			})
 		}
 	},
@@ -402,14 +387,6 @@ const cloud: CloudStore = {
 		void this.fetch_workspaces()
 		void this.fetch_profile()
 		void this.fetch_plan()
-		void desktops.sync_cloud_desktops()
-		// the experiment switch is a device setting and may have gone on before
-		// sign-in; the opt-in mark is idempotent and best-effort
-		if (desktops_enabled.value) {
-			void mark_desktops_opt_in(require_supabase()).catch((error) => {
-				console.error('[desktops] failed to mark the experiment opt-in', error)
-			})
-		}
 		// signing in while viewing a publication may unlock the Edit button
 		void this.refresh_public_edit_access()
 		if (this.invite_view) void this.accept_invite()
@@ -566,7 +543,6 @@ const cloud: CloudStore = {
 					.from('workspaces')
 					.select('id, name, owner_id, slug, is_public, hub_publications!source_workspace_id (source_workspace_id, hidden_at), workspace_members(user_id), workspace_invites(email, expires_at)')
 					.eq('owner_id', user_id)
-					.eq('is_system', false)
 					.order('created_at'),
 			)
 			if (owned_error) {
@@ -596,8 +572,7 @@ const cloud: CloudStore = {
 					require_supabase()
 						.from('workspaces')
 						.select('id, name, owner_id')
-						.in('id', member_ids)
-						.eq('is_system', false),
+						.in('id', member_ids),
 				)
 				if (shared_error) {
 					this.last_error = cloud_failure_message(shared_error, CLOUD_UNAVAILABLE)
@@ -701,13 +676,8 @@ const cloud: CloudStore = {
 	async open(item: WorkspacesListItem) {
 		this.publication_view = null
 		this.public_not_found = null
-		// Fullscreen renders the profile from these fields — opening a workspace
-		// leaves it. Desktops-mode profile windows keep them (each reloads from
-		// its own content watcher).
-		if (desktops.mode === 'fullscreen') {
-			this.profile_view = null
-			this.profile_not_found = null
-		}
+		this.profile_view = null
+		this.profile_not_found = null
 		await store.load_workspace(item)
 	},
 
@@ -715,8 +685,6 @@ const cloud: CloudStore = {
 		this.last_error = null
 		this.publication_view = null
 		this.public_not_found = null
-		// fullscreen-only entry (desktops opens a window instead) — entering the
-		// workspace leaves the in-app profile view behind
 		this.profile_view = null
 		this.profile_not_found = null
 		let pub
@@ -743,46 +711,6 @@ const cloud: CloudStore = {
 			{ public_readonly: true },
 		)
 		if (!store.workspace) {
-			this.publication_view = null
-			return false
-		}
-		await this.refresh_public_edit_access()
-		return true
-	},
-
-	async open_public_for_window(window_id, username, slug): Promise<boolean> {
-		this.last_error = null
-		this.publication_view = null
-		this.public_not_found = null
-		let pub
-		try {
-			pub = await get_published_workspace(require_supabase(), username, slug)
-		} catch (error) {
-			this.last_error = error instanceof Error ? error.message : String(error)
-			return false
-		}
-		if (!pub) {
-			this.public_not_found = `${username}/${slug}`
-			return false
-		}
-		this.publication_view = {
-			username,
-			slug,
-			...publication_view_ids(pub),
-			can_edit_source: false,
-		}
-		try {
-			await workspace_registry.load_for_window(
-				window_id,
-				{ type: 'cloud', id: pub.id, name: pub.name },
-				{ public_readonly: true },
-			)
-		} catch (error) {
-			this.last_error = error instanceof Error ? error.message : String(error)
-			this.publication_view = null
-			return false
-		}
-		if (!workspace_registry.get(window_id)) {
 			this.publication_view = null
 			return false
 		}

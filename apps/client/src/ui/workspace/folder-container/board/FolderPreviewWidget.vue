@@ -2,8 +2,6 @@
 import { computed } from 'vue'
 import type { FolderContainerWidget } from '@/domain/Widget'
 import FolderMenu from '@/ui/workspace/menu/FolderMenu.vue'
-import LocalWorkspaceTileMenu from '@/ui/workspace/menu/LocalWorkspaceTileMenu.vue'
-import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import WidgetShell from '../widgets/WidgetShell.vue'
 import LazyFolderPreview from '../widgets/LazyFolderPreview.vue'
 import { useMenuNode } from '../widgets/useMenuNode'
@@ -20,17 +18,11 @@ const props = withDefaults(defineProps<{
 
 const menuNode = useMenuNode(() => props.widget)
 
-// a previewed top-level folder of a local desktop is still a workspace tile:
-// it keeps the tile menu with "Copy to cloud…"
-const scope = useFolderContainerScope()
-const local_tile = computed(() => scope.localTileAt?.(props.widget.id) ?? null)
-
-const menuComponent = computed(() => (local_tile.value ? LocalWorkspaceTileMenu : FolderMenu))
+const menuComponent = computed(() => FolderMenu)
 
 const menuProps = computed(() => ({
 	isPreview: true,
 	showPreviewToggle: true,
-	...(local_tile.value ? { source: local_tile.value } : {}),
 }))
 
 const shellStyle = computed(() => backgroundStyle(props.widget.background))

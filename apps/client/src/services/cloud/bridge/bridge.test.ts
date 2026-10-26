@@ -89,6 +89,27 @@ async function make_run(src: FakeFileManager, patch: Partial<BridgeRun> = {}): P
 }
 
 describe('bridge preflight', () => {
+	test('does not measure or copy hidden names', async () => {
+		const src = await make_source()
+		src.seed_folder('/ws/.git')
+		src.seed_file('/ws/.git/HEAD', 'ref: refs/heads/main')
+		src.seed_file('/ws/.env', 'SECRET=1')
+		await src.fm.upload_file('/ws', '.big.bin', bytes(8_000_000), 'application/octet-stream')
+
+		const preflight = await preflight_tree(src.fm, '/ws', LIMITS)
+
+		expect(preflight.folders).toEqual(['board', 'board/refs'])
+		expect(preflight.files.map(file => file.name)).not.toEqual(expect.arrayContaining(['.env', 'HEAD', '.big.bin']))
+		expect(preflight.total_bytes).toBe(7 + 2048 + 4096)
+
+		const dst = make_dest()
+		const result = await run_bridge(make_deps(dst).deps, await make_run(src))
+		expect(result.kind).toBe('done')
+		expect(dst.has('/.env')).toBe(false)
+		expect(dst.has('/.git')).toBe(false)
+		expect(dst.has('/.big.bin')).toBe(false)
+	})
+
 	test('measures the tree, skipping sidecars and OS litter', async () => {
 		const src = await make_source()
 

@@ -21,6 +21,13 @@ export type SyncStatus = {
 	progress?: SyncProgress
 	/** Recent conflicted copies, newest last. */
 	conflicts: string[]
+	/** Folders kept here because of hidden files, newest last. */
+	kept_for_hidden: string[]
+	/**
+	 * The folders a pass just recreated for that reason. `pass` increases
+	 * once per such pass, so a toast can fire once and not on later status updates.
+	 */
+	kept_hidden_notice?: { pass: number; folders: string[] }
 	skipped: SyncReport['skipped']
 	errors: SyncReport['errors']
 }
@@ -81,7 +88,8 @@ function message_of(error: unknown): string {
  */
 export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DEFAULT_SYNC_TIMING): SyncEngine {
 	let state: SyncState | null = null
-	let status: SyncStatus = { phase: 'idle', conflicts: [], skipped: [], errors: [] }
+	let status: SyncStatus = { phase: 'idle', conflicts: [], kept_for_hidden: [], skipped: [], errors: [] }
+	let hidden_notice_pass = 0
 	let running: Promise<void> | null = null
 	let again = false
 	// the next pass reads the cloud even if nothing changed here: true at
@@ -136,8 +144,19 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		}
 		publish({ progress: undefined })
 		failures = 0
+		const present = new Set(result.local_folders)
+		const kept_still_here = (fresh: readonly string[]) =>
+			[...new Set([...status.kept_for_hidden.filter(folder => present.has(folder)), ...fresh])].slice(-CONFLICTS_SHOWN)
 		if (result.kind === 'unchanged') {
-			publish({ phase: 'idle', reason: undefined, message: undefined, pending_deletes: undefined, skipped: result.skipped, errors: [] })
+			publish({
+				phase: 'idle',
+				reason: undefined,
+				message: undefined,
+				pending_deletes: undefined,
+				skipped: result.skipped,
+				errors: [],
+				kept_for_hidden: kept_still_here([]),
+			})
 			return
 		}
 		if (result.kind === 'mass_delete') {
@@ -150,15 +169,23 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 				message: result.side === 'cloud'
 					? `${result.deletes} of ${result.base_files} files are gone from this folder.`
 					: `${result.deletes} of ${result.base_files} files are gone from the cloud workspace.`,
+				kept_for_hidden: kept_still_here([]),
 			})
 			return
 		}
 		state = result.state
 		await deps.save_state(state)
 		const conflicts = [...status.conflicts, ...result.report.conflicts].slice(-CONFLICTS_SHOWN)
+		const fresh_hidden = result.report.kept_for_hidden
+		const kept_for_hidden = kept_still_here(fresh_hidden)
+		const kept_hidden_notice = fresh_hidden.length === 0
+			? status.kept_hidden_notice
+			: { pass: ++hidden_notice_pass, folders: [...fresh_hidden] }
 		const common = {
 			last_synced_at: state.last_synced_at,
 			conflicts,
+			kept_for_hidden,
+			kept_hidden_notice,
 			skipped: result.report.skipped,
 			errors: result.report.errors,
 			pending_deletes: undefined,

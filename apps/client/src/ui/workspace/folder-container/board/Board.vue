@@ -14,8 +14,6 @@ import { backgroundStyle } from '../widgets/resolveBackground'
 import { useBoardMarqueeSelection } from './useBoardMarqueeSelection'
 import { isEmptyBoardPointerTarget } from './isEmptyBoardPointerTarget'
 import { useMoveSelectedWidgets } from '../useMoveSelectedWidgets'
-import { useDeleteSelectedWidgets } from '../useDeleteSelectedWidgets'
-import BulkRemoveDialog from '@/ui/workspace/menu/BulkRemoveDialog.vue'
 import BoardMarqueeOverlay from './BoardMarqueeOverlay.vue'
 import EmptyPaneHint from '../EmptyPaneHint.vue'
 import { useLineDrawMode } from '../useLineDrawMode'
@@ -26,7 +24,7 @@ import {
 	registerPanePositionResolver,
 } from '../panePosition'
 
-const { folderId, container, isEmbedded, fixedView } = useFolderContainerScope()
+const { folderId, container, isEmbedded } = useFolderContainerScope()
 const workspace = useWorkspace()
 const can_write = computed(() => workspace.value?.can_write !== false)
 
@@ -48,14 +46,6 @@ useMoveSelectedWidgets({
 	editingNoteId,
 	boardSnapSettings,
 	enabled: () => !isEmbedded,
-})
-
-// FolderChrome owns Backspace in workspace windows; the desktop surface has
-// no chrome, so this board is the only place that can confirm removal.
-const { dialogRef, onConfirm } = useDeleteSelectedWidgets({
-	children,
-	editingNoteId,
-	enabled: () => Boolean(fixedView),
 })
 
 function boardClickPosition(event: { clientX: number; clientY: number }): Position | null {
@@ -154,12 +144,7 @@ function onBoardPaneClick(event: MouseEvent) {
 }
 
 const boardChromeStyle = computed(() => ({
-	// On the desktop surface (fixedView) the background belongs to the
-	// desktop — the board stays transparent unless the folder bg is set
-	...backgroundStyle(
-		container.value?.background,
-		fixedView ? 'transparent' : 'white',
-	),
+	...backgroundStyle(container.value?.background, 'white'),
 	cursor: lineDraw.cursor.value
 		?? (boardPlacementTemplate.value ? 'crosshair' : undefined),
 }))
@@ -259,7 +244,6 @@ const boardExtentStyle = computed(() => {
 		<EmptyPaneHint :empty="children.length === 0" />
 	</div>
 	</FolderContainerCtxMenu>
-	<BulkRemoveDialog ref="dialogRef" @confirm="onConfirm" />
 </template>
 
 <style scoped>

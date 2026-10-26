@@ -11,7 +11,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Privacy"
-    updated="5 October 2026"
+    updated="26 October 2026"
     note="Written against what the code actually does. It changes when the product does."
   >
     <p>
@@ -36,8 +36,7 @@ useSeoMeta({
       </li>
       <li>
         <strong>What you put in a workspace</strong> — files, notes, ink,
-        connectors, names, file attributes, and the layout of your desktops and
-        windows.
+        connectors, names, and file attributes.
       </li>
       <li>
         <strong>Sharing</strong> — the email addresses you type into an invite

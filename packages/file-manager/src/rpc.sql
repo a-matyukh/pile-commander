@@ -24,12 +24,10 @@
 
 -- ----------------------------------------------------------------------------
 -- create_workspace: workspace + root entry (path '/', parent_id null)
--- The root create in board view by default (xattrs.view). p_desktop pins
--- the workspace to a cloud desktop's board (a folder child); the desktop
--- must be the caller's own.
+-- The root is created in board view by default (xattrs.view).
 -- ----------------------------------------------------------------------------
 
-create or replace function private.create_workspace(p_name text, p_desktop uuid default null)
+create or replace function private.create_workspace(p_name text)
 returns uuid
 language plpgsql
 security definer
@@ -44,14 +42,11 @@ begin
     if p_name is null or p_name = '' then
         raise exception 'create_workspace: name is required';
     end if;
-    if p_desktop is not null and not private.is_desktop_owner(p_desktop) then
-        raise exception 'create_workspace: desktop % not found or not yours', p_desktop;
-    end if;
 
     perform private.assert_owner_entries(auth.uid(), 1);
 
-    insert into public.workspaces (owner_id, name, desktop_id)
-    values (auth.uid(), p_name, p_desktop)
+    insert into public.workspaces (owner_id, name)
+    values (auth.uid(), p_name)
     returning id into v_workspace_id;
 
     insert into public.entries (workspace_id, parent_id, name, kind, xattrs)
@@ -62,60 +57,9 @@ end
 $$;
 
 -- ----------------------------------------------------------------------------
--- get_or_create_system_workspace: the hidden per-user workspace holding
--- desktop board FILES (/desktop-<id>/ folders). Idempotent; the partial
--- unique index workspaces_system_unique makes concurrent calls safe.
--- Filtered out of workspace lists; public/remove/share are forbidden (see
--- workspaces_insert/delete policies, set_workspace_public, add_workspace_member)
--- ----------------------------------------------------------------------------
-
-create or replace function private.get_or_create_system_workspace()
-returns uuid
-language plpgsql
-security definer
-set search_path = public, extensions
-as $$
-declare
-    v_id uuid;
-begin
-    if auth.uid() is null then
-        raise exception 'get_or_create_system_workspace: not authenticated';
-    end if;
-
-    select w.id into v_id from public.workspaces w
-     where w.owner_id = auth.uid() and w.is_system
-     limit 1;
-    if v_id is not null then
-        return v_id;
-    end if;
-
-    perform private.assert_owner_entries(auth.uid(), 1);
-
-    insert into public.workspaces (owner_id, name, is_system)
-    values (auth.uid(), 'system', true)
-    on conflict (owner_id) where is_system do nothing
-    returning id into v_id;
-
-    if v_id is null then
-        -- lost the race: the concurrent call created it
-        select w.id into v_id from public.workspaces w
-         where w.owner_id = auth.uid() and w.is_system
-         limit 1;
-        return v_id;
-    end if;
-
-    insert into public.entries (workspace_id, parent_id, name, kind)
-    values (v_id, null, '', 'folder');
-
-    return v_id;
-end
-$$;
-
--- ----------------------------------------------------------------------------
 -- set_workspace_xattr: single-key merge into workspaces.xattrs (jsonb_set),
 -- mirroring fm.set_xattr semantics for entries — a whole-object overwrite
--- would lose keys written concurrently. Owner only: the board tile layout
--- belongs to the desktop owner.
+-- would lose keys written concurrently. Owner only.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.set_workspace_xattr(p_workspace uuid, p_name text, p_value text)
@@ -1163,9 +1107,6 @@ begin
     if not found then
         raise exception 'set_workspace_public: workspace % not found', p_workspace;
     end if;
-    if v_workspace.is_system then
-        raise exception 'set_workspace_public: cannot make the system workspace public';
-    end if;
 
     update public.workspaces
        set is_public = true,
@@ -1183,8 +1124,7 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- set_workspace_private: drop the public link. Hub listing is removed
--- (no cascade from a non-delete). Owner only; system workspace is a no-op
--- path because it can never be public.
+-- (no cascade from a non-delete). Owner only.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.set_workspace_private(p_workspace uuid)
@@ -2342,12 +2282,6 @@ begin
     if auth.uid() is null then
         raise exception 'add_workspace_member: not authenticated';
     end if;
-    if exists (
-        select 1 from public.workspaces w
-         where w.id = p_workspace and w.is_system
-    ) then
-        raise exception 'add_workspace_member: the system workspace cannot be shared';
-    end if;
     if not private.is_workspace_owner(p_workspace) then
         raise exception 'add_workspace_member: only the owner can share';
     end if;
@@ -2498,22 +2432,13 @@ $$;
 -- Public wrappers (security invoker) — these are what supabase.rpc calls
 -- ----------------------------------------------------------------------------
 
-create or replace function public.create_workspace(p_name text, p_desktop uuid default null)
+create or replace function public.create_workspace(p_name text)
 returns uuid
 language sql
 security invoker
 set search_path = public, extensions
 as $$
-    select private.create_workspace(p_name, p_desktop);
-$$;
-
-create or replace function public.get_or_create_system_workspace()
-returns uuid
-language sql
-security invoker
-set search_path = public, extensions
-as $$
-    select private.get_or_create_system_workspace();
+    select private.create_workspace(p_name);
 $$;
 
 create or replace function public.set_workspace_xattr(p_workspace uuid, p_name text, p_value text)
@@ -3379,126 +3304,3 @@ revoke execute on function private.prune_entry_derivatives(int) from public, ano
 grant execute on function private.prune_entry_derivatives(int) to service_role;
 
 -- ----------------------------------------------------------------------------
--- Desktops experiment (DESKTOPS_EXPERIMENT.md): the opt-in mark and the admin
--- report. The report reads only what cloud accounts already store — no event
--- log, no client analytics (the privacy page promises no trackers). Local and
--- browser desktops never reach the server, so they are not in it.
--- ----------------------------------------------------------------------------
-
-create or replace function private.mark_desktops_opt_in()
-returns void
-language plpgsql
-security definer
-set search_path = public, extensions
-as $$
-begin
-    if auth.uid() is null then
-        raise exception 'mark_desktops_opt_in: not signed in';
-    end if;
-    insert into private.desktops_opt_ins (user_id) values (auth.uid())
-    on conflict (user_id) do nothing;
-end
-$$;
-
-create or replace function public.mark_desktops_opt_in()
-returns void
-language sql
-security invoker
-set search_path = public, extensions
-as $$
-    select private.mark_desktops_opt_in();
-$$;
-
--- One row of counts over all accounts. "Loose files" are live entries inside
--- a /desktop-<id> folder of the owner's system workspace (files dropped on a
--- cloud desktop board itself, not into one of its workspaces)
-drop function if exists public.desktops_experiment_report();
-drop function if exists private.desktops_experiment_report();
-
-create or replace function private.desktops_experiment_report()
-returns table (
-    opted_in_users bigint,
-    users_with_desktops bigint,
-    users_with_2plus_desktops bigint,
-    desktop_workspaces bigint,
-    users_with_2plus_desktop_workspaces bigint,
-    users_with_loose_files bigint,
-    users_with_2plus_windows bigint,
-    max_windows int,
-    active_14d bigint
-)
-language plpgsql
-stable
-security definer
-set search_path = public, extensions
-as $$
-begin
-    if auth.uid() is null or not private.is_admin() then
-        raise exception 'desktops_experiment_report: not an admin';
-    end if;
-
-    return query
-    with per_owner as (
-        select d.owner_id,
-               count(*) as desktops,
-               max(jsonb_array_length(d.windows)) as windows,
-               max(d.updated_at) as last_update
-          from public.desktops d
-         group by d.owner_id
-    ),
-    tiles as (
-        select w.owner_id, count(*) as n
-          from public.workspaces w
-         where w.desktop_id is not null
-         group by w.owner_id
-    ),
-    loose as (
-        select distinct w.owner_id
-          from public.workspaces w
-          join public.entries e on e.workspace_id = w.id
-         where w.is_system
-           and e.deleted_at is null
-           and e.path like '/desktop-%/%'
-    )
-    select
-        (select count(*) from private.desktops_opt_ins),
-        (select count(*) from per_owner),
-        (select count(*) from per_owner where desktops >= 2),
-        (select coalesce(sum(n), 0)::bigint from tiles),
-        (select count(*) from tiles where n >= 2),
-        (select count(*) from loose),
-        (select count(*) from per_owner where windows >= 2),
-        (select coalesce(max(windows), 0) from per_owner),
-        (select count(*) from per_owner where last_update > now() - interval '14 days');
-end
-$$;
-
-create or replace function public.desktops_experiment_report()
-returns table (
-    opted_in_users bigint,
-    users_with_desktops bigint,
-    users_with_2plus_desktops bigint,
-    desktop_workspaces bigint,
-    users_with_2plus_desktop_workspaces bigint,
-    users_with_loose_files bigint,
-    users_with_2plus_windows bigint,
-    max_windows int,
-    active_14d bigint
-)
-language sql
-stable
-security invoker
-set search_path = public, extensions
-as $$
-    select * from private.desktops_experiment_report();
-$$;
-
--- signed-in only; the report refuses non-admins inside
-revoke execute on function public.mark_desktops_opt_in() from public, anon;
-grant execute on function public.mark_desktops_opt_in() to authenticated;
-revoke execute on function private.mark_desktops_opt_in() from public, anon;
-grant execute on function private.mark_desktops_opt_in() to authenticated;
-revoke execute on function public.desktops_experiment_report() from public, anon;
-grant execute on function public.desktops_experiment_report() to authenticated;
-revoke execute on function private.desktops_experiment_report() from public, anon;
-grant execute on function private.desktops_experiment_report() to authenticated;

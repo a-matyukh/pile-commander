@@ -92,6 +92,18 @@ describe('workspace mutations', () => {
 		expect(docs.children!.map(c => c.id)).toEqual(['/ws/docs/a.txt'])
 	})
 
+	test('apply_entry_created notes a dot name only when the state surfaces hidden_notice', () => {
+		const state = make_state({ hidden_notice: null })
+		apply_entry_created(state, '/ws', entry('/ws/.env', '.env', 'file'))
+
+		expect(state.hidden_notice).toBe('.env is hidden. Turn on Show hidden files in Settings.')
+		expect(state.folders['/ws']!.children!.map(c => c.id)).toContain('/ws/.env')
+
+		const plain = make_state()
+		apply_entry_created(plain, '/ws', entry('/ws/.git', '.git', 'folder'))
+		expect(plain.hidden_notice).toBeUndefined()
+	})
+
 	test('apply_entry_removed clears selection, cache and parent children', () => {
 		const docs = folder('/ws/docs', 'docs', [entry('/ws/docs/a.txt', 'a.txt', 'file')])
 		const state = make_state({
