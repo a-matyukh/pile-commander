@@ -2063,7 +2063,7 @@ describe('createWorkspaceStore: drive-root watch', () => {
 		expect(watch_keys(active)).toEqual(['/ws/docs:recursive'])
 	})
 
-	test('a drive root is not watched recursively, and expanded branches outside that watch are', async () => {
+	test('with the option, every watch is non-recursive: root, opened folder and expanded branches', async () => {
 		const fake = createFakeFileManager()
 		fake.seed_folder('/home')
 		fake.seed_folder('/home/projects')
@@ -2081,7 +2081,7 @@ describe('createWorkspaceStore: drive-root watch', () => {
 
 		await store.open_folder('/home/projects/app')
 		expect(watch_keys(active)).toEqual([
-			'/home/projects/app:recursive',
+			'/home/projects/app:shallow',
 			'/home/projects:shallow',
 			'/home:shallow',
 		])
@@ -2090,7 +2090,7 @@ describe('createWorkspaceStore: drive-root watch', () => {
 		await vi.waitFor(() => {
 			expect(watch_keys(active)).toEqual([
 				'/home/desktop:shallow',
-				'/home/projects/app:recursive',
+				'/home/projects/app:shallow',
 				'/home/projects:shallow',
 				'/home:shallow',
 			])
@@ -2099,7 +2099,7 @@ describe('createWorkspaceStore: drive-root watch', () => {
 		store.toggle_folder_expanded('/home/desktop')
 		await vi.waitFor(() => {
 			expect(watch_keys(active)).toEqual([
-				'/home/projects/app:recursive',
+				'/home/projects/app:shallow',
 				'/home/projects:shallow',
 				'/home:shallow',
 			])
@@ -2113,6 +2113,40 @@ describe('createWorkspaceStore: drive-root watch', () => {
 
 		store.dispose()
 		expect(active).toEqual([])
+	})
+
+	test('with the option, a branch expanded inside the opened folder gets its own watch, deeper changes show on open', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/projects')
+		fake.seed_folder('/home/projects/app')
+		fake.seed_folder('/home/projects/app/src')
+		const active = track_live_watches(fake)
+		const store = await createWorkspaceStore(
+			{ id: '/home', type: 'local', name: 'Home' },
+			fake.fm,
+			{ shallow_root: true },
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		await store.open_folder('/home/projects')
+		store.toggle_folder_expanded('/home/projects/app')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual([
+				'/home/projects/app:shallow',
+				'/home/projects:shallow',
+				'/home:shallow',
+			])
+		})
+		expect(active.some(entry => entry.recursive)).toBe(false)
+
+		// Not watched and no event: the change below is read when the folder opens
+		fake.seed_folder('/home/projects/app/src/deep')
+		await store.open_folder('/home/projects/app/src')
+		expect(store.folders['/home/projects/app/src']?.children.some(child => child.id === '/home/projects/app/src/deep')).toBe(true)
+		expect(active.some(entry => entry.recursive)).toBe(false)
+
+		store.dispose()
 	})
 
 	test('renaming or deleting an expanded branch moves the watch with the set', async () => {

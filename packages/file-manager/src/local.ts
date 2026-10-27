@@ -8,6 +8,7 @@ import {
 	rename as fs_rename,
 	stat,
 	watch as fs_watch,
+	watchImmediate as fs_watch_immediate,
 	writeFile,
 	writeTextFile,
 	type DirEntry,
@@ -298,6 +299,15 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 	}
 }
 
+/**
+ * The watched path does not exist. notify reports it as "No path was found."
+ * (macOS FSEvents checks the path first); an io error says ENOENT
+ */
+function is_missing_dir_error(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return /no path was found|no such file or directory|os error 2\b/i.test(message)
+}
+
 async function sidecar_file_path(folder_path: string, file_name: string): Promise<string> {
 	return join(folder_path, PILE_DIR_NAME, file_name)
 }
@@ -343,24 +353,86 @@ function createLocalSidecarStore<T extends { id: string }>(file_name: string) {
 			const remaining = (await read_sidecar_file<T>(folder_id, file_name)).filter((record) => !doomed.has(record.id))
 			await write_sidecar_file(folder_id, file_name, remaining)
 		},
+		/**
+		 * Two one-level watches, never a recursive one: a recursive watch of the
+		 * folder walks its whole subtree up front (the debouncer's file-id
+		 * cache), on the main thread, which froze the app on ~/Library. The
+		 * folder watch notices `.pile` appearing or being replaced; the `.pile`
+		 * watch sees the sidecar file itself
+		 */
 		async watch(folder_id: string, on_event: (event: { upserted: T[]; deleted: string[] }) => void): Promise<Unwatch> {
-			const target_path = await sidecar_file_path(folder_id, file_name)
+			const pile_dir = await join(folder_id, PILE_DIR_NAME)
+			const target_path = await join(pile_dir, file_name)
 			let known = new Map(
 				(await read_sidecar_file<T>(folder_id, file_name)).map((record) => [record.id, JSON.stringify(record)]),
 			)
-			return fs_watch(
+			let closed = false
+			let pile_unwatch: Unwatch | null = null
+
+			const on_change = async () => {
+				const next = await read_sidecar_file<T>(folder_id, file_name)
+				if (closed) return
+				const upserted = next.filter((record) => known.get(record.id) !== JSON.stringify(record))
+				const deleted = [...known.keys()].filter((id) => !next.some((record) => record.id === id))
+				known = new Map(next.map((record) => [record.id, JSON.stringify(record)]))
+				if (upserted.length === 0 && deleted.length === 0) return
+				on_event({ upserted, deleted })
+			}
+
+			// Each (re)arm bumps the generation: an older subscription that
+			// resolves later is dropped, so only one `.pile` watch is ever live
+			let pile_generation = 0
+			// The old `.pile` watch stays until its replacement is live, so a
+			// failed re-arm (EMFILE, …) keeps watching instead of going quiet
+			const arm_pile = async () => {
+				const generation = ++pile_generation
+				let next: Unwatch
+				try {
+					next = await fs_watch_immediate(
+						pile_dir,
+						(event) => {
+							if (event.paths.some((path) => path === target_path)) void on_change()
+						},
+						{ recursive: false },
+					)
+				} catch (error) {
+					if (generation !== pile_generation) return
+					// No `.pile` (yet, or any more): the folder watch arms this once
+					// it appears. Any other failure is real and goes to the caller
+					if (!is_missing_dir_error(error)) throw error
+					pile_unwatch?.()
+					pile_unwatch = null
+					return
+				}
+				if (closed || generation !== pile_generation) {
+					next()
+					return
+				}
+				pile_unwatch?.()
+				pile_unwatch = next
+			}
+
+			const folder_unwatch = await fs_watch_immediate(
 				folder_id,
-				async (event) => {
-					if (!event.paths.some((path) => path === target_path)) return
-					const next = await read_sidecar_file<T>(folder_id, file_name)
-					const upserted = next.filter((record) => known.get(record.id) !== JSON.stringify(record))
-					const deleted = [...known.keys()].filter((id) => !next.some((record) => record.id === id))
-					known = new Map(next.map((record) => [record.id, JSON.stringify(record)]))
-					if (upserted.length === 0 && deleted.length === 0) return
-					on_event({ upserted, deleted })
+				(event) => {
+					if (!event.paths.some((path) => path === pile_dir)) return
+					void arm_pile()
+						.then(on_change)
+						.catch((error) => console.error("[pile] could not watch", pile_dir, error))
 				},
-				{ recursive: true },
+				{ recursive: false },
 			)
+			try {
+				await arm_pile()
+			} catch (error) {
+				folder_unwatch()
+				throw error
+			}
+			return () => {
+				closed = true
+				folder_unwatch()
+				pile_unwatch?.()
+			}
 		},
 	}
 }

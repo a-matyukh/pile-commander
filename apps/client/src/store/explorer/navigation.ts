@@ -1,4 +1,4 @@
-import { reactive, type Ref } from 'vue'
+import { reactive, ref, type Ref } from 'vue'
 import { useStorage } from '@vueuse/core'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
@@ -8,6 +8,7 @@ import store from '@/store'
 import { is_missing_path_error } from '@/store/helpers/fsErrors'
 import { report_error } from '@/store/helpers/reportError'
 import { BROWSER_ROOT, explorer_drives, is_within } from './drives'
+import { explain_folder_error } from './fsErrorMessage'
 
 /**
  * Pages the history can stand on. Trash, a profile and an invite join this
@@ -20,6 +21,15 @@ export type ExplorerLocation =
 	| { kind: 'page'; page: ExplorerPage }
 
 export const EXPLORER_LAST_LOCATION_KEY = 'pile_commander_explorer_location'
+/**
+ * Set while launch opens the last place, cleared once it is open. Still set
+ * at the next launch means that open hung or crashed: launch then opens the
+ * default folder instead, so the app does not hang again on every start.
+ */
+export const EXPLORER_LAUNCH_PENDING_KEY = 'pile_commander_explorer_launch_pending'
+
+/** How long a launch has to keep running before its last place counts as safe */
+export const LAUNCH_SETTLE_MS = 10_000
 
 type SelectionSnapshot = { ids: string[]; selection_mode: boolean }
 
@@ -38,6 +48,10 @@ export type ExplorerNavigationDeps = {
 	default_folder(): Promise<FolderRef>
 	home_path(): Promise<string>
 	last_location: Ref<FolderRef | null>
+	/** The launch mark (see EXPLORER_LAUNCH_PENDING_KEY). Kept in memory when absent. */
+	launch_pending?: Ref<boolean>
+	/** Runs `done` once the launch has stayed responsive for a while. Defaults to a timer. */
+	after_launch_settles?: (done: () => void) => void
 	/** A bookmark whose drive cannot be opened. The shell reads `store.last_error`. */
 	on_error?(error: unknown): void
 }
@@ -58,6 +72,8 @@ export type ExplorerNavigation = {
 	 * Opens the folder that was open before exit. A folder that is gone opens
 	 * the root of its drive. If that root cannot be opened, opens the default
 	 * root and keeps the saved place. With nothing saved, opens the default root.
+	 * If the previous launch never finished opening the saved place, opens the
+	 * default root and remembers it instead.
 	 */
 	open_at_launch(): Promise<void>
 	/** Drops a navigation still in flight. Does not close stores. */
@@ -160,6 +176,12 @@ type ShowOptions = {
  */
 export function create_explorer_navigation(deps: ExplorerNavigationDeps): ExplorerNavigation {
 	const selections = new Map<string, SelectionSnapshot>()
+	const launch_pending = deps.launch_pending ?? ref(false)
+	let launched_in_process = false
+	/** Only the latest launch's settle timer may clear the mark */
+	let launch_seq = 0
+	const after_launch_settles = deps.after_launch_settles
+		?? ((done: () => void) => { setTimeout(done, LAUNCH_SETTLE_MS) })
 	let generation = 0
 	const state = reactive({
 		location: null as ExplorerLocation | null,
@@ -206,17 +228,21 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 			)
 		} catch (error) {
 			if (seen !== generation) return null
-			if (options.recover_root) throw new DriveRootUnavailable(error)
-			throw error
+			const explained = explain_folder_error(error, target.ref.root_id)
+			if (options.recover_root) throw new DriveRootUnavailable(explained)
+			throw explained
 		}
 		if (seen !== generation || workspace.is_disposed) return null
 		let ref = target.ref
 		try {
 			if (workspace.opened_folder_id !== ref.folder_id) {
-				await workspace.open_folder(ref.folder_id, { skipHistory: true })
+				const folder_id = ref.folder_id
+				await workspace.open_folder(folder_id, { skipHistory: true })
 			}
 		} catch (error) {
-			if (!options.fallback_to_root || !is_missing_path_error(error)) throw error
+			if (!options.fallback_to_root || !is_missing_path_error(error)) {
+				throw explain_folder_error(error, ref.folder_id)
+			}
 			if (seen !== generation || workspace.is_disposed) return null
 			if (workspace.opened_folder_id !== workspace.id) {
 				await workspace.open_folder(workspace.id, { skipHistory: true })
@@ -345,11 +371,33 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		state.history = []
 		state.index = 0
 		state.location = null
-		const saved = deps.last_location.value ? { ...deps.last_location.value } : null
-		if (seen !== generation) return
-		const shown = saved
-			? await open_saved(saved, seen)
-			: null
+		// Only the first launch in this process can find a mark left by a hung
+		// one: a later call (the shell mounted again after the flag went off
+		// and on) would read the mark its own process set seconds ago
+		const interrupted = !launched_in_process && launch_pending.value
+		launched_in_process = true
+		const last = deps.last_location.value ? { ...deps.last_location.value } : null
+		// The last place hung or crashed the previous launch: skip it once
+		const saved = interrupted ? null : last
+		launch_pending.value = saved !== null
+		// A newer launch owns the mark from here on: an older settle timer that
+		// fires while this one is still opening must not clear it
+		const launch = ++launch_seq
+		let shown: ExplorerLocation | null = null
+		try {
+			shown = saved ? await open_saved(saved, seen) : null
+		} catch (error) {
+			// A throw is not a hang
+			launch_pending.value = false
+			throw error
+		}
+		// A hang can also come right after the open (look-ahead reads, watch
+		// events), so the mark stays until the app has kept running a while
+		if (launch_pending.value) {
+			after_launch_settles(() => {
+				if (launch === launch_seq) launch_pending.value = false
+			})
+		}
 		if (seen !== generation) return
 		const opened = shown ?? await (async () => {
 			const fallback = await deps.default_folder()
@@ -413,6 +461,8 @@ export const explorer_navigation = create_explorer_navigation({
 	},
 	home_path,
 	last_location: explorer_last_location,
+	// Written at once: the next launch must see it even if this one hangs
+	launch_pending: useStorage(EXPLORER_LAUNCH_PENDING_KEY, false, undefined, { flush: 'sync' }),
 	on_error(error) {
 		report_error(store, error)
 	},

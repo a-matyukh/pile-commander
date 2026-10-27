@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { computed, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { Drive } from '@/domain/Drive'
 import { t } from '@/i18n'
@@ -7,9 +8,13 @@ import store from '@/store'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_sidebar_width } from '@/store/explorer/sidebar'
+import { explorer_tree, visible_folder_children } from '@/store/explorer/tree'
 import { report_error } from '@/store/helpers/reportError'
+import { show_hidden_files } from '@/store/showHiddenFiles'
+import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
+import TreeRow from './TreeRow.vue'
 
 const drives = computed(() => explorer_drives.drives())
 const hub_open = computed(() => {
@@ -20,6 +25,16 @@ const active_source = computed(() => {
 	if (hub_open.value) return 'hub'
 	const location = explorer_navigation.location
 	return location?.kind === 'folder' ? location.ref.drive_id : null
+})
+const active_drive = computed(() => drives.value.find(item => item.id === active_source.value) ?? null)
+const primary_root = computed(() => active_drive.value?.kind === 'cloud' ? null : explorer_tree.roots[0] ?? null)
+const primary_children = computed(() => visible_folder_children(
+	primary_root.value?.workspace?.tree ?? [],
+	show_hidden_files.value,
+))
+const separate_roots = computed(() => {
+	if (active_drive.value?.kind === 'local') return explorer_tree.roots.slice(1)
+	return active_drive.value?.kind === 'cloud' ? explorer_tree.roots : []
 })
 
 function source_is_open(drive: Drive): boolean {
@@ -42,6 +57,23 @@ async function open_drive(drive: Drive) {
 		report_error(store, error)
 	}
 }
+
+watch(() => [primary_children.value, explorer_tree.round] as const, ([nodes]) => {
+	if (primary_root.value) explorer_tree.probe_folders(primary_root.value, nodes)
+}, { immediate: true })
+
+// Back from Finder: what changed in collapsed folders shows up now
+useEventListener(window, 'focus', () => explorer_tree.refresh_shown())
+
+watchEffect(() => {
+	const location = explorer_navigation.location
+	const drive = active_drive.value
+	if (!drive) {
+		explorer_tree.show_page()
+		return
+	}
+	void explorer_tree.show_drive(drive, location?.kind === 'folder' ? location.ref : null)
+})
 </script>
 
 <template>
@@ -54,13 +86,15 @@ async function open_drive(drive: Drive) {
 			<IconButton
 				v-for="drive in drives"
 				:key="drive.id"
-				:icon="drive.icon"
+				:icon="drive.kind === 'local' ? undefined : drive.icon"
 				:selected="source_is_open(drive)"
 				:class="{ cur: active_source === drive.id }"
 				:aria-label="drive.name"
 				:data-tip="drive.name"
 				@click="open_drive(drive)"
-			/>
+			>
+				<HomeGlyph v-if="drive.kind === 'local'" :size="18" />
+			</IconButton>
 			<IconButton
 				icon="tabler:world"
 				:selected="hub_open"
@@ -70,7 +104,24 @@ async function open_drive(drive: Drive) {
 				@click="explorer_navigation.open_page('hub')"
 			/>
 		</div>
-		<div class="tls" />
+		<div class="tls">
+			<template v-if="!hub_open">
+				<template v-if="primary_root">
+					<TreeRow
+						v-for="node in primary_children"
+						:key="node.id"
+						:item="primary_root"
+						:node="node"
+					/>
+				</template>
+				<div v-if="primary_root && separate_roots.length" class="sr" />
+				<TreeRow
+					v-for="item in separate_roots"
+					:key="`${item.drive.id}:${item.root.id}`"
+					:item="item"
+				/>
+			</template>
+		</div>
 	</aside>
 </template>
 
@@ -125,6 +176,11 @@ async function open_drive(drive: Drive) {
 	border-radius: 1px;
 	background: var(--text-primary);
 }
+.sr {
+	height: 0.5px;
+	margin: 6px 10px;
+	background: var(--border);
+}
 :global(.explorer.lg) .tree {
 	width: 280px;
 }
@@ -137,6 +193,9 @@ async function open_drive(drive: Drive) {
 }
 :global(.explorer.lg) .hd .ib :deep(svg) {
 	font-size: 21px;
+}
+:global(.explorer.lg) .hd .ib :deep(.hm) {
+	font-size: 21px !important;
 }
 :global(.explorer.lg) .hd .ib.cur::after {
 	bottom: -9px;

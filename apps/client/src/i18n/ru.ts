@@ -35,6 +35,9 @@ export const ru = {
 	},
 	tree: {
 		folder_menu: 'Меню папки',
+		delete_permanently_title: 'Удалить папку безвозвратно?',
+		delete_permanently_description: 'Папка «{name}» будет удалена безвозвратно. Это действие нельзя отменить.',
+		delete_permanently: 'Удалить безвозвратно',
 		nothing_found: 'Ничего не найдено',
 		reset: 'Сбросить',
 		search: 'Найти папку',
@@ -182,6 +185,7 @@ export const ru = {
 	},
 	menu: {
 		open: 'Открыть',
+		new_folder: 'Новая папка',
 		bookmark_add: 'Добавить в закладки',
 		bookmark_remove: 'Убрать из закладок',
 		rename: 'Переименовать',
@@ -443,6 +447,9 @@ export const ru = {
 		folder_search_d: 'Кнопка поиска в панели сайдбара',
 		open_in_browser: '«Открыть в браузере»',
 		open_in_browser_d: 'Пункт меню облачных папок',
+	},
+	errors: {
+		folder_access_denied: 'Нет доступа к папке «{name}». Разрешите Pile Commander доступ в Системных настройках → Конфиденциальность и безопасность → Полный доступ к диску',
 	},
 	plural: {
 		items: {

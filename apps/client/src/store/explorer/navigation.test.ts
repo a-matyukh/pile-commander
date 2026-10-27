@@ -5,8 +5,10 @@ import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
 import { create_explorer_drives } from './drives'
+import { explorer_language } from './language'
 import {
 	EXPLORER_LAST_LOCATION_KEY,
+	EXPLORER_LAUNCH_PENDING_KEY,
 	create_explorer_navigation,
 	read_folder_ref,
 	type ExplorerNavigation,
@@ -48,9 +50,13 @@ function setup() {
 	const stores = new Map<string, WorkspaceStore>()
 	let current: WorkspaceStore | null = null
 	const last = ref<FolderRef | null>(null)
+	const launch_pending = ref(false)
+	const pending_at_open_root: boolean[] = []
+	const settle_launch: Array<() => void> = []
 
 	const deps: ExplorerNavigationDeps = {
 		async open_root(drive_id, root_id) {
+			pending_at_open_root.push(launch_pending.value)
 			const key = `${drive_id}\0${root_id}`
 			let existing = stores.get(key)
 			if (!existing || existing.is_disposed) {
@@ -72,12 +78,20 @@ function setup() {
 		},
 		async home_path() { return HOME },
 		last_location: last,
+		launch_pending,
+		after_launch_settles: done => { settle_launch.push(done) },
 	}
 
 	return {
 		nav: create_explorer_navigation(deps),
 		open_root: deps.open_root,
 		last,
+		launch_pending,
+		pending_at_open_root,
+		/** Ends the settle wait of every launch so far */
+		settle: () => { for (const done of settle_launch.splice(0)) done() },
+		/** The settle callbacks so far, oldest first, without running them */
+		take_settle_timers: () => settle_launch.splice(0),
 		stores,
 		fake,
 		current: () => current,
@@ -128,6 +142,83 @@ describe('explorer navigation', () => {
 		expect(saved.nav.can_go_back).toBe(false)
 		expect(saved.current()!.can_go_back).toBe(false)
 		expect(saved.current()!.go_back).not.toHaveBeenCalled()
+	})
+
+	test('launch keeps the mark past the open and clears it once the app has kept running', async () => {
+		expect(EXPLORER_LAUNCH_PENDING_KEY).toBe('pile_commander_explorer_launch_pending')
+		const app = setup()
+		app.last.value = { drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` }
+		await app.nav.open_at_launch()
+		expect(app.pending_at_open_root).toEqual([true])
+		// A hang right after the open (look-ahead reads) must still be caught
+		expect(app.launch_pending.value).toBe(true)
+		app.settle()
+		expect(app.launch_pending.value).toBe(false)
+		expect(folder_of(app.nav)).toBe(`${HOME}/docs`)
+
+		// Nothing saved: nothing to guard
+		const fresh = setup()
+		await fresh.nav.open_at_launch()
+		expect(fresh.pending_at_open_root).toEqual([false])
+		expect(fresh.launch_pending.value).toBe(false)
+	})
+
+	test('a launch that never finished opening the saved place opens the default folder next time', async () => {
+		const app = setup()
+		app.last.value = { drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` }
+		app.launch_pending.value = true
+		await app.nav.open_at_launch()
+		expect(app.nav.location).toEqual({
+			kind: 'folder',
+			ref: { drive_id: 'local', root_id: HOME, folder_id: HOME },
+		})
+		expect(app.pending_at_open_root).toEqual([false])
+		expect(app.launch_pending.value).toBe(false)
+		// The default folder becomes the last place: the next launch is a normal one
+		expect(app.last.value).toEqual({ drive_id: 'local', root_id: HOME, folder_id: HOME })
+
+		app.last.value = { drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` }
+		await app.nav.open_at_launch()
+		expect(folder_of(app.nav)).toBe(`${HOME}/docs`)
+		app.settle()
+		expect(app.launch_pending.value).toBe(false)
+	})
+
+	test('the shell mounted again in the same process keeps the saved place', async () => {
+		const app = setup()
+		app.last.value = { drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` }
+		await app.nav.open_at_launch()
+		// The flag went off and on before the launch settled: the mark is still set
+		expect(app.launch_pending.value).toBe(true)
+		await app.nav.open_at_launch()
+		expect(folder_of(app.nav)).toBe(`${HOME}/docs`)
+		expect(app.last.value).toEqual({ drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` })
+	})
+
+	test('a settle timer from an earlier mount does not clear a newer launch mark', async () => {
+		const app = setup()
+		app.last.value = { drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` }
+		await app.nav.open_at_launch()
+		await app.nav.open_at_launch()
+		expect(app.launch_pending.value).toBe(true)
+		// The first launch's timer fires first: the second launch still owns the mark
+		const timers = app.take_settle_timers()
+		timers[0]!()
+		expect(app.launch_pending.value).toBe(true)
+		timers[1]!()
+		expect(app.launch_pending.value).toBe(false)
+	})
+
+	test('a failed open of the saved place clears the launch mark', async () => {
+		const app = setup()
+		app.last.value = { drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` }
+		const store_opened = app.open_root('local', HOME)
+		const workspace = await store_opened
+		vi.spyOn(workspace, 'open_folder').mockRejectedValueOnce(new Error('boom'))
+		app.pending_at_open_root.length = 0
+		await expect(app.nav.open_at_launch()).rejects.toThrow()
+		expect(app.pending_at_open_root).toEqual([true])
+		expect(app.launch_pending.value).toBe(false)
 	})
 
 	test('a saved folder that is gone opens the root of its drive', async () => {
@@ -278,6 +369,27 @@ describe('explorer navigation', () => {
 			root_id: HOME,
 			folder_id: `${HOME}/gone`,
 		})).rejects.toThrow(/no entry at/)
+		expect(folder_of(nav)).toBe(HOME)
+	})
+
+	test('opening a protected folder explains it instead of the OS text', async () => {
+		const { nav, fake } = setup()
+		await nav.open_at_launch()
+		const read = fake.fm.folder_with_children_xattrs.bind(fake.fm)
+		fake.fm.folder_with_children_xattrs = async (id: string) => {
+			if (id === `${HOME}/pics`) throw new Error('Operation not permitted (os error 1)')
+			return read(id)
+		}
+		explorer_language.value = 'en'
+		try {
+			await expect(nav.open_folder({
+				drive_id: 'local',
+				root_id: HOME,
+				folder_id: `${HOME}/pics`,
+			})).rejects.toThrow('No access to the folder “pics”')
+		} finally {
+			explorer_language.value = 'system'
+		}
 		expect(folder_of(nav)).toBe(HOME)
 	})
 

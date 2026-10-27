@@ -151,7 +151,8 @@ export type WorkspaceStoreOptions = {
 	live?: boolean
 	/**
 	 * This store's root is an unbounded local drive root (`~` or a volume).
-	 * Drive turns it on. Off, one recursive watch follows the opened folder.
+	 * Drive turns it on: every watch is non-recursive (opened folder, root,
+	 * expanded branches). Off, one recursive watch follows the opened folder.
 	 */
 	shallow_root?: boolean
 }
@@ -191,14 +192,6 @@ export async function createWorkspaceStore(
 		for (const entry of drive_watches.values()) entry.unwatch()
 		drive_watches.clear()
 		drive_generation.clear()
-	}
-
-	/** `folder_id` is `ancestor` or a path inside it. `/` does not become `//`. */
-	const is_path_under = (folder_id: string, ancestor: string): boolean => {
-		if (folder_id === ancestor) return true
-		const sep = path_separator(ancestor)
-		const prefix = ancestor === sep ? sep : ancestor + sep
-		return folder_id.startsWith(prefix)
 	}
 
 	/** True when every ancestor of `folder_id` up to `root` is expanded. */
@@ -310,10 +303,13 @@ export async function createWorkspaceStore(
 	const reconcile_shallow_watches_once = async (store: WorkspaceStore) => {
 		if (!shallow_root || !live || disposed) return
 		const opened = store.opened_folder_id
-		// The drive root itself is never watched recursively. A folder below it is.
-		const opened_recursive = opened !== store.id
+		// Every watch on a drive is non-recursive, the opened folder included:
+		// a recursive watch on ~/Library or a node_modules tree hangs the app
+		// (FSEvents flood, and the debounced watcher walks the whole subtree).
+		// Deeper changes show up when a folder is opened or expanded: it is
+		// read again then.
 		const wanted = new Map<string, boolean>()
-		wanted.set(opened, opened_recursive)
+		wanted.set(opened, false)
 		// The root listing stays visible. A deeper folder is watched only while
 		// every ancestor up to the root is expanded; a collapsed parent hides
 		// the branch, even if a nested id is still in the set.
@@ -321,7 +317,6 @@ export async function createWorkspaceStore(
 		for (const id of store.expanded_folder_ids) {
 			if (id === opened || id === store.id) continue
 			if (!expanded_branch_is_open(id, store.expanded_folder_ids, store.id)) continue
-			if (opened_recursive && is_path_under(id, opened)) continue
 			wanted.set(id, false)
 		}
 		for (const id of [...drive_watches.keys()]) {
@@ -1733,8 +1728,12 @@ export async function createWorkspaceStore(
 				await copy_entries_into(this, fm, this.opened_folder_id, entry_ids)
 			},
 
-			async show_folder_children(folder_id: string, should_apply?: () => boolean) {
-				if (this.tree_loaded_folder_ids.has(folder_id) && this.folders[folder_id]) {
+			async show_folder_children(
+				folder_id: string,
+				should_apply?: () => boolean,
+				options?: { silent?: boolean; refresh?: boolean },
+			) {
+				if (!options?.refresh && this.tree_loaded_folder_ids.has(folder_id) && this.folders[folder_id]) {
 					sync_tree_from_folders(this)
 					return
 				}
@@ -1759,6 +1758,7 @@ export async function createWorkspaceStore(
 					this.tree_loaded_folder_ids.add(folder_id)
 					sync_tree_from_folders(this)
 				} catch (error) {
+					if (options?.silent) throw error
 					report_error(this, error)
 				} finally {
 					this.loading_folder_ids.delete(folder_id)

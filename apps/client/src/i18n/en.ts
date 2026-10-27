@@ -38,6 +38,9 @@ export const en: typeof ru = {
 	},
 	tree: {
 		folder_menu: 'Folder menu',
+		delete_permanently_title: 'Delete folder permanently?',
+		delete_permanently_description: '“{name}” will be deleted permanently. This action cannot be undone.',
+		delete_permanently: 'Delete permanently',
 		nothing_found: 'Nothing found',
 		reset: 'Reset',
 		search: 'Find a folder',
@@ -185,6 +188,7 @@ export const en: typeof ru = {
 	},
 	menu: {
 		open: 'Open',
+		new_folder: 'New folder',
 		bookmark_add: 'Add to bookmarks',
 		bookmark_remove: 'Remove from bookmarks',
 		rename: 'Rename',
@@ -446,6 +450,9 @@ export const en: typeof ru = {
 		folder_search_d: 'Search button in the sidebar toolbar',
 		open_in_browser: '“Open in browser”',
 		open_in_browser_d: 'Menu item of cloud folders',
+	},
+	errors: {
+		folder_access_denied: 'No access to the folder “{name}”. Allow Pile Commander access in System Settings → Privacy & Security → Full Disk Access',
 	},
 	plural: {
 		items: {

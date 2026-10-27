@@ -177,7 +177,18 @@ type WorkspaceStore = {
 	/** Closes a tab; no-op for the last remaining tab. Activates a neighbor if the closed tab was active. */
 	close_tab(tab_id: string): Promise<void>
 
-	show_folder_children(folder_id: string, should_apply?: () => boolean): Promise<void>
+	/**
+	 * Reads a tree folder's children. A failed read sets `last_error`;
+	 * `silent: true` throws it to the caller instead, e.g. a background
+	 * look-ahead that must not toast for every unreadable folder.
+	 * `refresh: true` reads it again even when it is cached: a collapsed
+	 * folder is not watched in the Explorer, so its cache may be stale.
+	 */
+	show_folder_children(
+		folder_id: string,
+		should_apply?: () => boolean,
+		options?: { silent?: boolean; refresh?: boolean },
+	): Promise<void>
 	open_folder(folder_id: string, options?: { fromBack?: boolean; skipHistory?: boolean }): Promise<void>
 	/**
 	 * Shared navigation body (fetch, cache, watch, sidebar expand) used by

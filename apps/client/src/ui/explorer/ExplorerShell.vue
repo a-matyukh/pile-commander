@@ -13,6 +13,7 @@ import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
 import { explorer_sidebar_open } from '@/store/explorer/sidebar'
+import { explorer_tree } from '@/store/explorer/tree'
 import './tokens.css'
 
 const previous_lang = document.documentElement.lang
@@ -53,6 +54,7 @@ onMounted(async () => {
 onUnmounted(() => {
 	alive = false
 	explorer_navigation.cancel()
+	explorer_tree.reset()
 	explorer_drives.dispose_all()
 	adopt_workspace(restore_workspace)
 	document.documentElement.lang = previous_lang

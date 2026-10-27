@@ -85,6 +85,26 @@ fn folder_with_children_xattrs_at(folder_path: &str) -> io::Result<FolderWithChi
     })
 }
 
+/// Runs a read on Tauri's blocking thread pool. Synchronous commands run on
+/// the main thread, and a read that macOS holds back
+/// (a TCC-protected folder) would freeze the whole window. The io::Error
+/// text is kept as is, so callers still see e.g.
+/// "Operation not permitted (os error 1)".
+async fn run_blocking<T, F>(op: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> io::Result<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(op)
+        .await
+        .map_err(|e| format!("xattrs task failed: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
+/// Writes stay synchronous, on the main thread, so they land in the order
+/// they were called: two quick `position` writes on the blocking pool could
+/// finish in reverse and leave the older value on disk. A write goes to a
+/// file the user already opened, so it does not wait on a privacy prompt.
 #[tauri::command]
 pub fn set_xattr(path: String, name: String, value: String) -> Result<(), String> {
     if name.trim().is_empty() {
@@ -94,23 +114,24 @@ pub fn set_xattr(path: String, name: String, value: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn get_xattr(path: String, name: String) -> Result<Option<String>, String> {
-    get_xattr_at(&path, &name).map_err(|e| e.to_string())
+pub async fn get_xattr(path: String, name: String) -> Result<Option<String>, String> {
+    run_blocking(move || get_xattr_at(&path, &name)).await
 }
 
+/// Synchronous for the same reason as `set_xattr`: call order is write order.
 #[tauri::command]
 pub fn remove_xattr(path: String, name: String) -> Result<(), String> {
     remove_xattr_at(&path, &name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn list_xattrs(path: String) -> Result<Vec<Xattr>, String> {
-    list_xattrs_at(&path).map_err(|e| e.to_string())
+pub async fn list_xattrs(path: String) -> Result<Vec<Xattr>, String> {
+    run_blocking(move || list_xattrs_at(&path)).await
 }
 
 #[tauri::command]
-pub fn folder_with_children_xattrs(path: String) -> Result<FolderWithChildrenXattrs, String> {
-    folder_with_children_xattrs_at(&path).map_err(|e| e.to_string())
+pub async fn folder_with_children_xattrs(path: String) -> Result<FolderWithChildrenXattrs, String> {
+    run_blocking(move || folder_with_children_xattrs_at(&path)).await
 }
 
 #[cfg(test)]
@@ -242,5 +263,35 @@ mod tests {
         assert_eq!(result.children[0].name, "doc.txt");
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn commands_run_off_the_calling_thread_and_keep_io_error_text() {
+        let caller = std::thread::current().id();
+        let ran_on = tauri::async_runtime::block_on(run_blocking(|| Ok(std::thread::current().id())))
+            .unwrap();
+        assert_ne!(ran_on, caller);
+
+        let missing = std::env::temp_dir().join("tauri-plugin-xattrs-missing-dir");
+        fs::remove_dir_all(&missing).ok();
+        let expected = fs::metadata(&missing).unwrap_err().to_string();
+        let error = tauri::async_runtime::block_on(folder_with_children_xattrs(
+            missing.to_string_lossy().into_owned(),
+        ))
+        .unwrap_err();
+        assert_eq!(error, expected);
+        assert!(error.contains("os error 2"));
+
+        let denied = tauri::async_runtime::block_on(run_blocking::<(), _>(|| {
+            Err(io::Error::from_raw_os_error(1))
+        }))
+        .unwrap_err();
+        assert!(denied.contains("Operation not permitted") && denied.contains("os error 1"));
+    }
+
+    #[test]
+    fn empty_attribute_name_is_rejected_as_before() {
+        let error = set_xattr("/tmp".into(), " ".into(), "v".into()).unwrap_err();
+        assert_eq!(error, "Attribute name cannot be empty");
     }
 }

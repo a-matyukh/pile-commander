@@ -12,7 +12,7 @@ export type Drive = {
 	icon: string
 
 	/**
-	 * Top-level folders of the drive in the tree:
+	 * Stores owned by the drive:
 	 * local — ~ plus folders opened outside it (/Volumes/…);
 	 * browser — one virtual root; cloud — one per cloud workspace
 	 */
