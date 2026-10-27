@@ -52,7 +52,7 @@ export function useDeleteSelectedWidgets(options: UseDeleteSelectedWidgetsOption
 		return ws.selection.filter(id => childIds.has(id)).length
 	})
 
-	/** Remove control for multi-select (shown in folder chrome). */
+	/** Remove control for multi-select (shown on the folder actions panel). */
 	const showBulkRemoveButton = computed(() => selectedCount.value >= 2 && ws.can_write)
 
 	function openConfirm() {

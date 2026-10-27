@@ -11,8 +11,7 @@ import AccountPanel from './sidebar/workspaces-list/AccountPanel.vue'
 import WorkspacesPopover from './sidebar/workspaces-list/WorkspacesPopover.vue'
 import FolderContainer from './folder-container/FolderContainer.vue'
 import FolderChrome from './folder-container/FolderChrome.vue'
-import FolderChromeActionButton from './folder-container/FolderChromeActionButton.vue'
-import ClipboardBanner from './folder-container/ClipboardBanner.vue'
+import FolderActionsPanel from './folder-container/FolderActionsPanel.vue'
 import { provideFolderContainerScope, createScopeFromStore } from './folder-container/useFolderContainerScope'
 import { provideBoardPlacement } from './folder-container/board/boardShapePlacement'
 import { useClipboardShortcuts } from './folder-container/useClipboardShortcuts'
@@ -42,13 +41,6 @@ useClipboardShortcuts(
 )
 
 const folderView = computed(() => scope.container.value?.view ?? 'list')
-const has_multi_selection = computed(() => {
-	const ws = workspace.value
-	const children = scope.container.value?.children ?? []
-	if (!ws) return false
-	const childIds = new Set(children.map(child => child.id))
-	return ws.selection.filter(id => childIds.has(id)).length >= 2
-})
 
 // Cloud root folders have an empty name (rpc create_workspace); at the root
 // show the workspace name instead, deeper — the folder name. The name reads
@@ -66,8 +58,6 @@ const props = withDefaults(
 	}>(),
 	{ embedded: false },
 )
-
-const isCoarsePointer = useMediaQuery('(pointer: coarse)')
 
 const toast = useToast()
 const dragOver = ref(false)
@@ -208,17 +198,6 @@ const traffic_inset = computed(() => traffic_inset_target({
 	sidebar_collapsed: sidebarCollapsed.value,
 	drawer_open: !gallery_header.value && !showing_catalog.value && useDrawerSidebar.value && sidebarOpen.value,
 }))
-// Touch phones/tablets: Select lives on the right of the header (window
-// controls are hidden there). Folder previews do not get this button.
-const show_touch_select = computed(
-	() => isCoarsePointer.value
-		&& !!workspace.value?.can_write
-		&& !workspace.value?.selection_mode
-		&& folderView.value !== 'canvas'
-		&& !showing_catalog.value
-		&& !public_mode.value,
-)
-
 function go_home() {
 	window.location.href = '/'
 }
@@ -577,7 +556,7 @@ watch(
 							class="workspace-header flex shrink-0 items-center gap-1 border-b border-default px-2"
 							:data-tauri-drag-region="window_drag ? '' : undefined"
 						>
-							<template v-if="!workspace?.selection_mode">
+							<template>
 								<div class="flex shrink-0 items-center gap-1">
 									<WorkspacesPopover
 										v-model:open="wsListOpen"
@@ -653,22 +632,17 @@ watch(
 											(workspace?.tabs.length ?? 0) > 1 ? 'bg-default' : '',
 										]
 										: 'text-muted hover:bg-default/60',
-									has_multi_selection && tab.id === workspace?.active_tab_id
-										? 'max-w-none'
-										: 'max-w-64',
+									'max-w-64',
 								]"
 								role="tab"
 								:aria-selected="tab.id === workspace?.active_tab_id"
 								@click="void workspace?.activate_tab(tab.id)"
 							>
-								<span
-									v-if="!(has_multi_selection && tab.id === workspace?.active_tab_id)"
-									class="min-w-0 truncate text-sm font-medium p-1"
-								>
+								<span class="min-w-0 truncate text-sm font-medium p-1">
 									{{ tab_title(tab) }}
 								</span>
 								<UIcon
-									v-if="showOpeningSpinner && tab.id === workspace?.active_tab_id && !has_multi_selection"
+									v-if="showOpeningSpinner && tab.id === workspace?.active_tab_id"
 									name="i-lucide:loader-circle"
 									class="size-4 shrink-0 animate-spin text-muted"
 									aria-label="Loading folder"
@@ -676,7 +650,6 @@ watch(
 								<span
 									v-if="workspace?.can_write && tab.id === workspace?.active_tab_id"
 									class="workspace-header-chrome"
-									:class="{ 'workspace-header-chrome--selection': has_multi_selection }"
 								>
 									<FolderChrome :view="folderView" />
 								</span>
@@ -694,14 +667,8 @@ watch(
 								</div>
 								</template>
 						</template>
-						<span
-							v-if="workspace && workspace.can_write && workspace.selection_mode"
-							class="workspace-header-chrome workspace-header-chrome--selection"
-						>
-							<FolderChrome :view="folderView" />
-						</span>
 							<div
-								v-if="show_view_only || public_mode || show_touch_select"
+								v-if="show_view_only || public_mode"
 								class="workspace-window-controls ml-auto flex shrink-0 items-center justify-end gap-2 self-stretch pl-3"
 							>
 								<UBadge
@@ -757,12 +724,6 @@ watch(
 										@click="open_sign_in"
 									/>
 								</template>
-								<FolderChromeActionButton
-									v-if="show_touch_select"
-									icon="i-lucide-mouse-pointer-2"
-									label="Select"
-									@click="workspace?.enter_selection_mode()"
-								/>
 							</div>
 						</header>
 					<div class="relative min-h-0 flex-1">
@@ -782,7 +743,7 @@ watch(
 							<ProfileView v-else-if="showing_profile" class="h-full overflow-y-auto" />
 							<template v-else>
 								<FolderContainer v-if="workspace" :key="workspace.uid" />
-								<ClipboardBanner v-if="workspace" />
+								<FolderActionsPanel v-if="workspace" />
 							</template>
 						</template>
 					</div>
@@ -823,13 +784,13 @@ watch(
 
 /* Desktop / fine pointer: show chrome while the cursor is over the open folder panel. */
 @media (hover: hover) and (pointer: fine) {
-	.workspace-header-chrome:not(.workspace-header-chrome--selection) {
+	.workspace-header-chrome {
 		opacity: 0;
 		pointer-events: none;
 		transition: opacity 0.15s ease;
 	}
 
-	.workspace-panel:hover .workspace-header-chrome:not(.workspace-header-chrome--selection) {
+	.workspace-panel:hover .workspace-header-chrome {
 		opacity: 1;
 		pointer-events: auto;
 	}

@@ -527,7 +527,8 @@ watch(
 	padding: 0.5rem 0.75rem;
 	background: transparent;
 	pointer-events: none;
-	z-index: 10;
+	/* Above the folder actions panel (z-index 20) so tool menus open over it. */
+	z-index: 30;
 }
 
 .canvas-drawing-toolbar--bottom {

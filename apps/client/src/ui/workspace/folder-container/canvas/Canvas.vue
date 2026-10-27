@@ -7,7 +7,7 @@ import {
 	type EdgeMouseEvent,
 	type NodeDragEvent,
 } from '@vue-flow/core'
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance, type Ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
@@ -62,6 +62,7 @@ import type { BoardViewport } from './drawing/types'
 import { ZOOM_MAX, ZOOM_MIN, type EditorTool } from './drawing/types'
 import { PEN_CURSOR } from './drawing/cursors'
 import { isCanvasToolAllowed, useCanvasToolbarPrefs } from './useCanvasToolbarPrefs'
+import { clearCanvasToolbarInset, setCanvasToolbarInset } from './canvasToolbarInset'
 import { useHoverClickMenu } from './useHoverClickMenu'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
@@ -93,6 +94,45 @@ const { tool, penColor, penWidth, hoveredNodeId } = useCanvasToolState()
 
 const workspace = useWorkspace()
 const can_write = computed(() => workspace.value?.can_write !== false)
+const toolbarHost = ref<ComponentPublicInstance | null>(null)
+
+function toolbarElement(): HTMLElement | null {
+	const el = toolbarHost.value?.$el
+	return el instanceof HTMLElement ? el : null
+}
+
+function publishToolbarInset() {
+	const id = folderId.value
+	const onTop = toolbarPrefs.value.side === 'top'
+		&& !toolbarPrefs.value.hidden
+		&& can_write.value
+	const el = toolbarElement()
+	if (!onTop || !el) {
+		setCanvasToolbarInset(id, 0)
+		return
+	}
+	setCanvasToolbarInset(id, el.offsetHeight)
+}
+
+watch(toolbarHost, (host, _, onCleanup) => {
+	const el = host?.$el
+	if (!(el instanceof HTMLElement)) return
+	const observer = new ResizeObserver(() => publishToolbarInset())
+	observer.observe(el)
+	publishToolbarInset()
+	onCleanup(() => observer.disconnect())
+}, { flush: 'post' })
+
+watch(
+	() => [toolbarPrefs.value.side, toolbarPrefs.value.hidden, can_write.value, folderId.value] as const,
+	(current, previous) => {
+		const prevId = previous?.[3]
+		if (prevId && prevId !== current[3]) clearCanvasToolbarInset(prevId)
+		publishToolbarInset()
+	},
+)
+
+onUnmounted(() => clearCanvasToolbarInset(folderId.value))
 
 /** Read-only access keeps viewing tools (hand/select) but blocks mutating ones. */
 const READONLY_BLOCKED_TOOLS = new Set<EditorTool>(['pen', 'eraser', 'lasso', 'connect', 'disconnect'])
@@ -594,6 +634,7 @@ function onSectionPointerDown(event: PointerEvent) {
 			@pointerdown.capture="onSectionPointerDown"
 		>
 			<CanvasDrawingToolbar
+				ref="toolbarHost"
 				v-show="!toolbarPrefs.hidden && can_write"
 				:tool="tool"
 				:pen-color="penColor"

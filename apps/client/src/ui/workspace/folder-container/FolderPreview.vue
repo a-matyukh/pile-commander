@@ -9,6 +9,7 @@ import { useWidgetSelection } from './widgets/useWidgetSelection'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import FolderViewRouter from './FolderViewRouter.vue'
 import FolderChrome from './FolderChrome.vue'
+import FolderActionsPanel from './FolderActionsPanel.vue'
 
 /** Deeper previews render a static placeholder instead of a live view tree. */
 const MAX_PREVIEW_DEPTH = 2
@@ -98,18 +99,21 @@ function onTitleDblClick() {
 				<FolderChrome :view="scopeContainer.view" compact />
 			</span>
 		</p>
-		<section
-			class="folder-preview-body board-no-drag"
-			:class="[scopeContainer.view, { nodrag: isCanvasLayout, nopan: isCanvasLayout }]"
-			:style="bodyStyle"
-			:data-path="container.id"
-		>
-			<div v-if="isTooDeep" class="folder-preview-deep" @dblclick="onTitleDblClick">
-				<UIcon name="material-symbols:folder-outline" class="size-8" />
-				<p class="text-muted text-sm">{{ scopeContainer.children.length }} items</p>
-			</div>
-			<FolderViewRouter v-else :view="scopeContainer.view" />
-		</section>
+		<div class="folder-preview-stage">
+			<FolderActionsPanel v-if="can_write && !isTooDeep" compact />
+			<section
+				class="folder-preview-body board-no-drag"
+				:class="[scopeContainer.view, { nodrag: isCanvasLayout, nopan: isCanvasLayout }]"
+				:style="bodyStyle"
+				:data-path="container.id"
+			>
+				<div v-if="isTooDeep" class="folder-preview-deep" @dblclick="onTitleDblClick">
+					<UIcon name="material-symbols:folder-outline" class="size-8" />
+					<p class="text-muted text-sm">{{ scopeContainer.children.length }} items</p>
+				</div>
+				<FolderViewRouter v-else :view="scopeContainer.view" />
+			</section>
+		</div>
 	</div>
 </template>
 
@@ -157,6 +161,14 @@ function onTitleDblClick() {
 
 .folder-preview-title:active {
 	cursor: grabbing;
+}
+
+.folder-preview-stage {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 }
 
 .folder-preview-title-actions {

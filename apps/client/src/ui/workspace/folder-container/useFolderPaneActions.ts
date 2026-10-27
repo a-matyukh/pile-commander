@@ -78,7 +78,7 @@ export function useFolderPaneActions(options: UseFolderPaneActionsOptions) {
 		}
 
 		// Empty-pane click: drop the selection and leave touch Select mode
-		// so the header Deselect control does not linger with nothing selected.
+		// so the Deselect control does not linger with nothing selected.
 		ws.exit_selection_mode()
 
 		if (!options.editingNoteId.value) return

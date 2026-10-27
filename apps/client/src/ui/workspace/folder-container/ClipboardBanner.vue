@@ -66,14 +66,10 @@ function pasteHere() {
 
 <style scoped>
 .clipboard-banner {
-	position: absolute;
-	bottom: 0.5rem;
-	left: 0.5rem;
-	z-index: 20;
 	display: inline-flex;
 	align-items: center;
 	gap: 0.5rem;
-	max-width: calc(100% - 1rem);
+	max-width: 100%;
 	min-height: 32px;
 	padding: 0.25rem 0.625rem;
 	border: 1px solid rgba(0, 0, 0, 0.1);
