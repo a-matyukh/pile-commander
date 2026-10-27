@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { locale, t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
+import { start_explorer_list_migration } from '@/store/explorer/bookmarks'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_language } from '@/store/explorer/language'
@@ -35,6 +36,9 @@ watch(locale, (value) => {
 }, { immediate: true })
 
 onMounted(async () => {
+	// First time the flag is on. Doing this at app start would freeze the
+	// lists while the old window is still the one being edited.
+	start_explorer_list_migration()
 	try {
 		await explorer_navigation.open_at_launch()
 	} catch (error) {
