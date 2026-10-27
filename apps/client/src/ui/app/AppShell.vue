@@ -2,13 +2,15 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import store from '@/store'
 import { is_desktop } from '@/isDesktop'
+import { report_error } from '@/store/helpers/reportError'
+import { explorer_enabled } from '@/store/explorer/enabled'
+import { explorer_drives } from '@/store/explorer/drives'
 import {
 	listenFolderDrop,
 	type DroppedFilesPayload,
 	type DroppedFolderPayload,
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
-import { explorer_enabled } from '@/store/explorer/enabled'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import WorkspaceWindow from '@/ui/workspace/WorkspaceWindow.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
@@ -25,7 +27,14 @@ import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 const dragOver = ref(false)
 
 function on_folder_drop(payload: DroppedFolderPayload) {
-	void store.open_local_workspace(payload.path)
+	void open_dropped_folder(payload.path)
+}
+
+function open_dropped_folder(path: string): Promise<void> {
+	const opening = explorer_enabled.value
+		? explorer_drives.open_local_path(path).then(() => {})
+		: store.open_local_workspace(path)
+	return Promise.resolve(opening).catch(error => report_error(store, error))
 }
 
 function on_files_drop(payload: DroppedFilesPayload) {
@@ -51,7 +60,7 @@ onMounted(async () => {
 		dragOver,
 	})
 	unlistenOpened = await listenOpenedPaths({
-		onFolderDrop: (path) => store.open_local_workspace(path),
+		onFolderDrop: (path) => open_dropped_folder(path),
 		onPileOpen: (path) => store.import_workspace_pack(path),
 		onError: (message) => { store.last_error = message },
 	})

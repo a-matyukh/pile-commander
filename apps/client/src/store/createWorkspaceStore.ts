@@ -566,8 +566,10 @@ export async function createWorkspaceStore(
 		},
 
 		import_progress: null as ImportProgress | null,
+		is_disposed: false,
 
 		dispose() {
+			this.is_disposed = true
 			disposed = true
 			stop_shallow_watch()
 			stop_watching()

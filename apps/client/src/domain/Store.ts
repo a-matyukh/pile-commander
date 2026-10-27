@@ -110,6 +110,8 @@ type WorkspaceStore = {
 
 	/** Stops the FS watcher. Called when replacing or unloading the workspace. */
 	dispose(): void
+	/** True after `dispose()`. A closed store must not be reused. */
+	is_disposed: boolean
 
 	/**
 	 * Session caches of entry text content (note markdown, shape SVG), owned

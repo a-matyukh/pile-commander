@@ -17,6 +17,8 @@ export const en: typeof ru = {
 	},
 	source: {
 		local: 'Home folder',
+		this_mac: 'This Mac',
+		browser_disk: 'Browser storage',
 		cloud: 'Cloud',
 		hub: 'Hub: published folders',
 	},

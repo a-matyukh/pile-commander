@@ -14,6 +14,8 @@ export const ru = {
 	},
 	source: {
 		local: 'Домашняя папка',
+		this_mac: 'Этот Mac',
+		browser_disk: 'Локальное хранилище браузера',
 		cloud: 'Облако',
 		hub: 'Хаб — опубликованные папки',
 	},

@@ -164,4 +164,9 @@ const store: Store = {
 	},
 }
 
+/** Points the shell at a store Drive already holds, without disposing it or any other. */
+export function adopt_workspace(workspace: WorkspaceStore | null) {
+	fullscreen_workspace.value = workspace
+}
+
 export default reactive(store)
