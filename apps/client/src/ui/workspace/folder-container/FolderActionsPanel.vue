@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
+import cloud from '@/store/cloud'
 import { entry_clipboard } from '@/store/entryClipboard'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import BulkRemoveDialog from '@/ui/workspace/menu/BulkRemoveDialog.vue'
@@ -120,7 +121,9 @@ const panelStyle = computed(() => {
 
 <style scoped>
 .folder-actions-host {
-	display: contents;
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
 }
 
 .folder-actions-panel {
@@ -133,6 +136,7 @@ const panelStyle = computed(() => {
 	align-items: center;
 	gap: 0.5rem;
 	max-width: calc(100% - 1.5rem);
+	pointer-events: auto;
 	user-select: none;
 	-webkit-user-select: none;
 	-webkit-touch-callout: none;
@@ -143,5 +147,6 @@ const panelStyle = computed(() => {
 	width: 0;
 	height: 0;
 	overflow: visible;
+	pointer-events: auto;
 }
 </style>

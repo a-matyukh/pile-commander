@@ -556,7 +556,6 @@ watch(
 							class="workspace-header flex shrink-0 items-center gap-1 border-b border-default px-2"
 							:data-tauri-drag-region="window_drag ? '' : undefined"
 						>
-							<template>
 								<div class="flex shrink-0 items-center gap-1">
 									<WorkspacesPopover
 										v-model:open="wsListOpen"
@@ -666,7 +665,6 @@ watch(
 							</div>
 								</div>
 								</template>
-						</template>
 							<div
 								v-if="show_view_only || public_mode"
 								class="workspace-window-controls ml-auto flex shrink-0 items-center justify-end gap-2 self-stretch pl-3"
