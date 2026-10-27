@@ -14,7 +14,7 @@ const narrow = useMediaQuery('(max-width: 767px)')
 
 const { macOS } = useKbd()
 const overlay = use_overlay_titlebar()
-// No sidebar panel yet, so the bar is the left edge under the traffic lights.
+// The bar spans the window, so it is the left edge under the traffic lights.
 const window_drag = computed(() => overlay.enabled)
 const inset = computed(() => traffic_inset_target({
 	enabled: window_drag.value,

@@ -11,6 +11,8 @@ import Segmented from '@/ui/kit/Segmented.vue'
 import SettingsPanel from '@/ui/workspace/sidebar/workspaces-list/SettingsPanel.vue'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
+import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
+import { explorer_sidebar_open } from '@/store/explorer/sidebar'
 import './tokens.css'
 
 const previous_lang = document.documentElement.lang
@@ -59,27 +61,45 @@ onUnmounted(() => {
 
 <template>
 	<!-- Replaces WorkspaceWindow while the flag is on. The flag's only switch
-	     lives in the old settings, so they stay on this empty frame until the
-	     Explorer settings page exists. Menus and dialogs portal into this
-	     element so they inherit its tokens. -->
+	     lives in the old settings, so they stay here until the Explorer settings
+	     page exists. Menus and dialogs portal into this element to inherit its tokens. -->
 	<div class="explorer flex h-full min-h-0 flex-col">
 		<TopBar />
-		<div class="flex flex-col items-start gap-4 p-6">
-			<p v-if="shell_error" class="shell-error" role="alert">
-				<span>{{ shell_error }}</span>
-				<button type="button" @click="dismiss_error">{{ t('dialog.close') }}</button>
-			</p>
-			<div class="flex flex-col gap-2">
-				<span>{{ t('settings.language') }}</span>
-				<Segmented v-model="explorer_language" :options="language_options" />
-			</div>
-			<SettingsPanel />
-			<TooltipLayer />
+		<div class="body">
+			<Sidebar v-if="explorer_sidebar_open" />
+			<main class="pv">
+				<div class="flex flex-col items-start gap-4 p-6">
+					<p v-if="shell_error" class="shell-error" role="alert">
+						<span>{{ shell_error }}</span>
+						<button type="button" @click="dismiss_error">{{ t('dialog.close') }}</button>
+					</p>
+					<div class="flex flex-col gap-2">
+						<span>{{ t('settings.language') }}</span>
+						<Segmented v-model="explorer_language" :options="language_options" />
+					</div>
+					<SettingsPanel />
+				</div>
+			</main>
 		</div>
+		<TooltipLayer />
 	</div>
 </template>
 
 <style scoped>
+.body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+.pv {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow: auto;
+	background: var(--ct);
+}
 .shell-error {
 	display: flex;
 	align-items: center;
