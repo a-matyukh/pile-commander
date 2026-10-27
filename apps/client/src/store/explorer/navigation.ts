@@ -6,6 +6,7 @@ import { is_desktop } from '@/isDesktop'
 import { normalize_workspace_id, parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import store from '@/store'
 import { is_missing_path_error } from '@/store/helpers/fsErrors'
+import { report_error } from '@/store/helpers/reportError'
 import { BROWSER_ROOT, explorer_drives, is_within } from './drives'
 
 /**
@@ -37,6 +38,8 @@ export type ExplorerNavigationDeps = {
 	default_folder(): Promise<FolderRef>
 	home_path(): Promise<string>
 	last_location: Ref<FolderRef | null>
+	/** A bookmark whose drive cannot be opened. The shell reads `store.last_error`. */
+	on_error?(error: unknown): void
 }
 
 export type ExplorerNavigation = {
@@ -44,6 +47,8 @@ export type ExplorerNavigation = {
 	readonly can_go_back: boolean
 	readonly can_go_forward: boolean
 	open_folder(ref: FolderRef): Promise<void>
+	/** Bookmark: a missing folder opens its drive root. An unreachable root is reported, not thrown. */
+	open_bookmark(ref: FolderRef): Promise<void>
 	open_page(page: ExplorerPage): Promise<void>
 	/** A path inside ~ is a folder of the home root. Anything else is its own local root. */
 	open_local_path(path: string): Promise<void>
@@ -254,6 +259,24 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		push(shown)
 	}
 
+	async function open_bookmark(ref: FolderRef) {
+		const target = folder_location(ref)
+		if (state.location && same_location(state.location, target)) return
+		const seen = ++generation
+		try {
+			const shown = await show(target, {
+				fallback_to_root: true,
+				remember: true,
+				recover_root: true,
+			}, seen)
+			if (!shown || seen !== generation) return
+			push(shown)
+		} catch (error) {
+			if (seen !== generation) return
+			deps.on_error?.(error)
+		}
+	}
+
 	async function open_local_path(path: string) {
 		const seen = generation
 		const id = normalize_workspace_id(path)
@@ -348,6 +371,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		get can_go_back() { return state.index > 0 },
 		get can_go_forward() { return state.index < state.history.length - 1 },
 		open_folder: (ref: FolderRef) => navigate(folder_location(ref), false),
+		open_bookmark,
 		open_page: (page: ExplorerPage) => navigate({ kind: 'page', page }, false),
 		open_local_path,
 		go_back: () => go(state.index - 1),
@@ -389,4 +413,7 @@ export const explorer_navigation = create_explorer_navigation({
 	},
 	home_path,
 	last_location: explorer_last_location,
+	on_error(error) {
+		report_error(store, error)
+	},
 })

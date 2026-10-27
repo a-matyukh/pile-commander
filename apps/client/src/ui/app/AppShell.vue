@@ -4,7 +4,9 @@ import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import { report_error } from '@/store/helpers/reportError'
 import { explorer_enabled } from '@/store/explorer/enabled'
+import { add_bookmark } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { local_bookmark_ref, point_in_rect } from '@/ui/explorer/top-bar/folderDrop'
 import {
 	listenFolderDrop,
 	type DroppedFilesPayload,
@@ -27,7 +29,21 @@ import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 const dragOver = ref(false)
 
 function on_folder_drop(payload: DroppedFolderPayload) {
+	if (explorer_enabled.value && point_in_rect(payload.client, top_bar_rect())) {
+		void bookmark_dropped_folder(payload.path).catch(error => report_error(store, error))
+		return
+	}
 	void open_dropped_folder(payload.path)
+}
+
+function top_bar_rect() {
+	const bar = document.querySelector('.explorer .bb')
+	return bar ? bar.getBoundingClientRect() : null
+}
+
+async function bookmark_dropped_folder(path: string) {
+	const { homeDir } = await import('@tauri-apps/api/path')
+	add_bookmark(local_bookmark_ref(path, await homeDir()))
 }
 
 function open_dropped_folder(path: string): Promise<void> {

@@ -45,7 +45,7 @@ function add_current() {
 			:class="{ on: is_current(folder_ref_key(bookmark)) }"
 			:data-key="folder_ref_key(bookmark)"
 			:data-tip="t('bookmarks.drag_hint')"
-			@click="explorer_navigation.open_folder(bookmark)"
+			@click="explorer_navigation.open_bookmark(bookmark)"
 		>
 			<Icon icon="tabler:folder" />
 			{{ bookmark_name(bookmark) }}

@@ -281,6 +281,47 @@ describe('explorer navigation', () => {
 		expect(folder_of(nav)).toBe(HOME)
 	})
 
+	test('a bookmark to a missing folder opens that drive root', async () => {
+		const { nav } = setup()
+		await nav.open_at_launch()
+		await nav.open_folder({ drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` })
+		await expect(nav.open_bookmark({
+			drive_id: 'local',
+			root_id: HOME,
+			folder_id: `${HOME}/gone`,
+		})).resolves.toBeUndefined()
+		expect(folder_of(nav)).toBe(HOME)
+		expect(nav.can_go_back).toBe(true)
+	})
+
+	test('a bookmark whose drive cannot be opened is reported and does not move', async () => {
+		const base = setup()
+		const reported: string[] = []
+		const nav = create_explorer_navigation({
+			open_root(drive_id, root_id, still_current) {
+				if (drive_id === 'cloud') throw new Error('No access to workspace “ws-gone”')
+				return base.open_root(drive_id, root_id, still_current)
+			},
+			current_store: () => base.current(),
+			async default_folder() {
+				return { drive_id: 'local', root_id: HOME, folder_id: HOME }
+			},
+			async home_path() { return HOME },
+			last_location: base.last,
+			on_error(error) {
+				reported.push(error instanceof Error ? error.message : String(error))
+			},
+		})
+		await nav.open_at_launch()
+		await expect(nav.open_bookmark({
+			drive_id: 'cloud',
+			root_id: 'ws-gone',
+			folder_id: '/',
+		})).resolves.toBeUndefined()
+		expect(reported).toEqual(['No access to workspace “ws-gone”'])
+		expect(folder_of(nav)).toBe(HOME)
+	})
+
 	test('a slower first open loses to the folder opened after it', async () => {
 		const base = setup()
 		let release_first!: () => void

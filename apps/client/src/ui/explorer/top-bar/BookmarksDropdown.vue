@@ -58,7 +58,7 @@ function add_current() {
 				class="bkm"
 				:data-key="folder_ref_key(bookmark)"
 				:current="is_current(folder_ref_key(bookmark))"
-				@select="explorer_navigation.open_folder(bookmark)"
+				@select="explorer_navigation.open_bookmark(bookmark)"
 			>
 				<template #leading>
 					<Icon icon="tabler:grip-vertical" class="gp" />
