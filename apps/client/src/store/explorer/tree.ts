@@ -132,6 +132,8 @@ export function create_explorer_tree(
 		 * no watch, so what Finder did meanwhile shows up only by reading again
 		 */
 		round: 0,
+		/** The drive whose roots are listed, empty list included; null while listing */
+		listed_drive_id: null as string | null,
 	})
 	/** The round each folder was last read in, by probe key */
 	const read_in_round = new Map<string, number>()
@@ -289,6 +291,7 @@ export function create_explorer_tree(
 			if (ref?.drive_id === drive.id && next_ids.has(ref.root_id)) {
 				state.expanded_root_ids.add(ref.root_id)
 			}
+			state.listed_drive_id = drive.id
 			state.roots = roots.map(root => {
 				const old = previous.find(item => item.drive.id === drive.id && item.root.id === root.id)
 				return {
@@ -316,6 +319,7 @@ export function create_explorer_tree(
 	function show_page() {
 		generation += 1
 		state.roots = []
+		state.listed_drive_id = null
 	}
 
 	function is_root_expanded(item: ExplorerTreeRoot): boolean {
@@ -440,6 +444,7 @@ export function create_explorer_tree(
 		generation += 1
 		opening.clear()
 		state.roots = []
+		state.listed_drive_id = null
 		state.expanded_root_ids.clear()
 		probe_epoch += 1
 		probe_queue.length = 0
@@ -455,6 +460,7 @@ export function create_explorer_tree(
 
 	return reactive({
 		get roots() { return state.roots },
+		get listed_drive_id() { return state.listed_drive_id },
 		/** Rows pass it to their probe watch, so a new round probes again */
 		get round() { return state.round },
 		refresh_shown,

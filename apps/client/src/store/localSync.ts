@@ -51,6 +51,11 @@ export function sync_link_of(root: string): SyncLink | null {
 	return links.value[root] ?? null
 }
 
+/** Paths of every folder linked on this device, for any account. */
+export function sync_link_roots(): string[] {
+	return Object.keys(links.value)
+}
+
 /** The folder this account syncs with a cloud workspace on this device, if any. */
 export function synced_folder_of(workspace_id: string, user_id = cloud.user?.id): SyncLink | null {
 	return Object.values(links.value).find(link => link.workspace_id === workspace_id && link.user_id === user_id) ?? null

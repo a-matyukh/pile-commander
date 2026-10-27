@@ -9,9 +9,9 @@ import {
 	explorer_tree,
 	is_legacy_browser_folder,
 	tree_root_folder_id,
-	visible_folder_children,
 	type ExplorerTreeRoot,
 } from '@/store/explorer/tree'
+import { arranged_children } from '@/store/explorer/tree_arrange'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import Button from '@/ui/kit/Button.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -30,9 +30,10 @@ const rename_open = ref(false)
 const remove_open = ref(false)
 const folder_id = computed(() => props.node?.id ?? tree_root_folder_id(props.item))
 const workspace = computed(() => props.item.workspace)
-const children = computed(() => visible_folder_children(
+const children = computed(() => arranged_children(
+	props.item,
+	folder_id.value,
 	(props.node ? props.node.children : workspace.value?.tree) ?? [],
-	show_hidden_files.value,
 ))
 const expanded = computed(() => props.node
 	? workspace.value?.is_folder_expanded(folder_id.value) === true
@@ -44,6 +45,8 @@ const loading = computed(() => props.node
 	: props.item.loading)
 const can_expand = computed(() => {
 	if (loading.value) return true
+	// A read folder shows what the filter leaves; an unread one, what the look-ahead found
+	if (props.node?.children_loaded) return children.value.length > 0
 	if (props.node) return explorer_tree.has_chevron(props.item, props.node, show_hidden_files.value)
 	return !workspace.value || children.value.length > 0
 })

@@ -134,6 +134,16 @@ describe('explorer tree', () => {
 		expect(tree.is_root_expanded(primary)).toBe(true)
 	})
 
+	test('an empty list of roots counts as listed, unlike one still loading', async () => {
+		const { tree, drive } = fixture({ roots: [] })
+		expect(tree.listed_drive_id).toBeNull()
+		await tree.show_drive(drive, null)
+		expect(tree.roots).toEqual([])
+		expect(tree.listed_drive_id).toBe(drive.id)
+		tree.show_page()
+		expect(tree.listed_drive_id).toBeNull()
+	})
+
 	test('a closed folder loads through expand_folder_in_sidebar, an open one toggles shut', async () => {
 		const { tree, drive, workspace } = fixture()
 		await tree.show_drive(drive, null)

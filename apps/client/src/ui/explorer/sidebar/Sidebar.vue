@@ -8,12 +8,14 @@ import store from '@/store'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_sidebar_width } from '@/store/explorer/sidebar'
-import { explorer_tree, visible_folder_children } from '@/store/explorer/tree'
+import { explorer_tree, tree_root_folder_id } from '@/store/explorer/tree'
+import { arranged_children, arranged_roots } from '@/store/explorer/tree_arrange'
+import { TREE_FILTERS, explorer_tree_view, is_tree_filtered } from '@/store/explorer/tree_view'
 import { report_error } from '@/store/helpers/reportError'
-import { show_hidden_files } from '@/store/showHiddenFiles'
 import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
+import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
 
 const drives = computed(() => explorer_drives.drives())
@@ -28,14 +30,21 @@ const active_source = computed(() => {
 })
 const active_drive = computed(() => drives.value.find(item => item.id === active_source.value) ?? null)
 const primary_root = computed(() => active_drive.value?.kind === 'cloud' ? null : explorer_tree.roots[0] ?? null)
-const primary_children = computed(() => visible_folder_children(
-	primary_root.value?.workspace?.tree ?? [],
-	show_hidden_files.value,
-))
-const separate_roots = computed(() => {
-	if (active_drive.value?.kind === 'local') return explorer_tree.roots.slice(1)
-	return active_drive.value?.kind === 'cloud' ? explorer_tree.roots : []
+const primary_children = computed(() => {
+	const root = primary_root.value
+	return root ? arranged_children(root, tree_root_folder_id(root), root.workspace?.tree ?? []) : []
 })
+const separate_roots = computed(() => {
+	if (active_drive.value?.kind === 'local') return arranged_roots(explorer_tree.roots.slice(1))
+	return active_drive.value?.kind === 'cloud' ? arranged_roots(explorer_tree.roots) : []
+})
+const filtered = computed(() => is_tree_filtered(explorer_tree_view.value))
+/** Roots listed and their stores read: before that an empty tree means "not yet", not "none" */
+const tree_ready = computed(() => explorer_tree.listed_drive_id === active_drive.value?.id
+	&& explorer_tree.roots.every(item => !item.loading)
+	&& (!primary_root.value || primary_root.value.workspace !== null))
+const nothing_found = computed(() => filtered.value && tree_ready.value
+	&& !primary_children.value.length && !separate_roots.value.length)
 
 function source_is_open(drive: Drive): boolean {
 	const location = explorer_navigation.location
@@ -120,8 +129,19 @@ watchEffect(() => {
 					:key="`${item.drive.id}:${item.root.id}`"
 					:item="item"
 				/>
+				<div v-if="nothing_found" class="none">{{ t('tree.nothing_found') }}</div>
 			</template>
 		</div>
+		<template v-if="!hub_open">
+			<div v-if="filtered" class="chip">
+				<Icon :icon="TREE_FILTERS[explorer_tree_view.filter].icon" />
+				{{ t(`filter.${explorer_tree_view.filter}`) }}
+				<button type="button" class="reset" @click="explorer_tree_view.filter = 'all'">{{ t('tree.reset') }}</button>
+			</div>
+			<div class="tb">
+				<TreeMenus />
+			</div>
+		</template>
 	</aside>
 </template>
 
@@ -175,6 +195,48 @@ watchEffect(() => {
 	height: 2px;
 	border-radius: 1px;
 	background: var(--text-primary);
+}
+.none {
+	padding: 24px 12px;
+	text-align: center;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.chip {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 12px 6px;
+	font-size: 11px;
+	color: var(--text-accent);
+	flex: none;
+}
+.chip :deep(svg) {
+	font-size: 13px;
+}
+.reset {
+	margin-left: auto;
+	border: 0;
+	padding: 0;
+	background: none;
+	font: inherit;
+	cursor: pointer;
+	color: var(--text-secondary);
+}
+.tb {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px 6px;
+	border-top: 0.5px solid var(--border);
+	flex: none;
+}
+.tb :deep(.ib) {
+	height: 30px;
+	min-width: 30px;
+}
+.tb :deep(.ib svg) {
+	font-size: 17px;
 }
 .sr {
 	height: 0.5px;
