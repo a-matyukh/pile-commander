@@ -4,7 +4,7 @@ import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import { report_error } from '@/store/helpers/reportError'
 import { explorer_enabled } from '@/store/explorer/enabled'
-import { explorer_drives } from '@/store/explorer/drives'
+import { explorer_navigation } from '@/store/explorer/navigation'
 import {
 	listenFolderDrop,
 	type DroppedFilesPayload,
@@ -32,7 +32,7 @@ function on_folder_drop(payload: DroppedFolderPayload) {
 
 function open_dropped_folder(path: string): Promise<void> {
 	const opening = explorer_enabled.value
-		? explorer_drives.open_local_path(path).then(() => {})
+		? explorer_navigation.open_local_path(path)
 		: store.open_local_workspace(path)
 	return Promise.resolve(opening).catch(error => report_error(store, error))
 }

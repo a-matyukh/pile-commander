@@ -89,6 +89,24 @@ describe('explorer drives', () => {
 		expect((await drives.drives()[0]!.roots()).map(root => root.id)).toEqual([HOME])
 	})
 
+	test('an open that has already lost does not become the current root', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder(HOME)
+		fake.seed_folder('/Volumes/Disk')
+		let current: WorkspaceStore | null = null
+		const drives = create_explorer_drives(deps({
+			local_file_manager: () => fake.fm,
+			adopt: (workspace) => { current = workspace },
+		}))
+
+		await drives.open('local', HOME, () => false)
+		expect(current).toBeNull()
+
+		const disk = await drives.open('local', '/Volumes/Disk', () => true)
+		expect(current).toBe(disk)
+		expect(disk.id).toBe('/Volumes/Disk')
+	})
+
 	test('an expanded volume stays open after the current place moves home', async () => {
 		const fake = createFakeFileManager()
 		fake.seed_folder(HOME)

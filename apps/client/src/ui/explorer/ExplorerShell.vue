@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { locale, t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
 import { explorer_drives } from '@/store/explorer/drives'
+import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_language } from '@/store/explorer/language'
 import store, { adopt_workspace } from '@/store'
 import Segmented from '@/ui/kit/Segmented.vue'
@@ -35,7 +36,7 @@ watch(locale, (value) => {
 
 onMounted(async () => {
 	try {
-		await explorer_drives.open_default()
+		await explorer_navigation.open_at_launch()
 	} catch (error) {
 		if (alive) report_error(store, error)
 	}
@@ -44,6 +45,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
 	alive = false
+	explorer_navigation.cancel()
 	explorer_drives.dispose_all()
 	adopt_workspace(restore_workspace)
 	document.documentElement.lang = previous_lang

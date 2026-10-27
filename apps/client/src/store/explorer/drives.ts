@@ -33,9 +33,9 @@ export type ExplorerDriveDeps = {
 export type ExplorerDrives = {
 	drives(): Drive[]
 	/** Opens the root's store and shows it, without disposing stores Drive still holds. */
-	open(drive_id: string, root_id: string): Promise<WorkspaceStore>
+	open(drive_id: string, root_id: string, still_current?: () => boolean): Promise<WorkspaceStore>
 	/** A path under ~ uses the home store. Anything else becomes its own local root. */
-	open_local_path(path: string): Promise<WorkspaceStore>
+	open_local_path(path: string, still_current?: () => boolean): Promise<WorkspaceStore>
 	/** Desktop opens ~. The web app opens the browser-storage root. */
 	open_default(): Promise<WorkspaceStore>
 	/** Roots the tree currently has expanded. Unlisted open stores are disposed. */
@@ -160,10 +160,18 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		return job
 	}
 
-	async function open(drive_id: string, root_id: string): Promise<WorkspaceStore> {
+	async function open(
+		drive_id: string,
+		root_id: string,
+		still_current?: () => boolean,
+	): Promise<WorkspaceStore> {
 		const epoch_at_start = epoch
 		const store = await store_for(drive_id, root_id)
 		if (epoch_at_start !== epoch || store.is_disposed) return store
+		// A lost transition must not adopt, and must not dispose: it often
+		// shares this store with the winner (two folders of one root). The
+		// next successful open sweeps a root nobody kept; dispose_all does too.
+		if (still_current && !still_current()) return store
 		current_root_id = root_id
 		deps.adopt(store)
 		sweep()
@@ -227,11 +235,11 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			? [local_drive(), cloud_drive()]
 			: [browser_drive(), cloud_drive()],
 		open,
-		async open_local_path(path: string) {
+		async open_local_path(path: string, still_current?: () => boolean) {
 			const id = normalize_workspace_id(path)
 			const home_path = await home_id()
 			if (!is_within(id, home_path)) outside.add(id)
-			return open('local', is_within(id, home_path) ? home_path : id)
+			return open('local', is_within(id, home_path) ? home_path : id, still_current)
 		},
 		open_default: () => deps.is_desktop
 			? home_id().then(id => open('local', id))
