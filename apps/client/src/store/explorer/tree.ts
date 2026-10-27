@@ -79,19 +79,28 @@ export function folder_has_chevron(
 }
 
 /**
- * The tree never reads ahead into a place macOS guards with a privacy check
- * (Desktop, Documents, Downloads, Pictures, …, and the system folders in
- * ~/Library): such a read can stall until the user answers a prompt they
- * did not ask for. So the children of ~ and of ~/Library keep their chevron
- * unread; their own subfolders are probed once the user has opened them.
- * Only the home root: other local roots (volumes) are probed
+ * Folders of ~ that macOS guards with a privacy check. Reading one before the
+ * user opens it can stall on a prompt they did not ask for, so these keep
+ * their chevron unread (they nearly always have subfolders anyway)
+ */
+const PROTECTED_HOME_FOLDERS = new Set(['Desktop', 'Documents', 'Downloads', 'Library', 'Movies', 'Music', 'Pictures'])
+
+/**
+ * The tree never reads ahead into a place macOS guards: those folders of ~,
+ * and the system folders in ~/Library. Their own subfolders are probed once
+ * the user has opened them. Only the home root: other local roots (volumes)
+ * are probed
  */
 export function skips_probe(item: ExplorerTreeRoot, home_root_id: string | null, folder_id: string): boolean {
 	if (item.drive.kind !== 'local' || !home_root_id || item.root.id !== home_root_id) return false
 	const home = normalize_workspace_id(home_root_id)
-	const library = `${home}${path_separator(home)}Library`
+	const sep = path_separator(home)
+	const library = `${home}${sep}Library`
 	const parent = normalize_workspace_id(parent_folder_id_from_node_id(folder_id, home))
-	return parent === home || parent === library
+	if (parent === library) return true
+	if (parent !== home) return false
+	const name = normalize_workspace_id(folder_id).slice(home.length + sep.length)
+	return PROTECTED_HOME_FOLDERS.has(name)
 }
 
 /** Look-ahead reads in flight at once: in the cloud every read is a request */

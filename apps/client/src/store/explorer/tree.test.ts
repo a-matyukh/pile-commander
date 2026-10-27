@@ -419,7 +419,7 @@ describe('explorer tree', () => {
 			return { tree, workspaces }
 		}
 
-		test('children of ~ and of ~/Library are not read ahead and keep the chevron; deeper folders are', async () => {
+		test('guarded folders of ~ and the children of ~/Library are not read ahead and keep the chevron; others are', async () => {
 			const { tree, workspaces } = await local_tree([{ id: HOME, name: 'Home', can_write: true }])
 			const item = tree.roots[0]!
 			const fm = workspaces.get(HOME)!.file_manager
@@ -428,14 +428,18 @@ describe('explorer tree', () => {
 			const mail = node(`${HOME}/Library/Mail`, 'Mail')
 			const safari = node(`${HOME}/Library/Safari`, 'Safari')
 			const project = node(`${HOME}/Projects/app`, 'app')
+			const reunion = node(`${HOME}/Встреча выпускников`, 'Встреча выпускников')
 
-			tree.probe_folders(item, [library, documents])
+			tree.probe_folders(item, [library, documents, reunion])
 			tree.probe_folders(item, [mail, safari])
 			tree.probe_folders(item, [project])
 			await vi.waitFor(() => expect(tree.is_probing(item, project.id)).toBe(false))
+			await vi.waitFor(() => expect(tree.is_probing(item, reunion.id)).toBe(false))
 
 			const read = vi.mocked(fm.FolderChildren).mock.calls.map(call => call[0])
-			expect(read).toEqual([project.id])
+			expect(read.sort()).toEqual([reunion.id, project.id].sort())
+			// An ordinary folder of ~ with no subfolders gets no chevron
+			expect(tree.has_chevron(item, reunion, false)).toBe(false)
 			for (const skipped of [library, documents, mail, safari]) {
 				expect(tree.is_probing(item, skipped.id)).toBe(false)
 				expect(tree.has_chevron(item, skipped, false)).toBe(true)
