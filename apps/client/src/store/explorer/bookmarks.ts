@@ -1,7 +1,7 @@
 import { useStorage } from '@vueuse/core'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
-import { normalize_workspace_id } from '@/services/workspace/paths'
+import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import cloud from '@/store/cloud'
 import { BROWSER_ROOT } from './drives'
 import {
@@ -127,6 +127,45 @@ export async function import_legacy_list(
 
 export function is_bookmarked(ref: FolderRef): boolean {
 	return explorer_bookmarks.value.some(item => same_ref(item, ref))
+}
+
+export function folder_ref_key(ref: FolderRef): string {
+	return `${ref.drive_id}\0${ref.root_id}\0${ref.folder_id}`
+}
+
+function basename(id: string): string {
+	const sep = path_separator(id)
+	const index = id.lastIndexOf(sep)
+	const name = index === -1 ? id : id.slice(index + 1)
+	return name || id
+}
+
+function legacy_display_name(id: string): string | null {
+	const item = [...legacy_bookmarks.value, ...legacy_last_opened.value].find(entry => entry.id === id)
+	return item?.name || null
+}
+
+/** Label for a bookmark pill. Browser folders keep the name from the old list. */
+export function bookmark_name(ref: FolderRef): string {
+	if (ref.drive_id === 'cloud') {
+		return cloud.workspaces.find(ws => ws.id === ref.root_id)?.name
+			?? legacy_display_name(ref.root_id)
+			?? ref.root_id
+	}
+	if (ref.drive_id === 'browser') {
+		return legacy_display_name(ref.folder_id) ?? basename(ref.folder_id)
+	}
+	return basename(ref.folder_id)
+}
+
+export function move_bookmark(key: string, target_key: string, after: boolean) {
+	const item = explorer_bookmarks.value.find(entry => folder_ref_key(entry) === key)
+	if (!item || key === target_key) return
+	const rest = explorer_bookmarks.value.filter(entry => folder_ref_key(entry) !== key)
+	const target = rest.findIndex(entry => folder_ref_key(entry) === target_key)
+	if (target < 0) return
+	rest.splice(target + (after ? 1 : 0), 0, item)
+	explorer_bookmarks.value = rest
 }
 
 export function add_bookmark(ref: FolderRef): void {

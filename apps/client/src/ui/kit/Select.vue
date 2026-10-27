@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends string">
 import { computed, ref } from 'vue'
-import { Icon } from '@iconify/vue/offline'
+import { Icon } from '@iconify/vue'
 import DropMenu from './DropMenu.vue'
 import MenuItem from './MenuItem.vue'
 

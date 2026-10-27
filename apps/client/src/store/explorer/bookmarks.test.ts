@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { bookmarks, last_opened } from '@/store/workspaces_list'
+import cloud from '@/store/cloud'
 import { BROWSER_ROOT } from './drives'
 import {
 	EXPLORER_BOOKMARKS_KEY,
@@ -10,10 +11,13 @@ import {
 	explorer_bookmarks,
 	explorer_last_opened,
 	explorer_lists_migrated,
+	folder_ref_key,
 	import_legacy_list,
 	is_bookmarked,
+	bookmark_name,
 	legacy_item_to_folder_ref,
 	migrate_explorer_lists,
+	move_bookmark,
 	read_folder_refs,
 	remember_opened,
 	remove_bookmark,
@@ -177,5 +181,36 @@ describe('explorer bookmark list', () => {
 		expect(explorer_last_opened.value).toEqual([])
 		remove_bookmark(folder)
 		expect(is_bookmarked(folder)).toBe(false)
+	})
+
+	test('names a local path by its folder, a browser folder from the old list, and a cloud root by its workspace', () => {
+		const previous = cloud.workspaces.slice()
+		bookmarks.value = [{ type: 'browser', id: '/browser-desktops/desk', name: 'Desk' }]
+		cloud.workspaces = [{ type: 'cloud', id: 'ws-1', name: 'Shared' }]
+		expect(bookmark_name({
+			drive_id: 'local',
+			root_id: '/Users/me/docs',
+			folder_id: '/Users/me/docs',
+		})).toBe('docs')
+		expect(bookmark_name({
+			drive_id: 'browser',
+			root_id: BROWSER_ROOT,
+			folder_id: '/browser-desktops/desk',
+		})).toBe('Desk')
+		expect(bookmark_name({
+			drive_id: 'cloud',
+			root_id: 'ws-1',
+			folder_id: '/',
+		})).toBe('Shared')
+		cloud.workspaces = previous
+	})
+
+	test('drag reorder moves a bookmark before or after another', () => {
+		const a = { drive_id: 'local', root_id: '/a', folder_id: '/a' }
+		const b = { drive_id: 'local', root_id: '/b', folder_id: '/b' }
+		const c = { drive_id: 'local', root_id: '/c', folder_id: '/c' }
+		explorer_bookmarks.value = [a, b, c]
+		move_bookmark(folder_ref_key(c), folder_ref_key(a), true)
+		expect(explorer_bookmarks.value).toEqual([a, c, b])
 	})
 })

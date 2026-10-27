@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends string | number | boolean">
-import { Icon } from '@iconify/vue/offline'
+import { Icon } from '@iconify/vue'
 
 defineProps<{
 	options: { value: T; label: string; icon?: string; glyph?: string }[]

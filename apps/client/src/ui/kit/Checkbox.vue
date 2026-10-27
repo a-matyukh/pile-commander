@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue/offline'
+import { Icon } from '@iconify/vue'
 
 const model = defineModel<boolean>({ required: true })
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue/offline'
+import { Icon } from '@iconify/vue'
 import { ContextMenuItem, DropdownMenuItem } from 'reka-ui'
 import { use_menu_kind } from './menu_kind'
 

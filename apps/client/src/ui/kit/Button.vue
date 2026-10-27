@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Icon } from '@iconify/vue/offline'
+import { Icon } from '@iconify/vue'
 
 withDefaults(
 	defineProps<{
