@@ -1,7 +1,9 @@
 /*
- * Palette for the Explorer shell only. These variables stay on `.explorer`
- * so the current interface, which does not use that class, keeps its own theme.
- * Font smoothing is applied later, with the rest of the shell chrome.
+ * Light palette for the Explorer shell. There is no dark theme yet.
+ * Variables stay on `.explorer`, not :root, so the current interface keeps its theme.
+ *
+ * `--font-sans` is also Tailwind 4's theme variable. Inside this shell the
+ * `font-sans` utility therefore uses the prototype stack. That is intended.
  */
 .explorer {
 	--surface-0: #F0F0EE;
@@ -27,14 +29,42 @@
 	--text-success: #3B6D11;
 	--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	/* Window chrome. Gray panels and gray content override these. */
+	--pn: var(--surface-2);
 	--hv: var(--surface-1);
+	--ct: var(--surface-2);
+	--cth: var(--surface-1);
 
 	background: var(--surface-2);
 	color: var(--text-primary);
 	font-family: var(--font-sans);
 	font-size: 13px;
+	color-scheme: light;
+	/* Nuxt UI antialiases body for both interfaces. The shell keeps system smoothing. */
+	-webkit-font-smoothing: auto;
+	-moz-osx-font-smoothing: auto;
+}
+
+.explorer.gr {
+	--pn: var(--surface-1);
+	--hv: var(--surface-0);
+}
+
+.explorer.cg {
+	--ct: var(--surface-1);
+	--cth: var(--surface-0);
 }
 
 .explorer.lg {
 	font-size: 15px;
+}
+
+/* Lighter text. Absent, the shell keeps the system smoothing. */
+.explorer.thin {
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.explorer svg.iconify {
+	flex: none;
 }
