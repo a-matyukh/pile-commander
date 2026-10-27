@@ -46,6 +46,7 @@
     "dompurify": "^3.4.11",
     "interactjs": "^1.10.27",
     "marked": "^18.0.5",
+    "reka-ui": "2.9.10",
     "sortablejs": "^1.15.7",
     "tailwindcss": "^4.3.1",
     "vue": "3.5.40",

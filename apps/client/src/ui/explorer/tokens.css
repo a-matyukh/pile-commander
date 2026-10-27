@@ -1,0 +1,40 @@
+/*
+ * Palette for the Explorer shell only. These variables stay on `.explorer`
+ * so the current interface, which does not use that class, keeps its own theme.
+ * Font smoothing is applied later, with the rest of the shell chrome.
+ */
+.explorer {
+	--surface-0: #F0F0EE;
+	--surface-1: #F8F8F7;
+	--surface-2: #FFFFFF;
+	--surface-3: #FFFFFF;
+	--text-primary: #1F1F1E;
+	--text-secondary: #5F5E5A;
+	--text-muted: #9A9893;
+	--border: rgba(0, 0, 0, .08);
+	--border-strong: rgba(0, 0, 0, .15);
+	--border-stronger: rgba(0, 0, 0, .36);
+	--bg-accent: #E6F1FB;
+	--text-accent: #185FA5;
+	--border-accent: #85B7EB;
+	--fill-accent: #378ADD;
+	--on-accent: #fff;
+	--fill-primary: #1F1F1E;
+	--on-primary: #fff;
+	--bg-highlight: rgba(250, 199, 117, .55);
+	--text-danger: #A32D2D;
+	--fill-danger: #E24B4A;
+	--text-success: #3B6D11;
+	--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--hv: var(--surface-1);
+
+	background: var(--surface-2);
+	color: var(--text-primary);
+	font-family: var(--font-sans);
+	font-size: 13px;
+}
+
+.explorer.lg {
+	font-size: 15px;
+}
