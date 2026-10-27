@@ -8,6 +8,8 @@ import {
 	type DroppedFolderPayload,
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
+import { explorer_enabled } from '@/store/explorer/enabled'
+import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import WorkspaceWindow from '@/ui/workspace/WorkspaceWindow.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
@@ -72,7 +74,8 @@ onUnmounted(() => {
 			</div>
 		</Teleport>
 		<SyncKeptHiddenToast />
-		<WorkspaceWindow />
+		<ExplorerShell v-if="explorer_enabled" />
+		<WorkspaceWindow v-else />
 		<QuotaWallDialog />
 		<BridgeDialog />
 		<PasswordDialog />
