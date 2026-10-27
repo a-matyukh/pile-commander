@@ -106,6 +106,10 @@ function go_forward() {
 }
 .bb.inset {
 	padding-left: var(--pc-traffic-inset);
+	/* macOS overlay: with trafficLightPosition { y: 25 } (tauri.conf.json) the
+	   lights' centers sit 23.5px below the window top. A 47px bar centers the
+	   buttons on that line. Measured on a screenshot; recheck if y changes. */
+	height: 47px;
 }
 .vsep {
 	width: 0.5px;
@@ -116,5 +120,8 @@ function go_forward() {
 }
 :global(.explorer.lg) .bb {
 	height: 46px;
+}
+:global(.explorer.lg) .bb.inset {
+	height: 47px;
 }
 </style>
