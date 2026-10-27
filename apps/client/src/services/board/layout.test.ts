@@ -20,6 +20,8 @@ import {
 	FOLDER_PREVIEW_DEFAULT_SIZE,
 	TILE,
 	relative_to_origin,
+	shift_into_board_quadrant,
+	board_drop_positions,
 	snap_position,
 	top_left_position,
 } from './layout'
@@ -164,6 +166,75 @@ describe('board layout', () => {
 		expect(board_content_extent([file('a.txt')]).minWidth).toBe(
 			board_position(file('a.txt'), 0).x + NOTE_DEFAULT_SIZE.width + TILE.pad,
 		)
+	})
+})
+
+describe('shift_into_board_quadrant', () => {
+	test('shifts a group that sits entirely in the negative quadrant', () => {
+		expect(shift_into_board_quadrant([
+			{ x: -100, y: -50 },
+			{ x: -80, y: -40 },
+		])).toEqual([
+			{ x: TILE.pad, y: TILE.pad },
+			{ x: TILE.pad + 20, y: TILE.pad + 10 },
+		])
+	})
+
+	test('shifts only the axis that is negative', () => {
+		expect(shift_into_board_quadrant([
+			{ x: -10, y: 40 },
+			{ x: 50, y: 80 },
+		])).toEqual([
+			{ x: TILE.pad, y: 40 },
+			{ x: 80, y: 80 },
+		])
+	})
+
+	test('keeps spacing when each widget is negative on a different axis', () => {
+		expect(shift_into_board_quadrant([
+			{ x: -100, y: 40 },
+			{ x: 30, y: -10 },
+		])).toEqual([
+			{ x: 20, y: 70 },
+			{ x: 150, y: 20 },
+		])
+	})
+
+	test('leaves a non-negative group unchanged', () => {
+		const positions = [{ x: 0, y: 0 }, { x: 40, y: 15 }]
+		expect(shift_into_board_quadrant(positions)).toBe(positions)
+	})
+
+	test('returns an empty list unchanged', () => {
+		const positions: { x: number; y: number }[] = []
+		expect(shift_into_board_quadrant(positions)).toBe(positions)
+	})
+})
+
+describe('board_drop_positions', () => {
+	test('shifts a canvas drop onto a board and keeps missing positions', () => {
+		expect(board_drop_positions('canvas', 'board', [
+			{ x: -100, y: 40 },
+			null,
+			{ x: 30, y: -10 },
+		])).toEqual([
+			{ x: 20, y: 70 },
+			null,
+			{ x: 150, y: 20 },
+		])
+	})
+
+	test('leaves other view pairs unchanged', () => {
+		const positions = [{ x: -10, y: -20 }, null]
+		expect(board_drop_positions('board', 'board', positions)).toBe(positions)
+		expect(board_drop_positions('canvas', 'canvas', positions)).toBe(positions)
+		expect(board_drop_positions('canvas', 'list', positions)).toBe(positions)
+		expect(board_drop_positions(undefined, 'board', positions)).toBe(positions)
+	})
+
+	test('leaves a non-negative canvas drop unchanged', () => {
+		const positions = [{ x: 10, y: 20 }, null]
+		expect(board_drop_positions('canvas', 'board', positions)).toBe(positions)
 	})
 })
 

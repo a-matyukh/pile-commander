@@ -90,6 +90,63 @@ export function board_position(widget: FolderContainerWidgetChild, index: number
 	}
 }
 
+/**
+ * Translate a dropped group so it sits in the board's visible quadrant.
+ * An axis whose minimum is already >= 0 is left alone, so a group that only
+ * hangs off the left keeps its vertical arrangement. Returns the same array
+ * when nothing is negative.
+ */
+export function shift_into_board_quadrant(positions: Position[]): Position[] {
+	if (positions.length === 0) return positions
+
+	let min_x = Infinity
+	let min_y = Infinity
+	for (const position of positions) {
+		if (position.x < min_x) min_x = position.x
+		if (position.y < min_y) min_y = position.y
+	}
+
+	const dx = min_x < 0 ? TILE.pad - min_x : 0
+	const dy = min_y < 0 ? TILE.pad - min_y : 0
+	if (dx === 0 && dy === 0) return positions
+
+	return positions.map(position => ({
+		x: position.x + dx,
+		y: position.y + dy,
+	}))
+}
+
+/**
+ * Positions a folder drop should store. A canvas → board drop shifts the
+ * group into the visible quadrant when any coordinate is negative. Other
+ * view pairs are returned unchanged. Missing positions stay null so the
+ * board grid fallback can place those widgets.
+ */
+export function board_drop_positions(
+	source_view: string | undefined,
+	target_view: string | undefined,
+	positions: Array<Position | null>,
+): Array<Position | null> {
+	if (source_view !== 'canvas' || target_view !== 'board') return positions
+
+	const indexed: Array<{ index: number; position: Position }> = []
+	for (let index = 0; index < positions.length; index++) {
+		const position = positions[index]
+		if (position) indexed.push({ index, position })
+	}
+	if (indexed.length === 0) return positions
+
+	const defined = indexed.map(entry => entry.position)
+	const shifted = shift_into_board_quadrant(defined)
+	if (shifted === defined) return positions
+
+	const next = positions.slice()
+	for (let index = 0; index < indexed.length; index++) {
+		next[indexed[index]!.index] = shifted[index]!
+	}
+	return next
+}
+
 /** Topmost, then leftmost position in a set. */
 export function top_left_position(positions: Position[]): Position | undefined {
 	let best: Position | undefined
