@@ -175,6 +175,10 @@ export const ru = {
 		color: 'Цвет фона…',
 		image: 'Картинка фона…',
 		reset: 'Сбросить фон',
+		grid_size: 'Размер сетки',
+		dots: 'Точки сетки',
+		axes: 'Оси',
+		size: '{n} пикс.',
 	},
 	ai: {
 		folder_title: 'AI · папка «{name}»',

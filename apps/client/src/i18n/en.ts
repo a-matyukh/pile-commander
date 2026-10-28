@@ -178,6 +178,10 @@ export const en: typeof ru = {
 		color: 'Background color…',
 		image: 'Background image…',
 		reset: 'Reset background',
+		grid_size: 'Grid size',
+		dots: 'Grid dots',
+		axes: 'Axes',
+		size: '{n} px',
 	},
 	ai: {
 		folder_title: 'AI · “{name}” folder',

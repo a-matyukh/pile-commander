@@ -2,10 +2,13 @@
 import { computed } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
+import { to_folder_container } from '@/services/workspace/folderContainer'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { can_sync } from '@/store/explorer/share'
 import AddMenu from './AddMenu.vue'
 import AiMenu from './AiMenu.vue'
+import BackgroundMenu from './BackgroundMenu.vue'
+import LayersMenu from './LayersMenu.vue'
 import FolderMenu from './FolderMenu.vue'
 import PublicActions from './PublicActions.vue'
 import ShareMenu from './ShareMenu.vue'
@@ -21,6 +24,12 @@ import ViewMenu from './ViewMenu.vue'
 const props = defineProps<{ workspace: WorkspaceStore; folder: FolderRef; name: string; align: 'start' | 'end' }>()
 
 const own = computed(() => !is_transient_drive(props.folder.drive_id))
+/** A board or a canvas has layers and a grid with a background, as in the prototype */
+const spatial = computed(() => {
+	const folder = props.workspace.folders[props.folder.folder_id]
+	const view = folder ? to_folder_container(folder, props.workspace.preview_folders).view : null
+	return view === 'board' || view === 'canvas'
+})
 </script>
 
 <template>
@@ -28,6 +37,10 @@ const own = computed(() => !is_transient_drive(props.folder.drive_id))
 	<!-- A publication keeps its author's view -->
 	<ViewMenu v-if="folder.drive_id !== 'public'" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
+	<template v-if="spatial && workspace.can_write">
+		<LayersMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+		<BackgroundMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+	</template>
 	<template v-if="own">
 		<AiMenu :workspace="workspace" :folder_id="folder.folder_id" :name="name" :align="align" />
 		<ShareMenu :folder="folder" :name="name" :align="align" />
