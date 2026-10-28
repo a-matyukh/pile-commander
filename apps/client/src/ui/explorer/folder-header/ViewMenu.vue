@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Icon } from '@iconify/vue'
 import { FOLDER_VIEWS, type FolderView } from '@/domain/Widget'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
@@ -9,6 +10,8 @@ import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
+import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
+import { explorer_settings } from '@/store/explorer/settings'
 
 /** Folder view switch. Stored in the folder's attributes, so it survives a restart */
 const props = defineProps<{ workspace: WorkspaceStore; folder_id: string; align: 'start' | 'end' }>()
@@ -67,5 +70,35 @@ function set_view(view: FolderView) {
 			keep_open
 			@select="set_view(key)"
 		/>
+		<!-- Gallery's own setting: the icon size, a slider as in Finder -->
+		<template v-if="current === 'grid'">
+			<MenuSeparator />
+			<MenuLabel :label="t('view_menu.icon_size')" />
+			<div class="sz" @keydown.stop @pointerdown.stop>
+				<Icon icon="tabler:photo" class="sm" />
+				<input v-model.number="explorer_settings.gallery_icon" type="range" min="24" max="96" step="4" :aria-label="t('view_menu.icon_size')">
+				<Icon icon="tabler:photo" class="lg" />
+			</div>
+		</template>
 	</DropMenu>
 </template>
+
+<style scoped>
+.sz {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 10px 8px;
+	color: var(--text-muted);
+}
+.sz input {
+	flex: 1;
+	accent-color: var(--fill-accent);
+}
+.sm {
+	font-size: 12px;
+}
+.lg {
+	font-size: 18px;
+}
+</style>

@@ -12,6 +12,7 @@ import { workspaceDialogsKey } from '@/ui/workspace/sidebar/workspaceDialogs'
 import { publish_dialog, share_dialog } from './dialogs'
 import { use_folder_keys } from './folder_keys'
 import ListView from './views/ListView.vue'
+import GalleryView from './views/GalleryView.vue'
 
 /**
  * The open folder's content in its current view (step 3.3): the current
@@ -56,6 +57,12 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 		<!-- The prototype's views replace the current ones one by one (steps 3.6–3.12) -->
 		<ListView
 			v-if="scope.container.value?.view === 'list'"
+			:workspace="workspace"
+			:container="scope.container.value"
+			:location="location"
+		/>
+		<GalleryView
+			v-else-if="scope.container.value?.view === 'grid'"
 			:workspace="workspace"
 			:container="scope.container.value"
 			:location="location"

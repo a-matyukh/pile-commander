@@ -121,6 +121,7 @@ export const ru = {
 	view_menu: {
 		title: 'Вид папки',
 		settings: 'Настройки вида «{view}»',
+		icon_size: 'Размер иконок',
 	},
 	view_settings: {
 		columns: 'Колонки…',

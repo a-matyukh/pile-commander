@@ -26,6 +26,8 @@ export type ExplorerSettings = {
 	actions_on_top: boolean
 	bookmarks_visible: boolean
 	bookmarks_style: 'pills' | 'list'
+	/** Icon size of Gallery and the cloud page's tiles, px (a slider, as in Finder) */
+	gallery_icon: number
 }
 
 export const EXPLORER_SETTINGS_KEY = 'pile_commander_explorer_settings'
@@ -45,6 +47,7 @@ export const EXPLORER_SETTINGS_DEFAULTS: ExplorerSettings = {
 	actions_on_top: false,
 	bookmarks_visible: true,
 	bookmarks_style: 'pills',
+	gallery_icon: 40,
 }
 
 export const explorer_settings = toReactive<ExplorerSettings>(

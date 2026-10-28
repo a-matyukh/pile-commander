@@ -124,6 +124,7 @@ export const en: typeof ru = {
 	view_menu: {
 		title: 'Folder view',
 		settings: '{view} settings',
+		icon_size: 'Icon size',
 	},
 	view_settings: {
 		columns: 'Columns…',
