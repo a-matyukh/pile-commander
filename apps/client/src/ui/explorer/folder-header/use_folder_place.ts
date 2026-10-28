@@ -1,7 +1,6 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import { t } from '@/i18n'
-import { is_desktop } from '@/isDesktop'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import store from '@/store'
 import { bookmark_name } from '@/store/explorer/bookmarks'
@@ -9,22 +8,16 @@ import { folder_basename, folder_crumbs, folder_title, type CrumbNames } from '@
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
 import { public_roots } from '@/store/explorer/public_roots'
+import { explorer_home, read_explorer_home } from '@/store/explorer/home'
+import { system_folder_name } from '@/store/explorer/folder_cover'
 
-/** ~ on the desktop, read once for every header, top bar and tree row */
-const home = ref<string | null>(null)
+const home = explorer_home
 
 export function use_home() {
-	read_home()
+	read_explorer_home()
 	return home
 }
-let home_read = false
-function read_home() {
-	if (home_read || !is_desktop) return
-	home_read = true
-	void import('@tauri-apps/api/path')
-		.then(({ homeDir }) => homeDir())
-		.then((path) => { home.value = normalize_workspace_id(path) })
-}
+const read_home = read_explorer_home
 
 /**
  * Where the window is: the open folder (its path, title and store) or a page
@@ -47,7 +40,9 @@ export function use_folder_place() {
 			if (ref.drive_id === 'demo') return 'Demo'
 			return bookmark_name(ref)
 		},
-		folder_name: (ref: FolderRef) => ref.drive_id === 'browser' ? bookmark_name(ref) : folder_basename(ref.folder_id),
+		folder_name: (ref: FolderRef) => ref.drive_id === 'browser'
+			? bookmark_name(ref)
+			: system_folder_name(ref, home.value) ?? folder_basename(ref.folder_id),
 		cloud_name: t('source.cloud'),
 		hub_name: t('page.hub'),
 		publication_author: (ref: FolderRef) => public_roots.get(ref.root_id)?.username ?? null,

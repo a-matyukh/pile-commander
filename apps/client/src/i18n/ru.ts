@@ -386,6 +386,17 @@ export const ru = {
 		report: 'Пожаловаться',
 		read_only: 'Только просмотр',
 	},
+	system_folders: {
+		Desktop: 'Рабочий стол',
+		Documents: 'Документы',
+		Downloads: 'Загрузки',
+		Pictures: 'Изображения',
+		Music: 'Музыка',
+		Movies: 'Фильмы',
+		Applications: 'Программы',
+		Public: 'Общие',
+		Library: 'Библиотека',
+	},
 	cloud_page: {
 		new_folder: 'Новая папка',
 		empty: 'В облаке пока нет папок',

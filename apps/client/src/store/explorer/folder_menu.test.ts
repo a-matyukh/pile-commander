@@ -54,6 +54,12 @@ describe('folder header menu: items', () => {
 		})
 	})
 
+	test('macOS\'s own folders in ~ are neither renamed, cut nor trashed, as in Finder', () => {
+		const items = folder_menu_items(local(`${HOME}/Downloads`), { ...writable(home), home: HOME })
+		expect([items.rename, items.cut, items.move_to_trash, items.ungroup]).toEqual([false, false, false, false])
+		expect(items.copy).toBe(true)
+	})
+
 	test('paste needs something on the clipboard that may go here, and a writable folder', () => {
 		expect(folder_menu_items(local(`${HOME}/A`), writable(home)).paste).toBe(false)
 		expect(folder_menu_items(local(`${HOME}/A`), { item: home, can_write: false, desktop: true, can_paste: true }).paste).toBe(false)

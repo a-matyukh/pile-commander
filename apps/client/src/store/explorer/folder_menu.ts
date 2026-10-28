@@ -2,6 +2,7 @@ import type { Drive, FolderRef } from '@/domain/Drive'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import { add_bookmark, is_bookmarked, remove_bookmark } from './bookmarks'
+import { system_folder } from './folder_cover'
 import { folder_basename, root_folder_id } from './folder_header'
 import { explorer_tree, is_legacy_browser_folder, type ExplorerTreeRoot } from './tree'
 
@@ -28,6 +29,8 @@ export type FolderMenuContext = {
 	desktop: boolean
 	/** The clipboard's answer for this folder (folder_clipboard.ts) */
 	can_paste?: boolean
+	/** ~ on the desktop: macOS's own folders in it keep their name and place */
+	home?: string | null
 }
 
 /** The open folder as a tree node, for the tree's rename and remove */
@@ -44,7 +47,9 @@ export function folder_menu_node(ref: FolderRef): WorkspaceTreeNode {
  */
 export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): FolderMenuItems {
 	const is_root = normalize_workspace_id(ref.folder_id) === root_folder_id(ref)
-	const editable = context.can_write && !is_root && context.item !== null
+	// macOS's own folders (Downloads…) are neither renamed, moved nor trashed, as in Finder
+	const system = system_folder(ref, context.home ?? null) !== null
+	const editable = context.can_write && !is_root && context.item !== null && !system
 	const rename = editable && !is_legacy_browser_folder(context.item!, folder_menu_node(ref))
 	return {
 		rename,

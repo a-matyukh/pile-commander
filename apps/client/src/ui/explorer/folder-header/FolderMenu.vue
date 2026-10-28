@@ -17,6 +17,7 @@ import { FOLDER_ICON_COLORS, FOLDER_ICONS, read_folder_icon, write_folder_icon, 
 import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { Icon } from '@iconify/vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
+import { use_home } from './use_folder_place'
 import { explorer_folder_clipboard as clipboard } from '@/store/explorer/folder_clipboard'
 import { report_error } from '@/store/helpers/reportError'
 import Button from '@/ui/kit/Button.vue'
@@ -47,11 +48,13 @@ const remove_open = ref(false)
 
 const item = computed(() => explorer_tree.roots.find(root =>
 	root.drive.id === props.folder.drive_id && root.root.id === props.folder.root_id) ?? null)
+const home = use_home()
 const items = computed(() => folder_menu_items(props.folder, {
 	item: item.value,
 	can_write: props.can_write,
 	desktop: is_desktop,
 	can_paste: item.value ? clipboard.can_paste(item.value, props.folder.folder_id) : false,
+	home: home.value,
 }))
 const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
 

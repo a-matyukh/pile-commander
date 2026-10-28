@@ -19,7 +19,7 @@ import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
 import { shows_synced } from '@/store/explorer/share'
-import { read_folder_icon, standard_folder_icon } from '@/store/explorer/folder_cover'
+import { read_folder_icon, standard_folder_icon, system_folder } from '@/store/explorer/folder_cover'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
@@ -69,8 +69,11 @@ const current = computed(() => {
 		&& location.ref.root_id === props.item.root.id
 		&& location.ref.folder_id === folder_id.value
 })
+const home = use_home()
+/** macOS's own folders in ~ show Finder's name ("Загрузки"); the folder on disk keeps its own */
+const system = computed(() => props.node ? system_folder({ drive_id: props.item.drive.id, root_id: props.item.root.id, folder_id: props.node.id }, home.value) : null)
 const name = computed(() => props.node
-	? explorer_tree.node_name(props.item, props.node)
+	? (system.value ? t(`system_folders.${system.value}`) : explorer_tree.node_name(props.item, props.node))
 	: props.item.root.name)
 const hidden = computed(() => props.node ? is_hidden_entry_name(props.node.name) : false)
 const can_write = computed(() => workspace.value?.can_write ?? props.item.root.can_write)
@@ -114,7 +117,6 @@ const view_meta = computed(() => {
 	return view === 'list' ? null : FOLDER_VIEW_META[view]
 })
 
-const home = use_home()
 /**
  * The row's icon: the folder's own one (chosen in its menu), then its view
  * in color, then macOS's own folders in ~ (Downloads, Music…), then a folder
@@ -173,7 +175,8 @@ function confirm_root_move() {
  */
 function press(event: PointerEvent) {
 	const node = props.node
-	if (!can_write.value || (node
+	// macOS's own folders stay where they are, as in Finder
+	if (!can_write.value || system.value || (node
 		? is_legacy_browser_folder(props.item, node)
 		: props.item.drive.kind !== 'cloud')) return
 	if (event.target instanceof Element && event.target.closest('.tg, .cv')) return

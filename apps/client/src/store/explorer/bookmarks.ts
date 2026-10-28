@@ -5,6 +5,10 @@ import { t } from '@/i18n'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import cloud from '@/store/cloud'
 import { BROWSER_ROOT, is_within } from './drives'
+import { system_folder_name } from './folder_cover'
+import { explorer_home, read_explorer_home } from './home'
+
+read_explorer_home()
 import {
 	bookmarks as legacy_bookmarks,
 	filter_existing_workspaces,
@@ -157,7 +161,7 @@ export function bookmark_name(ref: FolderRef): string {
 		if (ref.folder_id === BROWSER_ROOT) return t('source.browser_disk')
 		return legacy_display_name(ref.folder_id) ?? basename(ref.folder_id)
 	}
-	return basename(ref.folder_id)
+	return system_folder_name(ref, explorer_home.value) ?? basename(ref.folder_id)
 }
 
 export function move_bookmark(key: string, target_key: string, after: boolean) {

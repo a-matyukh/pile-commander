@@ -389,6 +389,17 @@ export const en: typeof ru = {
 		report: 'Report',
 		read_only: 'View only',
 	},
+	system_folders: {
+		Desktop: 'Desktop',
+		Documents: 'Documents',
+		Downloads: 'Downloads',
+		Pictures: 'Pictures',
+		Music: 'Music',
+		Movies: 'Movies',
+		Applications: 'Applications',
+		Public: 'Public',
+		Library: 'Library',
+	},
 	cloud_page: {
 		new_folder: 'New folder',
 		empty: 'No folders in the cloud yet',

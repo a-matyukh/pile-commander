@@ -1,6 +1,10 @@
 /* Menu panel shared by dropdowns and context menus (portaled into .explorer) */
 .mn {
 	max-width: calc(100vw - 16px);
+	/* Never past the window: the room reka measured on the menu's side, then it scrolls */
+	max-height: var(--reka-popper-available-height, calc(100vh - 16px));
+	overflow-y: auto;
+	overscroll-behavior: contain;
 	box-sizing: border-box;
 	background: var(--surface-3);
 	border: 0.5px solid var(--border-strong);
