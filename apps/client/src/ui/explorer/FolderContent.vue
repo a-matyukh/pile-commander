@@ -11,6 +11,7 @@ import { createScopeFromStore, provideFolderContainerScope } from '@/ui/workspac
 import { workspaceDialogsKey } from '@/ui/workspace/sidebar/workspaceDialogs'
 import { publish_dialog, share_dialog } from './dialogs'
 import { use_folder_keys } from './folder_keys'
+import ListView from './views/ListView.vue'
 
 /**
  * The open folder's content in its current view (step 3.3): the current
@@ -52,7 +53,14 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 
 <template>
 	<div v-if="location && workspace" ref="box" class="fc">
-		<FolderContainer :key="workspace.uid" />
+		<!-- The prototype's views replace the current ones one by one (steps 3.6–3.12) -->
+		<ListView
+			v-if="scope.container.value?.view === 'list'"
+			:workspace="workspace"
+			:container="scope.container.value"
+			:location="location"
+		/>
+		<FolderContainer v-else :key="workspace.uid" />
 		<FolderActionsPanel />
 	</div>
 </template>

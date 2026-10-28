@@ -286,6 +286,11 @@ export const en: typeof ru = {
 		modified: 'Modified',
 		size: 'Size',
 		actions: 'Actions',
+		file_trash_title: 'Move “{name}” to the trash?',
+		file_trash_description: 'You can get the file back from the trash.',
+		file_delete_title: 'Delete “{name}” forever?',
+		file_delete_description: 'The file will be deleted for good.',
+		empty: 'This folder is empty',
 	},
 	size: {
 		kb: '{n} KB',

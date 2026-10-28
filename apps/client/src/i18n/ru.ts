@@ -283,6 +283,11 @@ export const ru = {
 		modified: 'Изменено',
 		size: 'Размер',
 		actions: 'Действия',
+		file_trash_title: 'Переместить «{name}» в корзину?',
+		file_trash_description: 'Файл можно будет вернуть из корзины.',
+		file_delete_title: 'Удалить «{name}» навсегда?',
+		file_delete_description: 'Файл удалится без возможности восстановления.',
+		empty: 'Папка пустая',
 	},
 	size: {
 		kb: '{n} КБ',
