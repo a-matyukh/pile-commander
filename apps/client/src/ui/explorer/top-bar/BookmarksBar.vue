@@ -7,9 +7,12 @@ import {
 	explorer_bookmarks,
 	folder_ref_key,
 	move_bookmark,
+	remove_bookmark,
 } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import CtxMenu from '@/ui/kit/CtxMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
+import MenuItem from '@/ui/kit/MenuItem.vue'
 import { use_pointer_reorder } from '@/ui/kit/use_pointer_reorder'
 import { bookmark_added_title, bookmark_current_folder } from './bookmark_current'
 
@@ -38,18 +41,23 @@ function add_current() {
 		@click="add_current"
 	/>
 	<div ref="bar" class="bks">
-		<div
-			v-for="bookmark in explorer_bookmarks"
-			:key="folder_ref_key(bookmark)"
-			class="bk"
-			:class="{ on: is_current(folder_ref_key(bookmark)) }"
-			:data-key="folder_ref_key(bookmark)"
-			:data-tip="t('bookmarks.drag_hint')"
-			@click="explorer_navigation.open_bookmark(bookmark)"
-		>
-			<Icon icon="tabler:folder" />
-			{{ bookmark_name(bookmark) }}
-		</div>
+		<!-- Right click: open or remove, as a browser's bookmarks bar -->
+		<CtxMenu v-for="bookmark in explorer_bookmarks" :key="folder_ref_key(bookmark)" :width="220">
+			<template #trigger>
+				<div
+					class="bk"
+					:class="{ on: is_current(folder_ref_key(bookmark)) }"
+					:data-key="folder_ref_key(bookmark)"
+					:data-tip="t('bookmarks.drag_hint')"
+					@click="explorer_navigation.open_bookmark(bookmark)"
+				>
+					<Icon icon="tabler:folder" />
+					{{ bookmark_name(bookmark) }}
+				</div>
+			</template>
+			<MenuItem icon="tabler:folder-open" :label="t('menu.open')" @select="explorer_navigation.open_bookmark(bookmark)" />
+			<MenuItem icon="tabler:bookmark-off" :label="t('menu.bookmark_remove')" @select="remove_bookmark(bookmark)" />
+		</CtxMenu>
 	</div>
 </template>
 

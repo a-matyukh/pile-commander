@@ -8,6 +8,7 @@ import {
 	folder_ref_key,
 	is_bookmarked,
 	move_bookmark,
+	remove_bookmark,
 } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -65,6 +66,16 @@ function add_current() {
 					<Icon icon="tabler:folder" />
 				</template>
 				{{ bookmark_name(bookmark) }}
+				<button
+					type="button"
+					class="rm"
+					:aria-label="t('menu.bookmark_remove')"
+					:data-tip="t('menu.bookmark_remove')"
+					@pointerdown.stop
+					@click.stop.prevent="remove_bookmark(bookmark)"
+				>
+					<Icon icon="tabler:x" />
+				</button>
 			</MenuItem>
 		</div>
 		<MenuLabel v-else :label="t('bookmarks.empty')" />
@@ -96,6 +107,28 @@ function add_current() {
 	-webkit-user-select: none;
 	touch-action: none;
 	padding-left: 4px;
+}
+.bkm :deep(.lb) {
+	flex: 1;
+}
+.rm {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	padding: 2px;
+	border: 0;
+	border-radius: 4px;
+	background: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	visibility: hidden;
+}
+.bkm[data-highlighted] .rm {
+	visibility: visible;
+}
+.rm:hover {
+	color: var(--text-primary);
+	background: var(--surface-2);
 }
 .gp {
 	font-size: 14px;
