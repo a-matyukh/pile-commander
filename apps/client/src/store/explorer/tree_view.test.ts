@@ -109,6 +109,16 @@ describe('tree filter', () => {
 	})
 })
 
+describe('folder view attribute', () => {
+	test('gallery reads as grid, an unknown value as list', () => {
+		const of = (value: string) => entry_view({ xattrs: [{ name: 'view', value: JSON.stringify(value) }] })
+		expect(of('gallery')).toBe('grid')
+		expect(of('grid')).toBe('grid')
+		expect(of('board')).toBe('board')
+		expect(of('dashboard')).toBe('list')
+	})
+})
+
 describe('tree sort', () => {
 	const nodes = [folder('/r/b10', 'b10'), folder('/r/B2', 'B2'), folder('/r/a', 'a')]
 	const views: Record<string, string> = { '/r/a': 'canvas', '/r/b10': 'board' }

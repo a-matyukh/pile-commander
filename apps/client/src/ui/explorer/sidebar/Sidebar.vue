@@ -142,6 +142,8 @@ watchEffect(() => {
 					:item="item"
 				/>
 				<div v-if="nothing_found" class="none">{{ t('tree.nothing_found') }}</div>
+				<!-- Listing the roots (the cloud asks the server): the tree is empty for a moment -->
+				<div v-if="active_drive && !tree_ready" class="none"><Icon icon="tabler:loader-2" class="spin" /></div>
 			</template>
 		</div>
 		<template v-if="!hub_open">
@@ -246,6 +248,13 @@ watchEffect(() => {
 	text-align: center;
 	font-size: 12px;
 	color: var(--text-muted);
+}
+.spin {
+	animation: tree-spin 0.8s linear infinite;
+	font-size: 16px;
+}
+@keyframes tree-spin {
+	to { transform: rotate(360deg); }
 }
 .chip {
 	display: flex;

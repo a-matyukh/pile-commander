@@ -152,6 +152,8 @@ export function create_explorer_tree(
 		expanded_root_ids: new Set<string>(),
 		/** Folders whose look-ahead read is queued or running */
 		probing: new Set<string>(),
+		/** Folders being moved: their row shows a spinner until the move ends */
+		moving: new Set<string>(),
 		/** Look-ahead results: subfolders found, or 'unknown' (failed or skipped) */
 		probes: new Map<string, FolderProbeState>(),
 		/**
@@ -294,6 +296,10 @@ export function create_explorer_tree(
 
 	function is_probing(item: ExplorerTreeRoot, folder_id: string): boolean {
 		return state.probing.has(probe_key(item, folder_id))
+	}
+
+	function is_moving(item: ExplorerTreeRoot, folder_id: string): boolean {
+		return state.moving.has(probe_key(item, folder_id))
 	}
 
 	function has_chevron(item: ExplorerTreeRoot, node: WorkspaceTreeNode, show_hidden: boolean): boolean {
@@ -462,6 +468,8 @@ export function create_explorer_tree(
 	 * When the current place was inside it, navigation follows the new path
 	 */
 	async function move_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode, target_folder_id: string) {
+		const moving = probe_key(item, node.id)
+		state.moving.add(moving)
 		try {
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
@@ -469,6 +477,8 @@ export function create_explorer_tree(
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
 			deps.on_error(error)
+		} finally {
+			state.moving.delete(moving)
 		}
 	}
 
@@ -488,6 +498,8 @@ export function create_explorer_tree(
 		// Both stores stay open for the whole transfer, even if the user
 		// collapses a root meanwhile; released (and swept) at the end
 		const releases = [item, target].map(root => deps.hold_root?.(root.root.id))
+		const moving = probe_key(item, node.id)
+		state.moving.add(moving)
 		try {
 			const source_store = await ensure_workspace(item)
 			const target_store = await ensure_workspace(target)
@@ -531,6 +543,7 @@ export function create_explorer_tree(
 		} catch (error) {
 			deps.on_error(error)
 		} finally {
+			state.moving.delete(moving)
 			for (const release of releases) release?.()
 		}
 	}
@@ -616,6 +629,7 @@ export function create_explorer_tree(
 		remove_folder,
 		probe_folders,
 		is_probing,
+		is_moving,
 		has_chevron,
 		reset,
 	})

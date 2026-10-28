@@ -68,9 +68,14 @@ export type TreeFilterSources = {
 	folders: Readonly<Record<string, FolderWithChildrenXattrs>>
 }
 
-/** The view a folder entry carries in its attributes, `list` when none */
+/**
+ * The view a folder entry carries in its attributes, `list` when none.
+ * `gallery` reads as `grid`: the product writes `grid` until stage 4 and
+ * `gallery` after it (EXPLORER_PLAN.md, «Совместимость данных»)
+ */
 export function entry_view(entry: { xattrs: { name: string; value: string }[] } | undefined): FolderView {
-	const view = entry ? xattrs_map(entry.xattrs).view : undefined
+	const raw = entry ? xattrs_map(entry.xattrs).view : undefined
+	const view = raw === 'gallery' ? 'grid' : raw
 	return (FOLDER_VIEWS as readonly unknown[]).includes(view) ? view as FolderView : 'list'
 }
 

@@ -12,6 +12,7 @@ import SettingsPanel from '@/ui/workspace/sidebar/workspaces-list/SettingsPanel.
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
+import FolderHeader from '@/ui/explorer/folder-header/FolderHeader.vue'
 import { explorer_sidebar_open } from '@/store/explorer/sidebar'
 import { explorer_tree } from '@/store/explorer/tree'
 import './tokens.css'
@@ -70,6 +71,7 @@ onUnmounted(() => {
 		<div class="body">
 			<Sidebar v-if="explorer_sidebar_open" />
 			<main class="pv">
+				<FolderHeader />
 				<div class="flex flex-col items-start gap-4 p-6">
 					<p v-if="shell_error" class="shell-error" role="alert">
 						<span>{{ shell_error }}</span>

@@ -13,6 +13,8 @@ import {
 	type ExplorerTreeRoot,
 } from '@/store/explorer/tree'
 import { arranged_children } from '@/store/explorer/tree_arrange'
+import { entry_view } from '@/store/explorer/tree_view'
+import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import Button from '@/ui/kit/Button.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -41,10 +43,11 @@ const expanded = computed(() => props.node
 	? workspace.value?.is_folder_expanded(folder_id.value) === true
 	: explorer_tree.is_root_expanded(props.item))
 // A look-ahead read is not the user's expand: no spinner for it
-const loading = computed(() => props.node
+const moving = computed(() => explorer_tree.is_moving(props.item, folder_id.value))
+const loading = computed(() => moving.value || (props.node
 	? workspace.value?.is_folder_loading(folder_id.value) === true
 		&& !explorer_tree.is_probing(props.item, folder_id.value)
-	: props.item.loading)
+	: props.item.loading))
 const can_expand = computed(() => {
 	if (loading.value) return true
 	// A read folder shows what the filter leaves; an unread one, what the look-ahead found
@@ -80,6 +83,22 @@ function toggle() {
 function rename(new_name: string) {
 	if (props.node) void explorer_tree.rename_folder(props.item, props.node, new_name)
 }
+
+/**
+ * A folder with its own view shows that view's icon in color, as in the
+ * prototype; a plain list folder keeps the folder icon. The view lives in
+ * the attributes the parent's read brought (a root: its own read)
+ */
+const view_meta = computed(() => {
+	const store = workspace.value
+	if (!store || store.is_disposed) return null
+	const entry = props.node
+		? store.folders[parent_folder_id_from_node_id(props.node.id, tree_root_folder_id(props.item))]
+			?.children.find(child => child.id === props.node!.id)
+		: store.folders[tree_root_folder_id(props.item)]
+	const view = entry_view(entry)
+	return view === 'list' ? null : FOLDER_VIEW_META[view]
+})
 
 const root_key = computed(() => tree_root_key(props.item.drive.id, props.item.root.id))
 const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value }))
@@ -124,7 +143,7 @@ watchEffect(on_cleanup => {
 <template>
 	<div
 		class="r"
-		:class="{ sel: current, mo: menu_open, hid: hidden, drop: drop_target, drg: dragged }"
+		:class="{ sel: current, mo: menu_open, hid: hidden, drop: drop_target, drg: dragged || moving }"
 		:data-folder-id="folder_id"
 		:data-drive-id="item.drive.id"
 		:data-root-id="item.root.id"
@@ -145,7 +164,13 @@ watchEffect(on_cleanup => {
 			@click.stop="toggle"
 		/>
 		<span v-else class="sp" />
-		<Icon :icon="expanded && children.length ? 'tabler:folder-open' : 'tabler:folder'" class="plain" />
+		<Icon
+			v-if="view_meta"
+			:icon="view_meta.icon"
+			class="vw"
+			:style="{ color: view_meta.color ?? undefined }"
+		/>
+		<Icon v-else :icon="expanded && children.length ? 'tabler:folder-open' : 'tabler:folder'" class="plain" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
 			<DropMenu v-if="can_write" v-model:open="menu_open" :width="240" align="start">
