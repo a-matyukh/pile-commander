@@ -4,6 +4,7 @@ import { computed, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { Drive } from '@/domain/Drive'
 import { t } from '@/i18n'
+import { is_desktop } from '@/isDesktop'
 import store from '@/store'
 import cloud from '@/store/cloud'
 import { explorer_drives } from '@/store/explorer/drives'
@@ -133,6 +134,19 @@ async function open_drive(drive: Drive) {
 	}
 }
 
+/** "This Mac" has no trash page: its button opens the Finder's trash */
+async function open_finder_trash() {
+	try {
+		const [{ homeDir }, { openPath }] = await Promise.all([
+			import('@tauri-apps/api/path'),
+			import('@tauri-apps/plugin-opener'),
+		])
+		await openPath(`${await homeDir()}/.Trash`)
+	} catch (error) {
+		report_error(store, error)
+	}
+}
+
 function open_hub() {
 	picked_source.value = null
 	switching.value = false
@@ -256,7 +270,7 @@ watchEffect(() => {
 			</div>
 			<div class="tb">
 				<TreeMenus />
-				<!-- The cloud keeps a trash; ~ and browser storage use the system's -->
+				<!-- The cloud keeps a trash; "This Mac" opens the Finder's; browser storage has none -->
 				<IconButton
 					v-if="active_drive?.kind === 'cloud' && cloud_signed_in"
 					icon="tabler:trash"
@@ -266,6 +280,15 @@ watchEffect(() => {
 					:data-tip="t('page.trash')"
 					class="trash"
 					@click="explorer_navigation.open_page('trash')"
+				/>
+				<IconButton
+					v-else-if="active_drive?.kind === 'local' && is_desktop"
+					icon="tabler:trash"
+					:label="explorer_settings.trash_button === 'text' ? t('trash.title') : undefined"
+					:aria-label="t('trash.title')"
+					:data-tip="t('trash.title')"
+					class="trash"
+					@click="open_finder_trash"
 				/>
 			</div>
 		</template>

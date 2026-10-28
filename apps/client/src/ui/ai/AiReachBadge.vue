@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 import type { AiReach } from '@/services/ai/locality'
 
-const props = defineProps<{ reach: AiReach }>()
+/** `label`: the caption in the interface language; the English one without it */
+const props = defineProps<{ reach: AiReach; label?: string }>()
 
 const BADGES: Record<AiReach, { label: string; icon: string; color: 'success' | 'info' | 'warning' }> = {
 	local: { label: 'This computer', icon: 'i-lucide:lock', color: 'success' },
@@ -15,7 +16,7 @@ const badge = computed(() => BADGES[props.reach])
 
 <template>
 	<UBadge
-		:label="badge.label"
+		:label="label ?? badge.label"
 		:icon="badge.icon"
 		:color="badge.color"
 		variant="subtle"

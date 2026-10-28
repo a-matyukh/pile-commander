@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { bookmarks, last_opened } from '@/store/workspaces_list'
 import cloud from '@/store/cloud'
+import { t } from '@/i18n'
 import { BROWSER_ROOT } from './drives'
 import {
 	EXPLORER_BOOKMARKS_KEY,
@@ -203,6 +204,14 @@ describe('explorer bookmark list', () => {
 			folder_id: '/',
 		})).toBe('Shared')
 		cloud.workspaces = previous
+	})
+
+	test('names the browser storage root by the drive, not by its path', () => {
+		expect(bookmark_name({
+			drive_id: 'browser',
+			root_id: BROWSER_ROOT,
+			folder_id: BROWSER_ROOT,
+		})).toBe(t('source.browser_disk'))
 	})
 
 	test('drag reorder moves a bookmark before or after another', () => {

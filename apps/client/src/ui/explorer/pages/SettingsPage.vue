@@ -207,7 +207,7 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 		</TabsContent>
 		<TabsContent value="ai" class="pane">
 			<div class="card">
-				<AiSettingsSection />
+				<AiSettingsSection bare />
 			</div>
 
 		</TabsContent>

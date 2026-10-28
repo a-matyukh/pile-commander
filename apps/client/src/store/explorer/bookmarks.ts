@@ -1,6 +1,7 @@
 import { useStorage } from '@vueuse/core'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
+import { t } from '@/i18n'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import cloud from '@/store/cloud'
 import { BROWSER_ROOT, is_within } from './drives'
@@ -153,6 +154,7 @@ export function bookmark_name(ref: FolderRef): string {
 			?? ref.root_id
 	}
 	if (ref.drive_id === 'browser') {
+		if (ref.folder_id === BROWSER_ROOT) return t('source.browser_disk')
 		return legacy_display_name(ref.folder_id) ?? basename(ref.folder_id)
 	}
 	return basename(ref.folder_id)

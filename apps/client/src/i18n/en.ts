@@ -499,6 +499,7 @@ export const en: typeof ru = {
 		key_plain_http: 'A key is never sent over plain http on the network',
 		key_tab_only: 'In the browser the key is kept for this tab only',
 		key_saved: 'Key saved',
+		key_save: 'Save',
 		key_remove: 'Remove key',
 		test: 'Connection',
 		test_d: 'Ask the provider for its models',

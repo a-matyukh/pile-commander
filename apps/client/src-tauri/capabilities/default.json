@@ -127,7 +127,8 @@
       "identifier": "opener:allow-open-path",
       "allow": [
         { "path": "$HOME" },
-        { "path": "$HOME/**/*" }
+        { "path": "$HOME/**/*" },
+        { "path": "$HOME/.Trash" }
       ]
     },
     "xattrs:default",
