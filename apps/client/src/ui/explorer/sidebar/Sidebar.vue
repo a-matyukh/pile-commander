@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useEventListener } from '@vueuse/core'
-import { computed, watch, watchEffect } from 'vue'
+import { computed, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { Drive } from '@/domain/Drive'
 import { t } from '@/i18n'
@@ -24,7 +24,14 @@ const hub_open = computed(() => {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' && location.page === 'hub'
 })
+/**
+ * The source the user just picked. The switch is instant, as in the
+ * prototype: the tree shows that drive (with a spinner while it lists its
+ * folders) before the navigation to its first folder has finished
+ */
+const picked_source = ref<string | null>(null)
 const active_source = computed(() => {
+	if (picked_source.value) return picked_source.value
 	if (hub_open.value) return 'hub'
 	const location = explorer_navigation.location
 	return location?.kind === 'folder' ? location.ref.drive_id : null
@@ -64,6 +71,11 @@ function source_is_open(drive: Drive): boolean {
 }
 
 async function open_drive(drive: Drive) {
+	picked_source.value = drive.id
+	switching.value = true
+	// Never stuck behind the spinner: a slow or failed switch shows what there is
+	if (switch_guard) clearTimeout(switch_guard)
+	switch_guard = setTimeout(() => { switching.value = false }, 15_000)
 	try {
 		const root = (await drive.roots())[0]
 		if (!root) return
@@ -74,8 +86,52 @@ async function open_drive(drive: Drive) {
 		})
 	} catch (error) {
 		report_error(store, error)
+	} finally {
+		// Another pick meanwhile owns the switch
+		if (picked_source.value === drive.id) picked_source.value = null
 	}
 }
+
+function open_hub() {
+	picked_source.value = null
+	switching.value = false
+	void explorer_navigation.open_page('hub')
+}
+
+/** The spinner waits a moment: a quick list should not flash it */
+const listing = computed(() => !!active_drive.value && explorer_tree.listed_drive_id !== active_drive.value.id)
+
+/**
+ * From a click on a source until its tree is final — listed, navigated to
+ * its first folder, that folder's root open and expanded — the user sees
+ * only a spinner, not the old drive's tree or the steps in between
+ */
+const switching = ref(false)
+const settled = computed(() => {
+	const drive = active_drive.value
+	if (!drive || picked_source.value || explorer_tree.listed_drive_id !== drive.id) return false
+	const location = explorer_navigation.location
+	if (location?.kind !== 'folder' || location.ref.drive_id !== drive.id) return true
+	const root = explorer_tree.roots.find(item => item.root.id === location.ref.root_id)
+	return !root || (!root.loading && root.workspace !== null)
+})
+let switch_guard: ReturnType<typeof setTimeout> | null = null
+watch(settled, now => {
+	if (!now || !switching.value) return
+	switching.value = false
+	if (switch_guard) clearTimeout(switch_guard)
+})
+const show_spinner = ref(false)
+let spinner_timer: ReturnType<typeof setTimeout> | null = null
+watch(() => listing.value || switching.value, now => {
+	if (spinner_timer) clearTimeout(spinner_timer)
+	spinner_timer = null
+	if (!now) {
+		show_spinner.value = false
+		return
+	}
+	spinner_timer = setTimeout(() => { show_spinner.value = true }, 250)
+}, { immediate: true })
 
 watch(() => [primary_children.value, explorer_tree.round] as const, ([nodes]) => {
 	if (primary_root.value) explorer_tree.probe_folders(primary_root.value, nodes)
@@ -120,7 +176,7 @@ watchEffect(() => {
 				:class="{ cur: active_source === 'hub' }"
 				:aria-label="t('source.hub')"
 				:data-tip="t('source.hub')"
-				@click="explorer_navigation.open_page('hub')"
+				@click="open_hub"
 			/>
 		</div>
 		<div
@@ -129,7 +185,7 @@ watchEffect(() => {
 			:data-drop-root="primary_spot?.root_key"
 			:data-drop-folder="primary_spot?.folder_id"
 		>
-			<template v-if="!hub_open">
+			<template v-if="!hub_open && !switching">
 				<template v-if="primary_root">
 					<TreeRow
 						v-for="node in primary_children"
@@ -145,11 +201,11 @@ watchEffect(() => {
 					:item="item"
 				/>
 				<div v-if="nothing_found" class="none">{{ t('tree.nothing_found') }}</div>
-				<!-- Listing the roots (the cloud asks the server): the tree is empty for a moment -->
-				<div v-if="active_drive && explorer_tree.listed_drive_id !== active_drive.id" class="none">
-					<Icon icon="tabler:loader-2" class="spin" />
-				</div>
 			</template>
+			<!-- Switching drives or listing the roots: nothing but a spinner until the tree is final -->
+			<div v-if="!hub_open && (switching || listing) && show_spinner" class="none">
+				<Icon icon="tabler:loader-2" class="spin" />
+			</div>
 		</div>
 		<template v-if="!hub_open">
 			<div v-if="filtered" class="chip">
