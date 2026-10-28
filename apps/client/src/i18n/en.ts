@@ -452,6 +452,7 @@ export const en: typeof ru = {
 		open_in_browser_d: 'Menu item of cloud folders',
 	},
 	errors: {
+		move_kept_both: 'The folder “{name}” changed while it was being moved. Nothing was lost: a copy is in the new place, and the original stayed where it was.',
 		folder_access_denied: 'No access to the folder “{name}”. Allow Pile Commander access in System Settings → Privacy & Security → Full Disk Access',
 	},
 	plural: {

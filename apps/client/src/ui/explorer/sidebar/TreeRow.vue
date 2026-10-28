@@ -96,11 +96,21 @@ function press(event: PointerEvent) {
 	const node = props.node
 	if (!node || !can_write.value || is_legacy_browser_folder(props.item, node)) return
 	if (event.target instanceof Element && event.target.closest('.tg, .cv')) return
+	// A press on a row starts a drag, not a text selection
+	event.preventDefault()
 	press_tree_row(event, {
 		...spot.value,
 		name: name.value,
 		parent_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(props.item)),
-	}, target => { void explorer_tree.move_folder(props.item, node, target.folder_id) })
+	}, target => {
+		if (target.root_key === root_key.value) {
+			void explorer_tree.move_folder(props.item, node, target.folder_id)
+			return
+		}
+		const target_item = explorer_tree.roots.find(item =>
+			tree_root_key(item.drive.id, item.root.id) === target.root_key)
+		if (target_item) void explorer_tree.transfer_folder(props.item, node, target_item, target.folder_id)
+	})
 }
 
 // Hovering a collapsed folder during a drag opens it, to drop deeper
@@ -190,6 +200,8 @@ watchEffect(on_cleanup => {
 
 <style scoped>
 .r {
+	user-select: none;
+	-webkit-user-select: none;
 	display: flex;
 	align-items: center;
 	gap: 6px;

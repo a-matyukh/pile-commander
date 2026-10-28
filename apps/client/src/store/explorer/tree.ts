@@ -6,6 +6,10 @@ import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
 import { normalize_workspace_id, parent_folder_id_from_node_id, path_separator } from '@/services/workspace/paths'
 import store from '@/store'
+import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pile-commander/file-manager'
+import { require_supabase } from '@/services/cloud/client'
+import { t } from '@/i18n'
+import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
 import { report_error } from '@/store/helpers/reportError'
 import {
 	bookmarks as legacy_bookmarks,
@@ -28,6 +32,20 @@ export type ExplorerTreeDeps = {
 	set_expanded(root_ids: Iterable<string>): void
 	browser_workspaces(): readonly WorkspacesListItem[]
 	on_error(error: unknown): void
+	/**
+	 * A move across cloud workspaces is a copy and a delete. These let the
+	 * delete leave no trace and never take what someone else did meanwhile:
+	 * the source row and its stamp are read together by path before the copy,
+	 * and the row is removed only if it is still there, unchanged (rpc.sql
+	 * delete_moved_entry). Optional: without them a move removes the source
+	 * to the trash
+	 */
+	cloud_stamp_at?(workspace_id: string, path: string): Promise<{ entry_id: string; stamp: string }>
+	delete_moved_cloud_entry?(entry_id: string, stamp: string, path: string): Promise<'deleted' | 'trashed' | 'changed' | 'gone'>
+	/** Trash a cloud row by id: a failed partial copy, wherever it is now */
+	trash_cloud_entry?(entry_id: string): Promise<void>
+	/** Keeps a root's store open during an operation; returns the release */
+	hold_root?(root_id: string): () => void
 }
 
 export function tree_root_folder_id(item: ExplorerTreeRoot): string {
@@ -454,6 +472,101 @@ export function create_explorer_tree(
 		}
 	}
 
+	/**
+	 * Moves a folder into another root of the same drive: another cloud
+	 * workspace, or between ~ and a folder outside it. The cloud forbids moves
+	 * across workspaces, so transfer_entries copies through both file managers
+	 * and then removes the source (to the trash). When the current place was
+	 * inside it, navigation follows to the new root
+	 */
+	async function transfer_folder(
+		item: ExplorerTreeRoot,
+		node: WorkspaceTreeNode,
+		target: ExplorerTreeRoot,
+		target_folder_id: string,
+	) {
+		// Both stores stay open for the whole transfer, even if the user
+		// collapses a root meanwhile; released (and swept) at the end
+		const releases = [item, target].map(root => deps.hold_root?.(root.root.id))
+		try {
+			const source_store = await ensure_workspace(item)
+			const target_store = await ensure_workspace(target)
+			const affected = affected_current(item, node.id)
+			const remove_source = await stamped_remove(item, node.id)
+			let kept = false
+			const errors_before = [source_store.last_error, target_store.last_error]
+			const [moved] = await transfer_entries({
+				source_store,
+				target_store,
+				entry_ids: [node.id],
+				target_folder_id,
+				mode: 'move',
+				discard: target.drive.kind === 'cloud' ? discard_partial : undefined,
+				remove_source: remove_source && (async () => {
+					kept = !(await remove_source())
+					return !kept
+				}),
+			})
+			// transfer_entries reports into each store, and the shell shows only
+			// the current one: lift a failure from the other store to the shell
+			for (const [index, store] of [source_store, target_store].entries()) {
+				if (!store.last_error || store.last_error === errors_before[index]) continue
+				deps.on_error(new Error(store.last_error))
+				store.clear_error()
+			}
+			if (kept) {
+				// Someone changed the folder while it was copied: nothing of theirs
+				// may be lost, so both stay and the user hears why
+				deps.on_error(new Error(t('errors.move_kept_both', { name: node_name(item, node) })))
+				return
+			}
+			if (!moved || !affected) return
+			const now = current_ref()
+			if (!now || !same_ref(now, affected)) return
+			await deps.open_folder({
+				drive_id: target.drive.id,
+				root_id: target.root.id,
+				folder_id: moved + affected.folder_id.slice(node.id.length),
+			})
+		} catch (error) {
+			deps.on_error(error)
+		} finally {
+			for (const release of releases) release?.()
+		}
+	}
+
+	/**
+	 * The source removal of a cloud move: the row and its stamp are read now,
+	 * before the copy reads anything, and removed later only if it is still
+	 * at this path and nothing changed. Resolves true when removed, false
+	 * when kept. Null (the default remove, to the trash) off the cloud or
+	 * when the stamp cannot be taken.
+	 *
+	 * A failed copy is not discarded without a trace: someone may already
+	 * have edited what landed in the target, so it goes to the target's trash
+	 * (transfer_entries' default), where nothing is lost
+	 */
+	async function stamped_remove(item: ExplorerTreeRoot, folder_id: string) {
+		const { cloud_stamp_at, delete_moved_cloud_entry } = deps
+		if (item.drive.kind !== 'cloud' || !cloud_stamp_at || !delete_moved_cloud_entry) return null
+		try {
+			const { entry_id, stamp } = await cloud_stamp_at(item.root.id, folder_id)
+			return async () => (await delete_moved_cloud_entry(entry_id, stamp, folder_id)) !== 'changed'
+		} catch {
+			return null
+		}
+	}
+
+	/**
+	 * A failed copy into the cloud goes to the target's trash by its row id,
+	 * not its path: someone may have moved it and put their own folder at
+	 * that path meanwhile
+	 */
+	async function discard_partial(store: WorkspaceStore, copy: PartialCopy) {
+		if (copy.entry_id && deps.trash_cloud_entry) await deps.trash_cloud_entry(copy.entry_id)
+		else await store.file_manager.remove(copy.id)
+	}
+
 	async function remove_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
 		try {
 			const workspace = await ensure_workspace(item)
@@ -499,6 +612,7 @@ export function create_explorer_tree(
 		create_folder,
 		rename_folder,
 		move_folder,
+		transfer_folder,
 		remove_folder,
 		probe_folders,
 		is_probing,
@@ -513,4 +627,8 @@ export const explorer_tree = create_explorer_tree({
 	set_expanded: root_ids => explorer_drives.set_expanded(root_ids),
 	browser_workspaces: () => [...legacy_bookmarks.value, ...legacy_last_opened.value],
 	on_error: error => report_error(store, error),
+	cloud_stamp_at: (workspace_id, path) => entry_subtree_stamp_at(require_supabase(), workspace_id, path),
+	delete_moved_cloud_entry: (entry_id, stamp, path) => delete_moved_entry(require_supabase(), entry_id, stamp, path),
+	trash_cloud_entry: entry_id => trash_entry_id(require_supabase(), entry_id),
+	hold_root: root_id => explorer_drives.hold(root_id),
 })

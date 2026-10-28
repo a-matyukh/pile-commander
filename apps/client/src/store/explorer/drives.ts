@@ -40,6 +40,11 @@ export type ExplorerDrives = {
 	open_default(): Promise<WorkspaceStore>
 	/** Roots the tree currently has expanded. Unlisted open stores are disposed. */
 	set_expanded(root_ids: Iterable<string>): void
+	/**
+	 * Keeps a root's store open while an operation uses it (a transfer into a
+	 * collapsed root). The release lets the next sweep close it, and sweeps
+	 */
+	hold(root_id: string): () => void
 	/** Closes every store Drive holds and forgets outside roots. Does not close a store it does not hold. */
 	dispose_all(): void
 }
@@ -75,6 +80,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 	const opening = new Map<string, Promise<WorkspaceStore>>()
 	const outside = new Set<string>()
 	const expanded = new Set<string>()
+	const holds = new Map<string, number>()
 	let home: string | null = null
 	let current_root_id: string | null = null
 	let epoch = 0
@@ -84,7 +90,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		return home
 	}
 
-	const kept = (root_id: string) => root_id === current_root_id || expanded.has(root_id)
+	const kept = (root_id: string) => root_id === current_root_id || expanded.has(root_id) || holds.has(root_id)
 
 	const sweep = () => {
 		for (const [key, store] of stores) {
@@ -185,6 +191,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		opening.clear()
 		outside.clear()
 		expanded.clear()
+		holds.clear()
 		current_root_id = null
 	}
 
@@ -244,6 +251,18 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		open_default: () => deps.is_desktop
 			? home_id().then(id => open('local', id))
 			: open('browser', BROWSER_ROOT),
+		hold(root_id: string) {
+			holds.set(root_id, (holds.get(root_id) ?? 0) + 1)
+			let released = false
+			return () => {
+				if (released) return
+				released = true
+				const left = (holds.get(root_id) ?? 1) - 1
+				if (left > 0) holds.set(root_id, left)
+				else holds.delete(root_id)
+				sweep()
+			}
+		},
 		set_expanded(root_ids: Iterable<string>) {
 			expanded.clear()
 			for (const id of root_ids) expanded.add(id)

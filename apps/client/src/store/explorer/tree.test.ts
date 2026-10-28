@@ -564,3 +564,165 @@ describe('explorer tree', () => {
 		})
 	})
 })
+
+describe('moving a folder to another root of the same drive', () => {
+	const live: WorkspaceStore[] = []
+	afterEach(() => {
+		for (const store of live.splice(0)) store.dispose()
+	})
+
+	async function two_roots(kind: 'local' | 'cloud' = 'local') {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/Projects')
+		fake.seed_folder('/home/Projects/app')
+		fake.seed_folder('/vol')
+		fake.seed_folder('/vol/Backup')
+		const stores = new Map<string, WorkspaceStore>()
+		for (const id of ['/home', '/vol']) {
+			const store = await createWorkspaceStore({ id, type: kind, name: id }, fake.fm, { root_folder_id: id })
+			if (!store) throw new Error('no store')
+			stores.set(id, store)
+			live.push(store)
+		}
+		const drive: Drive = {
+			id: kind,
+			kind,
+			name: kind,
+			icon: '',
+			trash: kind === 'cloud' ? 'page' : 'system',
+			roots: async () => [
+				{ id: '/home', name: 'Home', can_write: true },
+				{ id: '/vol', name: 'vol', can_write: true },
+			],
+			store_for: async id => stores.get(id)!,
+		}
+		let location: ExplorerLocation | null = {
+			kind: 'folder',
+			ref: { drive_id: kind, root_id: '/home', folder_id: '/home/Projects/app' },
+		}
+		const open_folder = vi.fn(async (ref: FolderRef) => { location = { kind: 'folder', ref } })
+		const on_error = vi.fn()
+		const cloud_stamp_at = vi.fn(async (_workspace: string, path: string) => ({ entry_id: `row:${path}`, stamp: `stamp:${path}` }))
+		let delete_result: 'deleted' | 'trashed' | 'changed' = 'deleted'
+		const delete_moved_cloud_entry = vi.fn(async (row: string, _stamp: string, _path: string) => {
+			if (delete_result !== 'changed') await fake.fm.remove(row.slice('row:'.length))
+			return delete_result
+		})
+		const released: string[] = []
+		const hold_root = vi.fn((root_id: string) => () => { released.push(root_id) })
+		const tree = create_explorer_tree({
+			current_location: () => location,
+			open_folder,
+			set_expanded: () => {},
+			browser_workspaces: () => [],
+			on_error,
+			cloud_stamp_at,
+			delete_moved_cloud_entry,
+			hold_root,
+		})
+		await tree.show_drive(drive, null)
+		const [home, vol] = tree.roots
+		return {
+			fake, stores, tree, home: home!, vol: vol!, open_folder, on_error, hold_root, released,
+			cloud_stamp_at, delete_moved_cloud_entry,
+			set_delete_result(result: typeof delete_result) { delete_result = result },
+		}
+	}
+
+	test('the folder lands in the other root and navigation follows the current place', async () => {
+		const { fake, stores, tree, home, vol, open_folder, on_error, hold_root, released } = await two_roots()
+		await stores.get('/vol')!.show_folder_children('/vol/Backup')
+		const projects = stores.get('/home')!.tree.find(node => node.id === '/home/Projects')!
+
+		await tree.transfer_folder(home, projects, vol, '/vol/Backup')
+
+		expect(on_error).not.toHaveBeenCalled()
+		expect(fake.has('/vol/Backup/Projects/app')).toBe(true)
+		expect(fake.has('/home/Projects')).toBe(false)
+		expect(open_folder).toHaveBeenCalledWith({
+			drive_id: 'local',
+			root_id: '/vol',
+			folder_id: '/vol/Backup/Projects/app',
+		})
+		// Both stores were held for the transfer and let go after it
+		expect(hold_root.mock.calls.map(call => call[0])).toEqual(['/home', '/vol'])
+		expect(released.sort()).toEqual(['/home', '/vol'])
+	})
+
+	test('a failure in the other store reaches the shell', async () => {
+		const { stores, tree, home, vol, on_error } = await two_roots()
+		const target = stores.get('/vol')!
+		await target.show_folder_children('/vol/Backup')
+		// A local pair falls back to copy + remove when the rename fails: fail both
+		vi.spyOn(target.file_manager, 'move').mockRejectedValueOnce(new Error('cross-device link'))
+		vi.spyOn(target.file_manager, 'copy_entry').mockRejectedValueOnce(new Error('disk full'))
+		const projects = stores.get('/home')!.tree.find(node => node.id === '/home/Projects')!
+
+		await tree.transfer_folder(home, projects, vol, '/vol/Backup')
+
+		expect(on_error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('disk full') }))
+		expect(target.last_error).toBeNull()
+	})
+
+	test('across cloud workspaces the source is stamped before the copy and removed by that stamp', async () => {
+		const ok = await two_roots('cloud')
+		await ok.stores.get('/vol')!.show_folder_children('/vol/Backup')
+		const projects = ok.stores.get('/home')!.tree.find(node => node.id === '/home/Projects')!
+		await ok.tree.transfer_folder(ok.home, projects, ok.vol, '/vol/Backup')
+
+		expect(ok.on_error).not.toHaveBeenCalled()
+		expect(ok.cloud_stamp_at).toHaveBeenCalledWith('/home', '/home/Projects')
+		expect(ok.delete_moved_cloud_entry).toHaveBeenCalledWith('row:/home/Projects', 'stamp:/home/Projects', '/home/Projects')
+		expect(ok.fake.has('/vol/Backup/Projects/app')).toBe(true)
+		expect(ok.fake.has('/home/Projects')).toBe(false)
+	})
+
+	test('a source changed during the copy is kept, the copy stays, and the user hears why', async () => {
+		const run = await two_roots('cloud')
+		run.set_delete_result('changed')
+		await run.stores.get('/vol')!.show_folder_children('/vol/Backup')
+		const source = run.stores.get('/home')!
+		const projects = source.tree.find(node => node.id === '/home/Projects')!
+		await run.tree.transfer_folder(run.home, projects, run.vol, '/vol/Backup')
+
+		expect(run.fake.has('/home/Projects/app')).toBe(true)
+		expect(run.fake.has('/vol/Backup/Projects/app')).toBe(true)
+		expect(source.tree.some(node => node.id === '/home/Projects')).toBe(true)
+		expect(run.on_error).toHaveBeenCalledTimes(1)
+		// Navigation stays: the current place was not moved
+		expect(run.open_folder).not.toHaveBeenCalled()
+	})
+
+	test('a failed copy into a cloud root goes to its trash, and the source stays', async () => {
+		const run = await two_roots('cloud')
+		const target = run.stores.get('/vol')!
+		await target.show_folder_children('/vol/Backup')
+		run.fake.seed_file('/home/Projects/app/one.txt', '1')
+		run.fake.seed_file('/home/Projects/app/two.txt', '2')
+		const upload = run.fake.fm.upload_file.bind(run.fake.fm)
+		let uploads = 0
+		run.fake.fm.upload_file = async (...args) => {
+			if (++uploads === 2) throw new Error('network lost')
+			return upload(...args)
+		}
+		const remove = vi.spyOn(run.fake.fm, 'remove')
+		const projects = run.stores.get('/home')!.tree.find(node => node.id === '/home/Projects')!
+		await run.tree.transfer_folder(run.home, projects, run.vol, '/vol/Backup')
+
+		// Someone may already have edited what landed: no hard delete there,
+		// only the trash, where nothing is lost
+		expect(remove).toHaveBeenCalledWith('/vol/Backup/Projects')
+		expect(run.delete_moved_cloud_entry).not.toHaveBeenCalled()
+		expect(run.fake.has('/home/Projects/app/one.txt')).toBe(true)
+		expect(run.on_error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('network lost') }))
+	})
+
+	test('a local move does not stamp anything', async () => {
+		const { stores, tree, home, vol, cloud_stamp_at } = await two_roots()
+		await stores.get('/vol')!.show_folder_children('/vol/Backup')
+		const projects = stores.get('/home')!.tree.find(node => node.id === '/home/Projects')!
+		await tree.transfer_folder(home, projects, vol, '/vol/Backup')
+		expect(cloud_stamp_at).not.toHaveBeenCalled()
+	})
+})

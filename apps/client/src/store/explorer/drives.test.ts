@@ -122,6 +122,34 @@ describe('explorer drives', () => {
 		expect(await drives.open('local', '/Volumes/Disk')).toBe(disk_store)
 	})
 
+	test('a held root stays open through a sweep and closes on release', async () => {
+		const stores = new Map<string, WorkspaceStore>()
+		const drives = create_explorer_drives(deps({
+			cloud_roots: () => [
+				{ id: 'ws-1', name: 'One', can_write: true },
+				{ id: 'ws-2', name: 'Two', can_write: true },
+			],
+			open_cloud: async (item) => {
+				const store = fake_store()
+				stores.set(item.id, store)
+				return store
+			},
+		}))
+		const cloud = drives.drives().find(drive => drive.kind === 'cloud')!
+		await drives.open('cloud', 'ws-1')
+		const release = drives.hold('ws-2')
+		const held = await cloud.store_for('ws-2')
+
+		drives.set_expanded([])
+		expect(held.dispose).not.toHaveBeenCalled()
+
+		release()
+		expect(held.dispose).toHaveBeenCalledTimes(1)
+		// A second release is a no-op; the current root stays
+		release()
+		expect(stores.get('ws-1')!.dispose).not.toHaveBeenCalled()
+	})
+
 	test('cloud roots come from the workspace list and reuse one store', async () => {
 		const opened: WorkspacesListItem[] = []
 		const cloud_store = fake_store()

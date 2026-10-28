@@ -35,9 +35,31 @@ export type TransferOptions = {
 	 * the read→write path so each FM call stays inside one workspace.
 	 */
 	force_generic?: boolean
+	/**
+	 * Removes what a failed copy left in the target. Defaults to the target
+	 * file manager's remove; a caller can make it leave no trace (the cloud
+	 * would otherwise keep the partial folder in its trash)
+	 */
+	discard?: (target_store: WorkspaceStore, partial: PartialCopy) => Promise<void>
+	/**
+	 * Removes the source after its copy landed ('move'). Defaults to the
+	 * source file manager's remove. Returning false keeps the source in
+	 * place (it changed during the copy): the transfer is then a copy
+	 */
+	remove_source?: (source_store: WorkspaceStore, id: string) => Promise<boolean>
 }
 
 type EntryMeta = { id: string; name: string; type: 'file' | 'folder' }
+
+/** What a failed generic copy left in the target */
+export type PartialCopy = {
+	/** Its root, by path */
+	id: string
+	/** Its root's cloud row id: the path may change (moved, replaced), this not */
+	entry_id?: string
+	/** Every entry the copy made, by path */
+	created: readonly string[]
+}
 
 /**
  * Cross-store (cross-workspace) transfer: the cloud backend forbids
@@ -74,6 +96,9 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 	const same_workspace = source_store.uid === target_store.uid
 	const local_pair = source_store.type === 'local' && target_store.type === 'local'
 	const direct = !options.force_generic && (same_workspace || local_pair)
+	// Ids compare as paths only within one namespace: two cloud workspaces
+	// both start at "/", so "/a/b" over there is not inside "/a" here
+	const shared_paths = same_workspace || local_pair
 
 	const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
 	const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
@@ -99,8 +124,8 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 			// copying a folder into itself/its subtree would recurse forever
 			// (local windows can be rooted inside the source desktop folder)
 			if (
-				target_folder_id === id
-				|| target_folder_id.startsWith(id + path_separator(id))
+				shared_paths
+				&& (target_folder_id === id || target_folder_id.startsWith(id + path_separator(id)))
 			) {
 				continue
 			}
@@ -120,6 +145,10 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 			// rename-based move already detached the source; every other path
 			// must remove it after a successful copy
 			let source_detached = false
+			// The generic copy builds the target folder piece by piece: on a
+			// failure midway, what it made so far is discarded
+			const partial: { id?: string; entry_id?: string } = {}
+			const made = new Map<string, string>()
 			try {
 				if (direct && mode === 'move') {
 					try {
@@ -138,10 +167,15 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 					copied = { id: child.id, name: child.name, type: meta.type }
 					xattrs = await target_fm.list_xattrs(copied.id)
 				} else {
-					copied = await copy_recursive(source_fm, target_fm, id, target_folder_id, name, meta.type, on_bytes)
+					copied = await copy_recursive(source_fm, target_fm, id, target_folder_id, name, meta.type, on_bytes, made, partial)
 					xattrs = await target_fm.list_xattrs(copied.id)
 				}
 			} catch (error) {
+				if (partial.id) {
+					const discard = options.discard ?? ((store: WorkspaceStore, copy: PartialCopy) => store.file_manager.remove(copy.id))
+					await discard(target_store, { id: partial.id, entry_id: partial.entry_id, created: [...made.values()] })
+						.catch(discard_error => console.error('[transfer] could not discard a partial copy', discard_error))
+				}
 				report_error(target_store, error)
 				return created_ids
 			}
@@ -160,25 +194,35 @@ export async function transfer_entries(options: TransferOptions): Promise<string
 
 		if (mode === 'move') {
 			if (!source_detached) {
+				let removed = true
 				try {
-					await source_fm.remove(id)
+					if (options.remove_source) removed = await options.remove_source(source_store, id)
+					else await source_fm.remove(id)
 				} catch (error) {
 					report_error(source_store, error)
 					return created_ids
 				}
+				// Kept on purpose (changed during the copy): this one was a copy
+				if (!removed) continue
 			}
 			invalidate_entry_content_caches(source_store.content_caches, id)
 			apply_entry_removed(source_store, id)
-			// Edges follow the entry across workspaces; when the other endpoint
-			// is transferred too (this or a later batch), the heal re-attaches it.
-			await move_folder_canvas_connections(
-				source_store,
-				target_store,
-				id,
-				copied.id,
-				parent_folder_id_from_node_id(id, source_store.id),
-				target_folder_id,
-			)
+			// An edge needs both ends in one workspace (the cloud enforces it).
+			// A remove_source caller moves across workspaces: an edge between the
+			// entry and something staying behind cannot follow, and goes with the
+			// source. Edges inside the moved folder were copied with it
+			if (!options.remove_source) {
+				// Edges follow the entry across workspaces; when the other endpoint
+				// is transferred too (this or a later batch), the heal re-attaches it.
+				await move_folder_canvas_connections(
+					source_store,
+					target_store,
+					id,
+					copied.id,
+					parent_folder_id_from_node_id(id, source_store.id),
+					target_folder_id,
+				)
+			}
 		}
 	}
 	} finally {
@@ -228,6 +272,8 @@ async function copy_recursive(
 	on_bytes: (loaded: number, total: number) => void,
 	/** source id → target id for the whole copied subtree (endpoint remap). */
 	id_map: Map<string, string> = new Map(),
+	/** Set to the entry this call creates, so a failure further in can discard it */
+	created?: { id?: string; entry_id?: string },
 ): Promise<EntryMeta> {
 	let child: FolderChild
 	if (type === 'folder') {
@@ -238,6 +284,10 @@ async function copy_recursive(
 		child = await target_fm.upload_file(target_folder_id, name, blob, mime, on_bytes)
 	}
 	id_map.set(source_id, child.id)
+	if (created) {
+		created.id = child.id
+		created.entry_id = child.entry_id
+	}
 
 	const xattrs = await source_fm.list_xattrs(source_id)
 	for (const attr of xattrs) {

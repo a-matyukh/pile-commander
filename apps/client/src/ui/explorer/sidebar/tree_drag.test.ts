@@ -26,9 +26,16 @@ describe('tree drag', () => {
 		expect(can_drop(source, { root_key: HOME, folder_id: '/Users/me/Projects/app-old' })).toBe(true)
 	})
 
-	test('not into another root or drive yet', () => {
-		expect(can_drop(source, { root_key: tree_root_key('local', '/Volumes/Disk'), folder_id: '/Volumes/Disk' })).toBe(false)
+	test('into another root of the same drive, not into another drive', () => {
+		expect(can_drop(source, { root_key: tree_root_key('local', '/Volumes/Disk'), folder_id: '/Volumes/Disk' })).toBe(true)
 		expect(can_drop(source, { root_key: tree_root_key('cloud', 'w1'), folder_id: '/' })).toBe(false)
+	})
+
+	test('cloud workspaces: the same path in another workspace is not "inside itself"', () => {
+		const cloud: TreeDragSource = { root_key: tree_root_key('cloud', 'w1'), folder_id: '/a', name: 'a', parent_id: '/' }
+		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w2'), folder_id: '/a/b' })).toBe(true)
+		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w2'), folder_id: '/' })).toBe(true)
+		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w1'), folder_id: '/a/b' })).toBe(false)
 	})
 })
 

@@ -11,3 +11,4 @@ apps/client/.env
 .cursor
 .claude
 piles
+BACKLOG.md

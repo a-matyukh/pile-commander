@@ -7,8 +7,9 @@ import { is_within } from '@/store/explorer/drives'
  * webview never gets native drop events (the old tree uses Sortable's
  * fallback for the same reason).
  *
- * Only within one root's store for now; moving across roots and drives is a
- * separate step (crossStoreTransfer).
+ * Within one drive: inside a root, or into another root of the same drive
+ * (another cloud workspace, a folder outside ~). Between ~ and the cloud is
+ * deferred: the tree shows one drive at a time.
  */
 
 /** A spot in the tree: a folder row, or the empty space of the main root */
@@ -38,10 +39,16 @@ export const tree_drag = reactive({
 
 export const tree_root_key = (drive_id: string, root_id: string) => `${drive_id}\0${root_id}`
 
-/** Where a folder may land: same root, not on itself or inside itself, not where it already is */
+const drive_of = (root_key: string) => root_key.slice(0, root_key.indexOf('\0'))
+
+/**
+ * Where a folder may land: the same drive; within its own root, not on itself,
+ * inside itself or where it already is. Ids of another root are its own paths
+ * (a cloud workspace starts at "/"), so they never nest with the source
+ */
 export function can_drop(source: TreeDragSource, spot: TreeDropSpot): boolean {
-	return spot.root_key === source.root_key
-		&& !is_within(spot.folder_id, source.folder_id)
+	if (spot.root_key !== source.root_key) return drive_of(spot.root_key) === drive_of(source.root_key)
+	return !is_within(spot.folder_id, source.folder_id)
 		&& spot.folder_id !== source.parent_id
 }
 
