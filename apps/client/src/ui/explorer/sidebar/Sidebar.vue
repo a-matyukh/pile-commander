@@ -88,6 +88,23 @@ function source_is_open(drive: Drive): boolean {
 }
 
 async function open_drive(drive: Drive) {
+	// The source already shown: its root, as Finder's Home. No switch, no spinner
+	const location = explorer_navigation.location
+	if (location?.kind === 'folder' && location.ref.drive_id === drive.id) {
+		try {
+			const root = (await drive.roots())[0]
+			if (root) {
+				await explorer_navigation.open_folder({
+					drive_id: drive.id,
+					root_id: root.id,
+					folder_id: drive.kind === 'cloud' ? '/' : root.id,
+				})
+			}
+		} catch (error) {
+			report_error(store, error)
+		}
+		return
+	}
 	picked_source.value = drive.id
 	switching.value = true
 	// Never stuck behind the spinner: a slow or failed switch shows what there is

@@ -64,6 +64,8 @@ export type ExplorerNavigation = {
 	location: ExplorerLocation | null
 	readonly can_go_back: boolean
 	readonly can_go_forward: boolean
+	/** A navigation is opening its folder: the store's open folder may differ from `location` meanwhile */
+	readonly navigating: boolean
 	open_folder(ref: FolderRef): Promise<void>
 	/**
 	 * Switching to a drive: its last open folder, as it was left. A folder that
@@ -197,6 +199,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		location: null as ExplorerLocation | null,
 		history: [] as ExplorerLocation[],
 		index: 0,
+		in_flight: 0,
 	})
 
 	function remember_selection() {
@@ -220,6 +223,19 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 	}
 
 	async function show(
+		target: ExplorerLocation,
+		options: ShowOptions,
+		seen: number,
+	): Promise<ExplorerLocation | null> {
+		state.in_flight += 1
+		try {
+			return await show_now(target, options, seen)
+		} finally {
+			state.in_flight -= 1
+		}
+	}
+
+	async function show_now(
 		target: ExplorerLocation,
 		options: ShowOptions,
 		seen: number,
@@ -450,6 +466,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		get location() { return state.location },
 		get can_go_back() { return state.index > 0 },
 		get can_go_forward() { return state.index < state.history.length - 1 },
+		get navigating() { return state.in_flight > 0 },
 		open_folder: (ref: FolderRef) => navigate(folder_location(ref), false),
 		open_drive,
 		open_bookmark,

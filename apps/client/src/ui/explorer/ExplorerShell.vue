@@ -10,6 +10,7 @@ import { explorer_settings } from '@/store/explorer/settings'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
+import FolderContent from '@/ui/explorer/FolderContent.vue'
 import HubView from '@/ui/hub/HubView.vue'
 import cloud from '@/store/cloud'
 import { take_explorer_start } from '@/store/explorer/public_view'
@@ -128,6 +129,7 @@ onUnmounted(() => {
 					<TrashPage v-else-if="page === 'trash'" />
 					<!-- The current Hub; a publication opens in the current viewer until step 3.6 -->
 					<HubView v-else-if="page === 'hub'" class="hub" hide_title />
+					<FolderContent v-else-if="!page" />
 				</div>
 			</main>
 		</div>
