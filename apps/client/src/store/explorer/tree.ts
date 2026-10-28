@@ -10,6 +10,7 @@ import cloud from '@/store/cloud'
 import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pile-commander/file-manager'
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
+import { retarget_bookmarks } from './bookmarks'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
 import { create_entry } from '@/store/helpers/createEntry'
 import { apply_entry_removed } from '@/services/workspace/mutations'
@@ -54,6 +55,8 @@ export type ExplorerTreeDeps = {
 	delete_cloud_root?(root_id: string): Promise<void>
 	/** Keeps a root's store open during an operation; returns the release */
 	hold_root?(root_id: string): () => void
+	/** Bookmarks at or inside a renamed or moved folder follow it */
+	retarget_bookmarks?(from: FolderRef, to: FolderRef): void
 }
 
 export function tree_root_folder_id(item: ExplorerTreeRoot): string {
@@ -464,6 +467,11 @@ export function create_explorer_tree(
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
 			await workspace.rename(node.id, name)
+			const parent = parent_folder_id_from_node_id(node.id, tree_root_folder_id(item))
+			const renamed = workspace.folders?.[parent]?.children.find(child => child.name === name && child.type === 'folder')
+			if (renamed && renamed.id !== node.id) {
+				deps.retarget_bookmarks?.(folder_ref(item, node.id), folder_ref(item, renamed.id))
+			}
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
 			deps.on_error(error)
@@ -481,7 +489,8 @@ export function create_explorer_tree(
 		try {
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
-			await workspace.move(node.id, target_folder_id, Number.MAX_SAFE_INTEGER)
+			const moved = await workspace.move(node.id, target_folder_id, Number.MAX_SAFE_INTEGER)
+			if (moved && moved !== node.id) deps.retarget_bookmarks?.(folder_ref(item, node.id), folder_ref(item, moved))
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
 			deps.on_error(error)
@@ -539,6 +548,9 @@ export function create_explorer_tree(
 				// may be lost, so both stay and the user hears why
 				deps.on_error(new Error(t('errors.move_kept_both', { name: node_name(item, node) })))
 				return
+			}
+			if (moved) {
+				deps.retarget_bookmarks?.(folder_ref(item, node.id), { drive_id: target.drive.id, root_id: target.root.id, folder_id: moved })
 			}
 			if (!moved || !affected) return
 			const now = current_ref()
@@ -670,6 +682,10 @@ export function create_explorer_tree(
 			if (!folder || created.length !== entry_ids.length) return
 
 			await deps.delete_cloud_root(item.root.id)
+			deps.retarget_bookmarks?.(
+				folder_ref(item, source_folder_id),
+				{ drive_id: target.drive.id, root_id: target.root.id, folder_id: folder.id },
+			)
 			const destination: FolderRef | null = affected
 				? {
 					drive_id: target.drive.id,
@@ -719,11 +735,30 @@ export function create_explorer_tree(
 		else await store.file_manager.remove(copy.id)
 	}
 
-	async function remove_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
+	/**
+	 * When the current place was inside the removed folder, navigation goes
+	 * where the store went (its root), or with `open_parent` to the removed
+	 * folder's parent (the folder header's menu)
+	 */
+	async function remove_folder(
+		item: ExplorerTreeRoot,
+		node: WorkspaceTreeNode,
+		options: { open_parent?: boolean } = {},
+	) {
 		try {
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
 			await workspace.remove(node.id)
+			// A failed remove leaves the store where it was: nowhere to go
+			if (options.open_parent && affected && workspace.opened_folder_id !== affected.folder_id) {
+				const now = current_ref()
+				if (!now || !same_ref(now, affected)) return
+				await deps.open_folder({
+					...affected,
+					folder_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(item)),
+				})
+				return
+			}
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
 			deps.on_error(error)
@@ -791,4 +826,5 @@ export const explorer_tree = create_explorer_tree({
 		if (cloud.last_error) throw new Error(cloud.last_error)
 	},
 	hold_root: root_id => explorer_drives.hold(root_id),
+	retarget_bookmarks,
 })

@@ -3,7 +3,7 @@ import type { FolderRef } from '@/domain/Drive'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import cloud from '@/store/cloud'
-import { BROWSER_ROOT } from './drives'
+import { BROWSER_ROOT, is_within } from './drives'
 import {
 	bookmarks as legacy_bookmarks,
 	filter_existing_workspaces,
@@ -179,6 +179,25 @@ export function add_bookmark(ref: FolderRef): void {
 
 export function remove_bookmark(ref: FolderRef): void {
 	explorer_bookmarks.value = explorer_bookmarks.value.filter(item => !same_ref(item, ref))
+}
+
+/**
+ * A folder was renamed or moved: bookmarks (and remembered places) at it or
+ * inside it follow to the new address, so they keep their name and still open
+ */
+export function retarget_bookmarks(from: FolderRef, to: FolderRef): void {
+	const follow = (list: FolderRef[]) => {
+		let changed = false
+		const next = list.map(ref => {
+			if (ref.drive_id !== from.drive_id || ref.root_id !== from.root_id) return ref
+			if (!is_within(ref.folder_id, from.folder_id)) return ref
+			changed = true
+			return { drive_id: to.drive_id, root_id: to.root_id, folder_id: to.folder_id + ref.folder_id.slice(from.folder_id.length) }
+		})
+		return changed ? next : list
+	}
+	explorer_bookmarks.value = follow(explorer_bookmarks.value)
+	explorer_last_opened.value = follow(explorer_last_opened.value)
 }
 
 /** Remembers a folder that is not already bookmarked. The list is not shown yet. */

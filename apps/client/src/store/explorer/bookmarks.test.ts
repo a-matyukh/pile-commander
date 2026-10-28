@@ -214,3 +214,24 @@ describe('explorer bookmark list', () => {
 		expect(explorer_bookmarks.value).toEqual([a, c, b])
 	})
 })
+
+describe('retarget_bookmarks', () => {
+	test('bookmarks at and inside a moved folder follow it; others stay', async () => {
+		const { explorer_bookmarks, retarget_bookmarks } = await import('./bookmarks')
+		explorer_bookmarks.value = [
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Old' },
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Old/sub' },
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Older' },
+		]
+		retarget_bookmarks(
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Old' },
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old' },
+		)
+		expect(explorer_bookmarks.value).toEqual([
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old' },
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old/sub' },
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Older' },
+		])
+		explorer_bookmarks.value = []
+	})
+})

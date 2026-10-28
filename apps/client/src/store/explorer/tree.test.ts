@@ -209,6 +209,37 @@ describe('explorer tree', () => {
 		expect(list).toHaveBeenCalledTimes(2)
 	})
 
+	test('a renamed folder takes its bookmarks along', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/Old')
+		fake.seed_folder('/home/Old/sub')
+		const workspace = await createWorkspaceStore({ id: '/home', type: 'local', name: 'home' }, fake.fm, { root_folder_id: '/home' })
+		if (!workspace) throw new Error('no store')
+		const retarget_bookmarks = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			browser_workspaces: () => [],
+			on_error: () => {},
+			retarget_bookmarks,
+		})
+		const drive: Drive = {
+			id: 'local', kind: 'local', name: 'Mac', icon: '', trash: 'system',
+			roots: async () => [{ id: '/home', name: 'Home', can_write: true }],
+			store_for: async () => workspace,
+		}
+		await tree.show_drive(drive, null)
+		const old = workspace.tree.find(node => node.id === '/home/Old')!
+		await tree.rename_folder(tree.roots[0]!, old, 'New')
+		expect(retarget_bookmarks).toHaveBeenCalledWith(
+			{ drive_id: 'local', root_id: '/home', folder_id: '/home/Old' },
+			{ drive_id: 'local', root_id: '/home', folder_id: '/home/New' },
+		)
+		workspace.dispose()
+	})
+
 	test('a folder read before is read again when expanded: while collapsed it had no watch', async () => {
 		const { tree, drive, workspace } = fixture()
 		await tree.show_drive(drive, null)
@@ -292,6 +323,40 @@ describe('explorer tree', () => {
 		await tree.remove_folder(tree.roots[0]!, node(ref.folder_id))
 
 		expect(open_folder).toHaveBeenCalledWith({ ...ref, folder_id: ROOT.id })
+	})
+
+	test('removing the current folder from its header menu opens its parent', async () => {
+		const ref: FolderRef = { drive_id: 'browser', root_id: ROOT.id, folder_id: `${ROOT.id}/workspace/old` }
+		const workspace = fake_store()
+		vi.mocked(workspace.remove).mockImplementation(async () => {
+			workspace.opened_folder_id = ROOT.id
+		})
+		const { tree, drive, open_folder } = fixture({
+			workspace,
+			location: { kind: 'folder', ref },
+		})
+		await tree.show_drive(drive, ref)
+
+		await tree.remove_folder(tree.roots[0]!, node(ref.folder_id), { open_parent: true })
+
+		expect(open_folder).toHaveBeenCalledTimes(1)
+		expect(open_folder).toHaveBeenCalledWith({ ...ref, folder_id: `${ROOT.id}/workspace` })
+	})
+
+	test('a failed remove from the header menu stays in the folder', async () => {
+		const ref: FolderRef = { drive_id: 'browser', root_id: ROOT.id, folder_id: `${ROOT.id}/workspace/old` }
+		const workspace = fake_store()
+		workspace.opened_folder_id = ref.folder_id
+		const { tree, drive, open_folder } = fixture({
+			workspace,
+			location: { kind: 'folder', ref },
+		})
+		await tree.show_drive(drive, ref)
+
+		await tree.remove_folder(tree.roots[0]!, node(ref.folder_id), { open_parent: true })
+
+		expect(workspace.remove).toHaveBeenCalledWith(ref.folder_id)
+		expect(open_folder).not.toHaveBeenCalled()
 	})
 
 	test('a chevron only for folders with visible subfolders; none while unread unless the read failed', () => {

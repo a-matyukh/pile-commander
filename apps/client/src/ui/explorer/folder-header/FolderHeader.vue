@@ -59,7 +59,7 @@ const title = computed(() => location.value ? folder_title(location.value, names
 		<Breadcrumbs :crumbs="crumbs" />
 		<div class="hrow">
 			<div class="ttl">{{ title }}</div>
-			<FolderActions v-if="workspace" :workspace="workspace" :folder_id="location.folder_id" align="end" />
+			<FolderActions v-if="workspace" :workspace="workspace" :folder="location" :name="title" align="end" />
 		</div>
 	</div>
 </template>

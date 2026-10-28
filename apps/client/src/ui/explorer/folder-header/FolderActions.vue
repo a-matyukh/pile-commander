@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
+import FolderMenu from './FolderMenu.vue'
 import ViewMenu from './ViewMenu.vue'
 
 /**
- * Actions of the open folder. Step 3.1 brings the view switch only; the
- * other menus of the prototype come with their own scenarios
+ * Actions of the open folder: the view switch and the "⋯" menu. The other
+ * menus of the prototype come with their own scenarios
  */
-defineProps<{ workspace: WorkspaceStore; folder_id: string; align: 'start' | 'end' }>()
+defineProps<{ workspace: WorkspaceStore; folder: FolderRef; name: string; align: 'start' | 'end' }>()
 </script>
 
 <template>
-	<ViewMenu :workspace="workspace" :folder_id="folder_id" :align="align" />
+	<ViewMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+	<FolderMenu :folder="folder" :name="name" :align="align" :can_write="workspace.can_write" />
 </template>

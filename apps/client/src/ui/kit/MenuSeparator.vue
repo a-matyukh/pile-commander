@@ -11,7 +11,9 @@ const tag = use_menu_kind() === 'context' ? ContextMenuSeparator : DropdownMenuS
 
 <style scoped>
 .ms {
-	height: 0.5px;
+	/* A whole pixel: at 0.5px a separator that lands on a fractional row
+	   rounds away to nothing, so some separators of a menu vanished */
+	height: 1px;
 	background: var(--border);
 	margin: 4px 6px;
 }

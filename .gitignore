@@ -12,3 +12,4 @@ apps/client/.env
 .claude
 piles
 BACKLOG.md
+USE_CASES.md

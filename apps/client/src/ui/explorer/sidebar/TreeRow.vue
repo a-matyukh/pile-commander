@@ -18,11 +18,8 @@ import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import Button from '@/ui/kit/Button.vue'
-import DropMenu from '@/ui/kit/DropMenu.vue'
-import MenuItem from '@/ui/kit/MenuItem.vue'
-import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
-import RenameFolderDialog from './RenameFolderDialog.vue'
+import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, press_tree_row, register_drop_opener, tree_drag, tree_root_key } from './tree_drag'
 
 const props = defineProps<{
@@ -31,8 +28,6 @@ const props = defineProps<{
 }>()
 
 const menu_open = ref(false)
-const rename_open = ref(false)
-const remove_open = ref(false)
 const folder_id = computed(() => props.node?.id ?? tree_root_folder_id(props.item))
 const workspace = computed(() => props.item.workspace)
 const children = computed(() => arranged_children(
@@ -72,7 +67,6 @@ const name = computed(() => props.node
 	: props.item.root.name)
 const hidden = computed(() => props.node ? is_hidden_entry_name(props.node.name) : false)
 const can_write = computed(() => workspace.value?.can_write ?? props.item.root.can_write)
-const can_rename = computed(() => props.node && !is_legacy_browser_folder(props.item, props.node))
 
 watch(
 	() => expanded.value ? [children.value, explorer_tree.round] as const : null,
@@ -85,9 +79,6 @@ function toggle() {
 	else void explorer_tree.toggle_root(props.item)
 }
 
-function rename(new_name: string) {
-	if (props.node) void explorer_tree.rename_folder(props.item, props.node, new_name)
-}
 
 /**
  * A folder with its own view shows that view's icon in color, as in the
@@ -109,6 +100,9 @@ const view_meta = computed(() => {
 	const view = entry_view(entry)
 	return view === 'list' ? null : FOLDER_VIEW_META[view]
 })
+
+/** This row's folder as an address, for the shared folder menu */
+const row_ref = computed(() => ({ drive_id: props.item.drive.id, root_id: props.item.root.id, folder_id: folder_id.value }))
 
 const root_key = computed(() => tree_root_key(props.item.drive.id, props.item.root.id))
 const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value }))
@@ -218,54 +212,23 @@ watchEffect(on_cleanup => {
 		<Icon v-else :icon="expanded && children.length ? 'tabler:folder-open' : 'tabler:folder'" class="plain" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
-			<DropMenu v-if="can_write" v-model:open="menu_open" :width="240" align="start">
+			<FolderMenu
+				v-model:open="menu_open"
+				:folder="row_ref"
+				:name="name"
+				align="start"
+				:can_write="can_write"
+				new_folder
+			>
 				<template #trigger>
 					<span class="dt" :data-tip="t('tree.folder_menu')" @click.stop><Icon icon="tabler:dots" /></span>
 				</template>
-				<MenuItem
-					icon="tabler:folder-plus"
-					:label="t('menu.new_folder')"
-					@select="explorer_tree.create_folder(item, node ?? null)"
-				/>
-				<template v-if="node">
-					<MenuSeparator />
-					<MenuItem
-						v-if="can_rename"
-						icon="tabler:pencil"
-						:label="t('menu.rename')"
-						@select="rename_open = true"
-					/>
-					<MenuItem
-						icon="tabler:trash"
-						:label="t('menu.move_to_trash')"
-						@select="item.drive.trash === null ? remove_open = true : explorer_tree.remove_folder(item, node)"
-					/>
-				</template>
-			</DropMenu>
+			</FolderMenu>
 		</span>
 	</div>
 	<div v-if="expanded && (children.length || loading)" class="g">
 		<TreeRow v-for="child in children" :key="child.id" :item="item" :node="child" />
 	</div>
-	<RenameFolderDialog
-		v-if="node"
-		v-model:open="rename_open"
-		:name="name"
-		@confirm="rename"
-	/>
-	<Modal
-		v-if="node && item.drive.trash === null"
-		v-model:open="remove_open"
-		:title="t('tree.delete_permanently_title')"
-		:description="t('tree.delete_permanently_description', { name })"
-	>
-		<template #footer>
-			<Button @click="remove_open = false">{{ t('dialog.cancel') }}</Button>
-			<Button variant="danger" @click="remove_open = false; explorer_tree.remove_folder(item, node!)">
-				{{ t('tree.delete_permanently') }}
-			</Button>
-		</template>
-	</Modal>
 	<Modal
 		v-if="!node && item.drive.kind === 'cloud'"
 		v-model:open="root_move_open"
