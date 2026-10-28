@@ -2,6 +2,7 @@
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import AddMenu from './AddMenu.vue'
+import AiMenu from './AiMenu.vue'
 import FolderMenu from './FolderMenu.vue'
 import ShareMenu from './ShareMenu.vue'
 import SyncMenu from './SyncMenu.vue'
@@ -18,6 +19,7 @@ defineProps<{ workspace: WorkspaceStore; folder: FolderRef; name: string; align:
 <template>
 	<ViewMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
+	<AiMenu :workspace="workspace" :folder_id="folder.folder_id" :name="name" :align="align" />
 	<ShareMenu :folder="folder" :name="name" :align="align" />
 	<SyncMenu v-if="can_sync(folder, workspace.can_write)" :folder="folder" :name="name" :align="align" />
 	<FolderMenu :folder="folder" :name="name" :align="align" :can_write="workspace.can_write" />

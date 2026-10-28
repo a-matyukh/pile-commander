@@ -171,6 +171,10 @@ export const en: typeof ru = {
 		selected_file: 'Selected file',
 		pick_file: 'Select a file in the folder',
 		ask: 'Ask about this folder…',
+		setup_hint: 'To use AI, set it up: pick a provider and a model.',
+		open_settings: 'Go to AI settings',
+		read_only: 'AI works in folders you can change.',
+		empty: 'Nothing in this folder to work with yet.',
 		item_summarize: 'AI: summarize',
 		item_translate: 'AI: translate',
 		folder: {
