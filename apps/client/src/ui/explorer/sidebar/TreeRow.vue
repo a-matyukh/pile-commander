@@ -19,6 +19,8 @@ import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
 import { shows_synced } from '@/store/explorer/share'
+import { read_folder_icon, standard_folder_icon } from '@/store/explorer/folder_cover'
+import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
 import Button from '@/ui/kit/Button.vue'
@@ -90,6 +92,16 @@ function toggle() {
  * prototype; a plain list folder keeps the folder icon. The view lives in
  * the attributes the parent's read brought (a root: its own read)
  */
+/** This row's folder as its parent's read lists it (a root: its own read) */
+const entry = computed(() => {
+	const store = workspace.value
+	if (!store || store.is_disposed) return undefined
+	return props.node
+		? store.folders[parent_folder_id_from_node_id(props.node.id, tree_root_folder_id(props.item))]
+			?.children.find(child => child.id === props.node!.id)
+		: store.folders[tree_root_folder_id(props.item)]
+})
+
 const view_meta = computed(() => {
 	const store = workspace.value
 	if (!store || store.is_disposed) {
@@ -98,12 +110,26 @@ const view_meta = computed(() => {
 		const view = known ? entry_view({ xattrs: [{ name: 'view', value: known }] }) : 'list'
 		return view === 'list' ? null : FOLDER_VIEW_META[view]
 	}
-	const entry = props.node
-		? store.folders[parent_folder_id_from_node_id(props.node.id, tree_root_folder_id(props.item))]
-			?.children.find(child => child.id === props.node!.id)
-		: store.folders[tree_root_folder_id(props.item)]
-	const view = entry_view(entry)
+	const view = entry_view(entry.value)
 	return view === 'list' ? null : FOLDER_VIEW_META[view]
+})
+
+const home = use_home()
+/**
+ * The row's icon: the folder's own one (chosen in its menu), then its view
+ * in color, then macOS's own folders in ~ (Downloads, Music…), then a folder
+ */
+const glyph = computed(() => {
+	// Written on the folder itself: its own read first, then the parent's listing
+	const store = workspace.value
+	const own_read = store && !store.is_disposed ? store.folders[folder_id.value]?.xattrs : undefined
+	const cover = (own_read ?? entry.value?.xattrs)?.find(xattr => xattr.name === 'cover')?.value
+	const own = read_folder_icon(cover)
+	if (own) return { icon: own.icon, color: own.color || undefined, plain: !own.color }
+	if (view_meta.value) return { icon: view_meta.value.icon, color: view_meta.value.color ?? undefined, plain: false }
+	const standard = standard_folder_icon(row_ref.value, home.value)
+	if (standard) return { icon: standard, color: undefined, plain: true }
+	return { icon: expanded.value && children.value.length ? 'tabler:folder-open' : 'tabler:folder', color: undefined, plain: true }
 })
 
 /** This row's folder as an address, for the shared folder menu */
@@ -208,13 +234,7 @@ watchEffect(on_cleanup => {
 			@click.stop="toggle"
 		/>
 		<span v-else class="sp" />
-		<Icon
-			v-if="view_meta"
-			:icon="view_meta.icon"
-			class="vw"
-			:style="{ color: view_meta.color ?? undefined }"
-		/>
-		<Icon v-else :icon="expanded && children.length ? 'tabler:folder-open' : 'tabler:folder'" class="plain" />
+		<Icon :icon="glyph.icon" :class="glyph.plain ? 'plain' : 'vw'" :style="{ color: glyph.color }" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
 			<span v-if="shows_synced(row_ref)" class="bdg" :data-tip="t('badge.synced')"><Icon icon="tabler:cloud-check" /></span>

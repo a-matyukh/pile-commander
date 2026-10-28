@@ -852,6 +852,14 @@ export async function createWorkspaceStore(
 				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', new_view)
 			},
 
+			async change_folder_cover(folder_id: string, cover: string) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
+				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)
+			},
+
 			async change_selected_slide_index(folder_id: string, index: number) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)

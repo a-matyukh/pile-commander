@@ -10,8 +10,13 @@ import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
 import { public_roots } from '@/store/explorer/public_roots'
 
-/** ~ on the desktop, read once for every header and top bar */
+/** ~ on the desktop, read once for every header, top bar and tree row */
 const home = ref<string | null>(null)
+
+export function use_home() {
+	read_home()
+	return home
+}
 let home_read = false
 function read_home() {
 	if (home_read || !is_desktop) return

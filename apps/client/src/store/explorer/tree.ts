@@ -618,6 +618,21 @@ export function create_explorer_tree(
 		}
 	}
 
+	/**
+	 * A folder's own cover (its icon in the tree, its tile on a board). A
+	 * folder the tree lists but has not read yet is read first: the cover is
+	 * written on the folder itself
+	 */
+	async function set_folder_cover(item: ExplorerTreeRoot, folder_id: string, cover: string) {
+		try {
+			const workspace = await ensure_workspace(item)
+			if (!workspace.resolve_folder_data(folder_id)) await workspace.show_folder_children(folder_id, undefined, { silent: true })
+			await workspace.change_folder_cover(folder_id, cover)
+		} catch (error) {
+			deps.on_error(error)
+		}
+	}
+
 	/** "Duplicate": a copy beside the folder, in its parent */
 	async function duplicate_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
 		await copy_folder(item, node, item, parent_folder_id_from_node_id(node.id, tree_root_folder_id(item)))
@@ -898,6 +913,7 @@ export function create_explorer_tree(
 		transfer_folder,
 		copy_folder,
 		duplicate_folder,
+		set_folder_cover,
 		transfer_folder_to_cloud_root,
 		transfer_cloud_root,
 		remove_folder,
