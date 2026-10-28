@@ -235,3 +235,21 @@ describe('retarget_bookmarks', () => {
 		explorer_bookmarks.value = []
 	})
 })
+
+describe('forget_bookmarks', () => {
+	test('bookmarks at and inside a trashed folder go away; a sibling with a longer name stays', async () => {
+		const { explorer_bookmarks, forget_bookmarks } = await import('./bookmarks')
+		explorer_bookmarks.value = [
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Old' },
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Old/sub' },
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Older' },
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/h/Old' },
+		]
+		forget_bookmarks({ drive_id: 'local', root_id: '/h', folder_id: '/h/Old' })
+		expect(explorer_bookmarks.value).toEqual([
+			{ drive_id: 'local', root_id: '/h', folder_id: '/h/Older' },
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/h/Old' },
+		])
+		explorer_bookmarks.value = []
+	})
+})

@@ -10,7 +10,8 @@ import cloud from '@/store/cloud'
 import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pile-commander/file-manager'
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
-import { retarget_bookmarks } from './bookmarks'
+import { forget_bookmarks, retarget_bookmarks } from './bookmarks'
+import { find_tree_node } from '@/services/workspace/tree'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
 import { create_entry } from '@/store/helpers/createEntry'
 import { copy_entries_into } from '@/store/helpers/copyEntriesInto'
@@ -58,6 +59,8 @@ export type ExplorerTreeDeps = {
 	hold_root?(root_id: string): () => void
 	/** Bookmarks at or inside a renamed or moved folder follow it */
 	retarget_bookmarks?(from: FolderRef, to: FolderRef): void
+	/** Bookmarks at or inside a trashed or ungrouped folder go away */
+	forget_bookmarks?(gone: FolderRef): void
 }
 
 export function tree_root_folder_id(item: ExplorerTreeRoot): string {
@@ -799,7 +802,9 @@ export function create_explorer_tree(
 		try {
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
+			const error_before = workspace.last_error
 			await workspace.remove(node.id)
+			forget_if_gone(item, node, workspace, error_before)
 			if (options.open_parent && await open_parent_of_gone(item, node, affected, workspace)) return
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
@@ -838,12 +843,21 @@ export function create_explorer_tree(
 		try {
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
+			const error_before = workspace.last_error
 			await workspace.uncombine_folder(node.id)
+			forget_if_gone(item, node, workspace, error_before)
 			if (await open_parent_of_gone(item, node, affected, workspace)) return
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
 			deps.on_error(error)
 		}
+	}
+
+	/** The store reports a failure instead of throwing: the folder is gone only without a new error */
+	function forget_if_gone(item: ExplorerTreeRoot, node: WorkspaceTreeNode, workspace: WorkspaceStore, error_before: string | null) {
+		const failed = !!workspace.last_error && workspace.last_error !== error_before
+		if (failed || find_tree_node(workspace.tree, node.id)) return
+		deps.forget_bookmarks?.(folder_ref(item, node.id))
 	}
 
 	function reset() {
@@ -911,4 +925,5 @@ export const explorer_tree = create_explorer_tree({
 	},
 	hold_root: root_id => explorer_drives.hold(root_id),
 	retarget_bookmarks,
+	forget_bookmarks,
 })

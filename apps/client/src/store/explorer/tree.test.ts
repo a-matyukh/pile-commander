@@ -241,6 +241,40 @@ describe('explorer tree', () => {
 		workspace.dispose()
 	})
 
+	test('a trashed folder takes its bookmarks away; a failed trash keeps them', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/A')
+		fake.seed_folder('/home/B')
+		const workspace = await createWorkspaceStore({ id: '/home', type: 'local', name: 'home' }, fake.fm, { root_folder_id: '/home' })
+		if (!workspace) throw new Error('no store')
+		const forget_bookmarks = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			browser_workspaces: () => [],
+			on_error: () => {},
+			forget_bookmarks,
+		})
+		const drive: Drive = {
+			id: 'local', kind: 'local', name: 'Mac', icon: '', trash: 'system',
+			roots: async () => [{ id: '/home', name: 'Home', can_write: true }],
+			store_for: async () => workspace,
+		}
+		await tree.show_drive(drive, null)
+		const item = tree.roots[0]!
+
+		await tree.remove_folder(item, workspace.tree.find(node => node.id === '/home/A')!)
+		expect(forget_bookmarks).toHaveBeenCalledWith({ drive_id: 'local', root_id: '/home', folder_id: '/home/A' })
+
+		forget_bookmarks.mockClear()
+		vi.spyOn(fake.fm, 'remove').mockRejectedValueOnce(new Error('denied'))
+		await tree.remove_folder(item, workspace.tree.find(node => node.id === '/home/B')!)
+		expect(forget_bookmarks).not.toHaveBeenCalled()
+		workspace.dispose()
+	})
+
 	test('duplicate and copy keep the original; the copy gets a free name', async () => {
 		const fake = createFakeFileManager()
 		fake.seed_folder('/home')

@@ -200,6 +200,21 @@ export function retarget_bookmarks(from: FolderRef, to: FolderRef): void {
 	explorer_last_opened.value = follow(explorer_last_opened.value)
 }
 
+/**
+ * A folder was trashed or ungrouped in the app: bookmarks (and remembered
+ * places) at it or inside it go away instead of pointing at nothing
+ */
+export function forget_bookmarks(gone: FolderRef): void {
+	const keep = (list: FolderRef[]) => {
+		const next = list.filter(ref => ref.drive_id !== gone.drive_id
+			|| ref.root_id !== gone.root_id
+			|| !is_within(ref.folder_id, gone.folder_id))
+		return next.length === list.length ? list : next
+	}
+	explorer_bookmarks.value = keep(explorer_bookmarks.value)
+	explorer_last_opened.value = keep(explorer_last_opened.value)
+}
+
 /** Remembers a folder that is not already bookmarked. The list is not shown yet. */
 export function remember_opened(ref: FolderRef): void {
 	const next = { ...ref }
