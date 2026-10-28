@@ -14,7 +14,7 @@ import CloudPage from '@/ui/explorer/pages/CloudPage.vue'
 import FolderContent from '@/ui/explorer/FolderContent.vue'
 import HubView from '@/ui/hub/HubView.vue'
 import cloud from '@/store/cloud'
-import { take_explorer_start } from '@/store/explorer/public_view'
+import { explorer_mounted, take_explorer_start } from '@/store/explorer/public_view'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
@@ -84,6 +84,7 @@ async function open_cloud_copy(item: WorkspacesListItem) {
 }
 
 onMounted(async () => {
+	explorer_mounted.value = true
 	set_open_cloud_copy(open_cloud_copy)
 	// First time the flag is on. Doing this at app start would freeze the
 	// lists while the old window is still the one being edited.
@@ -101,6 +102,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+	explorer_mounted.value = false
 	alive = false
 	set_open_cloud_copy(null)
 	explorer_navigation.cancel()

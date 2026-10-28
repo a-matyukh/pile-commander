@@ -39,7 +39,7 @@ export type CrumbNames = {
 
 /** Cloud folders are paths from `/`. `root_id` there is the workspace UUID. */
 export function root_folder_id(ref: Pick<FolderRef, 'drive_id' | 'root_id'>): string {
-	return ref.drive_id === 'cloud' ? '/' : normalize_workspace_id(ref.root_id)
+	return ref.drive_id === 'cloud' || ref.drive_id === 'public' ? '/' : normalize_workspace_id(ref.root_id)
 }
 
 export function folder_basename(id: string): string {

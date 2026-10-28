@@ -54,7 +54,10 @@ const active_source = computed(() => {
 	if (page_open('trash') || page_open('cloud')) return 'cloud'
 	return shown_folder.value?.drive_id ?? null
 })
-const active_drive = computed(() => drives.value.find(item => item.id === active_source.value) ?? null)
+/** A source, or a publication / the demo: those have a tree of their own, but no source button */
+const active_drive = computed(() => active_source.value && active_source.value !== 'hub'
+	? explorer_drives.drive(active_source.value)
+	: null)
 const primary_root = computed(() => active_drive.value?.kind === 'cloud' ? null : explorer_tree.roots[0] ?? null)
 const primary_children = computed(() => {
 	const root = primary_root.value
@@ -67,9 +70,10 @@ const separate_roots = computed(() => {
 const filtered = computed(() => is_tree_filtered(explorer_tree_view.value))
 /** The empty space takes drops into the main root, or creates a cloud root */
 const primary_spot = computed(() => {
-	if (active_drive.value?.kind === 'cloud') {
+	if (active_drive.value?.id === 'cloud') {
 		return { root_key: CLOUD_ROOT_DROP_KEY, folder_id: '/' }
 	}
+	if (active_drive.value?.kind === 'cloud') return null
 	const root = primary_root.value
 	if (!root || root.workspace?.can_write === false) return null
 	return { root_key: tree_root_key(root.drive.id, root.root.id), folder_id: tree_root_folder_id(root) }
@@ -272,7 +276,7 @@ watchEffect(() => {
 				<TreeMenus />
 				<!-- The cloud keeps a trash; "This Mac" opens the Finder's; browser storage has none -->
 				<IconButton
-					v-if="active_drive?.kind === 'cloud' && cloud_signed_in"
+					v-if="active_drive?.id === 'cloud' && cloud_signed_in"
 					icon="tabler:trash"
 					:label="explorer_settings.trash_button === 'text' ? t('trash.title') : undefined"
 					:selected="page_open('trash')"

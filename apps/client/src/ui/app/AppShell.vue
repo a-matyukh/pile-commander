@@ -54,6 +54,16 @@ function open_dropped_folder(path: string): Promise<void> {
 	return Promise.resolve(opening).catch(error => report_error(store, error))
 }
 
+/** A .pile unpacks into a folder the person picks; the new interface opens it as a folder of its own */
+async function open_pile(path: string) {
+	if (!explorer_enabled.value) {
+		await store.import_workspace_pack(path)
+		return
+	}
+	const unpacked = await store.unpack_workspace_pack(path)
+	if (unpacked) await open_dropped_folder(unpacked.root)
+}
+
 function on_files_drop(payload: DroppedFilesPayload) {
 	const workspace = store.workspace
 	if (!workspace) {
@@ -72,13 +82,13 @@ onMounted(async () => {
 	unlistenDrop = await listenFolderDrop({
 		onFolderDrop: on_folder_drop,
 		onFilesDrop: on_files_drop,
-		onPileOpen: (path) => store.import_workspace_pack(path),
+		onPileOpen: (path) => { void open_pile(path) },
 		onError: (message) => { store.last_error = message },
 		dragOver,
 	})
 	unlistenOpened = await listenOpenedPaths({
 		onFolderDrop: (path) => open_dropped_folder(path),
-		onPileOpen: (path) => store.import_workspace_pack(path),
+		onPileOpen: (path) => { void open_pile(path) },
 		onError: (message) => { store.last_error = message },
 	})
 })

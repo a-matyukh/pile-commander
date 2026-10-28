@@ -373,6 +373,14 @@ export const ru = {
 		submit: 'Удалить аккаунт',
 		done: 'Облачный аккаунт удалён',
 	},
+	public_view: {
+		fork: 'Скопировать к себе',
+		edit: 'Редактировать',
+		download: 'Скачать .pile',
+		report: 'Пожаловаться',
+		by: 'Автор: @{name}',
+		read_only: 'Только просмотр',
+	},
 	cloud_page: {
 		new_folder: 'Новая папка',
 		empty: 'В облаке пока нет папок',

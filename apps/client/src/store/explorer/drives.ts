@@ -6,7 +6,7 @@ import {
 	type WorkspaceRootInfo,
 } from '@pile-commander/file-manager'
 import type { Drive, DriveRoot } from '@/domain/Drive'
-import type { WorkspaceStore } from '@/domain/Store'
+import type { LoadWorkspaceOptions, WorkspaceStore } from '@/domain/Store'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
@@ -15,6 +15,7 @@ import { normalize_workspace_id, path_separator } from '@/services/workspace/pat
 import cloud from '@/store/cloud'
 import { require_supabase } from '@/services/cloud/client'
 import { cloud_workspaces_ready } from './cloud_list'
+import { DEMO_ROOT, public_roots } from './public_roots'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
 import { adopt_workspace } from '@/store/index'
 import { open_workspace_store } from '@/store/helpers/openWorkspaceStore'
@@ -32,14 +33,19 @@ export type ExplorerDriveDeps = {
 	is_desktop: boolean
 	home_path(): Promise<string>
 	local_file_manager(): FileManager
-	open_cloud(item: WorkspacesListItem): Promise<WorkspaceStore>
+	open_cloud(item: WorkspacesListItem, opts?: LoadWorkspaceOptions): Promise<WorkspaceStore>
+	/** The demo pack, in memory: changes are not saved */
+	open_demo?(): Promise<WorkspaceStore>
 	cloud_roots(): Promise<DriveRoot[]>
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
 }
 
 export type ExplorerDrives = {
+	/** The sources the user picks: this Mac or browser storage, and the cloud */
 	drives(): Drive[]
+	/** Any drive by id, also the ones that are not sources: a publication ("public"), the demo */
+	drive(id: string): Drive | null
 	/** Opens the root's store and shows it, without disposing stores Drive still holds. */
 	open(drive_id: string, root_id: string, still_current?: () => boolean): Promise<WorkspaceStore>
 	/** A path under ~ uses the home store. Anything else becomes its own local root. */
@@ -47,7 +53,7 @@ export type ExplorerDrives = {
 	/** Desktop opens ~. The web app opens the browser-storage root. */
 	open_default(): Promise<WorkspaceStore>
 	/** Roots the tree currently has expanded. Unlisted open stores are disposed. */
-	set_expanded(root_ids: Iterable<string>): void
+	set_expanded(root_ids: Iterable<string>, drive_id?: string | null): void
 	/**
 	 * Keeps a root's store open while an operation uses it (a transfer into a
 	 * collapsed root). The release lets the next sweep close it, and sweeps
@@ -91,6 +97,10 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 	const holds = new Map<string, number>()
 	let home: string | null = null
 	let current_root_id: string | null = null
+	/** The drive of the store on screen: another drive's expanded roots are not kept */
+	let current_drive_id: string | null = null
+	/** The drive whose tree reported `expanded` */
+	let expanded_drive_id: string | null = null
 	let epoch = 0
 
 	const home_id = async () => {
@@ -100,10 +110,23 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 
 	const kept = (root_id: string) => root_id === current_root_id || expanded.has(root_id) || holds.has(root_id)
 
+	/**
+	 * A store stays while it is on screen, held by an operation, or expanded in
+	 * the tree of the drive on screen. Leaving a publication or the demo for
+	 * another drive closes their stores (and a publication's live channel)
+	 */
+	const kept_store = (key: string) => {
+		const drive_id = key.slice(0, key.indexOf('\0'))
+		const root_id = key.slice(key.indexOf('\0') + 1)
+		if (holds.has(root_id)) return true
+		if (drive_id === current_drive_id && root_id === current_root_id) return true
+		return drive_id === expanded_drive_id && expanded.has(root_id)
+	}
+
 	const sweep = () => {
 		for (const [key, store] of stores) {
 			const root_id = key.slice(key.indexOf('\0') + 1)
-			if (kept(root_id)) continue
+			if (kept_store(key)) continue
 			store.dispose()
 			stores.delete(key)
 			outside.delete(root_id)
@@ -144,6 +167,14 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 				name: root?.name ?? root_id,
 			})
 		}
+		if (drive_id === 'public') {
+			// Someone's publication: read-only, as the old public viewer
+			return deps.open_cloud(
+				{ id: root_id, type: 'cloud', name: public_roots.get(root_id)?.name ?? root_id },
+				{ public_readonly: true },
+			)
+		}
+		if (drive_id === 'demo' && deps.open_demo) return deps.open_demo()
 		throw new Error(`Unknown drive “${drive_id}”`)
 	}
 
@@ -187,6 +218,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		// next successful open sweeps a root nobody kept; dispose_all does too.
 		if (still_current && !still_current()) return store
 		current_root_id = root_id
+		current_drive_id = drive_id
 		deps.adopt(store)
 		sweep()
 		return store
@@ -201,6 +233,8 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		expanded.clear()
 		holds.clear()
 		current_root_id = null
+		current_drive_id = null
+		expanded_drive_id = null
 	}
 
 	const local_drive = (): Drive => ({
@@ -245,10 +279,42 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		store_for: (root_id) => store_for('cloud', root_id),
 	})
 
+	const public_drive = (): Drive => ({
+		id: 'public',
+		// a cloud workspace underneath: its folders start at "/"
+		kind: 'cloud',
+		name: t('source.hub'),
+		icon: 'tabler:world',
+		trash: null,
+		async roots() {
+			return [...public_roots.values()].map(root => ({ id: root.id, name: root.name, can_write: false }))
+		},
+		store_for: (root_id) => store_for('public', root_id),
+	})
+
+	const demo_drive = (): Drive => ({
+		id: 'demo',
+		kind: 'demo',
+		name: 'Demo',
+		icon: 'tabler:sparkles',
+		trash: null,
+		async roots() {
+			return [{ id: DEMO_ROOT, name: 'Demo', can_write: true }]
+		},
+		store_for: (root_id) => store_for('demo', root_id),
+	})
+
+	const drives = () => deps.is_desktop
+		? [local_drive(), cloud_drive()]
+		: [browser_drive(), cloud_drive()]
+
 	return {
-		drives: () => deps.is_desktop
-			? [local_drive(), cloud_drive()]
-			: [browser_drive(), cloud_drive()],
+		drives,
+		drive(id: string) {
+			if (id === 'public') return public_drive()
+			if (id === 'demo') return demo_drive()
+			return drives().find(item => item.id === id) ?? null
+		},
 		open,
 		async open_local_path(path: string, still_current?: () => boolean) {
 			const id = normalize_workspace_id(path)
@@ -271,7 +337,8 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 				sweep()
 			}
 		},
-		set_expanded(root_ids: Iterable<string>) {
+		set_expanded(root_ids: Iterable<string>, drive_id: string | null = current_drive_id) {
+			expanded_drive_id = drive_id
 			expanded.clear()
 			for (const id of root_ids) expanded.add(id)
 			sweep()
@@ -287,7 +354,8 @@ export const explorer_drives = create_explorer_drives({
 		return homeDir()
 	},
 	local_file_manager: create_explorer_local_file_manager,
-	open_cloud: (item) => open_workspace_store(item),
+	open_cloud: (item, opts) => open_workspace_store(item, opts),
+	open_demo: () => open_workspace_store({ type: 'demo', id: DEMO_ROOT, name: 'Demo' }),
 	async cloud_roots() {
 		await cloud_workspaces_ready()
 		const roots: DriveRoot[] = cloud.workspaces.map(ws => ({

@@ -46,6 +46,7 @@ import {
 	type WorkspaceUsage,
 } from '@pile-commander/file-manager'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
+import type { LoadWorkspaceOptions } from '@/domain/Store'
 import {
 	backend_url,
 	cached_session_user,
@@ -76,13 +77,21 @@ import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 
 /**
- * Opens the cloud workspace an invite was accepted for. The new interface
- * (store/explorer/public_view.ts) opens it as a cloud folder instead
+ * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
+ * "Edit" of one's own publication, a publication (read-only). True when it
+ * opened. The new interface (store/explorer/public_view.ts) opens it as a
+ * folder of its own instead of loading the old window's store
  */
-let open_invited_workspace = (item: WorkspacesListItem): Promise<void> => store.load_workspace(item)
+type OpenWorkspace = (item: WorkspacesListItem, opts?: LoadWorkspaceOptions) => Promise<boolean>
 
-export function set_open_invited_workspace(open: ((item: WorkspacesListItem) => Promise<void>) | null): void {
-	open_invited_workspace = open ?? (item => store.load_workspace(item))
+const load_in_window: OpenWorkspace = async (item, opts) => {
+	await store.load_workspace(item, opts)
+	return !!store.workspace
+}
+let open_workspace: OpenWorkspace = load_in_window
+
+export function set_open_workspace(open: OpenWorkspace | null): void {
+	open_workspace = open ?? load_in_window
 }
 
 /** Current public-link state of a workspace, if any */
@@ -688,7 +697,7 @@ const cloud: CloudStore = {
 		this.public_not_found = null
 		this.profile_view = null
 		this.profile_not_found = null
-		await store.load_workspace(item)
+		await open_workspace(item)
 	},
 
 	async open_public(username: string, slug: string): Promise<boolean> {
@@ -716,11 +725,11 @@ const cloud: CloudStore = {
 		}
 		// visitor chrome is always read-only; owner/editor get Edit to reopen
 		// the same id with write access
-		await store.load_workspace(
+		const opened = await open_workspace(
 			{ type: 'cloud', id: pub.id, name: pub.name },
 			{ public_readonly: true },
 		)
-		if (!store.workspace) {
+		if (!opened) {
 			this.publication_view = null
 			return false
 		}
@@ -1175,7 +1184,7 @@ const cloud: CloudStore = {
 		}
 		if (typeof history !== 'undefined') history.replaceState(null, '', '/')
 		try {
-			await open_invited_workspace(item)
+			await open_workspace(item)
 		} finally {
 			if (this.invite_view?.token === view.token) this.invite_view = null
 		}

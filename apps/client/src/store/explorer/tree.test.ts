@@ -100,7 +100,7 @@ describe('explorer tree', () => {
 
 		await tree.show_drive(drive, ref)
 
-		expect(set_expanded).toHaveBeenLastCalledWith(new Set([ROOT.id]))
+		expect(set_expanded).toHaveBeenLastCalledWith(new Set([ROOT.id]), 'browser')
 		expect(drive.store_for).toHaveBeenCalledWith(ROOT.id)
 		expect(workspace.expand_folder_in_sidebar).toHaveBeenCalledWith(ref.folder_id)
 		expect(tree_root_folder_id(tree.roots[0]!)).toBe(ROOT.id)

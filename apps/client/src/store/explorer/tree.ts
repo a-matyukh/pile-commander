@@ -36,7 +36,8 @@ export type ExplorerTreeRoot = {
 export type ExplorerTreeDeps = {
 	current_location(): ExplorerLocation | null
 	open_folder(ref: FolderRef): Promise<void>
-	set_expanded(root_ids: Iterable<string>): void
+	/** The roots expanded in the tree of `drive_id`: their stores stay open */
+	set_expanded(root_ids: Iterable<string>, drive_id: string | null): void
 	browser_workspaces(): readonly WorkspacesListItem[]
 	on_error(error: unknown): void
 	/**
@@ -189,7 +190,7 @@ export function create_explorer_tree(
 	let probe_epoch = 0
 
 	const key = (item: ExplorerTreeRoot) => `${item.drive.id}\0${item.root.id}`
-	const sync_expanded = () => deps.set_expanded(state.expanded_root_ids)
+	const sync_expanded = () => deps.set_expanded(state.expanded_root_ids, state.listed_drive_id)
 	const current_ref = () => {
 		const location = deps.current_location()
 		return location?.kind === 'folder' ? location.ref : null
@@ -912,7 +913,7 @@ export function create_explorer_tree(
 export const explorer_tree = create_explorer_tree({
 	current_location: () => explorer_navigation.location,
 	open_folder: ref => explorer_navigation.open_folder(ref),
-	set_expanded: root_ids => explorer_drives.set_expanded(root_ids),
+	set_expanded: (root_ids, drive_id) => explorer_drives.set_expanded(root_ids, drive_id),
 	browser_workspaces: () => [...legacy_bookmarks.value, ...legacy_last_opened.value],
 	on_error: error => report_error(store, error),
 	cloud_stamp_at: (workspace_id, path) => entry_subtree_stamp_at(require_supabase(), workspace_id, path),

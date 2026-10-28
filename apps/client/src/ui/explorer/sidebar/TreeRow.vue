@@ -19,6 +19,7 @@ import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
 import { shows_synced } from '@/store/explorer/share'
+import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
@@ -218,7 +219,9 @@ watchEffect(on_cleanup => {
 		<span class="tg">
 			<span v-if="shows_synced(row_ref)" class="bdg" :data-tip="t('badge.synced')"><Icon icon="tabler:cloud-check" /></span>
 			<span v-if="is_bookmarked(row_ref)" class="bdg" :data-tip="t('badge.bookmarked')"><Icon icon="tabler:bookmark" /></span>
+			<!-- A publication or the demo is not one of the user's places: no folder menu -->
 			<FolderMenu
+				v-if="!is_transient_drive(item.drive.id)"
 				v-model:open="menu_open"
 				:folder="row_ref"
 				:name="name"

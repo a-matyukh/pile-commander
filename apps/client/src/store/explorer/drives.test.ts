@@ -122,6 +122,25 @@ describe('explorer drives', () => {
 		expect(await drives.open('local', '/Volumes/Disk')).toBe(disk_store)
 	})
 
+	test('leaving the demo for another drive closes it; the tree\'s drive keeps its expanded roots', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder(HOME)
+		const demo = fake_store()
+		const drives = create_explorer_drives(deps({
+			local_file_manager: () => fake.fm,
+			open_demo: async () => demo,
+		}))
+
+		await drives.open('demo', '/demo')
+		drives.set_expanded(['/demo'], 'demo')
+		await drives.open('local', HOME)
+		// the tree still shows the demo: its root stays open
+		expect(demo.dispose).not.toHaveBeenCalled()
+
+		drives.set_expanded([HOME], 'local')
+		expect(demo.dispose).toHaveBeenCalledTimes(1)
+	})
+
 	test('a held root stays open through a sweep and closes on release', async () => {
 		const stores = new Map<string, WorkspaceStore>()
 		const drives = create_explorer_drives(deps({

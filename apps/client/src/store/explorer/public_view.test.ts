@@ -30,6 +30,12 @@ describe('explorer start after public screens', () => {
 		expect(take_explorer_start()).toBeNull()
 	})
 
+	test('/demo opened directly starts on the demo folder', () => {
+		location.pathname = '/demo'
+		expect(take_explorer_start()).toEqual({ kind: 'folder', ref: { drive_id: 'demo', root_id: '/demo', folder_id: '/demo' } })
+		expect(location.pathname).toBe('/')
+	})
+
 	test('an accepted invitation starts on the invited folder', () => {
 		const ref = { drive_id: 'cloud', root_id: 'w1', folder_id: '/' }
 		explorer_return.value = { kind: 'folder', ref }

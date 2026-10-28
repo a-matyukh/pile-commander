@@ -8,6 +8,7 @@ import store from '@/store'
 import { is_missing_path_error } from '@/store/helpers/fsErrors'
 import { report_error } from '@/store/helpers/reportError'
 import { BROWSER_ROOT, explorer_drives, is_within } from './drives'
+import { is_transient_drive } from './public_roots'
 import { explain_folder_error } from './fsErrorMessage'
 
 /**
@@ -284,7 +285,8 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 			const snapshot = selections.get(folder_key(ref))
 			if (snapshot) apply_selection(workspace, snapshot.ids, snapshot.selection_mode)
 		}
-		if (options.remember) {
+		// A publication or the demo is not one of the user's places
+		if (options.remember && !is_transient_drive(ref.drive_id)) {
 			deps.last_location.value = { ...ref }
 			last_by_drive.value = { ...last_by_drive.value, [ref.drive_id]: { ...ref } }
 		}

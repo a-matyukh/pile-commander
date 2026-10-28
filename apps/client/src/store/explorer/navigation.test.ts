@@ -132,6 +132,15 @@ describe('explorer navigation', () => {
 		expect(folder_of(gone.nav)).toBe('/')
 	})
 
+	test('a publication or the demo is never the last folder', async () => {
+		const { nav, last, last_by_drive } = setup()
+		await nav.open_folder({ drive_id: 'local', root_id: HOME, folder_id: `${HOME}/docs` })
+		await nav.open_folder({ drive_id: 'demo', root_id: HOME, folder_id: HOME })
+		expect(folder_of(nav)).toBe(HOME)
+		expect(last.value?.folder_id).toBe(`${HOME}/docs`)
+		expect(last_by_drive.value.demo).toBeUndefined()
+	})
+
 	test('reads each drive\'s last folder and drops broken entries', () => {
 		expect(read_drive_locations('nope')).toEqual({})
 		expect(read_drive_locations(JSON.stringify({

@@ -43,6 +43,8 @@ type Store = {
 	 * When `pile_path` is set (Open With / double-click), skips the file picker.
 	 */
 	import_workspace_pack(pile_path?: string, opts?: LoadWorkspaceOptions): Promise<void>
+	/** The unpacking half of import_workspace_pack: the new folder, or null when cancelled or failed */
+	unpack_workspace_pack(pile_path?: string): Promise<{ root: string; name: string } | null>
 	load_workspace(ws: WorkspacesListItem, opts?: LoadWorkspaceOptions): Promise<void>
 	/** Closes the open workspace (e.g. after its cloud workspace was removed). */
 	close_workspace(): void

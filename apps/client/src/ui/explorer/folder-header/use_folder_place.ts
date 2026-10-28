@@ -8,6 +8,7 @@ import { bookmark_name } from '@/store/explorer/bookmarks'
 import { folder_basename, folder_crumbs, folder_title, type CrumbNames } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
+import { public_roots } from '@/store/explorer/public_roots'
 
 /** ~ on the desktop, read once for every header and top bar */
 const home = ref<string | null>(null)
@@ -37,6 +38,8 @@ export function use_folder_place() {
 					: folder_basename(ref.root_id)
 			}
 			if (ref.drive_id === 'browser') return t('source.browser_disk')
+			if (ref.drive_id === 'public') return public_roots.get(ref.root_id)?.name ?? ''
+			if (ref.drive_id === 'demo') return 'Demo'
 			return bookmark_name(ref)
 		},
 		folder_name: (ref: FolderRef) => ref.drive_id === 'browser' ? bookmark_name(ref) : folder_basename(ref.folder_id),

@@ -1,11 +1,13 @@
 import { apply_public_route, resolve_public_route, type ApplyPublicRouteDeps } from '@/services/publicRoute'
 import cloud_store from '@/store/cloud'
 import app_store from '@/store'
+import { explorer_enabled } from '@/store/explorer/enabled'
 
 export function public_route_deps(): ApplyPublicRouteDeps {
 	return {
 		is_cloud_configured: cloud_store.is_configured,
-		open_demo_workspace: () => { void app_store.open_demo_workspace() },
+		// With the new interface on, it opens /demo as its own folder (store/explorer/public_view.ts)
+		open_demo_workspace: () => { if (!explorer_enabled.value) void app_store.open_demo_workspace() },
 		fetch_hub: () => { void cloud_store.fetch_hub() },
 		open_profile: (username: string) => { void cloud_store.open_profile(username) },
 		open_public: (username: string, slug: string) => { void cloud_store.open_public(username, slug) },
