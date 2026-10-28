@@ -2211,28 +2211,48 @@ export async function entry_subtree_stamp_at(
 	return row
 }
 
+export type WorkspaceRootInfo = {
+	/** The root folder's `view` attribute as stored (JSON text), if any */
+	view?: string
+	/** Names of the live folders directly in the root */
+	subfolders: string[]
+}
+
 /**
- * The `view` attribute of each workspace's root folder, by workspace id: the
- * sidebar shows a top-level folder's own view before opening it. Raw values
- * as stored (JSON text); workspaces whose root has none are left out
+ * What the sidebar shows for a top-level cloud folder before opening it: its
+ * own view, and whether it has subfolders (for the chevron). Two queries for
+ * all workspaces, by workspace id
  */
-export async function workspace_root_views(
+export async function workspace_root_info(
 	client: SupabaseClient,
 	workspace_ids: string[],
-): Promise<Record<string, string>> {
+): Promise<Record<string, WorkspaceRootInfo>> {
 	if (workspace_ids.length === 0) return {}
-	const { data, error } = await client
+	const { data: roots, error } = await client
 		.from("entries")
-		.select("workspace_id, xattrs")
+		.select("id, workspace_id, xattrs")
 		.is("parent_id", null)
 		.in("workspace_id", workspace_ids)
-	if (error) throw new Error(`workspace_root_views failed: ${error.message}`)
-	const views: Record<string, string> = {}
-	for (const row of (data ?? []) as { workspace_id: string; xattrs: Record<string, string> | null }[]) {
-		const view = row.xattrs?.view
-		if (view) views[row.workspace_id] = view
+	if (error) throw new Error(`workspace_root_info failed: ${error.message}`)
+	const info: Record<string, WorkspaceRootInfo> = {}
+	const workspace_of_root = new Map<string, string>()
+	for (const row of (roots ?? []) as { id: string; workspace_id: string; xattrs: Record<string, string> | null }[]) {
+		info[row.workspace_id] = { view: row.xattrs?.view || undefined, subfolders: [] }
+		workspace_of_root.set(row.id, row.workspace_id)
 	}
-	return views
+	if (workspace_of_root.size === 0) return info
+	const { data: folders, error: folders_error } = await client
+		.from("entries")
+		.select("parent_id, name")
+		.in("parent_id", [...workspace_of_root.keys()])
+		.eq("kind", "folder")
+		.is("deleted_at", null)
+	if (folders_error) throw new Error(`workspace_root_info failed: ${folders_error.message}`)
+	for (const row of (folders ?? []) as { parent_id: string; name: string }[]) {
+		const workspace = workspace_of_root.get(row.parent_id)
+		if (workspace) info[workspace]!.subfolders.push(row.name)
+	}
+	return info
 }
 
 /** Moves one entry (by row id, whatever its path is now) to the trash */

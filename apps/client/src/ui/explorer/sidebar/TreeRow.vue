@@ -54,7 +54,11 @@ const can_expand = computed(() => {
 	// A read folder shows what the filter leaves; an unread one, what the look-ahead found
 	if (props.node?.children_loaded) return children.value.length > 0
 	if (props.node) return explorer_tree.has_chevron(props.item, props.node, show_hidden_files.value)
-	return !workspace.value || children.value.length > 0
+	if (workspace.value && !workspace.value.is_disposed) return children.value.length > 0
+	// A root not opened yet: subfolders came with the root list (cloud)
+	const known = props.item.root.subfolders
+	if (!known) return true
+	return known.some(name => show_hidden_files.value || !is_hidden_entry_name(name))
 })
 const current = computed(() => {
 	const location = explorer_navigation.location

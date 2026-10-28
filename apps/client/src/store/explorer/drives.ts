@@ -1,4 +1,10 @@
-import { createBrowserFileManager, createFileManager, workspace_root_views, type FileManager } from '@pile-commander/file-manager'
+import {
+	createBrowserFileManager,
+	createFileManager,
+	workspace_root_info,
+	type FileManager,
+	type WorkspaceRootInfo,
+} from '@pile-commander/file-manager'
 import type { Drive, DriveRoot } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
@@ -289,10 +295,12 @@ export const explorer_drives = create_explorer_drives({
 			name: ws.name,
 			can_write: cloud.role_of(ws.id) !== 'viewer',
 		}))
-		// Each top-level folder's own view, in one query, so the tree shows it
-		// before the folder is opened. Without it the tree shows plain folders
-		const views = await workspace_root_views(require_supabase(), roots.map(root => root.id)).catch(() => ({}))
-		return roots.map(root => ({ ...root, view: (views as Record<string, string>)[root.id] }))
+		// Each top-level folder's own view and subfolders, so the tree shows its
+		// icon and chevron before it is opened. Without them: a plain folder
+		// with a chevron
+		const info: Record<string, WorkspaceRootInfo> = await workspace_root_info(require_supabase(), roots.map(root => root.id))
+			.catch(() => ({}))
+		return roots.map(root => ({ ...root, view: info[root.id]?.view, subfolders: info[root.id]?.subfolders }))
 	},
 	async browser_file_manager() {
 		await ensure_browser_root()

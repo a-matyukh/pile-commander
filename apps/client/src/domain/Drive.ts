@@ -35,6 +35,8 @@ export type DriveRoot = {
 	can_write: boolean
 	/** The root folder's own view, when known before its store opens (cloud) */
 	view?: string
+	/** Names of its subfolders, when known before its store opens (cloud): the chevron */
+	subfolders?: string[]
 }
 
 /** Address of any folder: bookmarks, history and the last location store this */
