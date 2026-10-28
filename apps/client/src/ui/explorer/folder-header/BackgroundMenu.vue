@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
 import { DEFAULT_GRID_SIZE } from '@/services/board/layout'
@@ -15,12 +15,11 @@ import MenuSub from '@/ui/kit/MenuSub.vue'
 /**
  * "Grid and background" of a board or a canvas, as in the prototype, with
  * the current app's settings: snapping and the grid size (dots and axes on a
- * canvas), the folder's background color or picture, and a reset
+ * canvas), the folder's background color, any color or picture link, a reset
  */
 const props = defineProps<{ workspace: WorkspaceStore; folder_id: string; align: 'start' | 'end' }>()
 
 const open = ref(false)
-const file_input = ref<HTMLInputElement | null>(null)
 
 const container = computed(() => {
 	const folder = props.workspace.folders[props.folder_id]
@@ -32,21 +31,28 @@ const GRID_SIZES = [10, 20, 40, 80]
 
 const ws = () => props.workspace
 
-function pick_image() {
-	file_input.value?.click()
-}
+/**
+ * Any CSS color or a picture's link, as the current app's field; empty
+ * resets. A picture is not stored in the folder yet: a file in .pile comes
+ * later (BACKLOG.md)
+ */
+const custom = ref('')
+watch(open, (is_open) => {
+	if (!is_open) return
+	const current = container.value?.background
+	custom.value = current && current !== 'none' && !current.startsWith('data:') ? current : ''
+})
 
-/** A picture becomes the folder's background as a data URL, as the current app stores it */
-function on_image(event: Event) {
-	const input = event.target as HTMLInputElement
-	const file = input.files?.[0]
-	input.value = ''
-	if (!file) return
-	const reader = new FileReader()
-	reader.onload = () => {
-		if (typeof reader.result === 'string') void ws().change_background(props.folder_id, reader.result)
-	}
-	reader.readAsDataURL(file)
+/**
+ * The field takes the keys as soon as its submenu opens. The menu focuses
+ * its own content on open, so the field takes the focus right after it
+ */
+const vFocus = { mounted: (el: HTMLElement) => { requestAnimationFrame(() => el.focus()) } }
+
+function apply_custom() {
+	const value = custom.value.trim()
+	void ws().change_background(props.folder_id, value === '' ? 'none' : value)
+	open.value = false
 }
 </script>
 
@@ -112,11 +118,22 @@ function on_image(event: Event) {
 				/>
 			</div>
 		</MenuSub>
-		<MenuItem icon="tabler:photo" :label="t('background.image')" @select="pick_image" />
+		<MenuSub icon="tabler:link" :label="t('background.image')" :width="260">
+			<form class="cu" @submit.prevent="apply_custom">
+				<input
+					v-model="custom"
+					v-focus
+					class="in"
+					:placeholder="t('background.custom_placeholder')"
+					spellcheck="false"
+					@keydown.stop
+				>
+				<p class="hn">{{ t('background.custom_hint') }}</p>
+			</form>
+		</MenuSub>
 		<MenuSeparator />
 		<MenuItem icon="tabler:arrow-back-up" :label="t('background.reset')" @select="ws().change_background(folder_id, 'none')" />
 	</DropMenu>
-	<input ref="file_input" type="file" accept="image/*" class="hidden-input" @change="on_image">
 </template>
 
 <style scoped>
@@ -138,7 +155,31 @@ function on_image(event: Event) {
 	outline: 2px solid var(--fill-accent);
 	outline-offset: 1px;
 }
-.hidden-input {
-	display: none;
+.cu {
+	padding: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.in {
+	height: 28px;
+	padding: 0 8px;
+	border: 0.5px solid var(--border-strong);
+	border-radius: 6px;
+	background: var(--surface-2);
+	font: inherit;
+	font-size: 12px;
+	color: var(--text-primary);
+	outline: none;
+}
+.in:focus {
+	border-color: var(--border-accent);
+}
+.hn {
+	margin: 0;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--text-muted);
+	white-space: normal;
 }
 </style>
