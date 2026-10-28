@@ -27,8 +27,10 @@ export const en: typeof ru = {
 		hub: 'Hub',
 		settings: 'Settings',
 		trash: 'Cloud trash',
+		cloud: 'Cloud',
 	},
 	subtitle: {
+		cloud: 'Cloud folders',
 		account: 'Profile, plan and devices',
 		account_signed_out: 'Sign in or sign up',
 		hub: 'Published folders',
@@ -373,6 +375,11 @@ export const en: typeof ru = {
 		description: 'Your account and all cloud folders will be deleted for good. Folders on this computer stay. Enter your password to confirm',
 		submit: 'Delete account',
 		done: 'Cloud account deleted',
+	},
+	cloud_page: {
+		new_folder: 'New folder',
+		empty: 'No folders in the cloud yet',
+		open_hint: 'Double-click to open',
 	},
 	cloud_sign_in: {
 		text: 'Sign in to see your cloud folders',

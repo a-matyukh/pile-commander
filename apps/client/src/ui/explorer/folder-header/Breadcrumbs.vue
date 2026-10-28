@@ -12,8 +12,10 @@ import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
  */
 defineProps<{ crumbs: FolderCrumb[]; title?: string }>()
 
-function open(ref: FolderRef | null) {
-	if (ref) void explorer_navigation.open_folder(ref)
+/** A folder opens; the cloud itself opens as a page of its top-level folders */
+function open(crumb: FolderCrumb) {
+	if (crumb.ref) void explorer_navigation.open_folder(crumb.ref)
+	else if (crumb.glyph === 'cloud') void explorer_navigation.open_page('cloud')
 }
 </script>
 
@@ -23,11 +25,11 @@ function open(ref: FolderRef | null) {
 			<Icon v-if="i > 0" icon="tabler:chevron-right" class="sep" />
 			<span
 				class="crumb"
-				:class="{ static: !crumb.ref }"
+				:class="{ static: !crumb.ref && crumb.glyph !== 'cloud' }"
 				:data-tip="crumb.glyph ? crumb.name : undefined"
 				:aria-label="crumb.glyph ? crumb.name : undefined"
-				:role="crumb.ref ? 'link' : undefined"
-				@click="open(crumb.ref)"
+				:role="crumb.ref || crumb.glyph === 'cloud' ? 'link' : undefined"
+				@click="open(crumb)"
 			>
 				<HomeGlyph v-if="crumb.glyph === 'home'" :size="14" />
 				<Icon v-else-if="crumb.glyph === 'cloud'" icon="tabler:cloud" style="font-size: 17px" />

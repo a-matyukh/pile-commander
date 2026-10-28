@@ -7,7 +7,7 @@ import { t } from '@/i18n'
 import store from '@/store'
 import cloud from '@/store/cloud'
 import { explorer_drives } from '@/store/explorer/drives'
-import { explorer_last_location, explorer_navigation } from '@/store/explorer/navigation'
+import { explorer_drive_locations, explorer_last_location, explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
 import { explorer_sidebar_width } from '@/store/explorer/sidebar'
 import { explorer_tree, tree_root_folder_id } from '@/store/explorer/tree'
@@ -23,7 +23,7 @@ import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from '.
 
 const drives = computed(() => explorer_drives.drives())
 /** The account or settings page is open: its footer button shows it */
-function page_open(page: 'account' | 'settings' | 'trash') {
+function page_open(page: 'account' | 'settings' | 'trash' | 'cloud') {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' && location.page === page
 }
@@ -49,8 +49,8 @@ const shown_folder = computed(() => {
 const active_source = computed(() => {
 	if (picked_source.value) return picked_source.value
 	if (hub_open.value) return 'hub'
-	// The trash page is the cloud's: its tree stays beside it
-	if (page_open('trash')) return 'cloud'
+	// The trash and the cloud page are the cloud's: its tree stays beside them
+	if (page_open('trash') || page_open('cloud')) return 'cloud'
 	return shown_folder.value?.drive_id ?? null
 })
 const active_drive = computed(() => drives.value.find(item => item.id === active_source.value) ?? null)
@@ -81,15 +81,22 @@ const nothing_found = computed(() => filtered.value && tree_ready.value
 	&& !primary_children.value.length && !separate_roots.value.length)
 
 function source_is_open(drive: Drive): boolean {
+	// The cloud's root is its page of top-level folders
+	if (drive.kind === 'cloud') return page_open('cloud')
 	const location = explorer_navigation.location
 	if (location?.kind !== 'folder' || location.ref.drive_id !== drive.id) return false
-	const root_folder_id = drive.kind === 'cloud' ? '/' : location.ref.root_id
-	return location.ref.folder_id === root_folder_id
+	return location.ref.folder_id === location.ref.root_id
 }
 
 async function open_drive(drive: Drive) {
-	// The source already shown: its root, as Finder's Home. No switch, no spinner
 	const location = explorer_navigation.location
+	// The cloud's own "root" is the page of its top-level folders: when the
+	// cloud is already shown, or nothing in it was opened before
+	if (drive.kind === 'cloud' && (active_source.value === 'cloud' || !explorer_drive_locations.value.cloud)) {
+		void explorer_navigation.open_page('cloud')
+		return
+	}
+	// The source already shown: its root, as Finder's Home. No switch, no spinner
 	if (location?.kind === 'folder' && location.ref.drive_id === drive.id) {
 		try {
 			const root = (await drive.roots())[0]
