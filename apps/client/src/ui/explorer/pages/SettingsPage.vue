@@ -161,7 +161,15 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 						]"
 					/>
 				</SettingRow>
-				<!-- "Trash button" joins with the cloud trash (scenario 25) -->
+				<SettingRow :title="t('settings.trash')" :description="t('settings.trash_d')">
+					<ViewChoice
+						v-model="explorer_settings.trash_button"
+						:options="[
+							{ value: 'icon', label: t('settings.trash_icon'), mini: 'trash_icon' },
+							{ value: 'text', label: t('settings.trash_text'), mini: 'trash_text' },
+						]"
+					/>
+				</SettingRow>
 				<SettingRow :title="t('settings.home')" :description="t('settings.home_d')">
 					<Segmented
 						v-model="explorer_settings.home_icon"

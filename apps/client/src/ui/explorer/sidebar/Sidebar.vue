@@ -5,6 +5,7 @@ import { Icon } from '@iconify/vue'
 import type { Drive } from '@/domain/Drive'
 import { t } from '@/i18n'
 import store from '@/store'
+import cloud from '@/store/cloud'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_last_location, explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
@@ -22,10 +23,12 @@ import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from '.
 
 const drives = computed(() => explorer_drives.drives())
 /** The account or settings page is open: its footer button shows it */
-function page_open(page: 'account' | 'settings') {
+function page_open(page: 'account' | 'settings' | 'trash') {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' && location.page === page
 }
+
+const cloud_signed_in = computed(() => !!cloud.user)
 
 const hub_open = computed(() => {
 	const location = explorer_navigation.location
@@ -46,6 +49,8 @@ const shown_folder = computed(() => {
 const active_source = computed(() => {
 	if (picked_source.value) return picked_source.value
 	if (hub_open.value) return 'hub'
+	// The trash page is the cloud's: its tree stays beside it
+	if (page_open('trash')) return 'cloud'
 	return shown_folder.value?.drive_id ?? null
 })
 const active_drive = computed(() => drives.value.find(item => item.id === active_source.value) ?? null)
@@ -158,7 +163,8 @@ watchEffect(() => {
 		explorer_tree.show_page()
 		return
 	}
-	void explorer_tree.show_drive(drive, shown_folder.value)
+	const folder = shown_folder.value
+	void explorer_tree.show_drive(drive, folder?.drive_id === drive.id ? folder : null)
 })
 </script>
 
@@ -226,6 +232,17 @@ watchEffect(() => {
 			</div>
 			<div class="tb">
 				<TreeMenus />
+				<!-- The cloud keeps a trash; ~ and browser storage use the system's -->
+				<IconButton
+					v-if="active_drive?.kind === 'cloud' && cloud_signed_in"
+					icon="tabler:trash"
+					:label="explorer_settings.trash_button === 'text' ? t('trash.title') : undefined"
+					:selected="page_open('trash')"
+					:aria-label="t('page.trash')"
+					:data-tip="t('page.trash')"
+					class="trash"
+					@click="explorer_navigation.open_page('trash')"
+				/>
 			</div>
 		</template>
 		<div class="ft">
@@ -360,6 +377,9 @@ watchEffect(() => {
 	font: inherit;
 	cursor: pointer;
 	color: var(--text-secondary);
+}
+.tb .trash {
+	margin-left: auto;
 }
 .ft {
 	display: flex;

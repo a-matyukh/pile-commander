@@ -13,6 +13,7 @@ const subtitle = computed(() => {
 		return { icon: 'tabler:user-circle', text: cloud.user ? t('subtitle.account') : t('subtitle.account_signed_out') }
 	}
 	if (props.page === 'hub') return { icon: 'tabler:world', text: t('subtitle.hub') }
+	if (props.page === 'trash') return { icon: 'tabler:cloud', text: t('trash.cloud_note') }
 	return { icon: 'tabler:settings', text: t('subtitle.settings') }
 })
 </script>

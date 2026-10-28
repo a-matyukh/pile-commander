@@ -14,6 +14,7 @@ export type ExplorerSettings = {
 	home_icon: 'tilde' | 'house'
 	/** Account and settings buttons at the bottom of the sidebar */
 	footer_buttons: 'icon' | 'text' | 'both'
+	trash_button: 'icon' | 'text'
 	size: 'normal' | 'large'
 	/** `thin`: grayscale antialiasing instead of the system one (macOS) */
 	text_smoothing: 'system' | 'thin'
@@ -34,6 +35,7 @@ export const EXPLORER_SETTINGS_DEFAULTS: ExplorerSettings = {
 	gray_content: false,
 	home_icon: 'tilde',
 	footer_buttons: 'icon',
+	trash_button: 'icon',
 	size: 'normal',
 	text_smoothing: 'system',
 	path_visible: true,

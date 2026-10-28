@@ -9,6 +9,7 @@ import store, { adopt_workspace } from '@/store'
 import { explorer_settings } from '@/store/explorer/settings'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
+import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
 import HubView from '@/ui/hub/HubView.vue'
 import cloud from '@/store/cloud'
 import { explorer_return_page } from '@/store/explorer/public_view'
@@ -124,6 +125,7 @@ onUnmounted(() => {
 				<div class="content">
 					<SettingsPage v-if="page === 'settings'" />
 					<AccountPage v-else-if="page === 'account'" />
+					<TrashPage v-else-if="page === 'trash'" />
 					<!-- The current Hub; a publication opens in the current viewer until step 3.6 -->
 					<HubView v-else-if="page === 'hub'" class="hub" hide_title />
 				</div>
