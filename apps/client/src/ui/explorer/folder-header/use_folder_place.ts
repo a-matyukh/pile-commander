@@ -3,6 +3,7 @@ import type { FolderRef } from '@/domain/Drive'
 import { t } from '@/i18n'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import store from '@/store'
+import cloud from '@/store/cloud'
 import { bookmark_name } from '@/store/explorer/bookmarks'
 import { folder_basename, folder_crumbs, folder_title, type CrumbNames } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
@@ -56,6 +57,10 @@ export function use_folder_place() {
 		const value = explorer_navigation.location
 		return value?.kind === 'page' ? value.page : null
 	})
+	const page_arg = computed(() => {
+		const value = explorer_navigation.location
+		return value?.kind === 'page' ? value.arg ?? null : null
+	})
 	/** The store on screen, once it has opened the folder the location names */
 	const workspace = computed(() => {
 		const ref = location.value
@@ -66,9 +71,14 @@ export function use_folder_place() {
 	/** The parents; none when the settings show the folder name alone */
 	const crumbs = computed(() => location.value && explorer_settings.path_full ? folder_crumbs(location.value, names.value) : [])
 	const title = computed(() => {
+		// An author's page is titled by their name
+		if (page.value === 'profile' && page_arg.value) {
+			const profile = cloud.profile_view?.profile
+			return profile?.username === page_arg.value ? profile.display_name || profile.username || page_arg.value : page_arg.value
+		}
 		if (page.value) return t(`page.${page.value}`)
 		return location.value ? folder_title(location.value, names.value) : ''
 	})
 
-	return { location, page, workspace, crumbs, title }
+	return { location, page, page_arg, workspace, crumbs, title }
 }

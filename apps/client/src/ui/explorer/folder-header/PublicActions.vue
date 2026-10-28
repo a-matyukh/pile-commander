@@ -8,7 +8,7 @@ import cloud from '@/store/cloud'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { public_roots } from '@/store/explorer/public_roots'
 import { publication_view_of } from '@/store/explorer/public_view'
-import HubReportButton from '@/ui/hub/HubReportButton.vue'
+import ReportDialog from '@/ui/explorer/pages/hub/ReportDialog.vue'
 import Button from '@/ui/kit/Button.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
@@ -25,7 +25,7 @@ const props = defineProps<{ workspace: WorkspaceStore; folder: FolderRef; align:
 const root = computed(() => public_roots.get(props.folder.root_id) ?? null)
 const open = ref(false)
 const busy = ref(false)
-const report = ref<InstanceType<typeof HubReportButton> | null>(null)
+const report = ref<InstanceType<typeof ReportDialog> | null>(null)
 const can_report = ref(false)
 
 /** cloud.fork() and "Edit" read the publication from the cloud store */
@@ -78,11 +78,10 @@ async function download() {
 			<MenuItem v-if="root.can_fork" icon="tabler:download" :label="t('public_view.download')" @select="download" />
 			<MenuItem v-if="can_report" icon="tabler:flag" :label="t('public_view.report')" @select="report?.start_report()" />
 		</DropMenu>
-		<HubReportButton
+		<ReportDialog
 			v-if="!root.can_edit_source"
 			:key="root.id"
 			ref="report"
-			variant="modal"
 			:workspace_id="root.id"
 			:username="root.username"
 			:slug="root.slug"

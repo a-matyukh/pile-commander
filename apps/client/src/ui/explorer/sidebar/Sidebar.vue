@@ -33,7 +33,8 @@ const cloud_signed_in = computed(() => !!cloud.user)
 
 const hub_open = computed(() => {
 	const location = explorer_navigation.location
-	return location?.kind === 'page' && location.page === 'hub'
+	// An author's page belongs to the Hub
+	return location?.kind === 'page' && (location.page === 'hub' || location.page === 'profile')
 })
 /**
  * The source the user just picked. The switch is instant, as in the

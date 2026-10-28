@@ -12,7 +12,7 @@ import { use_folder_place } from './use_folder_place'
  * holds the actions alone, or goes away when they moved to the top bar too.
  * A page (settings, account, Hub) shows its title and a subtitle
  */
-const { location, page, workspace, crumbs, title } = use_folder_place()
+const { location, page, page_arg, workspace, crumbs, title } = use_folder_place()
 
 /** Path and title are shown here; a page shows its title unless the path is on top */
 const shows_place = computed(() => path_in_header.value || (!!page.value && !path_on_top.value))
@@ -31,7 +31,7 @@ const visible = computed(() => (location.value || page.value) && (shows_place.va
 
 		<div v-else-if="shows_place" class="ph0" :class="{ nt: !explorer_settings.path_full }">
 			<template v-if="explorer_settings.path_full">
-				<PlaceSubtitle v-if="page" :page="page" />
+				<PlaceSubtitle v-if="page" :page="page" :arg="page_arg" />
 				<!-- Kept when empty (at a root): the title row stays in place -->
 				<Breadcrumbs v-else :crumbs="crumbs" />
 			</template>

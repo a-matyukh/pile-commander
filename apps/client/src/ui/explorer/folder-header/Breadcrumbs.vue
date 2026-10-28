@@ -4,7 +4,6 @@ import type { FolderRef } from '@/domain/Drive'
 import type { FolderCrumb } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
-import { navigate_public } from '@/services/navigatePublic'
 
 /**
  * The parents of the open folder; a click opens that parent. Above the title,
@@ -21,7 +20,7 @@ function open(crumb: FolderCrumb) {
 	if (crumb.ref) void explorer_navigation.open_folder(crumb.ref)
 	else if (crumb.glyph === 'cloud') void explorer_navigation.open_page('cloud')
 	else if (crumb.glyph === 'hub') void explorer_navigation.open_page('hub')
-	else if (crumb.glyph === 'author') navigate_public(`/${crumb.name}`)
+	else if (crumb.glyph === 'author') void explorer_navigation.open_page('profile', crumb.name)
 }
 
 const clickable = (crumb: FolderCrumb) => !!crumb.ref || crumb.glyph === 'cloud' || crumb.glyph === 'hub' || crumb.glyph === 'author'

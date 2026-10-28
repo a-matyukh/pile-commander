@@ -12,7 +12,8 @@ import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
 import CloudPage from '@/ui/explorer/pages/CloudPage.vue'
 import FolderContent from '@/ui/explorer/FolderContent.vue'
-import HubView from '@/ui/hub/HubView.vue'
+import HubPage from '@/ui/explorer/pages/hub/HubPage.vue'
+import ProfilePage from '@/ui/explorer/pages/hub/ProfilePage.vue'
 import cloud from '@/store/cloud'
 import { explorer_mounted, take_explorer_start } from '@/store/explorer/public_view'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
@@ -43,6 +44,10 @@ const window_classes = computed(() => ({
 const page = computed(() => {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' ? location.page : null
+})
+const page_arg = computed(() => {
+	const location = explorer_navigation.location
+	return location?.kind === 'page' ? location.arg ?? null : null
 })
 
 // The Hub's list of publications loads when the page opens, as the old window's Hub did
@@ -92,7 +97,7 @@ onMounted(async () => {
 	// Back from a publication or an invitation, or /hub: there, not the last folder
 	const start = take_explorer_start()
 	try {
-		if (start?.kind === 'page') await explorer_navigation.open_page(start.page)
+		if (start?.kind === 'page') await explorer_navigation.open_page(start.page, start.arg)
 		else if (start?.kind === 'folder') await explorer_navigation.open_folder(start.ref)
 		else await explorer_navigation.open_at_launch()
 	} catch (error) {
@@ -131,8 +136,8 @@ onUnmounted(() => {
 					<AccountPage v-else-if="page === 'account'" />
 					<TrashPage v-else-if="page === 'trash'" />
 					<CloudPage v-else-if="page === 'cloud'" />
-					<!-- The current Hub; a publication opens in the current viewer until step 3.6 -->
-					<HubView v-else-if="page === 'hub'" class="hub" hide_title />
+					<HubPage v-else-if="page === 'hub'" />
+					<ProfilePage v-else-if="page === 'profile' && page_arg" :username="page_arg" />
 					<FolderContent v-else-if="!page" />
 				</div>
 			</main>
@@ -164,9 +169,6 @@ onUnmounted(() => {
 	flex: 1;
 	min-height: 0;
 	overflow: auto;
-}
-.hub {
-	padding: 8px 4px;
 }
 .shell-error {
 	padding: 12px 16px 0;

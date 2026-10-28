@@ -15,11 +15,12 @@ import { explain_folder_error } from './fsErrorMessage'
  * Pages the history can stand on. Trash, a profile and an invite join this
  * list when those screens exist; they are not folders.
  */
-export type ExplorerPage = 'hub' | 'account' | 'settings' | 'trash' | 'cloud'
+export type ExplorerPage = 'hub' | 'account' | 'settings' | 'trash' | 'cloud' | 'profile'
 
 export type ExplorerLocation =
 	| { kind: 'folder'; ref: FolderRef }
-	| { kind: 'page'; page: ExplorerPage }
+	/** `arg`: what the page shows, e.g. an author's username on "profile" */
+	| { kind: 'page'; page: ExplorerPage; arg?: string }
 
 export const EXPLORER_LAST_LOCATION_KEY = 'pile_commander_explorer_location'
 /** The last folder of each drive, so switching back to a drive returns to it */
@@ -75,7 +76,7 @@ export type ExplorerNavigation = {
 	open_drive(first: FolderRef): Promise<void>
 	/** Bookmark: a missing folder opens its drive root. An unreachable root is reported, not thrown. */
 	open_bookmark(ref: FolderRef): Promise<void>
-	open_page(page: ExplorerPage): Promise<void>
+	open_page(page: ExplorerPage, arg?: string): Promise<void>
 	/** A path inside ~ is a folder of the home root. Anything else is its own local root. */
 	open_local_path(path: string): Promise<void>
 	go_back(): Promise<void>
@@ -127,7 +128,7 @@ function folder_location(ref: FolderRef): ExplorerLocation {
 
 function same_location(a: ExplorerLocation, b: ExplorerLocation): boolean {
 	if (a.kind !== b.kind) return false
-	if (a.kind === 'page' && b.kind === 'page') return a.page === b.page
+	if (a.kind === 'page' && b.kind === 'page') return a.page === b.page && a.arg === b.arg
 	if (a.kind === 'folder' && b.kind === 'folder') {
 		return a.ref.drive_id === b.ref.drive_id
 			&& a.ref.root_id === b.ref.root_id
@@ -472,7 +473,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		open_folder: (ref: FolderRef) => navigate(folder_location(ref), false),
 		open_drive,
 		open_bookmark,
-		open_page: (page: ExplorerPage) => navigate({ kind: 'page', page }, false),
+		open_page: (page: ExplorerPage, arg?: string) => navigate(arg === undefined ? { kind: 'page', page } : { kind: 'page', page, arg }, false),
 		open_local_path,
 		go_back: () => go(state.index - 1),
 		go_forward: () => go(state.index + 1),

@@ -18,8 +18,6 @@ import { DEMO_ROOT, public_roots, type PublicRoot } from './public_roots'
  */
 export const explorer_public_open = computed(() => explorer_enabled.value && !!(
 	cloud.public_not_found
-	|| cloud.profile_view
-	|| cloud.profile_not_found
 	|| cloud.invite_view
 ))
 
@@ -27,7 +25,7 @@ export const explorer_public_open = computed(() => explorer_enabled.value && !!(
 export const explorer_mounted = ref(false)
 
 /** Where the Explorer opens when it comes back from those screens, instead of the last folder */
-export type ExplorerReturn = { kind: 'page'; page: ExplorerPage } | { kind: 'folder'; ref: FolderRef }
+export type ExplorerReturn = { kind: 'page'; page: ExplorerPage; arg?: string } | { kind: 'folder'; ref: FolderRef }
 export const explorer_return = ref<ExplorerReturn | null>(null)
 
 /** The Explorer has no addresses of its own */
@@ -74,12 +72,16 @@ export function take_explorer_start(): ExplorerReturn | null {
 	const back = explorer_return.value
 	explorer_return.value = null
 	if (back) return back
-	const route = resolve_public_route(window.location.pathname).kind
-	if (route === 'hub') {
+	const route = resolve_public_route(window.location.pathname)
+	if (route.kind === 'hub') {
 		leave_public_address()
 		return { kind: 'page', page: 'hub' }
 	}
-	if (route === 'demo') {
+	if (route.kind === 'profile') {
+		leave_public_address()
+		return { kind: 'page', page: 'profile', arg: route.username }
+	}
+	if (route.kind === 'demo') {
 		leave_public_address()
 		return { kind: 'folder', ref: { drive_id: 'demo', root_id: DEMO_ROOT, folder_id: DEMO_ROOT } }
 	}
