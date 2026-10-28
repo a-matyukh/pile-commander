@@ -5,8 +5,12 @@ import type { FolderCrumb } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
 
-/** The parents of the open folder, above its title. A click opens that parent */
-defineProps<{ crumbs: FolderCrumb[] }>()
+/**
+ * The parents of the open folder; a click opens that parent. Above the title,
+ * or with `title` one line ending in the open folder (compact header, path
+ * in the top bar)
+ */
+defineProps<{ crumbs: FolderCrumb[]; title?: string }>()
 
 function open(ref: FolderRef | null) {
 	if (ref) void explorer_navigation.open_folder(ref)
@@ -30,6 +34,10 @@ function open(ref: FolderRef | null) {
 				<Icon v-else-if="crumb.glyph === 'browser'" icon="tabler:database" style="font-size: 14px" />
 				<template v-else>{{ crumb.name }}</template>
 			</span>
+		</template>
+		<template v-if="title !== undefined">
+			<Icon v-if="crumbs.length" icon="tabler:chevron-right" class="sep" />
+			<span class="cur">{{ title }}</span>
 		</template>
 	</div>
 </template>
@@ -57,14 +65,20 @@ function open(ref: FolderRef | null) {
 	gap: 4px;
 	height: 18px;
 }
+.cur {
+	color: var(--text-primary);
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
 .crumb.static {
 	cursor: default;
 }
-:global(.explorer.lg) .bc {
+.explorer.lg .bc {
 	font-size: 14px;
 	line-height: 22px;
 }
-:global(.explorer.lg) .crumb {
+.explorer.lg .crumb {
 	height: 22px;
 }
 @media (hover: hover) {

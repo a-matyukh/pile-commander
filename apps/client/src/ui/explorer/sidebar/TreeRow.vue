@@ -346,24 +346,24 @@ watchEffect(on_cleanup => {
 		transform: rotate(360deg);
 	}
 }
-:global(.explorer.lg) .r {
+.explorer.lg .r {
 	height: 38px;
 }
-:global(.explorer.lg) .r > :deep(svg) {
+.explorer.lg .r > :deep(svg) {
 	font-size: 19px;
 }
-:global(.explorer.lg) .cv,
-:global(.explorer.lg) .sp {
+.explorer.lg .cv,
+.explorer.lg .sp {
 	width: 18px;
 }
-:global(.explorer.lg) .cv {
+.explorer.lg .cv {
 	font-size: 17px !important;
 }
-:global(.explorer.lg) .dt {
+.explorer.lg .dt {
 	width: 26px;
 	height: 26px;
 }
-:global(.explorer.lg) .g {
+.explorer.lg .g {
 	margin-left: 15px;
 }
 @media (hover: hover) {

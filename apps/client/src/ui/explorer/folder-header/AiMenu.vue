@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
 import { name_target_kind } from '@/services/ai/naming'
@@ -8,6 +8,8 @@ import { to_folder_container } from '@/services/workspace/folderContainer'
 import { ai_available, ai_ready } from '@/store/ai'
 import { open_bulk_rename } from '@/store/aiBulkRename'
 import { open_summary } from '@/store/aiSummary'
+import { explorer_navigation } from '@/store/explorer/navigation'
+import { settings_tab } from '@/store/explorer/settings'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
@@ -55,12 +57,10 @@ function suggest_names() {
 	open_bulk_rename(props.workspace, props.folder_id, nameable.value)
 }
 
-/** Settings are still the old panel below the header: bring its AI part into view */
-async function open_settings() {
-	await nextTick()
-	const section = document.getElementById('ai-settings')
-	section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-	section?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true })
+/** The settings page, on its AI tab */
+function open_settings() {
+	settings_tab.value = 'ai'
+	void explorer_navigation.open_page('settings')
 }
 </script>
 

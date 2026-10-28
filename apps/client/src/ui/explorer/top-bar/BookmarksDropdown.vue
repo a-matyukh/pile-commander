@@ -87,7 +87,7 @@ function add_current() {
 	font-size: 14px !important;
 	color: var(--text-muted);
 }
-:global(.explorer.lg) .nm {
+.explorer.lg .nm {
 	font-size: 14px;
 }
 .bkm.mi {

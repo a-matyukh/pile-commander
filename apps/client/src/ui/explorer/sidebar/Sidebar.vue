@@ -6,7 +6,8 @@ import type { Drive } from '@/domain/Drive'
 import { t } from '@/i18n'
 import store from '@/store'
 import { explorer_drives } from '@/store/explorer/drives'
-import { explorer_navigation } from '@/store/explorer/navigation'
+import { explorer_last_location, explorer_navigation } from '@/store/explorer/navigation'
+import { explorer_settings } from '@/store/explorer/settings'
 import { explorer_sidebar_width } from '@/store/explorer/sidebar'
 import { explorer_tree, tree_root_folder_id } from '@/store/explorer/tree'
 import { arranged_children, arranged_roots } from '@/store/explorer/tree_arrange'
@@ -20,6 +21,16 @@ import TreeRow from './TreeRow.vue'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
 const drives = computed(() => explorer_drives.drives())
+/** The settings page is open: its footer button shows it */
+const settings_open = computed(() => {
+	const location = explorer_navigation.location
+	return location?.kind === 'page' && location.page === 'settings'
+})
+
+function open_settings() {
+	void explorer_navigation.open_page('settings')
+}
+
 const hub_open = computed(() => {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' && location.page === 'hub'
@@ -30,11 +41,16 @@ const hub_open = computed(() => {
  * folders) before the navigation to its first folder has finished
  */
 const picked_source = ref<string | null>(null)
+/** The open folder; on a page (settings, account) the last one, so its tree stays */
+const shown_folder = computed(() => {
+	const location = explorer_navigation.location
+	if (location?.kind === 'folder') return location.ref
+	return location?.kind === 'page' ? explorer_last_location.value : null
+})
 const active_source = computed(() => {
 	if (picked_source.value) return picked_source.value
 	if (hub_open.value) return 'hub'
-	const location = explorer_navigation.location
-	return location?.kind === 'folder' ? location.ref.drive_id : null
+	return shown_folder.value?.drive_id ?? null
 })
 const active_drive = computed(() => drives.value.find(item => item.id === active_source.value) ?? null)
 const primary_root = computed(() => active_drive.value?.kind === 'cloud' ? null : explorer_tree.roots[0] ?? null)
@@ -141,13 +157,12 @@ watch(() => [primary_children.value, explorer_tree.round] as const, ([nodes]) =>
 useEventListener(window, 'focus', () => explorer_tree.refresh_shown())
 
 watchEffect(() => {
-	const location = explorer_navigation.location
 	const drive = active_drive.value
 	if (!drive) {
 		explorer_tree.show_page()
 		return
 	}
-	void explorer_tree.show_drive(drive, location?.kind === 'folder' ? location.ref : null)
+	void explorer_tree.show_drive(drive, shown_folder.value)
 })
 </script>
 
@@ -217,6 +232,17 @@ watchEffect(() => {
 				<TreeMenus />
 			</div>
 		</template>
+		<!-- Account joins with its page (step 3.2, scenario 23) -->
+		<div class="ft">
+			<IconButton
+				:icon="explorer_settings.footer_buttons !== 'text' ? 'tabler:settings' : undefined"
+				:label="explorer_settings.footer_buttons !== 'icon' ? t('page.settings') : undefined"
+				:selected="settings_open"
+				:aria-label="t('page.settings')"
+				:data-tip="t('page.settings')"
+				@click="open_settings"
+			/>
+		</div>
 		<div
 			v-if="tree_drag.source"
 			class="gh"
@@ -338,6 +364,22 @@ watchEffect(() => {
 	cursor: pointer;
 	color: var(--text-secondary);
 }
+.ft {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 2px;
+	padding: 4px 6px;
+	border-top: 0.5px solid var(--border);
+	flex: none;
+}
+.ft :deep(.ib) {
+	height: 30px;
+	min-width: 30px;
+}
+.ft :deep(.ib svg) {
+	font-size: 17px;
+}
 .tb {
 	display: flex;
 	align-items: center;
@@ -358,23 +400,23 @@ watchEffect(() => {
 	margin: 6px 10px;
 	background: var(--border);
 }
-:global(.explorer.lg) .tree {
+.explorer.lg .tree {
 	width: 280px;
 }
-:global(.explorer.lg) .hd {
+.explorer.lg .hd {
 	height: 56px;
 }
-:global(.explorer.lg) .hd .ib {
+.explorer.lg .hd .ib {
 	height: 38px;
 	min-width: 44px;
 }
-:global(.explorer.lg) .hd .ib :deep(svg) {
+.explorer.lg .hd .ib :deep(svg) {
 	font-size: 21px;
 }
-:global(.explorer.lg) .hd .ib :deep(.hm) {
+.explorer.lg .hd .ib :deep(.hm) {
 	font-size: 21px !important;
 }
-:global(.explorer.lg) .hd .ib.cur::after {
+.explorer.lg .hd .ib.cur::after {
 	bottom: -9px;
 }
 </style>

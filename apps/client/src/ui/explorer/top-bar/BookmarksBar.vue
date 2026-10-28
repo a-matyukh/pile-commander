@@ -93,12 +93,12 @@ function add_current() {
 	box-shadow: inset -2px 0 0 var(--fill-accent);
 	border-radius: 6px 0 0 6px;
 }
-:global(.explorer.lg) .bk {
+.explorer.lg .bk {
 	height: 32px;
 	font-size: 14px;
 	padding: 0 10px;
 }
-:global(.explorer.lg) .bk :deep(svg) {
+.explorer.lg .bk :deep(svg) {
 	font-size: 17px;
 }
 @media (hover: hover) {

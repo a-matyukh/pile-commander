@@ -1,67 +1,52 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import type { FolderRef } from '@/domain/Drive'
-import { t } from '@/i18n'
-import { is_desktop } from '@/isDesktop'
-import { normalize_workspace_id } from '@/services/workspace/paths'
-import store from '@/store'
-import { bookmark_name } from '@/store/explorer/bookmarks'
-import { folder_basename, folder_crumbs, folder_title, type CrumbNames } from '@/store/explorer/folder_header'
-import { explorer_navigation } from '@/store/explorer/navigation'
+import { computed } from 'vue'
+import { actions_on_top, explorer_settings, path_in_header, path_on_top } from '@/store/explorer/settings'
 import Breadcrumbs from './Breadcrumbs.vue'
 import FolderActions from './FolderActions.vue'
+import PlaceSubtitle from './PlaceSubtitle.vue'
+import { use_folder_place } from './use_folder_place'
 
 /**
- * The bar above the folder content: the path to the open folder, its title
- * and the folder actions. The prototype's default layout (two lines, full path)
+ * The bar above the folder content: path, title and folder actions, shaped
+ * by the path settings as in the prototype. With the path in the top bar it
+ * holds the actions alone, or goes away when they moved to the top bar too.
+ * A page (settings, account, Hub) shows its title and a subtitle
  */
+const { location, page, workspace, crumbs, title } = use_folder_place()
 
-const home = ref<string | null>(null)
-onMounted(async () => {
-	if (!is_desktop) return
-	const { homeDir } = await import('@tauri-apps/api/path')
-	home.value = normalize_workspace_id(await homeDir())
-})
-
-const names = computed<CrumbNames>(() => ({
-	is_home: root_id => home.value !== null && normalize_workspace_id(root_id) === home.value,
-	root_name(ref: FolderRef) {
-		if (ref.drive_id === 'local') {
-			return home.value !== null && normalize_workspace_id(ref.root_id) === home.value
-				? t('source.local')
-				: folder_basename(ref.root_id)
-		}
-		if (ref.drive_id === 'browser') return t('source.browser_disk')
-		return bookmark_name(ref)
-	},
-	folder_name: (ref: FolderRef) => ref.drive_id === 'browser' ? bookmark_name(ref) : folder_basename(ref.folder_id),
-	cloud_name: t('source.cloud'),
-}))
-
-const location = computed(() => {
-	const value = explorer_navigation.location
-	return value?.kind === 'folder' ? value.ref : null
-})
-/** The store on screen, once it has opened the folder the location names */
-const workspace = computed(() => {
-	const ref = location.value
-	const current = store.workspace
-	if (!ref || !current || current.is_disposed) return null
-	return current.opened_folder_id === ref.folder_id ? current : null
-})
-const crumbs = computed(() => location.value ? folder_crumbs(location.value, names.value) : [])
-const title = computed(() => location.value ? folder_title(location.value, names.value) : '')
+/** Path and title are shown here; a page shows its title unless the path is on top */
+const shows_place = computed(() => path_in_header.value || (!!page.value && !path_on_top.value))
+const compact = computed(() => explorer_settings.header_style === 'compact' || (!!page.value && !explorer_settings.path_full))
+const visible = computed(() => (location.value || page.value) && (shows_place.value || (!actions_on_top.value && !!workspace.value)))
 </script>
 
 <template>
-	<div v-if="location" class="ph0">
-		<!-- Kept when empty (at a root): the title row stays in place -->
-		<Breadcrumbs :crumbs="crumbs" />
-		<div class="hrow">
-			<div class="ttl">{{ title }}</div>
-			<FolderActions v-if="workspace" :workspace="workspace" :folder="location" :name="title" align="end" />
+	<template v-if="visible">
+		<div v-if="shows_place && compact" class="ph0 cp">
+			<div class="hrow">
+				<Breadcrumbs :crumbs="crumbs" :title="title" />
+				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="title" align="end" />
+			</div>
 		</div>
-	</div>
+
+		<div v-else-if="shows_place" class="ph0" :class="{ nt: !explorer_settings.path_full }">
+			<template v-if="explorer_settings.path_full">
+				<PlaceSubtitle v-if="page" :page="page" />
+				<!-- Kept when empty (at a root): the title row stays in place -->
+				<Breadcrumbs v-else :crumbs="crumbs" />
+			</template>
+			<div class="hrow">
+				<div class="ttl">{{ title }}</div>
+				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="title" align="end" />
+			</div>
+		</div>
+
+		<div v-else-if="workspace && location" class="ph0 cp lft">
+			<div class="hrow">
+				<FolderActions :workspace="workspace" :folder="location" :name="title" align="start" />
+			</div>
+		</div>
+	</template>
 </template>
 
 <style scoped>
@@ -70,6 +55,34 @@ const title = computed(() => location.value ? folder_title(location.value, names
 	border-bottom: 0.5px solid var(--border);
 	background: var(--pn);
 	flex: none;
+}
+.ph0.cp {
+	height: 46px;
+	box-sizing: border-box;
+	padding: 0 16px;
+	display: flex;
+	align-items: center;
+}
+.explorer.lg .ph0.cp {
+	height: 56px;
+}
+.ph0.cp.lft {
+	padding-left: 10px;
+}
+.ph0.cp .hrow {
+	flex: 1;
+	min-width: 0;
+}
+.ph0.cp .hrow,
+.ph0.nt .hrow {
+	margin-top: 0;
+}
+.ph0.cp :deep(.bc) {
+	font-size: 13px;
+	margin-right: auto;
+}
+.explorer.lg .ph0.cp :deep(.bc) {
+	font-size: 15px;
 }
 .hrow {
 	display: flex;
@@ -86,7 +99,7 @@ const title = computed(() => location.value ? folder_title(location.value, names
 	margin-right: auto;
 	min-width: 0;
 }
-:global(.explorer.lg) .ttl {
+.explorer.lg .ttl {
 	font-size: 21px;
 }
 </style>

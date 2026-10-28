@@ -7,10 +7,15 @@ import { traffic_inset_target } from '@/services/window/trafficInset'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_sidebar_open, toggle_explorer_sidebar } from '@/store/explorer/sidebar'
 import IconButton from '@/ui/kit/IconButton.vue'
+import { actions_on_top, explorer_settings, path_on_top } from '@/store/explorer/settings'
+import Breadcrumbs from '@/ui/explorer/folder-header/Breadcrumbs.vue'
+import FolderActions from '@/ui/explorer/folder-header/FolderActions.vue'
+import { use_folder_place } from '@/ui/explorer/folder-header/use_folder_place'
 import BookmarksBar from './BookmarksBar.vue'
 import BookmarksDropdown from './BookmarksDropdown.vue'
 
 const narrow = useMediaQuery('(max-width: 767px)')
+const { location, workspace, crumbs, title } = use_folder_place()
 
 const { macOS } = useKbd()
 const overlay = use_overlay_titlebar()
@@ -81,9 +86,18 @@ function go_forward() {
 			:data-tip-key="shortcut.forward"
 			@click="go_forward"
 		/>
-		<div class="vsep" />
-		<BookmarksDropdown v-if="narrow" />
-		<BookmarksBar v-else />
+		<div v-if="explorer_settings.bookmarks_visible || path_on_top" class="vsep" />
+		<template v-if="explorer_settings.bookmarks_visible">
+			<BookmarksDropdown v-if="narrow || explorer_settings.bookmarks_style === 'list'" />
+			<BookmarksBar v-else />
+		</template>
+		<template v-if="path_on_top && title">
+			<div v-if="explorer_settings.bookmarks_visible" class="vsep" />
+			<Breadcrumbs :crumbs="crumbs" :title="title" class="tpath" />
+		</template>
+		<div v-if="actions_on_top && workspace && location" class="rg">
+			<FolderActions :workspace="workspace" :folder="location" :name="title" align="end" />
+		</div>
 	</div>
 </template>
 
@@ -111,6 +125,23 @@ function go_forward() {
 	   buttons on that line. Measured on a screenshot; recheck if y changes. */
 	height: 47px;
 }
+.tpath {
+	flex: 1;
+	min-width: 0;
+	margin-left: 2px;
+	font-size: 13px;
+}
+.explorer.lg .tpath {
+	font-size: 15px;
+}
+.rg {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: none;
+	padding-left: 8px;
+}
 .vsep {
 	width: 0.5px;
 	height: 16px;
@@ -118,10 +149,10 @@ function go_forward() {
 	margin: 0 6px;
 	flex: none;
 }
-:global(.explorer.lg) .bb {
+.explorer.lg .bb {
 	height: 46px;
 }
-:global(.explorer.lg) .bb.inset {
+.explorer.lg .bb.inset {
 	height: 47px;
 }
 </style>

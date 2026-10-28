@@ -154,7 +154,7 @@ watch(() => ai_settings.value.model, () => {
 </script>
 
 <template>
-	<section id="ai-settings" class="flex flex-col gap-2">
+	<section class="flex flex-col gap-2">
 		<h3 class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
 			<UIcon name="i-lucide:sparkles" class="size-3.5 shrink-0" />
 			AI

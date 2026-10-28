@@ -5,10 +5,9 @@ import { report_error } from '@/store/helpers/reportError'
 import { start_explorer_list_migration } from '@/store/explorer/bookmarks'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
-import { explorer_language } from '@/store/explorer/language'
 import store, { adopt_workspace } from '@/store'
-import Segmented from '@/ui/kit/Segmented.vue'
-import SettingsPanel from '@/ui/workspace/sidebar/workspaces-list/SettingsPanel.vue'
+import { explorer_settings } from '@/store/explorer/settings'
+import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
@@ -26,11 +25,18 @@ const previous_lang = document.documentElement.lang
 const restore_workspace = store.workspace
 let alive = true
 
-const language_options = computed(() => [
-	{ value: 'system' as const, label: t('settings.language_system') },
-	{ value: 'ru' as const, label: 'Русский' },
-	{ value: 'en' as const, label: 'English' },
-])
+/** The interface settings that shape the whole window, as the prototype's window classes */
+const window_classes = computed(() => ({
+	gr: explorer_settings.gray_panels,
+	cg: explorer_settings.gray_content,
+	lg: explorer_settings.size === 'large',
+	thin: explorer_settings.text_smoothing === 'thin',
+}))
+
+const page = computed(() => {
+	const location = explorer_navigation.location
+	return location?.kind === 'page' ? location.page : null
+})
 
 const shell_error = computed(() => store.workspace?.last_error ?? store.last_error)
 
@@ -90,25 +96,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<!-- Replaces WorkspaceWindow while the flag is on. The flag's only switch
-	     lives in the old settings, so they stay here until the Explorer settings
-	     page exists. Menus and dialogs portal into this element to inherit its tokens. -->
-	<div class="explorer flex h-full min-h-0 flex-col">
+	<!-- Replaces WorkspaceWindow while the flag is on. Menus and dialogs portal
+	     into this element to inherit its tokens. -->
+	<div class="explorer flex h-full min-h-0 flex-col" :class="window_classes">
 		<TopBar />
 		<div class="body">
 			<Sidebar v-if="explorer_sidebar_open" />
 			<main class="pv">
 				<FolderHeader />
-				<div class="flex flex-col items-start gap-4 p-6">
-					<p v-if="shell_error" class="shell-error" role="alert">
-						<span>{{ shell_error }}</span>
-						<button type="button" @click="dismiss_error">{{ t('dialog.close') }}</button>
-					</p>
-					<div class="flex flex-col gap-2">
-						<span>{{ t('settings.language') }}</span>
-						<Segmented v-model="explorer_language" :options="language_options" />
-					</div>
-					<SettingsPanel />
+				<p v-if="shell_error" class="shell-error" role="alert">
+					<span>{{ shell_error }}</span>
+					<button type="button" @click="dismiss_error">{{ t('dialog.close') }}</button>
+				</p>
+				<div class="content">
+					<SettingsPage v-if="page === 'settings'" />
 				</div>
 			</main>
 		</div>
@@ -131,10 +132,17 @@ onUnmounted(() => {
 	flex: 1;
 	min-width: 0;
 	min-height: 0;
-	overflow: auto;
+	display: flex;
+	flex-direction: column;
 	background: var(--ct);
 }
+.content {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
 .shell-error {
+	padding: 12px 16px 0;
 	display: flex;
 	align-items: center;
 	gap: 12px;
