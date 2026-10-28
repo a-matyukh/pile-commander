@@ -10,6 +10,7 @@ import {
 	EXPLORER_LAST_LOCATION_KEY,
 	EXPLORER_LAUNCH_PENDING_KEY,
 	create_explorer_navigation,
+	read_drive_locations,
 	read_folder_ref,
 	type ExplorerNavigation,
 	type ExplorerNavigationDeps,
@@ -50,6 +51,7 @@ function setup() {
 	const stores = new Map<string, WorkspaceStore>()
 	let current: WorkspaceStore | null = null
 	const last = ref<FolderRef | null>(null)
+	const last_by_drive = ref<Record<string, FolderRef>>({})
 	const launch_pending = ref(false)
 	const pending_at_open_root: boolean[] = []
 	const settle_launch: Array<() => void> = []
@@ -78,6 +80,7 @@ function setup() {
 		},
 		async home_path() { return HOME },
 		last_location: last,
+		last_by_drive,
 		launch_pending,
 		after_launch_settles: done => { settle_launch.push(done) },
 	}
@@ -86,6 +89,7 @@ function setup() {
 		nav: create_explorer_navigation(deps),
 		open_root: deps.open_root,
 		last,
+		last_by_drive,
 		launch_pending,
 		pending_at_open_root,
 		/** Ends the settle wait of every launch so far */
@@ -105,6 +109,38 @@ function folder_of(nav: ExplorerNavigation): string {
 }
 
 describe('explorer navigation', () => {
+	test('switching back to a drive returns to its last folder, or its first one when that is gone', async () => {
+		const { nav } = setup()
+		const home = { drive_id: 'local', root_id: HOME, folder_id: HOME }
+		const cloud_root = { drive_id: 'cloud', root_id: '/', folder_id: '/' }
+		await nav.open_drive(cloud_root)
+		expect(folder_of(nav)).toBe('/')
+		await nav.open_folder({ ...cloud_root, folder_id: '/docs' })
+		await nav.open_drive(home)
+		expect(folder_of(nav)).toBe(HOME)
+		await nav.open_folder({ ...home, folder_id: `${HOME}/pics` })
+
+		await nav.open_drive(cloud_root)
+		expect(folder_of(nav)).toBe('/docs')
+		await nav.open_drive(home)
+		expect(folder_of(nav)).toBe(`${HOME}/pics`)
+
+		// gone meanwhile: its drive's root
+		const gone = setup()
+		gone.last_by_drive.value = { cloud: { ...cloud_root, folder_id: '/gone' } }
+		await gone.nav.open_drive(cloud_root)
+		expect(folder_of(gone.nav)).toBe('/')
+	})
+
+	test('reads each drive\'s last folder and drops broken entries', () => {
+		expect(read_drive_locations('nope')).toEqual({})
+		expect(read_drive_locations(JSON.stringify({
+			cloud: { drive_id: 'cloud', root_id: 'w1', folder_id: '/a' },
+			local: { drive_id: 'cloud', root_id: 'w1', folder_id: '/a' },
+			browser: { drive_id: 'browser' },
+		}))).toEqual({ cloud: { drive_id: 'cloud', root_id: 'w1', folder_id: '/a' } })
+	})
+
 	test('reads a folder address and drops anything else', () => {
 		expect(EXPLORER_LAST_LOCATION_KEY).toBe('pile_commander_explorer_location')
 		expect(read_folder_ref('')).toBeNull()

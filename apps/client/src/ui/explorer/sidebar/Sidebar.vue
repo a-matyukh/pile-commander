@@ -79,7 +79,7 @@ async function open_drive(drive: Drive) {
 	try {
 		const root = (await drive.roots())[0]
 		if (!root) return
-		await explorer_navigation.open_folder({
+		await explorer_navigation.open_drive({
 			drive_id: drive.id,
 			root_id: root.id,
 			folder_id: drive.kind === 'cloud' ? '/' : root.id,

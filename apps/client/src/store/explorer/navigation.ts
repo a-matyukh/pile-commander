@@ -21,6 +21,8 @@ export type ExplorerLocation =
 	| { kind: 'page'; page: ExplorerPage }
 
 export const EXPLORER_LAST_LOCATION_KEY = 'pile_commander_explorer_location'
+/** The last folder of each drive, so switching back to a drive returns to it */
+export const EXPLORER_DRIVE_LOCATIONS_KEY = 'pile_commander_explorer_drive_locations'
 /**
  * Set while launch opens the last place, cleared once it is open. Still set
  * at the next launch means that open hung or crashed: launch then opens the
@@ -48,6 +50,8 @@ export type ExplorerNavigationDeps = {
 	default_folder(): Promise<FolderRef>
 	home_path(): Promise<string>
 	last_location: Ref<FolderRef | null>
+	/** The last folder opened on each drive, for switching back to it. Kept in memory when absent. */
+	last_by_drive?: Ref<Record<string, FolderRef>>
 	/** The launch mark (see EXPLORER_LAUNCH_PENDING_KEY). Kept in memory when absent. */
 	launch_pending?: Ref<boolean>
 	/** Runs `done` once the launch has stayed responsive for a while. Defaults to a timer. */
@@ -61,6 +65,11 @@ export type ExplorerNavigation = {
 	readonly can_go_back: boolean
 	readonly can_go_forward: boolean
 	open_folder(ref: FolderRef): Promise<void>
+	/**
+	 * Switching to a drive: its last open folder, as it was left. A folder that
+	 * is gone opens its root; a root that cannot be opened opens `first`
+	 */
+	open_drive(first: FolderRef): Promise<void>
 	/** Bookmark: a missing folder opens its drive root. An unreachable root is reported, not thrown. */
 	open_bookmark(ref: FolderRef): Promise<void>
 	open_page(page: ExplorerPage): Promise<void>
@@ -175,6 +184,7 @@ type ShowOptions = {
  * `generation`, so a slower open that finishes later does not win.
  */
 export function create_explorer_navigation(deps: ExplorerNavigationDeps): ExplorerNavigation {
+	const last_by_drive = deps.last_by_drive ?? ref<Record<string, FolderRef>>({})
 	const selections = new Map<string, SelectionSnapshot>()
 	const launch_pending = deps.launch_pending ?? ref(false)
 	let launched_in_process = false
@@ -258,7 +268,10 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 			const snapshot = selections.get(folder_key(ref))
 			if (snapshot) apply_selection(workspace, snapshot.ids, snapshot.selection_mode)
 		}
-		if (options.remember) deps.last_location.value = { ...ref }
+		if (options.remember) {
+			deps.last_location.value = { ...ref }
+			last_by_drive.value = { ...last_by_drive.value, [ref.drive_id]: { ...ref } }
+		}
 		return folder_location(ref)
 	}
 
@@ -283,6 +296,25 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		}, seen)
 		if (!shown || seen !== generation) return
 		push(shown)
+	}
+
+	async function open_drive(first: FolderRef) {
+		const saved = last_by_drive.value[first.drive_id]
+		if (saved) {
+			const seen = ++generation
+			try {
+				const shown = await show(folder_location(saved), {
+					fallback_to_root: true,
+					remember: true,
+					recover_root: true,
+				}, seen)
+				if (shown && seen === generation) push(shown)
+				return
+			} catch {
+				if (seen !== generation) return
+			}
+		}
+		await navigate(folder_location(first), false)
 	}
 
 	async function open_bookmark(ref: FolderRef) {
@@ -419,6 +451,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		get can_go_back() { return state.index > 0 },
 		get can_go_forward() { return state.index < state.history.length - 1 },
 		open_folder: (ref: FolderRef) => navigate(folder_location(ref), false),
+		open_drive,
 		open_bookmark,
 		open_page: (page: ExplorerPage) => navigate({ kind: 'page', page }, false),
 		open_local_path,
@@ -428,6 +461,34 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		cancel() { generation += 1 },
 	})
 }
+
+/** Each drive's last folder: a broken entry is dropped, not the whole map */
+export function read_drive_locations(raw: string): Record<string, FolderRef> {
+	try {
+		const parsed: unknown = JSON.parse(raw)
+		if (!parsed || typeof parsed !== 'object') return {}
+		const result: Record<string, FolderRef> = {}
+		for (const [drive_id, value] of Object.entries(parsed)) {
+			const ref = read_folder_ref(JSON.stringify(value))
+			if (ref && ref.drive_id === drive_id) result[drive_id] = ref
+		}
+		return result
+	} catch {
+		return {}
+	}
+}
+
+export const explorer_drive_locations = useStorage<Record<string, FolderRef>>(
+	EXPLORER_DRIVE_LOCATIONS_KEY,
+	{},
+	undefined,
+	{
+		serializer: {
+			read: read_drive_locations,
+			write: (value) => JSON.stringify(value),
+		},
+	},
+)
 
 export const explorer_last_location = useStorage<FolderRef | null>(
 	EXPLORER_LAST_LOCATION_KEY,
@@ -461,6 +522,7 @@ export const explorer_navigation = create_explorer_navigation({
 	},
 	home_path,
 	last_location: explorer_last_location,
+	last_by_drive: explorer_drive_locations,
 	// Written at once: the next launch must see it even if this one hangs
 	launch_pending: useStorage(EXPLORER_LAUNCH_PENDING_KEY, false, undefined, { flush: 'sync' }),
 	on_error(error) {
