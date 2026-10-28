@@ -44,6 +44,8 @@ export function use_folder_place() {
 		},
 		folder_name: (ref: FolderRef) => ref.drive_id === 'browser' ? bookmark_name(ref) : folder_basename(ref.folder_id),
 		cloud_name: t('source.cloud'),
+		hub_name: t('page.hub'),
+		publication_author: (ref: FolderRef) => public_roots.get(ref.root_id)?.username ?? null,
 	}))
 
 	const location = computed(() => {

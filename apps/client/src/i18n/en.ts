@@ -381,7 +381,6 @@ export const en: typeof ru = {
 		edit: 'Edit',
 		download: 'Download .pile',
 		report: 'Report',
-		by: 'By @{name}',
 		read_only: 'View only',
 	},
 	cloud_page: {

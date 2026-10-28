@@ -18,7 +18,7 @@ export const FOLDER_VIEW_META: Record<FolderView, { icon: string; color: string 
 }
 
 /** How a crumb looks: the home glyph, a drive icon, or its name */
-export type CrumbGlyph = 'home' | 'cloud' | 'browser' | null
+export type CrumbGlyph = 'home' | 'cloud' | 'browser' | 'hub' | 'author' | null
 
 export type FolderCrumb = {
 	/** null: not a folder (the cloud drive itself), shown but not clickable */
@@ -35,6 +35,9 @@ export type CrumbNames = {
 	/** Name of a folder below its root (a browser folder keeps its old list name) */
 	folder_name(ref: FolderRef): string
 	cloud_name: string
+	/** A publication's path starts at the Hub and its author */
+	hub_name?: string
+	publication_author?(ref: FolderRef): string | null
 }
 
 /** Cloud folders are paths from `/`. `root_id` there is the workspace UUID. */
@@ -78,5 +81,10 @@ export function folder_crumbs(ref: FolderRef, names: CrumbNames): FolderCrumb[] 
 	}
 	const crumbs = ids.map(folder_id => crumb_for({ ...ref, folder_id }, names))
 	if (ref.drive_id === 'cloud') crumbs.unshift({ ref: null, name: names.cloud_name, glyph: 'cloud' })
+	if (ref.drive_id === 'public') {
+		const author = names.publication_author?.(ref)
+		if (author) crumbs.unshift({ ref: null, name: author, glyph: 'author' })
+		crumbs.unshift({ ref: null, name: names.hub_name ?? 'Hub', glyph: 'hub' })
+	}
 	return crumbs
 }

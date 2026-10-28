@@ -4,6 +4,7 @@ import type { FolderRef } from '@/domain/Drive'
 import type { FolderCrumb } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
+import { navigate_public } from '@/services/navigatePublic'
 
 /**
  * The parents of the open folder; a click opens that parent. Above the title,
@@ -12,11 +13,20 @@ import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
  */
 defineProps<{ crumbs: FolderCrumb[]; title?: string }>()
 
-/** A folder opens; the cloud itself opens as a page of its top-level folders */
+/**
+ * A folder opens; the cloud itself opens as a page of its top-level folders.
+ * A publication's path starts at the Hub and its author's profile
+ */
 function open(crumb: FolderCrumb) {
 	if (crumb.ref) void explorer_navigation.open_folder(crumb.ref)
 	else if (crumb.glyph === 'cloud') void explorer_navigation.open_page('cloud')
+	else if (crumb.glyph === 'hub') void explorer_navigation.open_page('hub')
+	else if (crumb.glyph === 'author') navigate_public(`/${crumb.name}`)
 }
+
+const clickable = (crumb: FolderCrumb) => !!crumb.ref || crumb.glyph === 'cloud' || crumb.glyph === 'hub' || crumb.glyph === 'author'
+/** Shown as an icon only: its name goes to the tooltip */
+const icon_only = (crumb: FolderCrumb) => crumb.glyph === 'home' || crumb.glyph === 'cloud' || crumb.glyph === 'browser'
 </script>
 
 <template>
@@ -25,15 +35,16 @@ function open(crumb: FolderCrumb) {
 			<Icon v-if="i > 0" icon="tabler:chevron-right" class="sep" />
 			<span
 				class="crumb"
-				:class="{ static: !crumb.ref && crumb.glyph !== 'cloud' }"
-				:data-tip="crumb.glyph ? crumb.name : undefined"
-				:aria-label="crumb.glyph ? crumb.name : undefined"
-				:role="crumb.ref || crumb.glyph === 'cloud' ? 'link' : undefined"
+				:class="{ static: !clickable(crumb) }"
+				:data-tip="icon_only(crumb) ? crumb.name : undefined"
+				:aria-label="icon_only(crumb) ? crumb.name : undefined"
+				:role="clickable(crumb) ? 'link' : undefined"
 				@click="open(crumb)"
 			>
 				<HomeGlyph v-if="crumb.glyph === 'home'" :size="14" />
 				<Icon v-else-if="crumb.glyph === 'cloud'" icon="tabler:cloud" style="font-size: 17px" />
 				<Icon v-else-if="crumb.glyph === 'browser'" icon="tabler:database" style="font-size: 14px" />
+				<template v-else-if="crumb.glyph === 'hub'"><Icon icon="tabler:world" style="font-size: 14px" />{{ crumb.name }}</template>
 				<template v-else>{{ crumb.name }}</template>
 			</span>
 		</template>

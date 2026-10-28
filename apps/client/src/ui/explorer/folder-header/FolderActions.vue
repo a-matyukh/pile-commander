@@ -25,7 +25,8 @@ const own = computed(() => !is_transient_drive(props.folder.drive_id))
 
 <template>
 	<PublicActions v-if="folder.drive_id === 'public'" :workspace="workspace" :folder="folder" :align="align" />
-	<ViewMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+	<!-- A publication keeps its author's view -->
+	<ViewMenu v-if="folder.drive_id !== 'public'" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
 	<template v-if="own">
 		<AiMenu :workspace="workspace" :folder_id="folder.folder_id" :name="name" :align="align" />

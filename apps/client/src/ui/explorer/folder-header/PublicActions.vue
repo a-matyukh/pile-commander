@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
-import { navigate_public } from '@/services/navigatePublic'
 import store from '@/store'
 import cloud from '@/store/cloud'
 import { explorer_navigation } from '@/store/explorer/navigation'
@@ -17,8 +16,9 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 
 /**
  * A publication's own actions in the folder header, as the old public
- * viewer had them: its author, "Copy to my cloud" (Fork) or "Edit" for its
- * owner and editors, and in "⋯" downloading a .pile and reporting it
+ * viewer had them: "Copy to my cloud" (Fork) or "Edit" for its owner and
+ * editors, and in "⋯" downloading a .pile and reporting it. Its author is
+ * in the path above its name
  */
 const props = defineProps<{ workspace: WorkspaceStore; folder: FolderRef; align: 'start' | 'end' }>()
 
@@ -67,7 +67,6 @@ async function download() {
 
 <template>
 	<template v-if="root">
-		<button type="button" class="by" @click="navigate_public(`/${root.username}`)">{{ t('public_view.by', { name: root.username }) }}</button>
 		<Button v-if="root.can_edit_source" icon="tabler:pencil" @click="edit">{{ t('public_view.edit') }}</Button>
 		<Button v-else-if="root.can_fork" variant="primary" icon="tabler:git-fork" :loading="busy" @click="fork">
 			{{ t('public_view.fork') }}
@@ -92,20 +91,3 @@ async function download() {
 		/>
 	</template>
 </template>
-
-<style scoped>
-.by {
-	border: 0;
-	background: none;
-	font: inherit;
-	font-size: 12px;
-	color: var(--text-secondary);
-	cursor: pointer;
-	padding: 0 6px;
-	white-space: nowrap;
-}
-.by:hover {
-	color: var(--text-primary);
-	text-decoration: underline;
-}
-</style>

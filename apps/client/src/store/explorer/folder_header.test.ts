@@ -36,6 +36,17 @@ describe('folder header: breadcrumbs', () => {
 		expect(folder_title(local(`${HOME}/Documents/Work/A`), names)).toBe('A')
 	})
 
+	test('a publication\'s path starts at the Hub and its author', () => {
+		const pub = { ...names, hub_name: 'Хаб', publication_author: () => 'amatyukh', root_name: () => 'Features' }
+		const root: FolderRef = { drive_id: 'public', root_id: 'w1', folder_id: '/' }
+		expect(folder_crumbs(root, pub)).toEqual([
+			{ ref: null, name: 'Хаб', glyph: 'hub' },
+			{ ref: null, name: 'amatyukh', glyph: 'author' },
+		])
+		expect(folder_title(root, pub)).toBe('Features')
+		expect(folder_crumbs({ ...root, folder_id: '/Canvas' }, pub).map(crumb => crumb.name)).toEqual(['Хаб', 'amatyukh', 'Features'])
+	})
+
 	test('~ itself has no parents and is titled by its name', () => {
 		expect(folder_crumbs(local(HOME), names)).toEqual([])
 		expect(folder_title(local(HOME), names)).toBe('Домашняя папка')

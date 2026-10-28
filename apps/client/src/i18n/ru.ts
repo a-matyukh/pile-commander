@@ -378,7 +378,6 @@ export const ru = {
 		edit: 'Редактировать',
 		download: 'Скачать .pile',
 		report: 'Пожаловаться',
-		by: 'Автор: @{name}',
 		read_only: 'Только просмотр',
 	},
 	cloud_page: {
