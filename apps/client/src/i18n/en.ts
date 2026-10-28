@@ -311,6 +311,9 @@ export const en: typeof ru = {
 		profile: 'Profile',
 		username_unset: 'no username yet',
 		change_password: 'Change password',
+		used: '{used} of {total} in the cloud',
+		usage_loading: 'Checking how much space is used…',
+		not_configured: 'The cloud is not set up in this build',
 	},
 	auth: {
 		sign_in_title: 'Sign in to the cloud',
@@ -329,6 +332,7 @@ export const en: typeof ru = {
 		reset_sent: 'A password reset link was sent to {email}',
 		confirm_sent: 'We sent an email to {email}. Confirm it, then sign in',
 		terms: 'By creating an account you agree to the Terms and the Privacy Policy',
+		sign_up_closed: 'Registration is closed for technical work until around mid-November. It will open again after that.',
 	},
 	profile: {
 		title: 'Profile',
@@ -439,6 +443,7 @@ export const en: typeof ru = {
 			interface: 'Interface',
 			ai: 'AI',
 			other: 'Other',
+			updates: 'Updates',
 		},
 		files: 'Files',
 		hidden_files: 'Show hidden files',

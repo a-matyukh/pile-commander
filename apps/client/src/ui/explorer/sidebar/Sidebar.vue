@@ -21,14 +21,10 @@ import TreeRow from './TreeRow.vue'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
 const drives = computed(() => explorer_drives.drives())
-/** The settings page is open: its footer button shows it */
-const settings_open = computed(() => {
+/** The account or settings page is open: its footer button shows it */
+function page_open(page: 'account' | 'settings') {
 	const location = explorer_navigation.location
-	return location?.kind === 'page' && location.page === 'settings'
-})
-
-function open_settings() {
-	void explorer_navigation.open_page('settings')
+	return location?.kind === 'page' && location.page === page
 }
 
 const hub_open = computed(() => {
@@ -232,15 +228,16 @@ watchEffect(() => {
 				<TreeMenus />
 			</div>
 		</template>
-		<!-- Account joins with its page (step 3.2, scenario 23) -->
 		<div class="ft">
 			<IconButton
-				:icon="explorer_settings.footer_buttons !== 'text' ? 'tabler:settings' : undefined"
-				:label="explorer_settings.footer_buttons !== 'icon' ? t('page.settings') : undefined"
-				:selected="settings_open"
-				:aria-label="t('page.settings')"
-				:data-tip="t('page.settings')"
-				@click="open_settings"
+				v-for="page in (['account', 'settings'] as const)"
+				:key="page"
+				:icon="explorer_settings.footer_buttons !== 'text' ? (page === 'account' ? 'tabler:user-circle' : 'tabler:settings') : undefined"
+				:label="explorer_settings.footer_buttons !== 'icon' ? t(`page.${page}`) : undefined"
+				:selected="page_open(page)"
+				:aria-label="t(`page.${page}`)"
+				:data-tip="t(`page.${page}`)"
+				@click="explorer_navigation.open_page(page)"
 			/>
 		</div>
 		<div
@@ -367,7 +364,7 @@ watchEffect(() => {
 .ft {
 	display: flex;
 	align-items: center;
-	justify-content: flex-end;
+	justify-content: space-between;
 	gap: 2px;
 	padding: 4px 6px;
 	border-top: 0.5px solid var(--border);

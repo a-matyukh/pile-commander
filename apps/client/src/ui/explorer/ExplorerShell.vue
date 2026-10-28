@@ -8,6 +8,7 @@ import { explorer_navigation } from '@/store/explorer/navigation'
 import store, { adopt_workspace } from '@/store'
 import { explorer_settings } from '@/store/explorer/settings'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
+import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
@@ -110,6 +111,7 @@ onUnmounted(() => {
 				</p>
 				<div class="content">
 					<SettingsPage v-if="page === 'settings'" />
+					<AccountPage v-else-if="page === 'account'" />
 				</div>
 			</main>
 		</div>

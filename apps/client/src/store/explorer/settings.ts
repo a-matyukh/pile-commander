@@ -49,7 +49,8 @@ export const explorer_settings = toReactive<ExplorerSettings>(
 	useStorage<ExplorerSettings>(EXPLORER_SETTINGS_KEY, { ...EXPLORER_SETTINGS_DEFAULTS }, undefined, { mergeDefaults: true }),
 )
 
-export const SETTINGS_TABS = ['interface', 'ai', 'other'] as const
+/** "Updates" is the desktop app's only: the web version updates itself */
+export const SETTINGS_TABS = ['interface', 'ai', 'other', 'updates'] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 
 /** The open tab of the settings page */

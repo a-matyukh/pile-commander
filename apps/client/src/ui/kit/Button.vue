@@ -67,7 +67,7 @@ withDefaults(
 	color: var(--text-secondary);
 }
 .danger-link {
-	color: var(--text-danger);
+	color: var(--text-muted);
 }
 .btn:disabled {
 	opacity: .45;
@@ -85,6 +85,10 @@ withDefaults(
 	height: 40px;
 }
 @media (hover: hover) {
+	/* A dangerous link stays quiet until pointed at */
+	.danger-link:not(:disabled):hover {
+		color: var(--text-danger);
+	}
 	.primary:not(:disabled):hover {
 		background: #3A3A38;
 	}

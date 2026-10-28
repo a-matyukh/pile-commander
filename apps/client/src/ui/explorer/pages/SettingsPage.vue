@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
+import { is_desktop } from '@/isDesktop'
+import DesktopUpdateControls from '@/ui/app/DesktopUpdateControls.vue'
 import { t } from '@/i18n'
 import { explorer_enabled } from '@/store/explorer/enabled'
 import { explorer_language } from '@/store/explorer/language'
@@ -11,6 +14,8 @@ import Switch from '@/ui/kit/Switch.vue'
 import SettingRow from './SettingRow.vue'
 import ViewChoice from './ViewChoice.vue'
 
+const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
+
 /**
  * The settings page, as in the prototype: "Interface" (path, bookmarks,
  * size, colors…), "AI" (the current app's AI settings) and "Other".
@@ -21,7 +26,7 @@ import ViewChoice from './ViewChoice.vue'
 <template>
 	<TabsRoot v-model="settings_tab" class="settings">
 		<TabsList class="tabs" :aria-label="t('page.settings')">
-			<TabsTrigger v-for="tab in TABS" :key="tab" :value="tab" class="tab">{{ t(`settings.tabs.${tab}`) }}</TabsTrigger>
+			<TabsTrigger v-for="tab in tabs" :key="tab" :value="tab" class="tab">{{ t(`settings.tabs.${tab}`) }}</TabsTrigger>
 		</TabsList>
 		<TabsContent value="interface" class="pane">
 			<div class="sh">{{ t('settings.path') }}</div>
@@ -208,6 +213,11 @@ import ViewChoice from './ViewChoice.vue'
 
 
 			</TabsContent>
+		<TabsContent v-if="is_desktop" value="updates" class="pane">
+			<div class="card pad">
+				<DesktopUpdateControls />
+			</div>
+		</TabsContent>
 	</TabsRoot>
 </template>
 
