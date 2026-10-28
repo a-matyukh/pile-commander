@@ -70,7 +70,9 @@ function add_current() {
 	font-size: 12px;
 	color: var(--text-primary);
 	white-space: nowrap;
-	cursor: pointer;
+	cursor: grab;
+	user-select: none;
+	-webkit-user-select: none;
 	touch-action: none;
 	flex: none;
 }

@@ -90,8 +90,10 @@ function add_current() {
 :global(.explorer.lg) .nm {
 	font-size: 14px;
 }
-.bkm {
+.bkm.mi {
 	cursor: grab;
+	user-select: none;
+	-webkit-user-select: none;
 	touch-action: none;
 	padding-left: 4px;
 }

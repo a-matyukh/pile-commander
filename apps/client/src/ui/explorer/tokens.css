@@ -68,3 +68,11 @@
 .explorer svg.iconify {
 	flex: none;
 }
+
+/* Dragging a bookmark to reorder (use_pointer_reorder): no text selection, a closed hand everywhere */
+html.reordering,
+html.reordering * {
+	cursor: grabbing !important;
+	user-select: none !important;
+	-webkit-user-select: none !important;
+}

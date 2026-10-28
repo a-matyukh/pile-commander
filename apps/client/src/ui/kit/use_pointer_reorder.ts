@@ -15,7 +15,8 @@ type Options = {
  * Reorder by dragging with mouse or touch. While dragging, the item gets
  * `.dragging` and the drop target `.drop-before` / `.drop-after`, which
  * the component styles as an insertion line. The click that ends a drag
- * never reaches the item.
+ * never reaches the item. While dragging, nothing on the page gets selected
+ * and the cursor is a closed hand.
  */
 export function use_pointer_reorder(o: Options) {
 	type Drag = { el: HTMLElement; x: number; y: number; on: boolean; target?: { key: string; after: boolean } }
@@ -47,6 +48,8 @@ export function use_pointer_reorder(o: Options) {
 				if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return
 				drag.on = true
 				drag.el.classList.add('dragging')
+				document.documentElement.classList.add('reordering')
+				window.getSelection()?.removeAllRanges()
 				// armed now, not on pointerup: an item can turn pointerup into a click
 				window.addEventListener('click', swallow_click, true)
 			}
@@ -69,6 +72,7 @@ export function use_pointer_reorder(o: Options) {
 		drag = null
 		if (!d.on) return
 		d.el.classList.remove('dragging')
+		document.documentElement.classList.remove('reordering')
 		clear_marks()
 		if (apply && d.target && d.el.dataset.key) o.on_move(d.el.dataset.key, d.target.key, d.target.after)
 		setTimeout(() => window.removeEventListener('click', swallow_click, true), 0)
