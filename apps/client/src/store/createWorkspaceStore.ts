@@ -290,7 +290,9 @@ export async function createWorkspaceStore(
 				{ recursive },
 			)
 		} catch (error) {
-			report_watch_error(store, error)
+			// The folder is gone (just deleted or moved; the next reconcile drops
+			// it): nothing to watch and nothing to tell the user
+			if (!is_missing_path_error(error)) report_watch_error(store, error)
 			return
 		}
 		if (disposed || drive_generation.get(folder_id) !== generation) {
@@ -1028,7 +1030,8 @@ export async function createWorkspaceStore(
 					buffered = null
 					for (const event of replay) apply_connections_event(this, folder_id, event)
 				} catch (error) {
-					report_error(this, error)
+					// A folder deleted meanwhile has no edges to load
+					if (!is_missing_path_error(error)) report_error(this, error)
 				} finally {
 					connections_pending.delete(folder_id)
 				}
@@ -1124,7 +1127,8 @@ export async function createWorkspaceStore(
 						buffered = null
 						for (const event of replay) apply_strokes_event(this, folder_id, event)
 					} catch (error) {
-						report_error(this, error)
+						// A folder deleted meanwhile has no ink to load: not the user's problem
+						if (!is_missing_path_error(error)) report_error(this, error)
 					} finally {
 						strokes_pending.delete(folder_id)
 					}
@@ -2081,7 +2085,10 @@ export async function createWorkspaceStore(
 			async remove(id: string) {
 				assert_can_write()
 				const owner_folder = find_entry_owner_folder(this.opened_folder, this.preview_folders, id)
-				const owner_folder_id = owner_folder?.id
+				// The open folder itself being removed: its edges live in its parent
+				const owner_folder_id = owner_folder?.id === id
+					? parent_folder_id_from_node_id(id, this.id)
+					: owner_folder?.id
 
 				try {
 					await fm.remove(id)

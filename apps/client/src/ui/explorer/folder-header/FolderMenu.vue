@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
-import { normalize_workspace_id } from '@/services/workspace/paths'
-import { root_folder_id } from '@/store/explorer/folder_header'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import store from '@/store'
 import {
+	create_child_folder,
 	folder_menu_items,
 	folder_menu_node,
+	remove_confirm_text,
 	reveal_in_finder,
 	toggle_bookmark,
 } from '@/store/explorer/folder_menu'
@@ -57,15 +57,10 @@ function remove() {
 	if (item.value) void explorer_tree.remove_folder(item.value, folder_menu_node(props.folder), { open_parent: true })
 }
 
-function request_remove() {
-	if (item.value?.drive.trash === null) remove_open.value = true
-	else remove()
-}
+const remove_text = computed(() => remove_confirm_text(item.value?.drive.trash ?? null))
 
 function create_folder() {
-	if (!item.value) return
-	const is_root = normalize_workspace_id(props.folder.folder_id) === root_folder_id(props.folder)
-	void explorer_tree.create_folder(item.value, is_root ? null : folder_menu_node(props.folder))
+	void create_child_folder(props.folder, item.value)
 }
 
 function reveal() {
@@ -99,20 +94,20 @@ function reveal() {
 		<template v-if="items.rename || items.move_to_trash">
 			<MenuSeparator />
 			<MenuItem v-if="items.rename" icon="tabler:pencil" :label="t('menu.rename')" @select="rename_open = true" />
-			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t('menu.move_to_trash')" @select="request_remove" />
+			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t('menu.move_to_trash')" @select="remove_open = true" />
 		</template>
 	</DropMenu>
 	<RenameFolderDialog v-model:open="rename_open" :name="name" @confirm="rename" />
 	<Modal
-		v-if="item?.drive.trash === null"
+		v-if="item"
 		v-model:open="remove_open"
-		:title="t('tree.delete_permanently_title')"
-		:description="t('tree.delete_permanently_description', { name })"
+		:title="t(remove_text.title, { name })"
+		:description="t(remove_text.description, { name })"
 	>
 		<template #footer>
 			<Button @click="remove_open = false">{{ t('dialog.cancel') }}</Button>
 			<Button variant="danger" @click="remove">
-				{{ t('tree.delete_permanently') }}
+				{{ t(remove_text.confirm) }}
 			</Button>
 		</template>
 	</Modal>

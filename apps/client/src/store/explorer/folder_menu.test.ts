@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import { BROWSER_ROOT } from './drives'
 import { explorer_bookmarks, explorer_last_opened, is_bookmarked } from './bookmarks'
-import { folder_menu_items, folder_menu_node, reveal_in_finder, toggle_bookmark } from './folder_menu'
-import type { ExplorerTreeRoot } from './tree'
+import { t } from '@/i18n'
+import { create_child_folder, folder_menu_items, folder_menu_node, remove_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
+import { explorer_language } from './language'
+import { explorer_tree, type ExplorerTreeRoot } from './tree'
 
 const reveal = vi.hoisted(() => vi.fn(async (_path: string) => {}))
 vi.mock('@tauri-apps/plugin-opener', () => ({ revealItemInDir: reveal }))
@@ -12,6 +14,7 @@ afterEach(() => {
 	explorer_bookmarks.value = []
 	explorer_last_opened.value = []
 	reveal.mockClear()
+	explorer_language.value = 'system'
 })
 
 const HOME = '/Users/me'
@@ -115,5 +118,39 @@ describe('folder header menu: actions', () => {
 			name: 'A',
 			type: 'folder',
 		})
+	})
+})
+
+describe('folder menu: "Move to trash" confirmation', () => {
+	const render = (trash: Drive['trash']) => {
+		const text = remove_confirm_text(trash)
+		return [t(text.title, { name: 'A' }), t(text.confirm)]
+	}
+
+	test('a drive with a trash asks to move the folder to the trash', () => {
+		explorer_language.value = 'ru'
+		expect(render('system')).toEqual(['Переместить «A» в корзину?', 'Переместить в корзину'])
+		expect(render('page')).toEqual(['Переместить «A» в корзину?', 'Переместить в корзину'])
+		explorer_language.value = 'en'
+		expect(render('system')).toEqual(['Move “A” to trash?', 'Move to trash'])
+	})
+
+	test('a drive without a trash (browser storage) keeps "Delete permanently"', () => {
+		explorer_language.value = 'ru'
+		expect(render(null)).toEqual(['Удалить папку безвозвратно?', 'Удалить безвозвратно'])
+		expect(t(remove_confirm_text(null).description, { name: 'A' })).toContain('«A»')
+	})
+})
+
+describe('folder menu: new folder inside the open one', () => {
+	test('goes through the tree, which expands the folder; at a root the root itself', async () => {
+		const create = vi.spyOn(explorer_tree, 'create_folder').mockResolvedValue(undefined)
+		await create_child_folder(local(`${HOME}/Documents/A`), home)
+		expect(create).toHaveBeenLastCalledWith(home, { id: `${HOME}/Documents/A`, name: 'A', type: 'folder' })
+		await create_child_folder(local(HOME), home)
+		expect(create).toHaveBeenLastCalledWith(home, null)
+		await create_child_folder(local(`${HOME}/Documents`), null)
+		expect(create).toHaveBeenCalledTimes(2)
+		create.mockRestore()
 	})
 })

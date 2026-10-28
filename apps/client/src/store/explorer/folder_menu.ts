@@ -1,9 +1,9 @@
-import type { FolderRef } from '@/domain/Drive'
+import type { Drive, FolderRef } from '@/domain/Drive'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import { add_bookmark, is_bookmarked, remove_bookmark } from './bookmarks'
 import { folder_basename, root_folder_id } from './folder_header'
-import { is_legacy_browser_folder, type ExplorerTreeRoot } from './tree'
+import { explorer_tree, is_legacy_browser_folder, type ExplorerTreeRoot } from './tree'
 
 /** Which items the folder header's "⋯" menu shows for the open folder */
 export type FolderMenuItems = {
@@ -42,6 +42,16 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 	}
 }
 
+/**
+ * A new folder inside the open one, as the tree row's "New folder": the
+ * tree expands the folder so the new one shows up in it
+ */
+export async function create_child_folder(ref: FolderRef, item: ExplorerTreeRoot | null): Promise<void> {
+	if (!item) return
+	const is_root = normalize_workspace_id(ref.folder_id) === root_folder_id(ref)
+	await explorer_tree.create_folder(item, is_root ? null : folder_menu_node(ref))
+}
+
 export function toggle_bookmark(ref: FolderRef): void {
 	if (is_bookmarked(ref)) remove_bookmark(ref)
 	else add_bookmark(ref)
@@ -52,4 +62,25 @@ export async function reveal_in_finder(ref: FolderRef): Promise<void> {
 	if (ref.drive_id !== 'local') return
 	const { revealItemInDir } = await import('@tauri-apps/plugin-opener')
 	await revealItemInDir(ref.folder_id)
+}
+
+/** i18n keys of the confirmation before "Move to trash" */
+export type RemoveConfirmText = { title: string; description: string; confirm: string }
+
+/**
+ * "Move to trash" always asks first. A drive without a trash (browser
+ * storage) deletes for good and says so
+ */
+export function remove_confirm_text(trash: Drive['trash']): RemoveConfirmText {
+	return trash === null
+		? {
+			title: 'tree.delete_permanently_title',
+			description: 'tree.delete_permanently_description',
+			confirm: 'tree.delete_permanently',
+		}
+		: {
+			title: 'tree.move_to_trash_title',
+			description: 'tree.move_to_trash_description',
+			confirm: 'menu.move_to_trash',
+		}
 }

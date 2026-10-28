@@ -118,6 +118,9 @@ export async function refresh_cached_folder(
 				apply_entry_removed(store, folder_id)
 				return
 			}
+			// The open folder itself was just deleted: whoever deleted it moves
+			// the view on (the Explorer opens the parent). Nothing to report
+			if (is_missing_path_error(error) && store.opened_folder_id === folder_id) return
 			report_error(store, error)
 			return
 		}
