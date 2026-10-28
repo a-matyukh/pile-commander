@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, watch } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 import store from '@/store'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
@@ -10,6 +10,7 @@ import { useClipboardShortcuts } from '@/ui/workspace/folder-container/useClipbo
 import { createScopeFromStore, provideFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { workspaceDialogsKey } from '@/ui/workspace/sidebar/workspaceDialogs'
 import { publish_dialog, share_dialog } from './dialogs'
+import { use_folder_keys } from './folder_keys'
 
 /**
  * The open folder's content in its current view (step 3.3): the current
@@ -36,6 +37,9 @@ const location = computed(() => {
 	return value?.kind === 'folder' ? value.ref : null
 })
 
+const box = ref<HTMLElement | null>(null)
+use_folder_keys(() => box.value, workspace, scope.container, location)
+
 // A view opens a subfolder through the store (a double click). The Explorer
 // follows, so the header, the tree, history and bookmarks know where it is
 watch(() => workspace.value?.opened_folder_id, (opened) => {
@@ -47,7 +51,7 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 </script>
 
 <template>
-	<div v-if="location && workspace" class="fc">
+	<div v-if="location && workspace" ref="box" class="fc">
 		<FolderContainer :key="workspace.uid" />
 		<FolderActionsPanel />
 	</div>

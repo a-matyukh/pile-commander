@@ -44,6 +44,7 @@ function onDblClick(event: MouseEvent, widget: (typeof children.value)[number]) 
 				<div
 					class="entry entry--file"
 					:class="{ 'pc-selected': ws.is_selected(widget.id), 'pc-cut': ws.is_cut(widget.id) }"
+					:data-item-id="widget.id"
 					@click="onSelectClick($event, widget.id)"
 					@selectstart="onSelectStart"
 					@dblclick="onDblClick($event, widget)"
@@ -66,6 +67,7 @@ function onDblClick(event: MouseEvent, widget: (typeof children.value)[number]) 
 				<div
 					class="entry entry--folder"
 					:class="{ 'pc-selected': ws.is_selected(widget.id), 'pc-cut': ws.is_cut(widget.id) }"
+					:data-item-id="widget.id"
 					@click="onSelectClick($event, widget.id)"
 					@selectstart="onSelectStart"
 					@dblclick="onDblClick($event, widget)"

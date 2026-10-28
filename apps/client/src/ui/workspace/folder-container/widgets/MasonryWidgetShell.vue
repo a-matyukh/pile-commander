@@ -133,6 +133,7 @@ const style = computed(() => {
 	<div
 		v-bind="$attrs"
 		:data-id="widget.id"
+		:data-item-id="widget.id"
 		:data-index="index"
 		:class="shellClass"
 		:style="style"

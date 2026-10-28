@@ -37,6 +37,7 @@ function onSelectClick(event: MouseEvent, id: string) {
 				<div
 					class="list-row-select flex items-center gap-3 select-none cursor-pointer"
 					:class="{ 'pc-selected': ws.is_selected(row.original.id), 'pc-cut': ws.is_cut(row.original.id) }"
+					:data-item-id="row.original.id"
 					@click="onSelectClick($event, row.original.id)"
 					@dblclick="ws.open(row.original)"
 				>
