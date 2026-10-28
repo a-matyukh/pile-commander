@@ -17,6 +17,8 @@ import { entry_view } from '@/store/explorer/tree_view'
 import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
+import { is_bookmarked } from '@/store/explorer/bookmarks'
+import { shows_synced } from '@/store/explorer/share'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
@@ -212,6 +214,8 @@ watchEffect(on_cleanup => {
 		<Icon v-else :icon="expanded && children.length ? 'tabler:folder-open' : 'tabler:folder'" class="plain" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
+			<span v-if="shows_synced(row_ref)" class="bdg" :data-tip="t('badge.synced')"><Icon icon="tabler:cloud-check" /></span>
+			<span v-if="is_bookmarked(row_ref)" class="bdg" :data-tip="t('badge.bookmarked')"><Icon icon="tabler:bookmark" /></span>
 			<FolderMenu
 				v-model:open="menu_open"
 				:folder="row_ref"
@@ -296,6 +300,14 @@ watchEffect(on_cleanup => {
 	display: flex;
 	gap: 4px;
 	align-items: center;
+}
+.bdg {
+	display: flex;
+	color: var(--text-muted);
+	font-size: 13px;
+}
+.r.sel .bdg {
+	color: var(--text-accent);
 }
 .dt {
 	display: none;

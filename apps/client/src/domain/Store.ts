@@ -27,8 +27,11 @@ type Store = {
 	open_local_workspace(path?: string, opts?: LoadWorkspaceOptions): Promise<void>
 	/** Opens an in-memory demo workspace (works in web without Tauri FS). */
 	open_demo_workspace(opts?: LoadWorkspaceOptions): Promise<void>
-	/** Exports the open local or cloud workspace to a `.pile` archive. Desktop only. */
-	export_current_workspace(): Promise<void>
+	/**
+	 * Exports the open local or cloud workspace (or `ws`, e.g. the Explorer's
+	 * cloud folder) to a `.pile` archive. Desktop only.
+	 */
+	export_current_workspace(ws?: WorkspaceStore): Promise<void>
 	/**
 	 * Saves a public cloud workspace whose author allows forks and downloads as a
 	 * `.pile` on this device: a save dialog in the desktop app, a browser

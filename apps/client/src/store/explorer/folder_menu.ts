@@ -8,6 +8,8 @@ import { explorer_tree, is_legacy_browser_folder, type ExplorerTreeRoot } from '
 /** Which items the folder header's "⋯" menu shows for the open folder */
 export type FolderMenuItems = {
 	rename: boolean
+	/** "Ungroup folder": wherever the folder can be renamed */
+	ungroup: boolean
 	bookmarked: boolean
 	show_in_finder: boolean
 	move_to_trash: boolean
@@ -29,13 +31,16 @@ export function folder_menu_node(ref: FolderRef): WorkspaceTreeNode {
  * A drive root (~, browser storage, a cloud top-level folder, a folder
  * outside ~) is neither renamed nor trashed here, as in the tree; nor is a
  * read-only folder. A legacy browser folder keeps its name: the old
- * interface finds it by its path. "Show in Finder" is the desktop's local drive only
+ * interface finds it by its path. "Ungroup folder" goes with "Rename".
+ * "Show in Finder" is the desktop's local drive only
  */
 export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): FolderMenuItems {
 	const is_root = normalize_workspace_id(ref.folder_id) === root_folder_id(ref)
 	const editable = context.can_write && !is_root && context.item !== null
+	const rename = editable && !is_legacy_browser_folder(context.item!, folder_menu_node(ref))
 	return {
-		rename: editable && !is_legacy_browser_folder(context.item!, folder_menu_node(ref)),
+		rename,
+		ungroup: rename,
 		bookmarked: is_bookmarked(ref),
 		show_in_finder: context.desktop && ref.drive_id === 'local',
 		move_to_trash: editable,

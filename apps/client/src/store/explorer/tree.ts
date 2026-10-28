@@ -749,16 +749,46 @@ export function create_explorer_tree(
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
 			await workspace.remove(node.id)
-			// A failed remove leaves the store where it was: nowhere to go
-			if (options.open_parent && affected && workspace.opened_folder_id !== affected.folder_id) {
-				const now = current_ref()
-				if (!now || !same_ref(now, affected)) return
-				await deps.open_folder({
-					...affected,
-					folder_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(item)),
-				})
-				return
-			}
+			if (options.open_parent && await open_parent_of_gone(item, node, affected, workspace)) return
+			await sync_current_after_mutation(affected, workspace)
+		} catch (error) {
+			deps.on_error(error)
+		}
+	}
+
+	/**
+	 * After the folder holding the current place is gone (removed or
+	 * ungrouped), navigation goes to the folder's parent. A failed action
+	 * leaves the store where it was: nowhere to go. True when it navigated
+	 * or the current place moved on meanwhile
+	 */
+	async function open_parent_of_gone(
+		item: ExplorerTreeRoot,
+		node: WorkspaceTreeNode,
+		affected: FolderRef | null,
+		workspace: WorkspaceStore,
+	): Promise<boolean> {
+		if (!affected || workspace.opened_folder_id === affected.folder_id) return false
+		const now = current_ref()
+		if (!now || !same_ref(now, affected)) return true
+		await deps.open_folder({
+			...affected,
+			folder_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(item)),
+		})
+		return true
+	}
+
+	/**
+	 * "Ungroup folder": the store's uncombine moves the folder's contents
+	 * into its parent and removes it. When the current place was inside it,
+	 * its parent opens, as after "Move to trash" from the folder menu
+	 */
+	async function ungroup_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
+		try {
+			const workspace = await ensure_workspace(item)
+			const affected = affected_current(item, node.id)
+			await workspace.uncombine_folder(node.id)
+			if (await open_parent_of_gone(item, node, affected, workspace)) return
 			await sync_current_after_mutation(affected, workspace)
 		} catch (error) {
 			deps.on_error(error)
@@ -803,6 +833,7 @@ export function create_explorer_tree(
 		transfer_folder_to_cloud_root,
 		transfer_cloud_root,
 		remove_folder,
+		ungroup_folder,
 		probe_folders,
 		is_probing,
 		is_moving,

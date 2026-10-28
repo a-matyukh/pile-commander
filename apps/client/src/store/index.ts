@@ -65,8 +65,7 @@ const store: Store = {
 	async open_demo_workspace(opts?: LoadWorkspaceOptions) {
 		await this.load_workspace({ type: 'demo', id: '/demo', name: 'Demo' }, opts)
 	},
-	async export_current_workspace() {
-		const ws = this.workspace
+	async export_current_workspace(ws = this.workspace ?? undefined) {
 		if (!ws || (ws.type !== 'local' && ws.type !== 'cloud') || !is_desktop) {
 			report_error(this, new Error('Open a local or cloud workspace in the desktop app to export'))
 			return

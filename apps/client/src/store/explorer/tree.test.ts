@@ -40,6 +40,7 @@ function fake_store(id = ROOT.id): WorkspaceStore {
 		create_folder: vi.fn(async () => ''),
 		rename: vi.fn(async () => {}),
 		remove: vi.fn(async () => {}),
+		uncombine_folder: vi.fn(async () => {}),
 	} as unknown as WorkspaceStore
 }
 
@@ -356,6 +357,51 @@ describe('explorer tree', () => {
 		await tree.remove_folder(tree.roots[0]!, node(ref.folder_id), { open_parent: true })
 
 		expect(workspace.remove).toHaveBeenCalledWith(ref.folder_id)
+		expect(open_folder).not.toHaveBeenCalled()
+	})
+
+	test('ungrouping a folder calls the store\'s uncombine', async () => {
+		const { tree, drive, workspace, open_folder } = fixture()
+		await tree.show_drive(drive, null)
+
+		await tree.ungroup_folder(tree.roots[0]!, node(`${ROOT.id}/workspace/A`))
+
+		expect(workspace.uncombine_folder).toHaveBeenCalledWith(`${ROOT.id}/workspace/A`)
+		expect(open_folder).not.toHaveBeenCalled()
+	})
+
+	test('ungrouping the current folder opens its parent', async () => {
+		const ref: FolderRef = { drive_id: 'browser', root_id: ROOT.id, folder_id: `${ROOT.id}/workspace/A` }
+		const workspace = fake_store()
+		workspace.opened_folder_id = ref.folder_id
+		vi.mocked(workspace.uncombine_folder).mockImplementation(async () => {
+			workspace.opened_folder_id = ROOT.id
+		})
+		const { tree, drive, open_folder } = fixture({
+			workspace,
+			location: { kind: 'folder', ref },
+		})
+		await tree.show_drive(drive, ref)
+
+		await tree.ungroup_folder(tree.roots[0]!, node(ref.folder_id))
+
+		expect(open_folder).toHaveBeenCalledTimes(1)
+		expect(open_folder).toHaveBeenCalledWith({ ...ref, folder_id: `${ROOT.id}/workspace` })
+	})
+
+	test('a failed ungroup stays in the folder', async () => {
+		const ref: FolderRef = { drive_id: 'browser', root_id: ROOT.id, folder_id: `${ROOT.id}/workspace/A` }
+		const workspace = fake_store()
+		workspace.opened_folder_id = ref.folder_id
+		const { tree, drive, open_folder } = fixture({
+			workspace,
+			location: { kind: 'folder', ref },
+		})
+		await tree.show_drive(drive, ref)
+
+		await tree.ungroup_folder(tree.roots[0]!, node(ref.folder_id))
+
+		expect(workspace.uncombine_folder).toHaveBeenCalledWith(ref.folder_id)
 		expect(open_folder).not.toHaveBeenCalled()
 	})
 

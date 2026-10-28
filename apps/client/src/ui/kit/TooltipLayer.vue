@@ -13,11 +13,12 @@ import { useEventListener } from '@vueuse/core'
  *   shows the next one at once
  * - also on keyboard focus; never on touch
  * - hidden on press, on scroll, and while the element's menu is open
+ * - menu items get it too (a hint on what the item does)
  */
 const DELAY = 300
 const WARM_FOR = 300
 
-const tip = reactive({ text: '', key: '', x: 0, y: 0, visible: false, measured: false })
+const tip = reactive({ text: '', key: '', x: 0, y: 0, visible: false, measured: false, beside: false })
 const box = ref<HTMLElement | null>(null)
 
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -33,6 +34,7 @@ async function show(el: HTMLElement) {
 	if (!el.isConnected || menu_open(el)) return
 	tip.text = el.dataset.tip ?? ''
 	tip.key = el.dataset.tipKey ?? ''
+	tip.beside = el.getAttribute('role') === 'menuitem'
 	if (!tip.text) return
 	tip.measured = false
 	tip.visible = true
@@ -42,9 +44,15 @@ async function show(el: HTMLElement) {
 	const r = el.getBoundingClientRect()
 	const w = b.offsetWidth
 	const h = b.offsetHeight
-	tip.x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8)
-	// below the element; above when there is no room
-	tip.y = r.bottom + 6 + h > innerHeight - 8 ? r.top - 6 - h : r.bottom + 6
+	if (tip.beside) {
+		// beside a menu item, not over its neighbors: right, or left when there is no room
+		tip.x = r.right + 8 + w > innerWidth - 8 ? Math.max(8, r.left - 8 - w) : r.right + 8
+		tip.y = r.top + r.height / 2 - h / 2
+	} else {
+		tip.x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8)
+		// below the element; above when there is no room
+		tip.y = r.bottom + 6 + h > innerHeight - 8 ? r.top - 6 - h : r.bottom + 6
+	}
 	tip.measured = true
 }
 
@@ -80,7 +88,11 @@ useEventListener(document, 'focusin', (e: FocusEvent) => {
 	}
 })
 
-useEventListener(document, 'focusout', hide)
+// Only the element's own focus loss: a menu moves focus onto the hovered
+// item, which must not cancel that item's tooltip
+useEventListener(document, 'focusout', (e: FocusEvent) => {
+	if (e.target === current) hide()
+})
 useEventListener(document, 'scroll', hide, { capture: true, passive: true })
 useEventListener(document, 'keydown', hide)
 </script>
@@ -90,6 +102,7 @@ useEventListener(document, 'keydown', hide)
 		v-if="tip.visible"
 		ref="box"
 		class="tip"
+		:class="{ beside: tip.beside }"
 		role="tooltip"
 		:style="{ left: tip.x + 'px', top: tip.y + 'px', visibility: tip.measured ? 'visible' : 'hidden' }"
 	>
@@ -118,5 +131,10 @@ useEventListener(document, 'keydown', hide)
 }
 .explorer.lg .tip {
 	font-size: 13px;
+}
+.tip.beside {
+	white-space: normal;
+	max-width: 220px;
+	line-height: 1.3;
 }
 </style>

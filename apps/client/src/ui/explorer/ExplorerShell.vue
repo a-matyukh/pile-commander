@@ -11,6 +11,11 @@ import Segmented from '@/ui/kit/Segmented.vue'
 import SettingsPanel from '@/ui/workspace/sidebar/workspaces-list/SettingsPanel.vue'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
+import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
+import ShareDialog from '@/ui/workspace/sidebar/ShareDialog.vue'
+import { publish_dialog, share_dialog, unlock_pointers } from './dialogs'
+import { set_open_cloud_copy, take_bridge_intent } from '@/store/bridge'
+import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
 import FolderHeader from '@/ui/explorer/folder-header/FolderHeader.vue'
 import { explorer_sidebar_open } from '@/store/explorer/sidebar'
@@ -40,7 +45,28 @@ watch(locale, (value) => {
 	document.documentElement.lang = value
 }, { immediate: true })
 
+const toast = useToast()
+
+/**
+ * A folder just copied to the cloud (Share, Publish, Copy to cloud) opens
+ * here as its cloud copy; then the dialog the copy started from
+ */
+async function open_cloud_copy(item: WorkspacesListItem) {
+	await explorer_navigation.open_folder({ drive_id: 'cloud', root_id: item.id, folder_id: '/' })
+	const intent = take_bridge_intent(item.id)
+	if (!intent) return
+	toast.add({
+		title: t('share.copied'),
+		description: intent.door === 'device' ? t('share.copied_device') : t('share.copied_text'),
+		color: 'success',
+		icon: 'i-lucide:cloud-upload',
+	})
+	if (intent.door === 'share') share_dialog.value?.open(item.id)
+	if (intent.door === 'publish') publish_dialog.value?.open(item.id)
+}
+
 onMounted(async () => {
+	set_open_cloud_copy(open_cloud_copy)
 	// First time the flag is on. Doing this at app start would freeze the
 	// lists while the old window is still the one being edited.
 	start_explorer_list_migration()
@@ -54,6 +80,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
 	alive = false
+	set_open_cloud_copy(null)
 	explorer_navigation.cancel()
 	explorer_tree.reset()
 	explorer_drives.dispose_all()
@@ -86,6 +113,9 @@ onUnmounted(() => {
 			</main>
 		</div>
 		<TooltipLayer />
+		<!-- The old interface's dialogs, opened from the Share menu -->
+		<ShareDialog :ref="dialog => share_dialog = dialog as never" @closed="unlock_pointers" />
+		<PublishDialog :ref="dialog => publish_dialog = dialog as never" @closed="unlock_pointers" />
 	</div>
 </template>
 

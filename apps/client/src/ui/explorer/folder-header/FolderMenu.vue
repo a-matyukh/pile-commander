@@ -57,6 +57,10 @@ function remove() {
 	if (item.value) void explorer_tree.remove_folder(item.value, folder_menu_node(props.folder), { open_parent: true })
 }
 
+function ungroup() {
+	if (item.value) void explorer_tree.ungroup_folder(item.value, folder_menu_node(props.folder))
+}
+
 const remove_text = computed(() => remove_confirm_text(item.value?.drive.trash ?? null))
 
 function create_folder() {
@@ -94,6 +98,13 @@ function reveal() {
 		<template v-if="items.rename || items.move_to_trash">
 			<MenuSeparator />
 			<MenuItem v-if="items.rename" icon="tabler:pencil" :label="t('menu.rename')" @select="rename_open = true" />
+			<MenuItem
+				v-if="items.ungroup"
+				icon="tabler:stack-pop"
+				:label="t('menu.ungroup_folder')"
+				:data-tip="t('menu.ungroup_folder_tip')"
+				@select="ungroup"
+			/>
 			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t('menu.move_to_trash')" @select="remove_open = true" />
 		</template>
 	</DropMenu>

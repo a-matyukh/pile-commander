@@ -43,6 +43,7 @@ describe('folder header menu: items', () => {
 	test('a folder in ~ on the desktop has every item', () => {
 		expect(folder_menu_items(local(`${HOME}/Documents/A`), writable(home))).toEqual({
 			rename: true,
+			ungroup: true,
 			bookmarked: false,
 			show_in_finder: true,
 			move_to_trash: true,
@@ -52,6 +53,7 @@ describe('folder header menu: items', () => {
 	test('~ itself is neither renamed nor trashed, but can be bookmarked and shown in Finder', () => {
 		expect(folder_menu_items(local(HOME), writable(home))).toEqual({
 			rename: false,
+			ungroup: false,
 			bookmarked: false,
 			show_in_finder: true,
 			move_to_trash: false,
@@ -64,6 +66,7 @@ describe('folder header menu: items', () => {
 		for (const [ref, item] of [[browser_root, browser], [cloud_top, cloud_root]] as const) {
 			const items = folder_menu_items(ref, writable(item))
 			expect(items.rename).toBe(false)
+			expect(items.ungroup).toBe(false)
 			expect(items.move_to_trash).toBe(false)
 		}
 	})
@@ -71,14 +74,15 @@ describe('folder header menu: items', () => {
 	test('a read-only folder has no rename and no trash', () => {
 		const items = folder_menu_items(local(`${HOME}/Documents/A`), { item: home, can_write: false, desktop: true })
 		expect(items.rename).toBe(false)
+		expect(items.ungroup).toBe(false)
 		expect(items.move_to_trash).toBe(false)
 	})
 
 	test('a legacy browser folder keeps its name but can be trashed', () => {
 		const legacy: FolderRef = { drive_id: 'browser', root_id: BROWSER_ROOT, folder_id: `${BROWSER_ROOT}/old-id` }
-		expect(folder_menu_items(legacy, writable(browser, false))).toMatchObject({ rename: false, move_to_trash: true })
+		expect(folder_menu_items(legacy, writable(browser, false))).toMatchObject({ rename: false, ungroup: false, move_to_trash: true })
 		const nested: FolderRef = { ...legacy, folder_id: `${BROWSER_ROOT}/old-id/A` }
-		expect(folder_menu_items(nested, writable(browser, false))).toMatchObject({ rename: true, move_to_trash: true })
+		expect(folder_menu_items(nested, writable(browser, false))).toMatchObject({ rename: true, ungroup: true, move_to_trash: true })
 	})
 
 	test('"Show in Finder" only for the local drive on the desktop', () => {
@@ -90,6 +94,7 @@ describe('folder header menu: items', () => {
 	test('no tree root listed for the folder: no rename and no trash', () => {
 		const items = folder_menu_items(local(`${HOME}/A`), writable(null))
 		expect(items.rename).toBe(false)
+		expect(items.ungroup).toBe(false)
 		expect(items.move_to_trash).toBe(false)
 	})
 })
@@ -133,6 +138,13 @@ describe('folder menu: "Move to trash" confirmation', () => {
 		expect(render('page')).toEqual(['Переместить «A» в корзину?', 'Переместить в корзину'])
 		explorer_language.value = 'en'
 		expect(render('system')).toEqual(['Move “A” to trash?', 'Move to trash'])
+	})
+
+	test('"Ungroup folder" is named in both languages', () => {
+		explorer_language.value = 'ru'
+		expect(t('menu.ungroup_folder')).toBe('Разобрать папку')
+		explorer_language.value = 'en'
+		expect(t('menu.ungroup_folder')).toBe('Ungroup folder')
 	})
 
 	test('a drive without a trash (browser storage) keeps "Delete permanently"', () => {
