@@ -286,8 +286,10 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		name: t('source.hub'),
 		icon: 'tabler:world',
 		trash: null,
+		// Only the publication on screen: the others opened this session are not "here"
 		async roots() {
-			return [...public_roots.values()].map(root => ({ id: root.id, name: root.name, can_write: false }))
+			const root = current_drive_id === 'public' && current_root_id ? public_roots.get(current_root_id) : undefined
+			return root ? [{ id: root.id, name: root.name, can_write: false }] : []
 		},
 		store_for: (root_id) => store_for('public', root_id),
 	})
