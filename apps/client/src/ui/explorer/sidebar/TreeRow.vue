@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { t } from '@/i18n'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
+import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import {
 	explorer_tree,
@@ -19,6 +20,7 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from './RenameFolderDialog.vue'
+import { is_drop_target, press_tree_row, register_drop_opener, tree_drag, tree_root_key } from './tree_drag'
 
 const props = defineProps<{
 	item: ExplorerTreeRoot
@@ -78,15 +80,47 @@ function toggle() {
 function rename(new_name: string) {
 	if (props.node) void explorer_tree.rename_folder(props.item, props.node, new_name)
 }
+
+const root_key = computed(() => tree_root_key(props.item.drive.id, props.item.root.id))
+const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value }))
+const drop_target = computed(() => is_drop_target(spot.value))
+const dragged = computed(() => tree_drag.source?.root_key === root_key.value
+	&& tree_drag.source.folder_id === folder_id.value)
+
+/**
+ * A folder row is a drag source; a root row only takes drops. A legacy
+ * browser folder stays put: the old interface finds it by its path until
+ * step 4.2. The chevron and the menu keep their own clicks
+ */
+function press(event: PointerEvent) {
+	const node = props.node
+	if (!node || !can_write.value || is_legacy_browser_folder(props.item, node)) return
+	if (event.target instanceof Element && event.target.closest('.tg, .cv')) return
+	press_tree_row(event, {
+		...spot.value,
+		name: name.value,
+		parent_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(props.item)),
+	}, target => { void explorer_tree.move_folder(props.item, node, target.folder_id) })
+}
+
+// Hovering a collapsed folder during a drag opens it, to drop deeper
+watchEffect(on_cleanup => {
+	on_cleanup(register_drop_opener(spot.value, () => {
+		if (!expanded.value && can_expand.value) toggle()
+	}))
+})
 </script>
 
 <template>
 	<div
 		class="r"
-		:class="{ sel: current, mo: menu_open, hid: hidden }"
+		:class="{ sel: current, mo: menu_open, hid: hidden, drop: drop_target, drg: dragged }"
 		:data-folder-id="folder_id"
 		:data-drive-id="item.drive.id"
 		:data-root-id="item.root.id"
+		:data-drop-root="can_write ? root_key : undefined"
+		:data-drop-folder="can_write ? folder_id : undefined"
+		@pointerdown="press"
 		@click="explorer_tree.open_folder(item, folder_id)"
 	>
 		<Icon
@@ -169,6 +203,13 @@ function rename(new_name: string) {
 }
 .r.mo {
 	background: var(--hv);
+}
+.r.drop {
+	background: var(--bg-accent);
+	box-shadow: inset 0 0 0 1px var(--border-accent);
+}
+.r.drg {
+	opacity: .45;
 }
 .r.hid {
 	opacity: .5;

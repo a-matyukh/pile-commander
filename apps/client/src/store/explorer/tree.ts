@@ -438,6 +438,22 @@ export function create_explorer_tree(
 		}
 	}
 
+	/**
+	 * Moves a folder into another folder of the same root. A move the store
+	 * refuses (into itself, a name clash on disk) reports through the store.
+	 * When the current place was inside it, navigation follows the new path
+	 */
+	async function move_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode, target_folder_id: string) {
+		try {
+			const workspace = await ensure_workspace(item)
+			const affected = affected_current(item, node.id)
+			await workspace.move(node.id, target_folder_id, Number.MAX_SAFE_INTEGER)
+			await sync_current_after_mutation(affected, workspace)
+		} catch (error) {
+			deps.on_error(error)
+		}
+	}
+
 	async function remove_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
 		try {
 			const workspace = await ensure_workspace(item)
@@ -482,6 +498,7 @@ export function create_explorer_tree(
 		node_name,
 		create_folder,
 		rename_folder,
+		move_folder,
 		remove_folder,
 		probe_folders,
 		is_probing,

@@ -17,6 +17,7 @@ import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
+import { is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
 const drives = computed(() => explorer_drives.drives())
 const hub_open = computed(() => {
@@ -39,6 +40,12 @@ const separate_roots = computed(() => {
 	return active_drive.value?.kind === 'cloud' ? arranged_roots(explorer_tree.roots) : []
 })
 const filtered = computed(() => is_tree_filtered(explorer_tree_view.value))
+/** The empty space of the tree takes drops into the main root (~, browser storage) */
+const primary_spot = computed(() => {
+	const root = primary_root.value
+	if (!root || root.workspace?.can_write === false) return null
+	return { root_key: tree_root_key(root.drive.id, root.root.id), folder_id: tree_root_folder_id(root) }
+})
 /** Roots listed and their stores read: before that an empty tree means "not yet", not "none" */
 const tree_ready = computed(() => explorer_tree.listed_drive_id === active_drive.value?.id
 	&& explorer_tree.roots.every(item => !item.loading)
@@ -113,7 +120,12 @@ watchEffect(() => {
 				@click="explorer_navigation.open_page('hub')"
 			/>
 		</div>
-		<div class="tls">
+		<div
+			class="tls"
+			:class="{ drop: primary_spot && is_drop_target(primary_spot) }"
+			:data-drop-root="primary_spot?.root_key"
+			:data-drop-folder="primary_spot?.folder_id"
+		>
 			<template v-if="!hub_open">
 				<template v-if="primary_root">
 					<TreeRow
@@ -142,6 +154,14 @@ watchEffect(() => {
 				<TreeMenus />
 			</div>
 		</template>
+		<div
+			v-if="tree_drag.source"
+			class="gh"
+			:style="{ left: tree_drag.x + 12 + 'px', top: tree_drag.y + 8 + 'px' }"
+		>
+			<Icon icon="tabler:folder" />
+			<span>{{ tree_drag.source.name }}</span>
+		</div>
 	</aside>
 </template>
 
@@ -161,6 +181,31 @@ watchEffect(() => {
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
+}
+.tls.drop {
+	box-shadow: inset 0 0 0 1px var(--border-accent);
+}
+.gh {
+	position: fixed;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 220px;
+	padding: 4px 8px;
+	border-radius: 6px;
+	background: var(--surface-2);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, .15);
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	pointer-events: none;
+}
+:global(body.tree-dragging) {
+	cursor: grabbing;
+	user-select: none;
+	-webkit-user-select: none;
 }
 .hd {
 	display: flex;
