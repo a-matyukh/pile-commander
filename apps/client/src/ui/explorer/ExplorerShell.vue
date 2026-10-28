@@ -12,7 +12,7 @@ import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
 import HubView from '@/ui/hub/HubView.vue'
 import cloud from '@/store/cloud'
-import { explorer_return_page } from '@/store/explorer/public_view'
+import { take_explorer_start } from '@/store/explorer/public_view'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
@@ -86,11 +86,11 @@ onMounted(async () => {
 	// First time the flag is on. Doing this at app start would freeze the
 	// lists while the old window is still the one being edited.
 	start_explorer_list_migration()
-	// Back from a publication opened in the Hub: the Hub again, not the last folder
-	const return_page = explorer_return_page.value
-	explorer_return_page.value = null
+	// Back from a publication or an invitation, or /hub: there, not the last folder
+	const start = take_explorer_start()
 	try {
-		if (return_page) await explorer_navigation.open_page(return_page)
+		if (start?.kind === 'page') await explorer_navigation.open_page(start.page)
+		else if (start?.kind === 'folder') await explorer_navigation.open_folder(start.ref)
 		else await explorer_navigation.open_at_launch()
 	} catch (error) {
 		if (alive) report_error(store, error)

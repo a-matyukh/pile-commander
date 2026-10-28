@@ -75,6 +75,16 @@ import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 
+/**
+ * Opens the cloud workspace an invite was accepted for. The new interface
+ * (store/explorer/public_view.ts) opens it as a cloud folder instead
+ */
+let open_invited_workspace = (item: WorkspacesListItem): Promise<void> => store.load_workspace(item)
+
+export function set_open_invited_workspace(open: ((item: WorkspacesListItem) => Promise<void>) | null): void {
+	open_invited_workspace = open ?? (item => store.load_workspace(item))
+}
+
 /** Current public-link state of a workspace, if any */
 export type Publication = {
 	slug: string
@@ -1165,7 +1175,7 @@ const cloud: CloudStore = {
 		}
 		if (typeof history !== 'undefined') history.replaceState(null, '', '/')
 		try {
-			await store.load_workspace(item)
+			await open_invited_workspace(item)
 		} finally {
 			if (this.invite_view?.token === view.token) this.invite_view = null
 		}
