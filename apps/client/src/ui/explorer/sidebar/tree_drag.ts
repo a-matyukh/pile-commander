@@ -39,6 +39,9 @@ export const tree_drag = reactive({
 
 export const tree_root_key = (drive_id: string, root_id: string) => `${drive_id}\0${root_id}`
 
+/** The cloud's empty tree space: a drop here creates a new top-level folder. */
+export const CLOUD_ROOT_DROP_KEY = tree_root_key('cloud', '')
+
 const drive_of = (root_key: string) => root_key.slice(0, root_key.indexOf('\0'))
 
 /**

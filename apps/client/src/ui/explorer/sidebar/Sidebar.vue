@@ -17,7 +17,7 @@ import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
-import { is_drop_target, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
 const drives = computed(() => explorer_drives.drives())
 const hub_open = computed(() => {
@@ -40,8 +40,11 @@ const separate_roots = computed(() => {
 	return active_drive.value?.kind === 'cloud' ? arranged_roots(explorer_tree.roots) : []
 })
 const filtered = computed(() => is_tree_filtered(explorer_tree_view.value))
-/** The empty space of the tree takes drops into the main root (~, browser storage) */
+/** The empty space takes drops into the main root, or creates a cloud root */
 const primary_spot = computed(() => {
+	if (active_drive.value?.kind === 'cloud') {
+		return { root_key: CLOUD_ROOT_DROP_KEY, folder_id: '/' }
+	}
 	const root = primary_root.value
 	if (!root || root.workspace?.can_write === false) return null
 	return { root_key: tree_root_key(root.drive.id, root.root.id), folder_id: tree_root_folder_id(root) }

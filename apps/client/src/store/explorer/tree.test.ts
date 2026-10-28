@@ -726,3 +726,115 @@ describe('moving a folder to another root of the same drive', () => {
 		expect(cloud_stamp_at).not.toHaveBeenCalled()
 	})
 })
+
+describe('moving a nested cloud folder to the top level', () => {
+	const live: WorkspaceStore[] = []
+	afterEach(() => {
+		for (const store of live.splice(0)) store.dispose()
+	})
+
+	async function cloud_tree() {
+		const source_fake = createFakeFileManager()
+		source_fake.seed_folder('/')
+		source_fake.seed_folder('/34')
+		source_fake.seed_folder('/34/New folder 1')
+		source_fake.seed_file('/34/New folder 1/inside.txt', 'inside')
+		const source = await createWorkspaceStore(
+			{ id: 'ws-34', type: 'cloud', name: '34' },
+			source_fake.fm,
+			{ root_folder_id: '/' },
+		)
+		if (!source) throw new Error('no source store')
+		live.push(source)
+		await source.show_folder_children('/34')
+
+		const roots: DriveRoot[] = [{ id: 'ws-34', name: '34', can_write: true }]
+		const stores = new Map<string, WorkspaceStore>([['ws-34', source]])
+		const target_fake = createFakeFileManager()
+		target_fake.seed_folder('/')
+		const create_cloud_root = vi.fn(async (name: string) => {
+			const target = await createWorkspaceStore(
+				{ id: 'ws-new', type: 'cloud', name },
+				target_fake.fm,
+				{ root_folder_id: '/' },
+			)
+			if (!target) throw new Error('no target store')
+			live.push(target)
+			stores.set('ws-new', target)
+			roots.push({ id: 'ws-new', name, can_write: true })
+			return 'ws-new'
+		})
+		const drive: Drive = {
+			id: 'cloud',
+			kind: 'cloud',
+			name: 'Cloud',
+			icon: '',
+			trash: 'page',
+			roots: async () => roots,
+			store_for: async id => stores.get(id)!,
+		}
+		const open_folder = vi.fn(async (_ref: FolderRef) => {})
+		const on_error = vi.fn()
+		const cloud_stamp_at = vi.fn(async (_workspace: string, path: string) => ({
+			entry_id: `row:${path}`,
+			stamp: `stamp:${path}`,
+		}))
+		let delete_result: 'deleted' | 'changed' = 'deleted'
+		const delete_moved_cloud_entry = vi.fn(async (row: string, _stamp: string, path: string) => {
+			if (delete_result === 'deleted') await source_fake.fm.remove(path)
+			return delete_result
+		})
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder,
+			set_expanded: () => {},
+			browser_workspaces: () => [],
+			on_error,
+			create_cloud_root,
+			cloud_stamp_at,
+			delete_moved_cloud_entry,
+			hold_root: () => () => {},
+		})
+		await tree.show_drive(drive, null)
+		return {
+			source_fake, target_fake, source, tree, item: tree.roots[0]!,
+			create_cloud_root, open_folder, on_error, delete_moved_cloud_entry,
+			set_delete_result(result: typeof delete_result) { delete_result = result },
+		}
+	}
+
+	test('the contents land in a new root and the source folder disappears', async () => {
+		const run = await cloud_tree()
+		const folder = run.source.tree.find(item => item.id === '/34')!.children!
+			.find(item => item.id === '/34/New folder 1')!
+
+		await run.tree.transfer_folder_to_cloud_root(run.item, folder)
+
+		expect(run.create_cloud_root).toHaveBeenCalledWith('New folder 1')
+		expect(run.target_fake.has('/inside.txt')).toBe(true)
+		expect(run.source_fake.has('/34/New folder 1')).toBe(false)
+		expect(run.delete_moved_cloud_entry).toHaveBeenCalledWith(
+			'row:/34/New folder 1',
+			'stamp:/34/New folder 1',
+			'/34/New folder 1',
+		)
+		expect(run.tree.roots.map(item => item.root.id)).toEqual(['ws-34', 'ws-new'])
+		expect(run.open_folder).toHaveBeenCalledWith({ drive_id: 'cloud', root_id: 'ws-new', folder_id: '/' })
+		expect(run.on_error).not.toHaveBeenCalled()
+	})
+
+	test('a source changed during the copy stays next to the new root', async () => {
+		const run = await cloud_tree()
+		run.set_delete_result('changed')
+		const folder = run.source.tree.find(item => item.id === '/34')!.children!
+			.find(item => item.id === '/34/New folder 1')!
+
+		await run.tree.transfer_folder_to_cloud_root(run.item, folder)
+
+		expect(run.target_fake.has('/inside.txt')).toBe(true)
+		expect(run.source_fake.has('/34/New folder 1/inside.txt')).toBe(true)
+		expect(run.on_error).toHaveBeenCalledTimes(1)
+		expect((run.on_error.mock.calls[0]![0] as Error).message).toContain('New folder 1')
+		expect(run.open_folder).not.toHaveBeenCalled()
+	})
+})

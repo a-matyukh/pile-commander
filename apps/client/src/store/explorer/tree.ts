@@ -6,10 +6,13 @@ import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
 import { normalize_workspace_id, parent_folder_id_from_node_id, path_separator } from '@/services/workspace/paths'
 import store from '@/store'
+import cloud from '@/store/cloud'
 import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pile-commander/file-manager'
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
+import { apply_entry_removed } from '@/services/workspace/mutations'
+import { invalidate_entry_content_caches } from '@/ui/workspace/folder-container/textContentCache'
 import { report_error } from '@/store/helpers/reportError'
 import {
 	bookmarks as legacy_bookmarks,
@@ -44,6 +47,8 @@ export type ExplorerTreeDeps = {
 	delete_moved_cloud_entry?(entry_id: string, stamp: string, path: string): Promise<'deleted' | 'trashed' | 'changed' | 'gone'>
 	/** Trash a cloud row by id: a failed partial copy, wherever it is now */
 	trash_cloud_entry?(entry_id: string): Promise<void>
+	/** Creates the top-level cloud folder dropped onto the tree's empty space */
+	create_cloud_root?(name: string): Promise<string | null>
 	/** Keeps a root's store open during an operation; returns the release */
 	hold_root?(root_id: string): () => void
 }
@@ -548,6 +553,62 @@ export function create_explorer_tree(
 		}
 	}
 
+	/** A nested cloud folder dropped onto empty tree space becomes a top-level folder. */
+	async function transfer_folder_to_cloud_root(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
+		if (item.drive.kind !== 'cloud' || !deps.create_cloud_root) return
+		const releases = [deps.hold_root?.(item.root.id)]
+		const moving = probe_key(item, node.id)
+		state.moving.add(moving)
+		try {
+			const name = node_name(item, node)
+			const root_id = await deps.create_cloud_root(name)
+			if (!root_id) return
+			releases.push(deps.hold_root?.(root_id))
+			const root = (await item.drive.roots()).find(root => root.id === root_id)
+				?? { id: root_id, name, can_write: true }
+			const target: ExplorerTreeRoot = { drive: item.drive, root, workspace: null, loading: false }
+			const source_store = await ensure_workspace(item)
+			const target_store = await ensure_workspace(target)
+			await source_store.show_folder_children(node.id)
+			const entry_ids = (source_store.resolve_folder_data(node.id)?.children ?? []).map(child => child.id)
+			const remove_source = await stamped_remove(item, node.id)
+			const errors_before = [source_store.last_error, target_store.last_error]
+			const created = await transfer_entries({
+				source_store,
+				target_store,
+				entry_ids,
+				target_folder_id: '/',
+				mode: 'copy',
+				discard: discard_partial,
+			})
+			for (const [index, store] of [source_store, target_store].entries()) {
+				if (!store.last_error || store.last_error === errors_before[index]) continue
+				deps.on_error(new Error(store.last_error))
+				store.clear_error()
+			}
+			if (created.length !== entry_ids.length) return
+
+			const removed = remove_source
+				? await remove_source()
+				: await source_store.file_manager.remove(node.id).then(() => true)
+			if (!removed) {
+				deps.on_error(new Error(t('errors.move_kept_both', { name })))
+				return
+			}
+			invalidate_entry_content_caches(source_store.content_caches, node.id)
+			apply_entry_removed(source_store, node.id)
+
+			const ref: FolderRef = { drive_id: item.drive.id, root_id, folder_id: '/' }
+			await show_drive(item.drive, ref)
+			await deps.open_folder(ref)
+		} catch (error) {
+			deps.on_error(error)
+		} finally {
+			state.moving.delete(moving)
+			for (const release of releases) release?.()
+		}
+	}
+
 	/**
 	 * The source removal of a cloud move: the row and its stamp are read now,
 	 * before the copy reads anything, and removed later only if it is still
@@ -626,6 +687,7 @@ export function create_explorer_tree(
 		rename_folder,
 		move_folder,
 		transfer_folder,
+		transfer_folder_to_cloud_root,
 		remove_folder,
 		probe_folders,
 		is_probing,
@@ -644,5 +706,6 @@ export const explorer_tree = create_explorer_tree({
 	cloud_stamp_at: (workspace_id, path) => entry_subtree_stamp_at(require_supabase(), workspace_id, path),
 	delete_moved_cloud_entry: (entry_id, stamp, path) => delete_moved_entry(require_supabase(), entry_id, stamp, path),
 	trash_cloud_entry: entry_id => trash_entry_id(require_supabase(), entry_id),
+	create_cloud_root: name => cloud.create(name),
 	hold_root: root_id => explorer_drives.hold(root_id),
 })

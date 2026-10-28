@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { can_drop, press_tree_row, tree_drag, tree_root_key, type TreeDragSource } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, can_drop, press_tree_row, tree_drag, tree_root_key, type TreeDragSource } from './tree_drag'
 
 const HOME = tree_root_key('local', '/Users/me')
 const source: TreeDragSource = {
@@ -35,6 +35,7 @@ describe('tree drag', () => {
 		const cloud: TreeDragSource = { root_key: tree_root_key('cloud', 'w1'), folder_id: '/a', name: 'a', parent_id: '/' }
 		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w2'), folder_id: '/a/b' })).toBe(true)
 		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w2'), folder_id: '/' })).toBe(true)
+		expect(can_drop(cloud, { root_key: CLOUD_ROOT_DROP_KEY, folder_id: '/' })).toBe(true)
 		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w1'), folder_id: '/a/b' })).toBe(false)
 	})
 })

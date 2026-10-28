@@ -22,7 +22,7 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from './RenameFolderDialog.vue'
-import { is_drop_target, press_tree_row, register_drop_opener, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, press_tree_row, register_drop_opener, tree_drag, tree_root_key } from './tree_drag'
 
 const props = defineProps<{
 	item: ExplorerTreeRoot
@@ -122,6 +122,10 @@ function press(event: PointerEvent) {
 		name: name.value,
 		parent_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(props.item)),
 	}, target => {
+		if (target.root_key === CLOUD_ROOT_DROP_KEY) {
+			void explorer_tree.transfer_folder_to_cloud_root(props.item, node)
+			return
+		}
 		if (target.root_key === root_key.value) {
 			void explorer_tree.move_folder(props.item, node, target.folder_id)
 			return
