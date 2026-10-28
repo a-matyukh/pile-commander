@@ -28,6 +28,8 @@ import type { WorkspaceTab } from '@/domain/Store'
 import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
 import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
 import { traffic_inset_target } from '@/services/window/trafficInset'
+import { explorer_enabled } from '@/store/explorer/enabled'
+import { back_to_explorer_hub } from '@/store/explorer/public_view'
 
 const workspace = useWorkspace()
 const scope = createScopeFromStore()
@@ -308,6 +310,11 @@ function open_app_hub() {
 }
 
 function back_to_hub() {
+	// Opened from the new interface's Hub: back there
+	if (explorer_enabled.value) {
+		back_to_explorer_hub()
+		return
+	}
 	open_app_hub()
 }
 

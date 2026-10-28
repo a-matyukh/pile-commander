@@ -4,6 +4,7 @@ import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import { report_error } from '@/store/helpers/reportError'
 import { explorer_enabled } from '@/store/explorer/enabled'
+import { explorer_public_open } from '@/store/explorer/public_view'
 import { add_bookmark } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { local_bookmark_ref, point_in_rect } from '@/ui/explorer/top-bar/folderDrop'
@@ -99,7 +100,8 @@ onUnmounted(() => {
 			</div>
 		</Teleport>
 		<SyncKeptHiddenToast />
-		<ExplorerShell v-if="explorer_enabled" />
+		<!-- A publication from the Explorer's Hub opens in the current viewer (step 3.6 replaces it) -->
+		<ExplorerShell v-if="explorer_enabled && !explorer_public_open" />
 		<WorkspaceWindow v-else />
 		<QuotaWallDialog />
 		<BridgeDialog />

@@ -9,6 +9,9 @@ import store, { adopt_workspace } from '@/store'
 import { explorer_settings } from '@/store/explorer/settings'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
+import HubView from '@/ui/hub/HubView.vue'
+import cloud from '@/store/cloud'
+import { explorer_return_page } from '@/store/explorer/public_view'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
@@ -38,6 +41,11 @@ const page = computed(() => {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' ? location.page : null
 })
+
+// The Hub's list of publications loads when the page opens, as the old window's Hub did
+watch(page, (value) => {
+	if (value === 'hub' && cloud.is_configured) void cloud.fetch_hub()
+}, { immediate: true })
 
 const shell_error = computed(() => store.workspace?.last_error ?? store.last_error)
 
@@ -77,8 +85,12 @@ onMounted(async () => {
 	// First time the flag is on. Doing this at app start would freeze the
 	// lists while the old window is still the one being edited.
 	start_explorer_list_migration()
+	// Back from a publication opened in the Hub: the Hub again, not the last folder
+	const return_page = explorer_return_page.value
+	explorer_return_page.value = null
 	try {
-		await explorer_navigation.open_at_launch()
+		if (return_page) await explorer_navigation.open_page(return_page)
+		else await explorer_navigation.open_at_launch()
 	} catch (error) {
 		if (alive) report_error(store, error)
 	}
@@ -112,6 +124,8 @@ onUnmounted(() => {
 				<div class="content">
 					<SettingsPage v-if="page === 'settings'" />
 					<AccountPage v-else-if="page === 'account'" />
+					<!-- The current Hub; a publication opens in the current viewer until step 3.6 -->
+					<HubView v-else-if="page === 'hub'" class="hub" hide_title />
 				</div>
 			</main>
 		</div>
@@ -142,6 +156,9 @@ onUnmounted(() => {
 	flex: 1;
 	min-height: 0;
 	overflow: auto;
+}
+.hub {
+	padding: 8px 4px;
 }
 .shell-error {
 	padding: 12px 16px 0;
