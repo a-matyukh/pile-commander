@@ -13,6 +13,12 @@ export type FolderMenuItems = {
 	bookmarked: boolean
 	show_in_finder: boolean
 	move_to_trash: boolean
+	/** Clipboard: copy from anywhere but a drive root; cut and duplicate where a drag or a rename may */
+	copy: boolean
+	cut: boolean
+	duplicate: boolean
+	/** Into this folder: something is on the clipboard and may go here */
+	paste: boolean
 }
 
 export type FolderMenuContext = {
@@ -20,6 +26,8 @@ export type FolderMenuContext = {
 	item: ExplorerTreeRoot | null
 	can_write: boolean
 	desktop: boolean
+	/** The clipboard's answer for this folder (folder_clipboard.ts) */
+	can_paste?: boolean
 }
 
 /** The open folder as a tree node, for the tree's rename and remove */
@@ -44,6 +52,10 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 		bookmarked: is_bookmarked(ref),
 		show_in_finder: context.desktop && ref.drive_id === 'local',
 		move_to_trash: editable,
+		copy: !is_root && context.item !== null,
+		cut: rename,
+		duplicate: rename,
+		paste: context.can_write && context.item !== null && !!context.can_paste,
 	}
 }
 

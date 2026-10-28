@@ -242,6 +242,7 @@ export const en: typeof ru = {
 		cut: 'Cut',
 		copy: 'Copy',
 		duplicate: 'Duplicate',
+		paste_folder: 'Paste “{name}”',
 		show_in_finder: 'Show in Finder',
 		open_in_browser: 'Open in browser',
 		move_to_trash: 'Move to trash',

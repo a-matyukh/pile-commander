@@ -241,6 +241,43 @@ describe('explorer tree', () => {
 		workspace.dispose()
 	})
 
+	test('duplicate and copy keep the original; the copy gets a free name', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/A')
+		fake.seed_file('/home/A/note.md')
+		fake.seed_folder('/home/B')
+		const workspace = await createWorkspaceStore({ id: '/home', type: 'local', name: 'home' }, fake.fm, { root_folder_id: '/home' })
+		if (!workspace) throw new Error('no store')
+		const on_error = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			browser_workspaces: () => [],
+			on_error,
+		})
+		const drive: Drive = {
+			id: 'local', kind: 'local', name: 'Mac', icon: '', trash: 'system',
+			roots: async () => [{ id: '/home', name: 'Home', can_write: true }],
+			store_for: async () => workspace,
+		}
+		await tree.show_drive(drive, null)
+		const item = tree.roots[0]!
+		const a = workspace.tree.find(node => node.id === '/home/A')!
+
+		await tree.duplicate_folder(item, a)
+		await tree.copy_folder(item, a, item, '/home/B')
+
+		const names = (await fake.fm.FolderChildren('/home')).map(child => child.name).sort()
+		expect(names.filter(name => name.startsWith('A'))).toHaveLength(2)
+		expect(names).toContain('A')
+		expect((await fake.fm.FolderChildren('/home/B')).map(child => child.name)).toEqual(['A'])
+		expect((await fake.fm.FolderChildren('/home/B/A')).map(child => child.name)).toEqual(['note.md'])
+		expect(on_error).not.toHaveBeenCalled()
+		workspace.dispose()
+	})
+
 	test('a folder read before is read again when expanded: while collapsed it had no watch', async () => {
 		const { tree, drive, workspace } = fixture()
 		await tree.show_drive(drive, null)

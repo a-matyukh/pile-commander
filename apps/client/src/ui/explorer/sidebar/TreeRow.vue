@@ -19,6 +19,7 @@ import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
 import { shows_synced } from '@/store/explorer/share'
+import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
@@ -42,6 +43,7 @@ const expanded = computed(() => props.node
 	: explorer_tree.is_root_expanded(props.item))
 // A look-ahead read is not the user's expand: no spinner for it
 const moving = computed(() => explorer_tree.is_moving(props.item, folder_id.value))
+const cut = computed(() => explorer_folder_clipboard.is_cut(props.item, folder_id.value))
 const loading = computed(() => moving.value || (props.node
 	? workspace.value?.is_folder_loading(folder_id.value) === true
 		&& !explorer_tree.is_probing(props.item, folder_id.value)
@@ -184,7 +186,7 @@ watchEffect(on_cleanup => {
 <template>
 	<div
 		class="r"
-		:class="{ sel: current, mo: menu_open, hid: hidden, drop: drop_target, drg: dragged || moving }"
+		:class="{ sel: current, mo: menu_open, hid: hidden, drop: drop_target, drg: dragged || moving || cut }"
 		:data-folder-id="folder_id"
 		:data-drive-id="item.drive.id"
 		:data-root-id="item.root.id"

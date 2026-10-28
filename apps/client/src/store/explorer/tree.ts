@@ -13,6 +13,7 @@ import { t } from '@/i18n'
 import { retarget_bookmarks } from './bookmarks'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
 import { create_entry } from '@/store/helpers/createEntry'
+import { copy_entries_into } from '@/store/helpers/copyEntriesInto'
 import { apply_entry_removed } from '@/services/workspace/mutations'
 import { invalidate_entry_content_caches } from '@/ui/workspace/folder-container/textContentCache'
 import { report_error } from '@/store/helpers/reportError'
@@ -536,13 +537,7 @@ export function create_explorer_tree(
 					return !kept
 				}),
 			})
-			// transfer_entries reports into each store, and the shell shows only
-			// the current one: lift a failure from the other store to the shell
-			for (const [index, store] of [source_store, target_store].entries()) {
-				if (!store.last_error || store.last_error === errors_before[index]) continue
-				deps.on_error(new Error(store.last_error))
-				store.clear_error()
-			}
+			lift_errors([source_store, target_store], errors_before)
 			if (kept) {
 				// Someone changed the folder while it was copied: nothing of theirs
 				// may be lost, so both stay and the user hears why
@@ -566,6 +561,62 @@ export function create_explorer_tree(
 			state.moving.delete(moving)
 			for (const release of releases) release?.()
 		}
+	}
+
+	/**
+	 * The copy helpers report into each store, and the shell shows only the
+	 * current one: a new failure in either store goes to the shell
+	 */
+	function lift_errors(stores: WorkspaceStore[], before: (string | null)[]) {
+		for (const [index, store] of stores.entries()) {
+			if (!store.last_error || store.last_error === before[index]) continue
+			deps.on_error(new Error(store.last_error))
+			store.clear_error()
+		}
+	}
+
+	/**
+	 * Copies a folder into another folder; the original stays. Within one
+	 * root the store's copy picks a free name ("Name 2"); across roots and
+	 * drives both file managers copy it, as a move does without the removal
+	 */
+	async function copy_folder(
+		item: ExplorerTreeRoot,
+		node: WorkspaceTreeNode,
+		target: ExplorerTreeRoot,
+		target_folder_id: string,
+	) {
+		const releases = [item, target].map(root => deps.hold_root?.(root.root.id))
+		try {
+			const source_store = await ensure_workspace(item)
+			const target_store = await ensure_workspace(target)
+			if (!target_store.resolve_folder_data(target_folder_id)) {
+				await target_store.show_folder_children(target_folder_id)
+			}
+			const errors_before = [source_store.last_error, target_store.last_error]
+			if (source_store === target_store) {
+				await copy_entries_into(target_store, target_store.file_manager, target_folder_id, [node.id])
+			} else {
+				await transfer_entries({
+					source_store,
+					target_store,
+					entry_ids: [node.id],
+					target_folder_id,
+					mode: 'copy',
+					discard: target.drive.kind === 'cloud' ? discard_partial : undefined,
+				})
+			}
+			lift_errors([source_store, target_store], errors_before)
+		} catch (error) {
+			deps.on_error(error)
+		} finally {
+			for (const release of releases) release?.()
+		}
+	}
+
+	/** "Duplicate": a copy beside the folder, in its parent */
+	async function duplicate_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode) {
+		await copy_folder(item, node, item, parent_folder_id_from_node_id(node.id, tree_root_folder_id(item)))
 	}
 
 	/** A nested cloud folder dropped onto empty tree space becomes a top-level folder. */
@@ -830,6 +881,8 @@ export function create_explorer_tree(
 		rename_folder,
 		move_folder,
 		transfer_folder,
+		copy_folder,
+		duplicate_folder,
 		transfer_folder_to_cloud_root,
 		transfer_cloud_root,
 		remove_folder,

@@ -13,6 +13,7 @@ import {
 	toggle_bookmark,
 } from '@/store/explorer/folder_menu'
 import { explorer_tree } from '@/store/explorer/tree'
+import { explorer_folder_clipboard as clipboard } from '@/store/explorer/folder_clipboard'
 import { report_error } from '@/store/helpers/reportError'
 import Button from '@/ui/kit/Button.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -46,7 +47,25 @@ const items = computed(() => folder_menu_items(props.folder, {
 	item: item.value,
 	can_write: props.can_write,
 	desktop: is_desktop,
+	can_paste: item.value ? clipboard.can_paste(item.value, props.folder.folder_id) : false,
 }))
+const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
+
+function cut() {
+	if (item.value) clipboard.cut(item.value, node.value, props.name)
+}
+
+function copy() {
+	if (item.value) clipboard.copy(item.value, node.value, props.name)
+}
+
+function paste() {
+	if (item.value) void clipboard.paste(item.value, props.folder.folder_id)
+}
+
+function duplicate() {
+	if (item.value) void explorer_tree.duplicate_folder(item.value, node.value)
+}
 
 function rename(new_name: string) {
 	if (item.value) void explorer_tree.rename_folder(item.value, folder_menu_node(props.folder), new_name)
@@ -95,6 +114,18 @@ function reveal() {
 			@select="toggle_bookmark(folder)"
 		/>
 		<MenuItem v-if="items.show_in_finder" icon="tabler:external-link" :label="t('menu.show_in_finder')" @select="reveal" />
+		<template v-if="items.cut || items.copy || items.paste || items.duplicate">
+			<MenuSeparator />
+			<MenuItem v-if="items.cut" icon="tabler:cut" :label="t('menu.cut')" @select="cut" />
+			<MenuItem v-if="items.copy" icon="tabler:copy" :label="t('menu.copy')" @select="copy" />
+			<MenuItem
+				v-if="items.paste && clipboard.clip"
+				icon="tabler:clipboard"
+				:label="t('menu.paste_folder', { name: clipboard.clip.name })"
+				@select="paste"
+			/>
+			<MenuItem v-if="items.duplicate" icon="tabler:copy-plus" :label="t('menu.duplicate')" @select="duplicate" />
+		</template>
 		<template v-if="items.rename || items.move_to_trash">
 			<MenuSeparator />
 			<MenuItem v-if="items.rename" icon="tabler:pencil" :label="t('menu.rename')" @select="rename_open = true" />

@@ -239,6 +239,7 @@ export const ru = {
 		cut: 'Вырезать',
 		copy: 'Скопировать',
 		duplicate: 'Дублировать',
+		paste_folder: 'Вставить «{name}»',
 		show_in_finder: 'Показать в Finder',
 		open_in_browser: 'Открыть в браузере',
 		move_to_trash: 'Переместить в корзину',

@@ -41,13 +41,25 @@ const writable = (item: ExplorerTreeRoot | null, desktop = true) => ({ item, can
 
 describe('folder header menu: items', () => {
 	test('a folder in ~ on the desktop has every item', () => {
-		expect(folder_menu_items(local(`${HOME}/Documents/A`), writable(home))).toEqual({
+		expect(folder_menu_items(local(`${HOME}/Documents/A`), { ...writable(home), can_paste: true })).toEqual({
 			rename: true,
 			ungroup: true,
 			bookmarked: false,
 			show_in_finder: true,
 			move_to_trash: true,
+			copy: true,
+			cut: true,
+			duplicate: true,
+			paste: true,
 		})
+	})
+
+	test('paste needs something on the clipboard that may go here, and a writable folder', () => {
+		expect(folder_menu_items(local(`${HOME}/A`), writable(home)).paste).toBe(false)
+		expect(folder_menu_items(local(`${HOME}/A`), { item: home, can_write: false, desktop: true, can_paste: true }).paste).toBe(false)
+		// a read-only folder can still be copied, not cut or duplicated
+		const read_only = folder_menu_items(local(`${HOME}/A`), { item: home, can_write: false, desktop: true })
+		expect([read_only.copy, read_only.cut, read_only.duplicate]).toEqual([true, false, false])
 	})
 
 	test('~ itself is neither renamed nor trashed, but can be bookmarked and shown in Finder', () => {
@@ -57,6 +69,10 @@ describe('folder header menu: items', () => {
 			bookmarked: false,
 			show_in_finder: true,
 			move_to_trash: false,
+			copy: false,
+			cut: false,
+			duplicate: false,
+			paste: false,
 		})
 	})
 
