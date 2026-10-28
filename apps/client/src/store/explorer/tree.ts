@@ -11,6 +11,7 @@ import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pil
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
+import { create_entry } from '@/store/helpers/createEntry'
 import { apply_entry_removed } from '@/services/workspace/mutations'
 import { invalidate_entry_content_caches } from '@/ui/workspace/folder-container/textContentCache'
 import { report_error } from '@/store/helpers/reportError'
@@ -49,6 +50,8 @@ export type ExplorerTreeDeps = {
 	trash_cloud_entry?(entry_id: string): Promise<void>
 	/** Creates the top-level cloud folder dropped onto the tree's empty space */
 	create_cloud_root?(name: string): Promise<string | null>
+	/** Deletes the source workspace after its contents moved into another root */
+	delete_cloud_root?(root_id: string): Promise<void>
 	/** Keeps a root's store open during an operation; returns the release */
 	hold_root?(root_id: string): () => void
 }
@@ -609,6 +612,81 @@ export function create_explorer_tree(
 		}
 	}
 
+	/** A cloud root dropped into another root becomes an ordinary folder there. */
+	async function transfer_cloud_root(
+		item: ExplorerTreeRoot,
+		target: ExplorerTreeRoot,
+		target_folder_id: string,
+	) {
+		if (item.drive.kind !== 'cloud' || target.drive.id !== item.drive.id || !deps.delete_cloud_root) return
+		const releases = [item, target].map(root => deps.hold_root?.(root.root.id))
+		const source_folder_id = tree_root_folder_id(item)
+		const moving = probe_key(item, source_folder_id)
+		state.moving.add(moving)
+		try {
+			const source_store = await ensure_workspace(item)
+			const target_store = await ensure_workspace(target)
+			const affected = affected_current(item, source_folder_id)
+			const source_root = source_store.resolve_folder_data(source_folder_id)
+			const entry_ids = (source_root?.children ?? []).map(child => child.id)
+			const errors_before = [source_store.last_error, target_store.last_error]
+			const folder = await create_entry(
+				target_store,
+				target_store.file_manager,
+				target_folder_id,
+				'folder',
+				item.root.name,
+				// The top-level folder's own attributes (its view, background, …)
+				// stay with it, as they would on a local move
+				{ xattrs: source_root?.xattrs ?? [] },
+			)
+			if (folder) {
+				// Ink drawn on the top-level folder's own canvas moves with it.
+				// Fresh ids: stroke ids are global keys and the source rows exist
+				// until the source goes
+				const strokes = await source_store.file_manager.strokes.list_strokes(source_folder_id)
+				if (strokes.length > 0) {
+					await target_store.file_manager.strokes.upsert_strokes(
+						folder.id,
+						strokes.map(stroke => ({ ...stroke, id: crypto.randomUUID() })),
+					)
+				}
+			}
+			const created = folder
+				? await transfer_entries({
+					source_store,
+					target_store,
+					entry_ids,
+					target_folder_id: folder.id,
+					mode: 'copy',
+					discard: discard_partial,
+				})
+				: []
+			for (const [index, store] of [source_store, target_store].entries()) {
+				if (!store.last_error || store.last_error === errors_before[index]) continue
+				deps.on_error(new Error(store.last_error))
+				store.clear_error()
+			}
+			if (!folder || created.length !== entry_ids.length) return
+
+			await deps.delete_cloud_root(item.root.id)
+			const destination: FolderRef | null = affected
+				? {
+					drive_id: target.drive.id,
+					root_id: target.root.id,
+					folder_id: folder.id + (affected.folder_id === source_folder_id ? '' : affected.folder_id),
+				}
+				: null
+			await show_drive(item.drive, destination ?? current_ref())
+			if (destination) await deps.open_folder(destination)
+		} catch (error) {
+			deps.on_error(error)
+		} finally {
+			state.moving.delete(moving)
+			for (const release of releases) release?.()
+		}
+	}
+
 	/**
 	 * The source removal of a cloud move: the row and its stamp are read now,
 	 * before the copy reads anything, and removed later only if it is still
@@ -688,6 +766,7 @@ export function create_explorer_tree(
 		move_folder,
 		transfer_folder,
 		transfer_folder_to_cloud_root,
+		transfer_cloud_root,
 		remove_folder,
 		probe_folders,
 		is_probing,
@@ -707,5 +786,9 @@ export const explorer_tree = create_explorer_tree({
 	delete_moved_cloud_entry: (entry_id, stamp, path) => delete_moved_entry(require_supabase(), entry_id, stamp, path),
 	trash_cloud_entry: entry_id => trash_entry_id(require_supabase(), entry_id),
 	create_cloud_root: name => cloud.create(name),
+	delete_cloud_root: async root_id => {
+		await cloud.remove(root_id)
+		if (cloud.last_error) throw new Error(cloud.last_error)
+	},
 	hold_root: root_id => explorer_drives.hold(root_id),
 })

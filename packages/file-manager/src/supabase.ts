@@ -2211,6 +2211,30 @@ export async function entry_subtree_stamp_at(
 	return row
 }
 
+/**
+ * The `view` attribute of each workspace's root folder, by workspace id: the
+ * sidebar shows a top-level folder's own view before opening it. Raw values
+ * as stored (JSON text); workspaces whose root has none are left out
+ */
+export async function workspace_root_views(
+	client: SupabaseClient,
+	workspace_ids: string[],
+): Promise<Record<string, string>> {
+	if (workspace_ids.length === 0) return {}
+	const { data, error } = await client
+		.from("entries")
+		.select("workspace_id, xattrs")
+		.is("parent_id", null)
+		.in("workspace_id", workspace_ids)
+	if (error) throw new Error(`workspace_root_views failed: ${error.message}`)
+	const views: Record<string, string> = {}
+	for (const row of (data ?? []) as { workspace_id: string; xattrs: Record<string, string> | null }[]) {
+		const view = row.xattrs?.view
+		if (view) views[row.workspace_id] = view
+	}
+	return views
+}
+
 /** Moves one entry (by row id, whatever its path is now) to the trash */
 export async function trash_entry_id(client: SupabaseClient, entry_id: string): Promise<void> {
 	const { error } = await client.rpc("delete_entry", { p_entry: entry_id, p_client_id: client_instance_id() })

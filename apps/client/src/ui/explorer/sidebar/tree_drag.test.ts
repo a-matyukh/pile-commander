@@ -38,6 +38,13 @@ describe('tree drag', () => {
 		expect(can_drop(cloud, { root_key: CLOUD_ROOT_DROP_KEY, folder_id: '/' })).toBe(true)
 		expect(can_drop(cloud, { root_key: tree_root_key('cloud', 'w1'), folder_id: '/a/b' })).toBe(false)
 	})
+
+	test('a cloud root moves into another root, not onto the empty space', () => {
+		const root: TreeDragSource = { root_key: tree_root_key('cloud', 'a'), folder_id: '/', name: 'A', parent_id: '/' }
+		expect(can_drop(root, { root_key: tree_root_key('cloud', '34'), folder_id: '/' })).toBe(true)
+		expect(can_drop(root, { root_key: CLOUD_ROOT_DROP_KEY, folder_id: '/' })).toBe(false)
+		expect(can_drop(root, { root_key: root.root_key, folder_id: '/' })).toBe(false)
+	})
 })
 
 describe('tree drag gesture', () => {

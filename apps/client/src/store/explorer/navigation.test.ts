@@ -501,7 +501,7 @@ describe('explorer navigation', () => {
 				if (!created) throw new Error('failed to open cloud')
 				return created
 			},
-			cloud_roots: () => [{ id: 'ws-1', name: 'Notes', can_write: true }],
+			cloud_roots: async () => [{ id: 'ws-1', name: 'Notes', can_write: true }],
 			browser_file_manager: async () => fake.fm,
 			adopt: (workspace) => { current = workspace },
 		})

@@ -39,7 +39,7 @@ function deps(over: Partial<ExplorerDriveDeps> = {}): ExplorerDriveDeps {
 		home_path: async () => HOME,
 		local_file_manager: () => createFakeFileManager().fm,
 		open_cloud: async () => fake_store(),
-		cloud_roots: () => [],
+		cloud_roots: async () => [],
 		browser_file_manager: async () => createFakeFileManager().fm,
 		adopt: () => {},
 		...over,
@@ -125,7 +125,7 @@ describe('explorer drives', () => {
 	test('a held root stays open through a sweep and closes on release', async () => {
 		const stores = new Map<string, WorkspaceStore>()
 		const drives = create_explorer_drives(deps({
-			cloud_roots: () => [
+			cloud_roots: async () => [
 				{ id: 'ws-1', name: 'One', can_write: true },
 				{ id: 'ws-2', name: 'Two', can_write: true },
 			],
@@ -154,7 +154,7 @@ describe('explorer drives', () => {
 		const opened: WorkspacesListItem[] = []
 		const cloud_store = fake_store()
 		const drives = create_explorer_drives(deps({
-			cloud_roots: () => [
+			cloud_roots: async () => [
 				{ id: 'ws-1', name: 'Notes', can_write: true },
 				{ id: 'ws-2', name: 'Shared', can_write: false },
 			],

@@ -1,4 +1,4 @@
-import { createBrowserFileManager, createFileManager, type FileManager } from '@pile-commander/file-manager'
+import { createBrowserFileManager, createFileManager, workspace_root_views, type FileManager } from '@pile-commander/file-manager'
 import type { Drive, DriveRoot } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
@@ -7,6 +7,8 @@ import { is_desktop } from '@/isDesktop'
 import { require_browser_storage } from '@/services/workspace/browserStorage'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import cloud from '@/store/cloud'
+import { require_supabase } from '@/services/cloud/client'
+import { cloud_workspaces_ready } from './cloud_list'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
 import { adopt_workspace } from '@/store/index'
 import { open_workspace_store } from '@/store/helpers/openWorkspaceStore'
@@ -25,7 +27,7 @@ export type ExplorerDriveDeps = {
 	home_path(): Promise<string>
 	local_file_manager(): FileManager
 	open_cloud(item: WorkspacesListItem): Promise<WorkspaceStore>
-	cloud_roots(): DriveRoot[]
+	cloud_roots(): Promise<DriveRoot[]>
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
 }
@@ -129,7 +131,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			return workspace
 		}
 		if (drive_id === 'cloud') {
-			const root = deps.cloud_roots().find(item => item.id === root_id)
+			const root = (await deps.cloud_roots()).find(item => item.id === root_id)
 			return deps.open_cloud({
 				id: root_id,
 				type: 'cloud',
@@ -280,11 +282,18 @@ export const explorer_drives = create_explorer_drives({
 	},
 	local_file_manager: create_explorer_local_file_manager,
 	open_cloud: (item) => open_workspace_store(item),
-	cloud_roots: () => cloud.workspaces.map(ws => ({
-		id: ws.id,
-		name: ws.name,
-		can_write: cloud.role_of(ws.id) !== 'viewer',
-	})),
+	async cloud_roots() {
+		await cloud_workspaces_ready()
+		const roots: DriveRoot[] = cloud.workspaces.map(ws => ({
+			id: ws.id,
+			name: ws.name,
+			can_write: cloud.role_of(ws.id) !== 'viewer',
+		}))
+		// Each top-level folder's own view, in one query, so the tree shows it
+		// before the folder is opened. Without it the tree shows plain folders
+		const views = await workspace_root_views(require_supabase(), roots.map(root => root.id)).catch(() => ({}))
+		return roots.map(root => ({ ...root, view: (views as Record<string, string>)[root.id] }))
+	},
 	async browser_file_manager() {
 		await ensure_browser_root()
 		return createBrowserFileManager(require_browser_storage())

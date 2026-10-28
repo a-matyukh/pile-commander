@@ -33,6 +33,8 @@ export type DriveRoot = {
 	id: string
 	name: string
 	can_write: boolean
+	/** The root folder's own view, when known before its store opens (cloud) */
+	view?: string
 }
 
 /** Address of any folder: bookmarks, history and the last location store this */

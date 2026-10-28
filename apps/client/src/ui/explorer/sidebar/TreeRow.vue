@@ -16,6 +16,7 @@ import { arranged_children } from '@/store/explorer/tree_arrange'
 import { entry_view } from '@/store/explorer/tree_view'
 import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
+import cloud from '@/store/cloud'
 import Button from '@/ui/kit/Button.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
@@ -91,7 +92,12 @@ function rename(new_name: string) {
  */
 const view_meta = computed(() => {
 	const store = workspace.value
-	if (!store || store.is_disposed) return null
+	if (!store || store.is_disposed) {
+		// A cloud root not opened yet: its view came with the root list
+		const known = props.node ? undefined : props.item.root.view
+		const view = known ? entry_view({ xattrs: [{ name: 'view', value: known }] }) : 'list'
+		return view === 'list' ? null : FOLDER_VIEW_META[view]
+	}
 	const entry = props.node
 		? store.folders[parent_folder_id_from_node_id(props.node.id, tree_root_folder_id(props.item))]
 			?.children.find(child => child.id === props.node!.id)
@@ -106,33 +112,64 @@ const drop_target = computed(() => is_drop_target(spot.value))
 const dragged = computed(() => tree_drag.source?.root_key === root_key.value
 	&& tree_drag.source.folder_id === folder_id.value)
 
+const root_move_open = ref(false)
+const pending_root_move = ref<{ target: ExplorerTreeRoot; folder_id: string } | null>(null)
+const root_move_needs_warning = computed(() => props.item.drive.kind === 'cloud' && Boolean(
+	cloud.shared_out[props.item.root.id]
+	|| cloud.published_slugs[props.item.root.id]
+	|| cloud.hub_listed[props.item.root.id],
+))
+watch(root_move_open, open => { if (!open) pending_root_move.value = null })
+
+function request_root_move(target: ExplorerTreeRoot, target_folder_id: string) {
+	if (root_move_needs_warning.value) {
+		pending_root_move.value = { target, folder_id: target_folder_id }
+		root_move_open.value = true
+		return
+	}
+	void explorer_tree.transfer_cloud_root(props.item, target, target_folder_id)
+}
+
+function confirm_root_move() {
+	const pending = pending_root_move.value
+	root_move_open.value = false
+	pending_root_move.value = null
+	if (pending) void explorer_tree.transfer_cloud_root(props.item, pending.target, pending.folder_id)
+}
+
 /**
- * A folder row is a drag source; a root row only takes drops. A legacy
- * browser folder stays put: the old interface finds it by its path until
- * step 4.2. The chevron and the menu keep their own clicks
+ * Nested folders and cloud roots are drag sources. A legacy browser folder
+ * stays put: the old interface finds it by its path until step 4.2. The
+ * chevron and the menu keep their own clicks
  */
 function press(event: PointerEvent) {
 	const node = props.node
-	if (!node || !can_write.value || is_legacy_browser_folder(props.item, node)) return
+	if (!can_write.value || (node
+		? is_legacy_browser_folder(props.item, node)
+		: props.item.drive.kind !== 'cloud')) return
 	if (event.target instanceof Element && event.target.closest('.tg, .cv')) return
 	// A press on a row starts a drag, not a text selection
 	event.preventDefault()
 	press_tree_row(event, {
 		...spot.value,
 		name: name.value,
-		parent_id: parent_folder_id_from_node_id(node.id, tree_root_folder_id(props.item)),
+		parent_id: node
+			? parent_folder_id_from_node_id(node.id, tree_root_folder_id(props.item))
+			: folder_id.value,
 	}, target => {
 		if (target.root_key === CLOUD_ROOT_DROP_KEY) {
-			void explorer_tree.transfer_folder_to_cloud_root(props.item, node)
+			if (node) void explorer_tree.transfer_folder_to_cloud_root(props.item, node)
 			return
 		}
 		if (target.root_key === root_key.value) {
-			void explorer_tree.move_folder(props.item, node, target.folder_id)
+			if (node) void explorer_tree.move_folder(props.item, node, target.folder_id)
 			return
 		}
 		const target_item = explorer_tree.roots.find(item =>
 			tree_root_key(item.drive.id, item.root.id) === target.root_key)
-		if (target_item) void explorer_tree.transfer_folder(props.item, node, target_item, target.folder_id)
+		if (!target_item) return
+		if (node) void explorer_tree.transfer_folder(props.item, node, target_item, target.folder_id)
+		else request_root_move(target_item, target.folder_id)
 	})
 }
 
@@ -222,6 +259,19 @@ watchEffect(on_cleanup => {
 			<Button @click="remove_open = false">{{ t('dialog.cancel') }}</Button>
 			<Button variant="danger" @click="remove_open = false; explorer_tree.remove_folder(item, node!)">
 				{{ t('tree.delete_permanently') }}
+			</Button>
+		</template>
+	</Modal>
+	<Modal
+		v-if="!node && item.drive.kind === 'cloud'"
+		v-model:open="root_move_open"
+		:title="t('tree.move_root_warning_title')"
+		:description="t('tree.move_root_warning_description', { name })"
+	>
+		<template #footer>
+			<Button @click="root_move_open = false">{{ t('dialog.cancel') }}</Button>
+			<Button variant="danger" @click="confirm_root_move">
+				{{ t('tree.move_root_warning_confirm') }}
 			</Button>
 		</template>
 	</Modal>

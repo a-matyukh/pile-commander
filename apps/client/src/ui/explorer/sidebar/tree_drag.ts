@@ -50,6 +50,8 @@ const drive_of = (root_key: string) => root_key.slice(0, root_key.indexOf('\0'))
  * (a cloud workspace starts at "/"), so they never nest with the source
  */
 export function can_drop(source: TreeDragSource, spot: TreeDropSpot): boolean {
+	// A cloud root can move into another root, but cannot become a new root itself
+	if (spot.root_key === CLOUD_ROOT_DROP_KEY && source.folder_id === source.parent_id) return false
 	if (spot.root_key !== source.root_key) return drive_of(spot.root_key) === drive_of(source.root_key)
 	return !is_within(spot.folder_id, source.folder_id)
 		&& spot.folder_id !== source.parent_id

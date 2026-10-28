@@ -146,7 +146,9 @@ watchEffect(() => {
 				/>
 				<div v-if="nothing_found" class="none">{{ t('tree.nothing_found') }}</div>
 				<!-- Listing the roots (the cloud asks the server): the tree is empty for a moment -->
-				<div v-if="active_drive && !tree_ready" class="none"><Icon icon="tabler:loader-2" class="spin" /></div>
+				<div v-if="active_drive && explorer_tree.listed_drive_id !== active_drive.id" class="none">
+					<Icon icon="tabler:loader-2" class="spin" />
+				</div>
 			</template>
 		</div>
 		<template v-if="!hub_open">

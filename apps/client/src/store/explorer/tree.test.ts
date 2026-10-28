@@ -838,3 +838,89 @@ describe('moving a nested cloud folder to the top level', () => {
 		expect(run.open_folder).not.toHaveBeenCalled()
 	})
 })
+
+describe('moving a cloud root into another root', () => {
+	const live: WorkspaceStore[] = []
+	afterEach(() => {
+		for (const store of live.splice(0)) store.dispose()
+	})
+
+	async function root_move() {
+		const source_fake = createFakeFileManager()
+		source_fake.seed_folder('/')
+		source_fake.seed_folder('/nested')
+		source_fake.seed_file('/inside.txt', 'inside')
+		source_fake.seed_file('/.hidden.txt', 'hidden')
+		const target_fake = createFakeFileManager()
+		target_fake.seed_folder('/')
+		const source = await createWorkspaceStore(
+			{ id: 'ws-a', type: 'cloud', name: 'A' },
+			source_fake.fm,
+			{ root_folder_id: '/' },
+		)
+		const target = await createWorkspaceStore(
+			{ id: 'ws-34', type: 'cloud', name: '34' },
+			target_fake.fm,
+			{ root_folder_id: '/' },
+		)
+		if (!source || !target) throw new Error('no store')
+		live.push(source, target)
+		const roots: DriveRoot[] = [
+			{ id: 'ws-a', name: 'A', can_write: true },
+			{ id: 'ws-34', name: '34', can_write: true },
+		]
+		const stores = new Map<string, WorkspaceStore>([['ws-a', source], ['ws-34', target]])
+		const drive: Drive = {
+			id: 'cloud',
+			kind: 'cloud',
+			name: 'Cloud',
+			icon: '',
+			trash: 'page',
+			roots: async () => roots,
+			store_for: async id => stores.get(id)!,
+		}
+		let location: ExplorerLocation | null = {
+			kind: 'folder',
+			ref: { drive_id: 'cloud', root_id: 'ws-a', folder_id: '/nested' },
+		}
+		const open_folder = vi.fn(async (ref: FolderRef) => { location = { kind: 'folder', ref } })
+		const on_error = vi.fn()
+		const delete_cloud_root = vi.fn(async (root_id: string) => {
+			const index = roots.findIndex(root => root.id === root_id)
+			if (index !== -1) roots.splice(index, 1)
+		})
+		const tree = create_explorer_tree({
+			current_location: () => location,
+			open_folder,
+			set_expanded: () => {},
+			browser_workspaces: () => [],
+			on_error,
+			delete_cloud_root,
+			hold_root: () => () => {},
+		})
+		await tree.show_drive(drive, location.kind === 'folder' ? location.ref : null)
+		return {
+			tree, target_fake, open_folder, on_error, delete_cloud_root,
+			item: tree.roots.find(item => item.root.id === 'ws-a')!,
+			target: tree.roots.find(item => item.root.id === 'ws-34')!,
+		}
+	}
+
+	test('the root becomes a folder and navigation follows its current branch', async () => {
+		const run = await root_move()
+
+		await run.tree.transfer_cloud_root(run.item, run.target, '/')
+
+		expect(run.target_fake.has('/A/inside.txt')).toBe(true)
+		expect(run.target_fake.has('/A/.hidden.txt')).toBe(true)
+		expect(run.target_fake.has('/A/nested')).toBe(true)
+		expect(run.delete_cloud_root).toHaveBeenCalledWith('ws-a')
+		expect(run.tree.roots.map(item => item.root.id)).toEqual(['ws-34'])
+		expect(run.open_folder).toHaveBeenCalledWith({
+			drive_id: 'cloud',
+			root_id: 'ws-34',
+			folder_id: '/A/nested',
+		})
+		expect(run.on_error).not.toHaveBeenCalled()
+	})
+})
