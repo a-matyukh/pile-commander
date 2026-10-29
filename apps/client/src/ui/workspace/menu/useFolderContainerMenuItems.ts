@@ -21,6 +21,7 @@ import { useFolderViewMenuItems } from './useFolderViewMenuItems'
 import { ai_available } from '@/store/ai'
 import { open_summary } from '@/store/aiSummary'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
+import { explorer_mounted } from '@/store/explorer/public_view'
 
 type FolderContainerMenuOptions = {
 	position?: MaybeRefOrGetter<Position | null | undefined>
@@ -323,7 +324,12 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 							: []),
 					],
 				},
-				...(backgroundItem ? [backgroundItem as DropdownMenuItem] : []),
+				...(backgroundItem
+					// The Explorer's color panel in place of the presets, the picker and the field
+					? [explorer_mounted.value
+						? { label: backgroundItem.label, disabled: backgroundItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }
+						: backgroundItem as DropdownMenuItem]
+					: []),
 			],
 			summarizeItems.value,
 		]
@@ -332,6 +338,8 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 
 	return {
 		items,
+		/** The folder's background, for the Explorer's color panel */
+		background: computed(() => scope.container.value?.background),
 		gridSize,
 		onGridSizeChange,
 		pickerColor,

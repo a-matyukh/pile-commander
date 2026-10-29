@@ -10,8 +10,8 @@ import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { FOLDER_ICON_COLORS, folder_icon_of, write_folder_icon, type FolderIcon } from '@/store/explorer/folder_cover'
 import { RECOMMENDED_ICONS, load_all_icons, search_icons, shown_icon } from '@/store/explorer/icon_catalog'
 import { explorer_tree, tree_root_folder_id, type ExplorerTreeRoot } from '@/store/explorer/tree'
-import { PRESET_COLORS } from '@/ui/workspace/menu/useColorSubmenu'
 import MenuItem from '@/ui/kit/MenuItem.vue'
+import ColorPanel from './ColorPanel.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
 import MenuSub from '@/ui/kit/MenuSub.vue'
 
@@ -85,31 +85,10 @@ const searching = computed(() => query.value.trim() !== '' && names.value === nu
  */
 const vFocus = { mounted: (el: HTMLElement) => { requestAnimationFrame(() => el.focus()) } }
 
-const custom = ref('')
-watch(cover, (value) => { custom.value = value.startsWith('data:') ? '' : value }, { immediate: true })
-
 function set_cover(value: string) {
 	const cover = value.trim() || 'none'
 	if (props.store) void in_store(store => store.change_folder_cover(props.folder.folder_id, cover))
 	else if (props.item) void explorer_tree.set_folder_cover(props.item, props.folder.folder_id, cover)
-}
-
-/**
- * Any color by hand, as the board's "Cover": the picker follows the cover
- * and writes once the pointer is up, not on every move
- */
-const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
-const picked = ref('#FFFFFF')
-watch(cover, (value) => { if (HEX.test(value)) picked.value = value.toUpperCase() }, { immediate: true })
-watch(picked, (value) => { custom.value = value })
-
-function pick_start() {
-	window.addEventListener('pointerup', () => {
-		// The picker sets its color on the same release
-		setTimeout(() => {
-			if (picked.value.toUpperCase() !== cover.value.toUpperCase()) set_cover(picked.value)
-		})
-	}, { once: true, capture: true })
 }
 </script>
 
@@ -159,35 +138,7 @@ function pick_start() {
 		<MenuItem v-if="icon" icon="tabler:arrow-back-up" :label="t('style.default_icon')" @select="reset_icon" />
 	</MenuSub>
 	<MenuSub icon="tabler:photo" :label="t('style.cover')" :width="208">
-		<MenuLabel :label="t('style.cover_color')" />
-		<div class="sw">
-			<button
-				v-for="preset in PRESET_COLORS"
-				:key="preset.label"
-				type="button"
-				class="c"
-				:class="{ on: cover === preset.color }"
-				:style="{ background: preset.color }"
-				:aria-label="preset.label"
-				:data-tip="preset.label"
-				@click="set_cover(preset.color)"
-			/>
-		</div>
-		<div class="pk" @pointerdown.capture="pick_start" @pointerdown.stop @click.stop @keydown.stop>
-			<UColorPicker v-model="picked" size="xs" />
-		</div>
-		<MenuLabel :label="t('style.cover_custom')" />
-		<form class="cu" @submit.prevent="set_cover(custom)">
-			<input
-				v-model="custom"
-				class="in"
-				:placeholder="t('background.custom_placeholder')"
-				spellcheck="false"
-				@keydown.stop
-			>
-			<p class="hn">{{ t('style.cover_hint') }}</p>
-		</form>
-		<MenuItem v-if="cover" icon="tabler:arrow-back-up" :label="t('style.remove_cover')" @select="set_cover('')" />
+		<ColorPanel :value="cover" :label="t('style.cover_color')" picture :reset_label="t('style.remove_cover')" @set="set_cover" />
 	</MenuSub>
 </template>
 
@@ -267,33 +218,6 @@ function pick_start() {
 	background: var(--bg-accent);
 	color: var(--text-accent);
 }
-.sw {
-	display: grid;
-	grid-template-columns: repeat(7, 22px);
-	gap: 4px;
-	padding: 2px 8px 6px;
-}
-.c {
-	width: 22px;
-	height: 22px;
-	border-radius: 6px;
-	border: 0.5px solid var(--border-strong);
-	cursor: pointer;
-	padding: 0;
-}
-.c.on {
-	outline: 2px solid var(--fill-accent);
-	outline-offset: 1px;
-}
-.pk {
-	padding: 2px 8px 6px;
-}
-.cu {
-	padding: 0 6px 6px;
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-}
 .hn {
 	margin: 0;
 	padding: 0 8px 6px;
@@ -301,9 +225,6 @@ function pick_start() {
 	line-height: 1.4;
 	color: var(--text-muted);
 	white-space: normal;
-}
-.cu .hn {
-	padding: 0 2px;
 }
 .spin {
 	animation: spin 1s linear infinite;
