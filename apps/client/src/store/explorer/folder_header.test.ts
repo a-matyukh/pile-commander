@@ -134,7 +134,7 @@ describe('folder header: view switch', () => {
 		await first.change_folder_view(folder_id, 'grid')
 		expect(first.last_error).toBeNull()
 		expect(entry_view(first.resolve_folder_data(folder_id) ?? undefined)).toBe('grid')
-		expect(fake.get_xattr(folder_id, 'view')).toBe('grid')
+		expect(fake.get_xattr(folder_id, 'view')).toBe('gallery')
 		first.dispose()
 
 		// Restart: a new store over the same disk

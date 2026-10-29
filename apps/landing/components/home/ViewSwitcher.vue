@@ -14,14 +14,15 @@ const items: { id: string; name: string; kind: Kind; meta: string }[] = [
   { id: "chair", name: "chair.glb", kind: "model", meta: "3D model · 3 MB" },
 ];
 
+// The app's own view names and icons (FOLDER_VIEW_META in apps/client)
 const views: { id: ViewId; label: string; icon: string; caption: string }[] = [
-  { id: "list", label: "List", icon: "i-lucide-list", caption: "Rows with a name and an icon. For when you just need to find the thing." },
-  { id: "grid", label: "Grid", icon: "i-lucide-layout-grid", caption: "Tiles, like any file manager. Folders keep their tab." },
-  { id: "board", label: "Board", icon: "i-lucide-mouse-pointer-2", caption: "Place anything anywhere. Resize, leave space, snap to a grid if you like." },
-  { id: "canvas", label: "Canvas", icon: "i-lucide-spline", caption: "An infinite canvas. Connect things, draw over them, zoom from 20% to 400%." },
-  { id: "stack", label: "Stack", icon: "i-lucide-rows-3", caption: "One column you reorder by dragging. Notes and media open inline." },
-  { id: "masonry", label: "Masonry", icon: "i-lucide-layout-dashboard", caption: "A tiled wall. Tiles snap to a grid and can span it." },
-  { id: "slides", label: "Slides", icon: "i-lucide-presentation", caption: "One piece at a time. On a cloud workspace, everyone lands on the same slide." },
+  { id: "list", label: "List", icon: "i-tabler-list", caption: "Rows with a name and an icon. For when you just need to find the thing." },
+  { id: "grid", label: "Gallery", icon: "i-tabler-layout-grid", caption: "Tiles, like any file manager. Folders keep their tab." },
+  { id: "board", label: "Board", icon: "i-tabler-template", caption: "Place anything anywhere. Resize, leave space, snap to a grid if you like." },
+  { id: "canvas", label: "Canvas", icon: "i-tabler-artboard", caption: "An infinite canvas. Connect things, draw over them, zoom from 20% to 400%." },
+  { id: "stack", label: "Stack", icon: "i-tabler-layout-rows", caption: "One column you reorder by dragging. Notes and media open inline." },
+  { id: "masonry", label: "Masonry", icon: "i-tabler-layout-cards", caption: "A tiled wall. Tiles snap to a grid and can span it." },
+  { id: "slides", label: "Slides", icon: "i-tabler-presentation", caption: "One piece at a time. On a cloud workspace, everyone lands on the same slide." },
 ];
 
 const SLIDE: Box = { x: 14, y: 7, w: 72, h: 78 };

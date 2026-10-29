@@ -1106,7 +1106,7 @@ describe('createWorkspaceStore: watch', () => {
 
 		await store.change_folder_view('/ws/pics', 'grid')
 
-		expect(fake.get_xattr('/ws/pics', 'view')).toBe('grid')
+		expect(fake.get_xattr('/ws/pics', 'view')).toBe('gallery')
 		expect(store.folder_container.view).toBe('grid')
 	})
 

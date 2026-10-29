@@ -1,6 +1,6 @@
 import { useStorage } from '@vueuse/core'
 import type { FolderRef } from '@/domain/Drive'
-import { FOLDER_VIEWS, type FolderView } from '@/domain/Widget'
+import { FOLDER_VIEWS, folder_view_from_stored, type FolderView } from '@/domain/Widget'
 import type { WorkspaceTree, WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import type { FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import { xattrs_map } from '@/services/workspace/xattrs'
@@ -68,15 +68,9 @@ export type TreeFilterSources = {
 	folders: Readonly<Record<string, FolderWithChildrenXattrs>>
 }
 
-/**
- * The view a folder entry carries in its attributes, `list` when none.
- * `gallery` reads as `grid`: the product writes `grid` until stage 4 and
- * `gallery` after it (EXPLORER_PLAN.md, «Совместимость данных»)
- */
+/** The view a folder entry carries in its attributes, `list` when none ("gallery" and "grid" are Gallery) */
 export function entry_view(entry: { xattrs: { name: string; value: string }[] } | undefined): FolderView {
-	const raw = entry ? xattrs_map(entry.xattrs).view : undefined
-	const view = raw === 'gallery' ? 'grid' : raw
-	return (FOLDER_VIEWS as readonly unknown[]).includes(view) ? view as FolderView : 'list'
+	return folder_view_from_stored(entry ? xattrs_map(entry.xattrs).view : undefined)
 }
 
 /**

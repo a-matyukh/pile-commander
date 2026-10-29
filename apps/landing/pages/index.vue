@@ -18,7 +18,7 @@ useSeoMeta({
     <FeatureSection
       eyebrow="Seven views"
       title="One folder. Seven ways to look at it."
-      lede="Every folder remembers its own view. Switch whenever the work changes — the files stay put, only the way of looking moves. Two classic file-manager views, List and Grid; two spatial ones, Board and Canvas; and three based on sorting, Stack, Masonry and Slides."
+      lede="Every folder remembers its own view. Switch whenever the work changes — the files stay put, only the way of looking moves. Two classic file-manager views, List and Gallery; two spatial ones, Board and Canvas; and three based on sorting, Stack, Masonry and Slides."
       muted
     >
       <HomeViewSwitcher />

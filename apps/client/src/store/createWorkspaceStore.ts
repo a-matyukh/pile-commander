@@ -73,6 +73,7 @@ import {
 	Position,
 	Size,
 	StrokeNode,
+	stored_folder_view,
 } from '@/domain/Widget'
 import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE } from '@/services/board/layout'
 import { get_mime_type } from '@/services/board/media'
@@ -863,7 +864,7 @@ export async function createWorkspaceStore(
 				if (container.view === new_view) {
 					return
 				}
-				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', new_view)
+				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
 			},
 
 			async change_folder_cover(folder_id: string, cover: string) {
@@ -1816,7 +1817,7 @@ export async function createWorkspaceStore(
 
 				const node = await create_entry(this, fm, folder_id, 'folder', folder_name, {
 					xattrs: [
-						{ name: 'view', value: options?.view ?? 'board' },
+						{ name: 'view', value: stored_folder_view(options?.view ?? 'board') },
 						...(position
 							? [
 								{ name: 'position', value: JSON.stringify(position) },
