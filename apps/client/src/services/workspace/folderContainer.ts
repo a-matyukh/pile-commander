@@ -1,5 +1,5 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
-import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
+import { folder_view_from_stored, type FolderContainerWidget, type FolderContainerWidgetChild } from '@/domain/Widget'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import { is_hidden_entry_name } from './hiddenName'
 import { find_entry_owner_folder, xattrs_map } from './xattrs'
@@ -143,7 +143,7 @@ export function to_folder_container(
 	preview_folders?: Record<string, FolderWithChildrenXattrs>,
 ): FolderContainerWidget {
 	const attrs = xattrs_map(folder.xattrs)
-	const view = (attrs.view as FolderContainerWidget['view']) ?? 'list'
+	const view = folder_view_from_stored(attrs.view)
 
 	const raw_children = (folder.children ?? []).filter(entry =>
 		show_hidden_files.value || !is_hidden_entry_name(entry.name),

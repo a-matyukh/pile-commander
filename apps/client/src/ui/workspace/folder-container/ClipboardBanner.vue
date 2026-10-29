@@ -77,7 +77,6 @@ function pasteHere() {
 	background: #fefefe;
 	color: #111827;
 	font-size: 12px;
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 	user-select: none;
 	-webkit-user-select: none;
 }
@@ -95,16 +94,17 @@ function pasteHere() {
 	gap: 0.375rem;
 	flex-shrink: 0;
 	padding: 0.125rem 0.5rem;
-	border: 1px solid rgba(0, 0, 0, 0.12);
-	border-radius: 0.25rem;
-	background: var(--pc-gray-muted);
+	border: 1px solid rgba(0, 0, 0, 0.1);
+	border-radius: 0.375rem;
+	background: #fefefe;
 	color: inherit;
 	font: inherit;
 	cursor: pointer;
 }
 
+/* As the "Select" button beside it */
 .clipboard-banner__paste:hover {
-	background: var(--pc-gray-border);
+	background: var(--pc-gray-muted);
 }
 
 .clipboard-banner__kbds {

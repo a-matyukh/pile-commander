@@ -1,0 +1,55 @@
+/* Menu panel shared by dropdowns and context menus (portaled into .explorer) */
+.mn {
+	max-width: calc(100vw - 16px);
+	/* Never past the window: the room reka measured on the menu's side, then it scrolls */
+	max-height: var(--reka-popper-available-height, calc(100vh - 16px));
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	box-sizing: border-box;
+	background: var(--surface-3);
+	border: 0.5px solid var(--border-strong);
+	border-radius: 8px;
+	padding: 4px;
+	z-index: 50;
+	color: var(--text-primary);
+	font-size: 13px;
+	outline: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+.explorer.lg .mn {
+	width: auto !important;
+	min-width: 250px;
+	font-size: 15px;
+}
+/* "Smooth menus" and "Menu shadow" in the settings, as the current app's menus.
+   The switch is the person's own choice, so the system's "Reduce motion" does not override it */
+.explorer.mshadow .mn {
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
+}
+.explorer.manim .mn {
+	transform-origin: var(--reka-popper-transform-origin);
+}
+.explorer.manim .mn[data-state='open'] {
+	animation: mn-in .14s ease-out;
+}
+.explorer.manim .mn[data-state='closed'] {
+	animation: mn-out .1s ease-in;
+}
+/* A submenu leaves at once: moving from one to the next, the old one fading
+   over the new one read as a blink */
+.explorer.manim .mn.sub[data-state='closed'] {
+	animation: none;
+}
+@keyframes mn-in {
+	from {
+		opacity: 0;
+		transform: scale(.96);
+	}
+}
+@keyframes mn-out {
+	to {
+		opacity: 0;
+		transform: scale(.96);
+	}
+}

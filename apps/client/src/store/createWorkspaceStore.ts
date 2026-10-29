@@ -31,6 +31,7 @@ import {
 	type FileManager,
 	type StrokesWatchEvent,
 	type Unwatch,
+	type WatchEvent,
 } from '@pile-commander/file-manager'
 import { folder_stroke_to_node, node_to_folder_stroke } from '@/services/canvas/strokes'
 import {
@@ -72,6 +73,7 @@ import {
 	Position,
 	Size,
 	StrokeNode,
+	stored_folder_view,
 } from '@/domain/Widget'
 import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE } from '@/services/board/layout'
 import { get_mime_type } from '@/services/board/media'
@@ -135,6 +137,20 @@ function persist_workspace_xattr(
 	)
 }
 
+/**
+ * A folder's own attribute (its cover, its icon) written on the folder also
+ * shows in the listings that hold it as a child: a board or a canvas draws its
+ * cards from the open folder's list, and would keep the old one until a refresh
+ */
+function mirror_to_listings(store: PersistXattrStore, folder_id: string, name: string, value: string) {
+	for (const [owner_id, owner] of Object.entries(store.folders)) {
+		if (owner_id === folder_id || !owner.children?.some(child => child.id === folder_id)) continue
+		upsert_folder_xattr(owner, folder_id, name, value)
+		notify_entry_xattr_changed(owner, folder_id)
+		store.folders[owner_id] = { ...owner }
+	}
+}
+
 let tab_seq = 0
 const next_tab_id = () => `tab-${++tab_seq}`
 
@@ -148,12 +164,18 @@ export type WorkspaceStoreOptions = {
 	 * once and no realtime subscription is opened (so no realtime connection).
 	 */
 	live?: boolean
+	/**
+	 * This store's root is an unbounded local drive root (`~` or a volume).
+	 * Drive turns it on: every watch is non-recursive (opened folder, root,
+	 * expanded branches). Off, one recursive watch follows the opened folder.
+	 */
+	shallow_root?: boolean
 }
 
 export async function createWorkspaceStore(
 	ws: WorkspacesListItem,
 	fm: FileManager,
-	{ root_folder_id = ws.id, can_write = true, live = true }: WorkspaceStoreOptions = {},
+	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
 	const opened_folder: FolderWithChildrenXattrs = await fm.folder_with_children_xattrs(root_folder_id)
 
@@ -182,6 +204,153 @@ export async function createWorkspaceStore(
 	const stop_watching = () => {
 		unwatch?.()
 		unwatch = null
+		for (const entry of drive_watches.values()) entry.unwatch()
+		drive_watches.clear()
+		drive_generation.clear()
+	}
+
+	/** True when every ancestor of `folder_id` up to `root` is expanded. */
+	const expanded_branch_is_open = (
+		folder_id: string,
+		expanded: Set<string>,
+		root: string,
+	): boolean => {
+		let current = parent_folder_id_from_node_id(folder_id, root)
+		while (current !== root) {
+			if (!expanded.has(current)) return false
+			current = parent_folder_id_from_node_id(current, root)
+		}
+		return true
+	}
+
+	type DriveWatch = { unwatch: Unwatch; recursive: boolean }
+	const drive_watches = new Map<string, DriveWatch>()
+	const drive_generation = new Map<string, number>()
+	let drive_clock = 0
+	let shallow_reconcile_tail: Promise<void> = Promise.resolve()
+
+	const drop_drive_watch = (folder_id: string) => {
+		drive_generation.set(folder_id, ++drive_clock)
+		const current = drive_watches.get(folder_id)
+		if (!current) return
+		current.unwatch()
+		drive_watches.delete(folder_id)
+	}
+
+	const handle_watch_event = (
+		store: WorkspaceStore,
+		folder_id: string,
+		event: WatchEvent,
+	) => {
+		void (async () => {
+			if (event.kind === 'resync') {
+				await resync_cached_folders(store, folder_id)
+				return
+			}
+			if (batch_fs_update_active()) return
+
+			// External content edits (e.g. Inkscape save) — drop cached
+			// file content so subscribers re-read from disk.
+			if (event.kind !== 'remove') {
+				for (const id of event.ids) {
+					content_caches.shapes.invalidate(id)
+					content_caches.notes.invalidate(id)
+				}
+			}
+			// New bytes under the same id (an image edited on disk, a
+			// blob replaced in place in the cloud): images and videos
+			// load again. Not on a layout-only change, and not on
+			// 'other' — an access event from reading the file would
+			// otherwise reload it forever
+			if (
+				(event.kind === 'modify' || event.kind === 'create' || event.kind === 'rename')
+				&& event.content_changed !== false
+			) {
+				for (const id of event.ids) media_cache.invalidate(id)
+			}
+
+			const folder_ids = cached_folders_affected_by(
+				store.folders,
+				event.ids,
+				store.id,
+				event.kind,
+			)
+			for (const id of folder_ids) {
+				await refresh_cached_folder(store, fm, id, event)
+			}
+		})()
+	}
+
+	const report_watch_error = (store: WorkspaceStore, error: unknown) => {
+		const message = user_message_for_watch_error(error)
+		if (message === null) {
+			console.error(error)
+			return
+		}
+		report_error(store, new Error(message))
+	}
+
+	const subscribe_drive_watch = async (
+		store: WorkspaceStore,
+		folder_id: string,
+		recursive: boolean,
+	) => {
+		const generation = ++drive_clock
+		drive_generation.set(folder_id, generation)
+		let next: Unwatch
+		try {
+			next = await fm.watch(
+				folder_id,
+				(event) => handle_watch_event(store, folder_id, event),
+				{ recursive },
+			)
+		} catch (error) {
+			// The folder is gone (just deleted or moved; the next reconcile drops
+			// it): nothing to watch and nothing to tell the user
+			if (!is_missing_path_error(error)) report_watch_error(store, error)
+			return
+		}
+		if (disposed || drive_generation.get(folder_id) !== generation) {
+			next()
+			return
+		}
+		drive_watches.set(folder_id, { unwatch: next, recursive })
+	}
+
+	const reconcile_shallow_watches_once = async (store: WorkspaceStore) => {
+		if (!shallow_root || !live || disposed) return
+		const opened = store.opened_folder_id
+		// Every watch on a drive is non-recursive, the opened folder included:
+		// a recursive watch on ~/Library or a node_modules tree hangs the app
+		// (FSEvents flood, and the debounced watcher walks the whole subtree).
+		// Deeper changes show up when a folder is opened or expanded: it is
+		// read again then.
+		const wanted = new Map<string, boolean>()
+		wanted.set(opened, false)
+		// The root listing stays visible. A deeper folder is watched only while
+		// every ancestor up to the root is expanded; a collapsed parent hides
+		// the branch, even if a nested id is still in the set.
+		if (opened !== store.id) wanted.set(store.id, false)
+		for (const id of store.expanded_folder_ids) {
+			if (id === opened || id === store.id) continue
+			if (!expanded_branch_is_open(id, store.expanded_folder_ids, store.id)) continue
+			wanted.set(id, false)
+		}
+		for (const id of [...drive_watches.keys()]) {
+			if (wanted.get(id) !== drive_watches.get(id)?.recursive) drop_drive_watch(id)
+		}
+		for (const [id, recursive] of wanted) {
+			if (disposed) return
+			if (drive_watches.get(id)?.recursive === recursive) continue
+			await subscribe_drive_watch(store, id, recursive)
+		}
+	}
+
+	const reconcile_shallow_watches = (store: WorkspaceStore): Promise<void> => {
+		if (!shallow_root || !live) return Promise.resolve()
+		const run = shallow_reconcile_tail.then(() => reconcile_shallow_watches_once(store))
+		shallow_reconcile_tail = run.then(() => {}, () => {})
+		return run
 	}
 
 	// Canvas ink bookkeeping: per-folder entity cache + live stroke watchers.
@@ -335,6 +504,10 @@ export async function createWorkspaceStore(
 		folder_id: string,
 	) => {
 		if (!live) return
+		if (shallow_root) {
+			await reconcile_shallow_watches(store as WorkspaceStore)
+			return
+		}
 		const generation = ++watch_generation
 		try {
 			// Subscribe before releasing the previous watch: the cloud fm shares
@@ -342,45 +515,7 @@ export async function createWorkspaceStore(
 			// instead of a leave/join per opened folder
 			const next = await fm.watch(
 				folder_id,
-				(event) => {
-					void (async () => {
-						if (event.kind === 'resync') {
-							await resync_cached_folders(store, folder_id)
-							return
-						}
-						if (batch_fs_update_active()) return
-
-						// External content edits (e.g. Inkscape save) — drop cached
-						// file content so subscribers re-read from disk.
-						if (event.kind !== 'remove') {
-							for (const id of event.ids) {
-								content_caches.shapes.invalidate(id)
-								content_caches.notes.invalidate(id)
-							}
-						}
-						// New bytes under the same id (an image edited on disk, a
-						// blob replaced in place in the cloud): images and videos
-						// load again. Not on a layout-only change, and not on
-						// 'other' — an access event from reading the file would
-						// otherwise reload it forever
-						if (
-							(event.kind === 'modify' || event.kind === 'create' || event.kind === 'rename')
-							&& event.content_changed !== false
-						) {
-							for (const id of event.ids) media_cache.invalidate(id)
-						}
-
-						const folder_ids = cached_folders_affected_by(
-							store.folders,
-							event.ids,
-							store.id,
-							event.kind,
-						)
-						for (const id of folder_ids) {
-							await refresh_cached_folder(store, fm, id, event)
-						}
-					})()
-				},
+				(event) => handle_watch_event(store as WorkspaceStore, folder_id, event),
 				{ recursive: true },
 			)
 			if (disposed || generation !== watch_generation) {
@@ -390,12 +525,7 @@ export async function createWorkspaceStore(
 			unwatch?.()
 			unwatch = next
 		} catch (error) {
-			const message = user_message_for_watch_error(error)
-			if (message === null) {
-				console.error(error)
-				return
-			}
-			report_error(store, new Error(message))
+			report_watch_error(store as WorkspaceStore, error)
 		}
 	}
 
@@ -428,6 +558,7 @@ export async function createWorkspaceStore(
 		// raw object and Vue would never see cache replacements — e.g. a board
 		// would stop updating after the first watch refresh.
 		let stop_show_hidden_watch = () => {}
+		let stop_shallow_watch = () => {}
 		const workspace: WorkspaceStore = reactive({
 			id: root_folder_id,
 			uid: ws.id,
@@ -447,9 +578,12 @@ export async function createWorkspaceStore(
 		},
 
 		import_progress: null as ImportProgress | null,
+		is_disposed: false,
 
 		dispose() {
+			this.is_disposed = true
 			disposed = true
+			stop_shallow_watch()
 			stop_watching()
 			stop_watching_strokes()
 			stop_watching_connections()
@@ -716,6 +850,9 @@ export async function createWorkspaceStore(
 	void this.ensure_strokes(folder_id)
 	void this.ensure_connections(folder_id)
 	await this.expand_folder_in_sidebar(folder_id)
+	// Expansion changes the set after the opened-folder watch. The shallow
+	// watcher queues that pass; wait until it has caught up.
+	if (shallow_root) await shallow_reconcile_tail
 },
 
 			async change_folder_view(folder_id: string, new_view: FolderView) {
@@ -727,7 +864,23 @@ export async function createWorkspaceStore(
 				if (container.view === new_view) {
 					return
 				}
-				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', new_view)
+				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
+			},
+
+			async change_folder_cover(folder_id: string, cover: string) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)) mirror_to_listings(this, folder_id, 'cover', cover)
+			},
+
+			async change_folder_icon(folder_id: string, icon: string) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)) mirror_to_listings(this, folder_id, 'icon', icon)
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {
@@ -908,7 +1061,8 @@ export async function createWorkspaceStore(
 					buffered = null
 					for (const event of replay) apply_connections_event(this, folder_id, event)
 				} catch (error) {
-					report_error(this, error)
+					// A folder deleted meanwhile has no edges to load
+					if (!is_missing_path_error(error)) report_error(this, error)
 				} finally {
 					connections_pending.delete(folder_id)
 				}
@@ -1004,7 +1158,8 @@ export async function createWorkspaceStore(
 						buffered = null
 						for (const event of replay) apply_strokes_event(this, folder_id, event)
 					} catch (error) {
-						report_error(this, error)
+						// A folder deleted meanwhile has no ink to load: not the user's problem
+						if (!is_missing_path_error(error)) report_error(this, error)
 					} finally {
 						strokes_pending.delete(folder_id)
 					}
@@ -1608,8 +1763,12 @@ export async function createWorkspaceStore(
 				await copy_entries_into(this, fm, this.opened_folder_id, entry_ids)
 			},
 
-			async show_folder_children(folder_id: string, should_apply?: () => boolean) {
-				if (this.tree_loaded_folder_ids.has(folder_id) && this.folders[folder_id]) {
+			async show_folder_children(
+				folder_id: string,
+				should_apply?: () => boolean,
+				options?: { silent?: boolean; refresh?: boolean },
+			) {
+				if (!options?.refresh && this.tree_loaded_folder_ids.has(folder_id) && this.folders[folder_id]) {
 					sync_tree_from_folders(this)
 					return
 				}
@@ -1634,6 +1793,7 @@ export async function createWorkspaceStore(
 					this.tree_loaded_folder_ids.add(folder_id)
 					sync_tree_from_folders(this)
 				} catch (error) {
+					if (options?.silent) throw error
 					report_error(this, error)
 				} finally {
 					this.loading_folder_ids.delete(folder_id)
@@ -1657,7 +1817,7 @@ export async function createWorkspaceStore(
 
 				const node = await create_entry(this, fm, folder_id, 'folder', folder_name, {
 					xattrs: [
-						{ name: 'view', value: options?.view ?? 'board' },
+						{ name: 'view', value: stored_folder_view(options?.view ?? 'board') },
 						...(position
 							? [
 								{ name: 'position', value: JSON.stringify(position) },
@@ -1956,7 +2116,10 @@ export async function createWorkspaceStore(
 			async remove(id: string) {
 				assert_can_write()
 				const owner_folder = find_entry_owner_folder(this.opened_folder, this.preview_folders, id)
-				const owner_folder_id = owner_folder?.id
+				// The open folder itself being removed: its edges live in its parent
+				const owner_folder_id = owner_folder?.id === id
+					? parent_folder_id_from_node_id(id, this.id)
+					: owner_folder?.id
 
 				try {
 					await fm.remove(id)
@@ -2272,6 +2435,16 @@ export async function createWorkspaceStore(
 		stop_show_hidden_watch = watch(show_hidden_files, () => {
 			sync_tree_from_folders(workspace)
 		})
+
+		if (shallow_root) {
+			// One subscription for every change to the open branch, including
+			// a rename or a delete that rewrites the set from outside this file.
+			stop_shallow_watch = watch(
+				() => [...workspace.expanded_folder_ids, workspace.opened_folder_id],
+				() => { void reconcile_shallow_watches(workspace) },
+				{ flush: 'sync' },
+			)
+		}
 
 		await start_watching(workspace, root_folder_id)
 		return workspace

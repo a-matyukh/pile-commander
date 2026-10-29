@@ -5,6 +5,9 @@ import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import RenameDialog from './RenameDialog.vue'
 import RemoveDialog from './RemoveDialog.vue'
 import MenuSwatchDot from './MenuSwatchDot.vue'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import ItemsCtxMenu from '@/ui/kit/ItemsCtxMenu.vue'
+import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
 
 const props = defineProps<{
 	node: WorkspaceTreeNode
@@ -53,8 +56,18 @@ defineExpose({ open_rename, open_remove })
 
 <template>
 	<span class="contents contents-menu-root">
+		<!-- In the Explorer the same items, in its own menu style -->
+		<ItemsDropMenu v-if="!hasContextTrigger && explorer_mounted" :items="items">
+			<template
+				v-for="name in forwardedSlotNames"
+				:key="name"
+				#[name]="slotProps"
+			>
+				<slot :name="name" v-bind="slotProps" />
+			</template>
+		</ItemsDropMenu>
 		<UDropdownMenu
-			v-if="!hasContextTrigger"
+			v-else-if="!hasContextTrigger"
 			class="shrink-0"
 			:items="items"
 			:content="{
@@ -80,6 +93,21 @@ defineExpose({ open_rename, open_remove })
 				<slot :name="name" v-bind="slotProps" />
 			</template>
 		</UDropdownMenu>
+		<!-- In the Explorer the same items, in its own menu style -->
+		<ItemsCtxMenu
+			v-else-if="explorer_mounted"
+			:items="items"
+			:press_open_delay="pressOpenDelay ?? 700"
+		>
+			<slot />
+			<template
+				v-for="name in forwardedSlotNames"
+				:key="name"
+				#[name]="slotProps"
+			>
+				<slot :name="name" v-bind="slotProps" />
+			</template>
+		</ItemsCtxMenu>
 		<UContextMenu
 			v-else
 			:modal="false"

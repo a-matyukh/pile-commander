@@ -386,7 +386,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	}
 
 	function to_child(row: EntryRow): FolderChild {
-		return { id: row.path, name: row.name, type: row.kind }
+		return { id: row.path, name: row.name, type: row.kind, entry_id: row.id }
 	}
 
 	type FolderReadResult = { folder: EntryRow; children: EntryRow[] }
@@ -2195,6 +2195,95 @@ export async function purge_entry(
  * Hard-deletes one entry by id once it is in the trash. A path can name
  * several trashed versions of a file; the local sync knows the exact row
  */
+/**
+ * The live entry at a path and a fingerprint of its whole subtree (entries,
+ * ink, edges that touch it), read together (rpc.sql)
+ */
+export async function entry_subtree_stamp_at(
+	client: SupabaseClient,
+	workspace_id: string,
+	path: string,
+): Promise<{ entry_id: string; stamp: string }> {
+	const { data, error } = await client.rpc("entry_subtree_stamp_at", { p_workspace: workspace_id, p_path: path })
+	if (error) throw new Error(`entry_subtree_stamp_at failed: ${error.message}`)
+	const row = (data as { entry_id: string; stamp: string }[] | null)?.[0]
+	if (!row) throw new Error(`entry_subtree_stamp_at: no entry at ${path}`)
+	return row
+}
+
+export type WorkspaceRootInfo = {
+	/** The root folder's `view` attribute as stored (JSON text), if any */
+	view?: string
+	/** Names of the live folders directly in the root */
+	subfolders: string[]
+}
+
+/**
+ * What the sidebar shows for a top-level cloud folder before opening it: its
+ * own view, and whether it has subfolders (for the chevron). Two queries for
+ * all workspaces, by workspace id
+ */
+export async function workspace_root_info(
+	client: SupabaseClient,
+	workspace_ids: string[],
+): Promise<Record<string, WorkspaceRootInfo>> {
+	if (workspace_ids.length === 0) return {}
+	const { data: roots, error } = await client
+		.from("entries")
+		.select("id, workspace_id, xattrs")
+		.is("parent_id", null)
+		.in("workspace_id", workspace_ids)
+	if (error) throw new Error(`workspace_root_info failed: ${error.message}`)
+	const info: Record<string, WorkspaceRootInfo> = {}
+	const workspace_of_root = new Map<string, string>()
+	for (const row of (roots ?? []) as { id: string; workspace_id: string; xattrs: Record<string, string> | null }[]) {
+		info[row.workspace_id] = { view: row.xattrs?.view || undefined, subfolders: [] }
+		workspace_of_root.set(row.id, row.workspace_id)
+	}
+	if (workspace_of_root.size === 0) return info
+	const { data: folders, error: folders_error } = await client
+		.from("entries")
+		.select("parent_id, name")
+		.in("parent_id", [...workspace_of_root.keys()])
+		.eq("kind", "folder")
+		.is("deleted_at", null)
+	if (folders_error) throw new Error(`workspace_root_info failed: ${folders_error.message}`)
+	for (const row of (folders ?? []) as { parent_id: string; name: string }[]) {
+		const workspace = workspace_of_root.get(row.parent_id)
+		if (workspace) info[workspace]!.subfolders.push(row.name)
+	}
+	return info
+}
+
+/** Moves one entry (by row id, whatever its path is now) to the trash */
+export async function trash_entry_id(client: SupabaseClient, entry_id: string): Promise<void> {
+	const { error } = await client.rpc("delete_entry", { p_entry: entry_id, p_client_id: client_instance_id() })
+	if (error) throw new Error(`delete_entry failed: ${error.message}`)
+}
+
+/**
+ * Removes the source of a move across workspaces if it is still at `path`
+ * and its subtree still matches `stamp`: 'deleted' leaves no trace,
+ * 'trashed' keeps it in the trash for an earlier-trashed item inside,
+ * 'changed' means someone moved or changed it meanwhile and nothing was
+ * removed, 'gone' that someone had already deleted it
+ */
+export async function delete_moved_entry(
+	client: SupabaseClient,
+	entry_id: string,
+	stamp: string,
+	path: string,
+): Promise<"deleted" | "trashed" | "changed" | "gone"> {
+	const { data, error } = await client.rpc("delete_moved_entry", {
+		p_entry: entry_id,
+		p_stamp: stamp,
+		p_path: path,
+		p_client_id: client_instance_id(),
+	})
+	if (error) throw new Error(`delete_moved_entry failed: ${error.message}`)
+	return data as "deleted" | "trashed" | "changed" | "gone"
+}
+
 export async function purge_entry_id(client: SupabaseClient, entry_id: string): Promise<void> {
 	const { error } = await client.rpc("purge_entry", { p_entry: entry_id })
 	if (error) throw new Error(`purge_entry failed: ${error.message}`)

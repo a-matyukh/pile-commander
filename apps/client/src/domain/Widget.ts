@@ -52,6 +52,20 @@ export const FOLDER_VIEWS = [
 
 export type FolderView = (typeof FOLDER_VIEWS)[number]
 
+/**
+ * A folder's `view` attribute as stored. Gallery is `grid` in the code and is
+ * stored as "gallery" since 2.3; "grid", which earlier versions wrote, still
+ * reads as Gallery. Anything unknown, or none, is a list
+ */
+export function folder_view_from_stored(raw: unknown): FolderView {
+	const view = raw === 'gallery' ? 'grid' : raw
+	return (FOLDER_VIEWS as readonly unknown[]).includes(view) ? view as FolderView : 'list'
+}
+
+export function stored_folder_view(view: FolderView): string {
+	return view === 'grid' ? 'gallery' : view
+}
+
 export type HandlePosition = 'top' | 'right' | 'bottom' | 'left'
 
 /** Vue Flow MarkerType values; undefined = no marker. */

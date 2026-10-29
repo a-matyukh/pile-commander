@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import type { DirEntry, WatchEvent as TauriWatchEvent } from "@tauri-apps/plugin-fs"
 import type { WatchEvent } from "./types"
 
@@ -14,6 +14,14 @@ const readTextFile = mock<(path: string) => Promise<string>>()
 const readFile = mock<(path: string) => Promise<Uint8Array>>()
 const openPath = mock<(path: string) => Promise<void>>()
 const fs_watch = mock<
+	(
+		paths: string | string[],
+		cb: (event: TauriWatchEvent) => void,
+		options?: { recursive?: boolean; delayMs?: number },
+	) => Promise<() => void>
+>()
+
+const fs_watch_immediate = mock<
 	(
 		paths: string | string[],
 		cb: (event: TauriWatchEvent) => void,
@@ -56,6 +64,7 @@ mock.module("@tauri-apps/plugin-fs", () => ({
 	readTextFile,
 	readFile,
 	watch: fs_watch,
+	watchImmediate: fs_watch_immediate,
 }))
 
 mock.module("@tauri-apps/plugin-opener", () => ({
@@ -564,6 +573,8 @@ describe("local strokes store (.pile/strokes.json)", () => {
 		fs_rename.mockReset()
 		fs_watch.mockReset()
 		fs_watch.mockResolvedValue(() => {})
+		fs_watch_immediate.mockReset()
+		fs_watch_immediate.mockResolvedValue(() => {})
 	})
 
 	const stroke = {
@@ -623,16 +634,19 @@ describe("local strokes store (.pile/strokes.json)", () => {
 	test("watch_strokes diffs sidecar re-reads by stroke id", async () => {
 		let file_content = JSON.stringify([stroke])
 		readTextFile.mockImplementation(() => Promise.resolve(file_content))
-		const unwatch = mock(() => {})
-		fs_watch.mockResolvedValue(unwatch)
+		const unwatch_folder = mock(() => {})
+		const unwatch_pile = mock(() => {})
+		fs_watch_immediate.mockImplementation(async (path) => (path === "/board" ? unwatch_folder : unwatch_pile))
 
 		const fm = createLocalFileManager()
 		const on_event = mock<(event: { upserted: unknown[]; deleted: string[] }) => void>()
 		const result = await fm.strokes.watch_strokes("/board", on_event)
-		expect(result).toBe(unwatch)
-		expect(fs_watch).toHaveBeenCalledWith("/board", expect.any(Function), { recursive: true })
+		// One level each, never recursive: a recursive watch walks the whole subtree
+		expect(fs_watch_immediate).toHaveBeenCalledWith("/board", expect.any(Function), { recursive: false })
+		expect(fs_watch_immediate).toHaveBeenCalledWith("/board/.pile", expect.any(Function), { recursive: false })
+		expect(fs_watch).not.toHaveBeenCalled()
 
-		const tauri_cb = fs_watch.mock.calls.at(-1)![1]
+		const tauri_cb = fs_watch_immediate.mock.calls.find(call => call[0] === "/board/.pile")![1]
 		const fire = async (paths: string[]) => {
 			await tauri_cb({ type: { modify: { kind: "data", mode: "content" } }, paths, attrs: {} })
 			// the callback re-reads async
@@ -660,6 +674,109 @@ describe("local strokes store (.pile/strokes.json)", () => {
 		on_event.mockClear()
 		await fire(["/board/.pile/strokes.json"])
 		expect(on_event).not.toHaveBeenCalled()
+
+		result()
+		expect(unwatch_folder).toHaveBeenCalled()
+		expect(unwatch_pile).toHaveBeenCalled()
+	})
+
+	test("watch_strokes fails on a real watch error instead of going quiet", async () => {
+		readTextFile.mockResolvedValue("[]")
+		const unwatch_folder = mock(() => {})
+		fs_watch_immediate.mockImplementation(async (path) => {
+			if (path === "/board/.pile") throw new Error("Too many open files (os error 24)")
+			return unwatch_folder
+		})
+
+		const fm = createLocalFileManager()
+		await expect(fm.strokes.watch_strokes("/board", () => {})).rejects.toThrow("Too many open files")
+		// The folder watch it had already set is released
+		expect(unwatch_folder).toHaveBeenCalled()
+	})
+
+	test("watch_strokes keeps the old .pile watch when a re-arm fails", async () => {
+		readTextFile.mockResolvedValue("[]")
+		const live = new Set<string>()
+		let n = 0
+		let fail_next = false
+		fs_watch_immediate.mockImplementation(async (path) => {
+			if (path === "/board") return () => {}
+			if (fail_next) throw new Error("Too many open files (os error 24)")
+			const id = `pile-${++n}`
+			live.add(id)
+			return () => live.delete(id)
+		})
+		const error = spyOn(console, "error").mockImplementation(() => {})
+
+		const fm = createLocalFileManager()
+		await fm.strokes.watch_strokes("/board", () => {})
+		expect([...live]).toEqual(["pile-1"])
+
+		fail_next = true
+		const folder_cb = fs_watch_immediate.mock.calls.find(call => call[0] === "/board")![1]
+		folder_cb({ type: { create: { kind: "folder" } }, paths: ["/board/.pile"], attrs: {} } as never)
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect([...live]).toEqual(["pile-1"])
+		expect(error).toHaveBeenCalled()
+		error.mockRestore()
+	})
+
+	test("watch_strokes keeps a single .pile watch when .pile events race", async () => {
+		readTextFile.mockResolvedValue("[]")
+		const live = new Set<string>()
+		let n = 0
+		const pending: Array<() => void> = []
+		fs_watch_immediate.mockImplementation(async (path) => {
+			if (path === "/board") return () => {}
+			const id = `pile-${++n}`
+			// The first .pile subscription answers late
+			if (id === "pile-2") await new Promise<void>(resolve => pending.push(resolve))
+			live.add(id)
+			return () => live.delete(id)
+		})
+
+		const fm = createLocalFileManager()
+		const unwatch = await fm.strokes.watch_strokes("/board", () => {})
+		expect([...live]).toEqual(["pile-1"])
+
+		const folder_cb = fs_watch_immediate.mock.calls.find(call => call[0] === "/board")![1]
+		const pile_event = { type: { create: { kind: "folder" } }, paths: ["/board/.pile"], attrs: {} }
+		folder_cb(pile_event as never) // arms pile-2, which hangs
+		folder_cb(pile_event as never) // arms pile-3
+		await new Promise(resolve => setTimeout(resolve, 0))
+		pending.splice(0).forEach(resolve => resolve())
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect([...live]).toEqual(["pile-3"])
+		unwatch()
+		expect(live.size).toBe(0)
+	})
+
+	test("watch_strokes starts watching .pile once it appears", async () => {
+		let file_content = "[]"
+		readTextFile.mockImplementation(() => Promise.resolve(file_content))
+		let pile_exists = false
+		fs_watch_immediate.mockImplementation(async (path) => {
+			if (path === "/board/.pile" && !pile_exists) throw new Error("No path was found.")
+			return () => {}
+		})
+
+		const fm = createLocalFileManager()
+		const on_event = mock<(event: { upserted: unknown[]; deleted: string[] }) => void>()
+		await fm.strokes.watch_strokes("/board", on_event)
+		expect(fs_watch_immediate.mock.calls.filter(call => call[0] === "/board/.pile")).toHaveLength(1)
+
+		// Another device synced the first stroke: .pile appears in the folder
+		pile_exists = true
+		file_content = JSON.stringify([stroke])
+		const folder_cb = fs_watch_immediate.mock.calls.find(call => call[0] === "/board")![1]
+		folder_cb({ type: { create: { kind: "folder" } }, paths: ["/board/.pile"], attrs: {} })
+		await new Promise(resolve => setTimeout(resolve, 0))
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(fs_watch_immediate.mock.calls.filter(call => call[0] === "/board/.pile")).toHaveLength(2)
+		expect(on_event).toHaveBeenCalledWith({ upserted: [stroke], deleted: [] })
 	})
 })
 
@@ -671,6 +788,8 @@ describe("local connections store (.pile/connections.json)", () => {
 		fs_rename.mockReset()
 		fs_watch.mockReset()
 		fs_watch.mockResolvedValue(() => {})
+		fs_watch_immediate.mockReset()
+		fs_watch_immediate.mockResolvedValue(() => {})
 	})
 
 	const connection = {
@@ -731,16 +850,19 @@ describe("local connections store (.pile/connections.json)", () => {
 	test("watch_connections diffs sidecar re-reads by connection id", async () => {
 		let file_content = JSON.stringify([connection])
 		readTextFile.mockImplementation(() => Promise.resolve(file_content))
-		const unwatch = mock(() => {})
-		fs_watch.mockResolvedValue(unwatch)
+		const unwatch_folder = mock(() => {})
+		const unwatch_pile = mock(() => {})
+		fs_watch_immediate.mockImplementation(async (path) => (path === "/board" ? unwatch_folder : unwatch_pile))
 
 		const fm = createLocalFileManager()
 		const on_event = mock<(event: { upserted: unknown[]; deleted: string[] }) => void>()
 		const result = await fm.connections.watch_connections("/board", on_event)
-		expect(result).toBe(unwatch)
-		expect(fs_watch).toHaveBeenCalledWith("/board", expect.any(Function), { recursive: true })
+		// One level each, never recursive: a recursive watch walks the whole subtree
+		expect(fs_watch_immediate).toHaveBeenCalledWith("/board", expect.any(Function), { recursive: false })
+		expect(fs_watch_immediate).toHaveBeenCalledWith("/board/.pile", expect.any(Function), { recursive: false })
+		expect(fs_watch).not.toHaveBeenCalled()
 
-		const tauri_cb = fs_watch.mock.calls.at(-1)![1]
+		const tauri_cb = fs_watch_immediate.mock.calls.find(call => call[0] === "/board/.pile")![1]
 		const fire = async (paths: string[]) => {
 			await tauri_cb({ type: { modify: { kind: "data", mode: "content" } }, paths, attrs: {} })
 			// the callback re-reads async

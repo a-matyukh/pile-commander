@@ -3,7 +3,7 @@ import { createFakeFileManager, type FakeFileManager } from '@pile-commander/fil
 import type { WorkspaceStore } from '@/domain/Store'
 import { createWorkspaceStore } from '../createWorkspaceStore'
 import { entry_clipboard } from '../entryClipboard'
-import { transfer_entries } from './crossStoreTransfer'
+import { transfer_entries, type PartialCopy } from './crossStoreTransfer'
 
 async function makeStore(
 	fake: FakeFileManager,
@@ -345,6 +345,53 @@ describe('crossStoreTransfer: generic path (cloud, different workspaces)', () =>
 		expect(await source_fake.fm.connections.list_connections('/desktop-1')).toEqual([])
 	})
 
+	test('a move across workspaces with remove_source leaves edges to what stays behind alone', async () => {
+		const { source_fake, target_fake, source, target } = await makeCloudPair()
+		source_fake.seed_file('/desktop-1/a.txt', 'a')
+		source_fake.seed_file('/desktop-1/b.txt', 'b')
+		source_fake.seed_connections('/desktop-1', [
+			{ id: 'e1', from: '/desktop-1/a.txt', to: '/desktop-1/b.txt', is_animated: false },
+		])
+		await source.reload_folder_cache('/desktop-1')
+
+		await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/desktop-1/a.txt'],
+			target_folder_id: '/',
+			mode: 'move',
+			remove_source: async (_store, id) => {
+				await source_fake.fm.remove(id)
+				return true
+			},
+		})
+
+		// An edge needs both ends in one workspace: it does not follow, and the
+		// source canvas is not touched here (the server drops it with the entry)
+		expect(await target_fake.fm.connections.list_connections('/')).toEqual([])
+		expect(source_fake.calls.some(call => call.method === 'delete_connections')).toBe(false)
+	})
+
+	test('a source kept by remove_source stays, and the transfer is a copy', async () => {
+		const { source_fake, target_fake, source, target } = await makeCloudPair()
+		source_fake.seed_file('/desktop-1/a.txt', 'a')
+		await source.reload_folder_cache('/desktop-1')
+
+		const created = await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/desktop-1/a.txt'],
+			target_folder_id: '/',
+			mode: 'move',
+			remove_source: async () => false,
+		})
+
+		expect(created).toEqual(['/a.txt'])
+		expect(source_fake.has('/desktop-1/a.txt')).toBe(true)
+		expect(source.folders['/desktop-1']!.children.some(child => child.id === '/desktop-1/a.txt')).toBe(true)
+		expect(await target_fake.fm.read_text_file('/a.txt')).toBe('a')
+	})
+
 	test('move removes the source and updates the source store cache', async () => {
 		const { source_fake, target_fake, source, target } = await makeCloudPair()
 		source_fake.seed_file('/desktop-1/pic.png', 'bytes')
@@ -485,6 +532,91 @@ describe('crossStoreTransfer: direct path (same workspace / local pair)', () => 
 
 		expect(created).toEqual([])
 		expect(shared.calls.some(c => c.method === 'copy_entry')).toBe(false)
+	})
+})
+
+describe('crossStoreTransfer: across two cloud workspaces', () => {
+	async function two_workspaces() {
+		const source_fake = createFakeFileManager()
+		source_fake.seed_folder('/')
+		source_fake.seed_folder('/a')
+		source_fake.seed_file('/a/one.txt', '1')
+		source_fake.seed_file('/a/two.txt', '2')
+		const target_fake = createFakeFileManager()
+		target_fake.seed_folder('/')
+		target_fake.seed_folder('/a')
+		target_fake.seed_folder('/a/b')
+		const source = await makeStore(source_fake, { id: 'w1', type: 'cloud', name: 'One' }, '/')
+		const target = await makeStore(target_fake, { id: 'w2', type: 'cloud', name: 'Two' }, '/')
+		await source.reload_folder_cache('/')
+		return { source_fake, target_fake, source, target }
+	}
+
+	test('the same path in another workspace is not "inside itself"', async () => {
+		const { target_fake, source, target } = await two_workspaces()
+		// The drop target row is on screen, so its parent was read
+		await target.show_folder_children('/a')
+
+		const created = await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/a'],
+			target_folder_id: '/a/b',
+			mode: 'move',
+		})
+
+		expect(created).toEqual(['/a/b/a'])
+		expect(await target_fake.fm.read_text_file('/a/b/a/one.txt')).toBe('1')
+	})
+
+	test('a failed copy hands its root row id to discard, not only its path', async () => {
+		const { target_fake, source, target } = await two_workspaces()
+		const create = target_fake.fm.create_folder.bind(target_fake.fm)
+		target_fake.fm.create_folder = async (...args) => ({ ...(await create(...args)), entry_id: 'row-of-copy' })
+		target_fake.fm.upload_file = async () => { throw new Error('network lost') }
+		const discard = vi.fn(async (_store: WorkspaceStore, _copy: PartialCopy) => {})
+
+		await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/a'],
+			target_folder_id: '/',
+			mode: 'move',
+			discard,
+		})
+
+		expect(discard).toHaveBeenCalledWith(target, expect.objectContaining({ entry_id: 'row-of-copy' }))
+	})
+
+	test('a copy that fails midway is discarded from the target, and the source stays', async () => {
+		const { source_fake, target_fake, source, target } = await two_workspaces()
+		const upload = target_fake.fm.upload_file.bind(target_fake.fm)
+		let uploads = 0
+		target_fake.fm.upload_file = async (...args) => {
+			if (++uploads === 2) throw new Error('network lost')
+			return upload(...args)
+		}
+		const discard = vi.fn(async (store: WorkspaceStore, copy: PartialCopy) => store.file_manager.remove(copy.id))
+
+		const created = await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/a'],
+			target_folder_id: '/',
+			mode: 'move',
+			discard,
+		})
+
+		expect(created).toEqual([])
+		// The partial root and what was made in it so far, so a caller can tell
+		// its own entries from anyone else's
+		expect(discard).toHaveBeenCalledWith(target, expect.objectContaining({
+			id: '/a (1)',
+			created: expect.arrayContaining(['/a (1)', '/a (1)/one.txt']),
+		}))
+		expect(target_fake.has('/a (1)')).toBe(false)
+		expect(source_fake.has('/a/one.txt')).toBe(true)
+		expect(target.last_error).toContain('network lost')
 	})
 })
 

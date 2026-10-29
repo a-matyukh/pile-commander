@@ -16,6 +16,7 @@ const { isSelected, isCut, onSelectClick } = useWidgetSelection(() => props.widg
 	<div
 		class="stack-row"
 		:class="{ 'pc-selected': isSelected, 'pc-cut': isCut }"
+		:data-item-id="widgetId"
 		@click="onSelectClick"
 	>
 		<slot />

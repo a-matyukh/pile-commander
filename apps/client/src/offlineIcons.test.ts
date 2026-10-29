@@ -12,5 +12,14 @@ test('every icon used in the client exists in a local Iconify collection', () =>
 		'lucide:lasso',
 		'lsicon:drag-filled',
 		'material-symbols:folder-outline',
+		'tabler:chevron-left',
+		'tabler:layout-sidebar',
+		'tabler:check',
+		'tabler:selector',
+		'tabler:loader-2',
+		'tabler:bookmark-plus',
+		'tabler:bookmarks',
+		'tabler:folder',
+		'tabler:grip-vertical',
 	]))
 })

@@ -17,6 +17,9 @@ import {
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
+import { t } from '@/i18n'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const props = defineProps<{
 	node: WorkspaceTreeNode
@@ -134,6 +137,15 @@ const activeCommitPickerColor = computed(() =>
 	isMultiSelection.value ? selectionCommitPickerColor : commitPickerColor,
 )
 
+/** The Explorer's color panel: what it colors and how its reset reads */
+const colorPanel = computed(() => {
+	const mode = colorSubmenuOptions.value?.mode
+	if (mode === 'cover') return { label: t('style.cover_color'), picture: true, reset: t('style.remove_cover') }
+	if (mode === 'background') return { label: t('style.background_color'), picture: true, reset: t('style.remove_background') }
+	if (mode === 'shape_fill') return { label: isLineShape.value ? t('style.line_color') : t('style.fill_color'), picture: false, reset: t('style.remove_color') }
+	return null
+})
+
 function linePlugItems(): DropdownMenuItem[] {
 	if (!isShapePreview.value || !isLineShape.value) return []
 
@@ -197,7 +209,12 @@ const items = computed<DropdownMenuItem[][]>(() => {
 				},
 			}]
 			: []),
-		...(props.showPreviewToggle && colorItem ? [colorItem as DropdownMenuItem] : []),
+		...(props.showPreviewToggle && colorItem
+			// The Explorer's color panel in place of the presets and the picker
+			? [explorer_mounted.value
+				? { label: colorItem.label, disabled: colorItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }
+				: colorItem as DropdownMenuItem]
+			: []),
 		...plugItems,
 	]
 
@@ -221,6 +238,16 @@ const items = computed<DropdownMenuItem[][]>(() => {
 	>
 		<template v-if="$slots.default" #default>
 			<slot />
+		</template>
+		<template #explorer-color>
+			<ColorPanel
+				v-if="colorPanel"
+				:value="colorSubmenuOptions?.currentColor"
+				:label="colorPanel.label"
+				:picture="colorPanel.picture"
+				:reset_label="colorPanel.reset"
+				@set="value => void applyColor(value)"
+			/>
 		</template>
 		<template #preset-colors>
 			<PresetColorsMenuSlot :apply-color="activeApplyColor" />

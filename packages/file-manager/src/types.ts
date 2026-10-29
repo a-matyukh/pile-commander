@@ -13,7 +13,13 @@ export type EntryWithXattrs = Entry & {
 	xattrs: Xattr[]
 }
 
-export type FolderChild = Entry
+export type FolderChild = Entry & {
+	/**
+	 * Cloud: the row's uuid, which survives a rename or a move while the path
+	 * does not. Lets a caller act on exactly the entry it created
+	 */
+	entry_id?: string
+}
 
 type FolderChildPatch = Pick<FolderChild, "id" | "name">
 

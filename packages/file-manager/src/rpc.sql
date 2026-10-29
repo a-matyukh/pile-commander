@@ -1047,6 +1047,174 @@ begin
 end
 $$;
 
+-- ----------------------------------------------------------------------------
+-- Moving a folder to another workspace. The cloud forbids moves across
+-- workspaces, so the client copies the folder there, then removes the source
+-- with delete_moved_entry. A move must look like a move: nothing left in the
+-- trash. And it must never lose what someone else did meanwhile.
+--
+-- entry_subtree_fingerprint: md5 over the subtree's entries (id, updated_at,
+-- deleted_at — a text save updates entries too, entry_contents_touch), the
+-- ink of its folders and every edge that touches it: owned by a folder in it,
+-- or pointing at an entry in it from the parent's canvas (those edges go with
+-- a hard delete, the from_entry/to_entry FKs cascade). Any change to any of
+-- them changes the fingerprint.
+--
+-- entry_subtree_stamp_at: the live entry at a path and its fingerprint, read
+-- together, so the id the client deletes later is the folder it is copying.
+--
+-- delete_moved_entry: under the workspace lock, locks the subtree's rows in
+-- the order a text save takes them (entry_contents, then entries — the
+-- reverse would deadlock with entry_contents_touch), then its ink and edges,
+-- so nothing changes between the check and the delete. Then:
+--   'changed' — the folder moved away from the copied path, or anything in
+--               it changed since the stamp: nothing is deleted (the client
+--               keeps both and says so);
+--   'trashed' — an item trashed earlier lives inside it, which a hard delete
+--               would cascade to (entries.parent_id): soft delete only, so
+--               that item can still be restored;
+--   'deleted' — soft delete (so watchers get the removal: Realtime trims a
+--               hard DELETE to its key) and hard delete in one transaction:
+--               the move leaves nothing in the trash;
+--   'gone'    — someone deleted the folder already (trash or purge): the copy
+--               stands, and their delete is theirs to undo.
+-- ----------------------------------------------------------------------------
+
+create or replace function private.entry_subtree_fingerprint(p_node_path ltree)
+returns text
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+    select md5(
+        coalesce((
+            select string_agg(e.id::text || ':' || e.updated_at::text || ':' || coalesce(e.deleted_at::text, ''),
+                              ',' order by e.id)
+              from public.entries e
+             where e.node_path <@ p_node_path
+        ), '')
+        || '|' ||
+        coalesce((
+            select string_agg(s.id::text || ':' || s.updated_at::text, ',' order by s.id)
+              from public.folder_strokes s
+              join public.entries e on e.id = s.entry_id
+             where e.node_path <@ p_node_path
+        ), '')
+        || '|' ||
+        coalesce((
+            select string_agg(c.id || ':' || c.entry_id::text || ':' || c.updated_at::text, ',' order by c.entry_id, c.id)
+              from public.folder_connections c
+             where exists (
+                select 1 from public.entries e
+                 where e.node_path <@ p_node_path
+                   and e.id in (c.entry_id, c.from_entry, c.to_entry)
+             )
+        ), '')
+    );
+$$;
+
+create or replace function private.entry_subtree_stamp_at(p_workspace uuid, p_path text)
+returns table (entry_id uuid, stamp text)
+language plpgsql
+stable
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_entry public.entries%rowtype;
+begin
+    if not private.can_write_workspace(p_workspace) then
+        raise exception 'entry_subtree_stamp_at: access denied';
+    end if;
+    select * into v_entry from public.entries e
+     where e.workspace_id = p_workspace and e.path = p_path and e.deleted_at is null;
+    if not found then
+        raise exception 'entry_subtree_stamp_at: no entry at %', p_path;
+    end if;
+    entry_id := v_entry.id;
+    stamp := private.entry_subtree_fingerprint(v_entry.node_path);
+    return next;
+end
+$$;
+
+create or replace function private.delete_moved_entry(
+    p_entry uuid,
+    p_stamp text,
+    p_path text,
+    p_client_id text default null
+)
+returns text
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_entry public.entries%rowtype;
+begin
+    -- Purged meanwhile: nothing to lock or to remove
+    if not exists (select 1 from public.entries e where e.id = p_entry) then
+        return 'gone';
+    end if;
+    perform private.lock_entry_workspace(p_entry);
+    select * into v_entry from public.entries e where e.id = p_entry;
+    if not found or v_entry.deleted_at is not null then
+        return 'gone';
+    end if;
+    if not private.can_write_workspace(v_entry.workspace_id) then
+        raise exception 'delete_moved_entry: access denied';
+    end if;
+    if v_entry.parent_id is null then
+        raise exception 'delete_moved_entry: cannot delete workspace root';
+    end if;
+
+    perform 1 from public.entry_contents c
+      join public.entries e on e.id = c.entry_id
+     where e.node_path <@ v_entry.node_path
+       for update of c;
+    perform 1 from public.entries e
+     where e.node_path <@ v_entry.node_path
+       for update;
+    perform 1 from public.folder_strokes s
+      join public.entries e on e.id = s.entry_id
+     where e.node_path <@ v_entry.node_path
+       for update of s;
+    perform 1 from public.folder_connections c
+     where exists (
+        select 1 from public.entries e
+         where e.node_path <@ v_entry.node_path
+           and e.id in (c.entry_id, c.from_entry, c.to_entry)
+     )
+       for update of c;
+
+    -- Re-read: a move or a delete committed while this call waited for the locks
+    select * into v_entry from public.entries e where e.id = p_entry;
+    if not found or v_entry.deleted_at is not null then
+        return 'gone';
+    end if;
+    if v_entry.path is distinct from p_path
+       or private.entry_subtree_fingerprint(v_entry.node_path) is distinct from p_stamp then
+        return 'changed';
+    end if;
+
+    if exists (
+        select 1 from public.entries d
+         where d.node_path <@ v_entry.node_path
+           and d.deleted_at is not null
+    ) then
+        perform private.delete_entry(p_entry, p_client_id);
+        return 'trashed';
+    end if;
+
+    perform private.delete_entry(p_entry, p_client_id);
+    delete from public.entries d
+     where d.node_path <@ v_entry.node_path;
+    return 'deleted';
+end
+$$;
+
+revoke execute on function private.entry_subtree_fingerprint(ltree) from public, anon, authenticated;
+
 create or replace function private.purge_trash(p_workspace uuid)
 returns void
 language plpgsql
@@ -2616,6 +2784,30 @@ security invoker
 set search_path = public, extensions
 as $$
     select private.purge_entry(p_entry);
+$$;
+
+create or replace function public.entry_subtree_stamp_at(p_workspace uuid, p_path text)
+returns table (entry_id uuid, stamp text)
+language sql
+security invoker
+stable
+set search_path = public, extensions
+as $$
+    select * from private.entry_subtree_stamp_at(p_workspace, p_path);
+$$;
+
+create or replace function public.delete_moved_entry(
+    p_entry uuid,
+    p_stamp text,
+    p_path text,
+    p_client_id text default null
+)
+returns text
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.delete_moved_entry(p_entry, p_stamp, p_path, p_client_id);
 $$;
 
 create or replace function public.purge_trash(p_workspace uuid)

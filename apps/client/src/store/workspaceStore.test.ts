@@ -1106,7 +1106,7 @@ describe('createWorkspaceStore: watch', () => {
 
 		await store.change_folder_view('/ws/pics', 'grid')
 
-		expect(fake.get_xattr('/ws/pics', 'view')).toBe('grid')
+		expect(fake.get_xattr('/ws/pics', 'view')).toBe('gallery')
 		expect(store.folder_container.view).toBe('grid')
 	})
 
@@ -2017,5 +2017,200 @@ describe('createWorkspaceStore: a file saved by another app', () => {
 		await refresh_cached_folder(store, fake.fm, '/ws', { kind: 'modify', ids: ['/ws/note.txt'], content_changed: false })
 
 		expect(fake.get_xattr('/ws/note.txt', 'position')).toBeNull()
+	})
+})
+
+describe('createWorkspaceStore: drive-root watch', () => {
+	type LiveWatch = { folder_id: string; recursive: boolean }
+
+	function track_live_watches(fake: ReturnType<typeof createFakeFileManager>): LiveWatch[] {
+		const watch = fake.fm.watch.bind(fake.fm)
+		const active: LiveWatch[] = []
+		fake.fm.watch = async (folder_id, on_event, options) => {
+			const unwatch = await watch(folder_id, on_event, options)
+			const entry = { folder_id, recursive: options?.recursive === true }
+			active.push(entry)
+			return () => {
+				const index = active.indexOf(entry)
+				if (index !== -1) active.splice(index, 1)
+				unwatch()
+			}
+		}
+		return active
+	}
+
+	function watch_keys(active: LiveWatch[]): string[] {
+		return active.map(entry => `${entry.folder_id}:${entry.recursive ? 'recursive' : 'shallow'}`).sort()
+	}
+
+	test('without the option, one recursive watch follows the opened folder', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/ws')
+		fake.seed_folder('/ws/docs')
+		fake.seed_folder('/ws/pics')
+		const active = track_live_watches(fake)
+		const store = await createWorkspaceStore(
+			{ id: '/ws', type: 'local', name: 'ws' },
+			fake.fm,
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		expect(watch_keys(active)).toEqual(['/ws:recursive'])
+
+		await store.open_folder('/ws/docs')
+		store.toggle_folder_expanded('/ws/pics')
+
+		expect(watch_keys(active)).toEqual(['/ws/docs:recursive'])
+	})
+
+	test('with the option, every watch is non-recursive: root, opened folder and expanded branches', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/projects')
+		fake.seed_folder('/home/projects/app')
+		fake.seed_folder('/home/desktop')
+		const active = track_live_watches(fake)
+		const store = await createWorkspaceStore(
+			{ id: '/home', type: 'local', name: 'Home' },
+			fake.fm,
+			{ shallow_root: true },
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		expect(watch_keys(active)).toEqual(['/home:shallow'])
+
+		await store.open_folder('/home/projects/app')
+		expect(watch_keys(active)).toEqual([
+			'/home/projects/app:shallow',
+			'/home/projects:shallow',
+			'/home:shallow',
+		])
+
+		store.toggle_folder_expanded('/home/desktop')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual([
+				'/home/desktop:shallow',
+				'/home/projects/app:shallow',
+				'/home/projects:shallow',
+				'/home:shallow',
+			])
+		})
+
+		store.toggle_folder_expanded('/home/desktop')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual([
+				'/home/projects/app:shallow',
+				'/home/projects:shallow',
+				'/home:shallow',
+			])
+		})
+
+		fake.seed_folder('/home/music')
+		fake.emit_watch_event('/home', { kind: 'create', ids: ['/home/music'] })
+		await vi.waitFor(() => {
+			expect(store.folders['/home']?.children.some(child => child.id === '/home/music')).toBe(true)
+		})
+
+		store.dispose()
+		expect(active).toEqual([])
+	})
+
+	test('with the option, a branch expanded inside the opened folder gets its own watch, deeper changes show on open', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/projects')
+		fake.seed_folder('/home/projects/app')
+		fake.seed_folder('/home/projects/app/src')
+		const active = track_live_watches(fake)
+		const store = await createWorkspaceStore(
+			{ id: '/home', type: 'local', name: 'Home' },
+			fake.fm,
+			{ shallow_root: true },
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		await store.open_folder('/home/projects')
+		store.toggle_folder_expanded('/home/projects/app')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual([
+				'/home/projects/app:shallow',
+				'/home/projects:shallow',
+				'/home:shallow',
+			])
+		})
+		expect(active.some(entry => entry.recursive)).toBe(false)
+
+		// Not watched and no event: the change below is read when the folder opens
+		fake.seed_folder('/home/projects/app/src/deep')
+		await store.open_folder('/home/projects/app/src')
+		expect(store.folders['/home/projects/app/src']?.children.some(child => child.id === '/home/projects/app/src/deep')).toBe(true)
+		expect(active.some(entry => entry.recursive)).toBe(false)
+
+		store.dispose()
+	})
+
+	test('renaming or deleting an expanded branch moves the watch with the set', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/projects')
+		fake.seed_folder('/home/projects/sub')
+		const active = track_live_watches(fake)
+		const store = await createWorkspaceStore(
+			{ id: '/home', type: 'local', name: 'Home' },
+			fake.fm,
+			{ shallow_root: true },
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		store.toggle_folder_expanded('/home/projects')
+		store.toggle_folder_expanded('/home/projects/sub')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual([
+				'/home/projects/sub:shallow',
+				'/home/projects:shallow',
+				'/home:shallow',
+			])
+		})
+
+		await store.rename('/home/projects', 'papers')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual([
+				'/home/papers/sub:shallow',
+				'/home/papers:shallow',
+				'/home:shallow',
+			])
+		})
+
+		await fake.fm.remove('/home/papers')
+		fake.emit_watch_event('/home', { kind: 'remove', ids: ['/home/papers'] })
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual(['/home:shallow'])
+		})
+	})
+
+	test('a folder inside a collapsed parent is not watched', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/home')
+		fake.seed_folder('/home/projects')
+		fake.seed_folder('/home/projects/sub')
+		const active = track_live_watches(fake)
+		const store = await createWorkspaceStore(
+			{ id: '/home', type: 'local', name: 'Home' },
+			fake.fm,
+			{ shallow_root: true },
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		store.toggle_folder_expanded('/home/projects')
+		store.toggle_folder_expanded('/home/projects/sub')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toContain('/home/projects/sub:shallow')
+		})
+
+		store.toggle_folder_expanded('/home/projects')
+		await vi.waitFor(() => {
+			expect(watch_keys(active)).toEqual(['/home:shallow'])
+		})
+		expect(store.is_folder_expanded('/home/projects/sub')).toBe(true)
 	})
 })

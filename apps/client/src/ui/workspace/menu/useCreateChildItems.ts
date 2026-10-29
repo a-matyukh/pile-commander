@@ -81,5 +81,5 @@ export function useCreateChildItems(
 		},
 	}))
 
-	return { newItems, importItem, create }
+	return { newItems, importItem, create, pick_and_import }
 }

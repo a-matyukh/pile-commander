@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
+import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { ai_transport } from '@/services/ai/client'
@@ -10,17 +11,35 @@ import { NAME_STYLES, type NameStyle } from '@/services/ai/naming'
 import { AI_PRESETS, ai_preset, model_label, preset_for_url, type AiPresetId } from '@/services/ai/presets'
 import AiReachBadge from './AiReachBadge.vue'
 
+/**
+ * `bare`: inside the explorer's settings page, which gives the card and the
+ * "AI" tab. No own heading or frame, and the captions follow the interface
+ * language. Without it (the old window) it stays as it was, in English
+ */
+const props = withDefaults(defineProps<{ bare?: boolean }>(), { bare: false })
+
+/** The interface language in `bare`, the old English text otherwise */
+function caption(key: string, english: string, params?: Record<string, string | number>): string {
+	return props.bare ? t(`ai_settings.${key}`, params) : english
+}
+
 const transport = ai_transport()
 
-const preset_items = AI_PRESETS.map(preset => ({
-	label: preset.label,
+const preset_items = computed(() => AI_PRESETS.map(preset => ({
+	label: caption(`presets.${preset.id}`, preset.label),
 	value: preset.id,
 	disabled: !is_desktop && preset.desktop_only,
-}))
+})))
 
-const name_style_items = NAME_STYLES.map(style => ({ ...style }))
+const name_style_items = computed(() => NAME_STYLES.map(style => ({
+	...style,
+	label: caption(`styles.${style.value}`, style.label),
+})))
 
 const preset = computed(() => ai_preset(ai_settings.value.preset))
+const key_hint = computed(() => preset.value.key_hint
+	? caption(`key_hints.${preset.value.id}`, preset.value.key_hint)
+	: undefined)
 const key_allowed = computed(() => ai_base_check.value.ok && may_carry_key(ai_base_check.value.url))
 
 const key_input = ref('')
@@ -119,8 +138,8 @@ async function test_connection() {
 		test_result.value = {
 			ok: !missing,
 			text: missing
-				? `Connected, but “${model_label(model)}” isn't among the ${ids.length} models of this provider.`
-				: `Connected: ${ids.length} ${ids.length === 1 ? 'model' : 'models'} available.`,
+				? caption('test_missing', `Connected, but “${model_label(model)}” isn't among the ${ids.length} models of this provider.`, { model: model_label(model), n: ids.length })
+				: caption('test_ok', `Connected: ${ids.length} ${ids.length === 1 ? 'model' : 'models'} available.`, { n: ids.length }),
 		}
 	} catch (error) {
 		test_result.value = {
@@ -155,18 +174,19 @@ watch(() => ai_settings.value.model, () => {
 
 <template>
 	<section class="flex flex-col gap-2">
-		<h3 class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
+		<h3 v-if="!bare" class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
 			<UIcon name="i-lucide:sparkles" class="size-3.5 shrink-0" />
 			AI
 		</h3>
 
-		<div class="flex flex-col gap-3 rounded-md border border-default p-2.5">
-			<p class="text-xs leading-relaxed text-muted">
+		<div class="flex flex-col gap-3" :class="bare ? 'px-4 py-3.5' : 'rounded-md border border-default p-2.5'">
+			<p v-if="bare" class="text-xs leading-relaxed text-muted">{{ t('ai_settings.intro') }}</p>
+			<p v-else class="text-xs leading-relaxed text-muted">
 				Suggest names and summarize boards with a model you choose. Results are
 				plain files and names; nothing changes without your OK.
 			</p>
 
-			<UFormField label="Provider" size="sm">
+			<UFormField :label="caption('provider', 'Provider')" size="sm">
 				<div class="flex items-center gap-2">
 					<USelect
 						:model-value="ai_settings.preset"
@@ -175,12 +195,16 @@ watch(() => ai_settings.value.model, () => {
 						class="min-w-0 flex-1"
 						@update:model-value="(value) => select_preset(value as AiPresetId)"
 					/>
-					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
+					<AiReachBadge
+						v-if="ai_base_check.ok"
+						:reach="ai_base_check.reach"
+						:label="bare ? t(`ai_settings.reach.${ai_base_check.reach}`) : undefined"
+					/>
 				</div>
 			</UFormField>
 
 			<UFormField
-				label="Address"
+				:label="caption('address', 'Address')"
 				size="sm"
 				:error="ai_settings.base_url && !ai_base_check.ok ? ai_base_check.message : false"
 			>
@@ -196,12 +220,12 @@ watch(() => ai_settings.value.model, () => {
 			</UFormField>
 
 			<UFormField
-				label="API key"
+				:label="caption('key', 'API key')"
 				size="sm"
-				:hint="has_key ? 'Saved' : 'Optional'"
+				:hint="has_key ? caption('key_saved', 'Saved') : caption('key_optional', 'Optional')"
 				:help="!key_allowed && ai_base_check.ok
-					? 'A key is never sent over plain http on the network.'
-					: preset.key_hint ?? undefined"
+					? caption('key_plain_http', 'A key is never sent over plain http on the network.')
+					: key_hint"
 				:error="key_error ?? false"
 			>
 				<div class="flex items-center gap-1.5">
@@ -216,7 +240,7 @@ watch(() => ai_settings.value.model, () => {
 						@keydown.enter="save_key"
 					/>
 					<UButton
-						label="Save"
+						:label="caption('key_save', 'Save')"
 						size="sm"
 						color="neutral"
 						variant="outline"
@@ -230,19 +254,19 @@ watch(() => ai_settings.value.model, () => {
 						size="sm"
 						color="neutral"
 						variant="ghost"
-						aria-label="Remove the key"
+						:aria-label="caption('key_remove', 'Remove the key')"
 						:disabled="key_busy"
 						@click="remove_key"
 					/>
 				</div>
 			</UFormField>
 			<p v-if="!is_desktop" class="-mt-2 text-xs text-muted">
-				In the browser the key is kept for this tab only and never stored.
+				{{ caption('key_tab_only', 'In the browser the key is kept for this tab only and never stored.') }}
 			</p>
 
 			<div class="flex flex-col gap-1.5">
 				<UButton
-					label="Test connection"
+					:label="caption('test_button', 'Test connection')"
 					icon="i-lucide:plug-zap"
 					size="sm"
 					color="neutral"
@@ -261,13 +285,13 @@ watch(() => ai_settings.value.model, () => {
 				</p>
 			</div>
 
-			<UFormField label="Model" size="sm">
+			<UFormField :label="caption('model', 'Model')" size="sm">
 				<UInputMenu
 					:model-value="ai_settings.model || undefined"
 					:items="model_items"
 					value-key="value"
 					create-item
-					placeholder="e.g. gemma3 or openai/gpt-4o-mini"
+					:placeholder="caption('model_placeholder', 'e.g. gemma3 or openai/gpt-4o-mini')"
 					size="sm"
 					class="w-full"
 					@update:model-value="(value) => set_model(value as string | undefined)"
@@ -275,7 +299,7 @@ watch(() => ai_settings.value.model, () => {
 				/>
 			</UFormField>
 
-			<UFormField label="Suggested names" size="sm">
+			<UFormField :label="caption('names', 'Suggested names')" size="sm">
 				<USelect
 					:model-value="ai_settings.name_style"
 					:items="name_style_items"

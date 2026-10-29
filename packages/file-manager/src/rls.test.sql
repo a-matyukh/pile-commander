@@ -38,6 +38,9 @@ declare
     v_file    uuid;
     v_old     uuid;
     v_new     uuid;
+    v_moved   uuid;   -- a folder moved to another workspace
+    v_stamp   text;
+    v_moved_result text;
     v_fork    uuid;
     v_json    json;
     v_key     text;
@@ -477,6 +480,52 @@ begin
         and (select deleted_at is not null from public.entries where id = v_old), null);
     insert into __results values ('trash: list_trash shows it at top level again',
         (select count(*) from public.list_trash(v_ws) t where t.id = v_old) = 1, null);
+
+    -- a folder moved to another workspace: the source goes without a trace,
+    -- unless it changed during the copy (kept) or holds an earlier-trashed
+    -- item that a hard delete would cascade to (trash only)
+    select st.stamp into v_stamp
+      from public.entry_subtree_stamp_at(v_ws, (select path from public.entries where id = v_folder)) st;
+    v_moved_result := public.delete_moved_entry(v_folder, v_stamp, (select path from public.entries where id = v_folder), null);
+    insert into __results values ('move: a folder holding an earlier-trashed item only goes to the trash',
+        v_moved_result = 'trashed'
+        and (select deleted_at is not null from public.entries where id = v_folder)
+        and (select count(*) from public.entries where id in (v_folder, v_new, v_old)) = 3,
+        v_moved_result);
+    perform public.restore_entry(v_folder, null);
+
+    insert into public.entries (workspace_id, parent_id, name, kind)
+    values (v_ws, v_root, 'moved', 'folder')
+    returning id into v_moved;
+    perform public.create_text_file(v_moved, 'inside.txt', 'text/plain', 'x', null, null);
+    select st.stamp into v_stamp from public.entry_subtree_stamp_at(v_ws, '/moved') st;
+    -- someone adds a file while the copy runs
+    perform public.create_text_file(v_moved, 'late.txt', 'text/plain', 'y', null, null);
+    v_moved_result := public.delete_moved_entry(v_moved, v_stamp, '/moved', null);
+    insert into __results values ('move: a folder changed during the copy is kept',
+        v_moved_result = 'changed'
+        and (select count(*) from public.entries e
+              where e.workspace_id = v_ws and e.deleted_at is null
+                and (e.id = v_moved or e.parent_id = v_moved)) = 3,
+        v_moved_result);
+
+    -- the folder was copied from another path: it is not the one being copied
+    select st.stamp into v_stamp from public.entry_subtree_stamp_at(v_ws, '/moved') st;
+    v_moved_result := public.delete_moved_entry(v_moved, v_stamp, '/elsewhere', null);
+    insert into __results values ('move: a folder no longer at the copied path is kept',
+        v_moved_result = 'changed'
+        and (select deleted_at is null from public.entries where id = v_moved),
+        v_moved_result);
+
+    v_moved_result := public.delete_moved_entry(v_moved, v_stamp, '/moved', null);
+    insert into __results values ('move: an unchanged folder leaves no trace, not even in the trash',
+        v_moved_result = 'deleted'
+        and (select count(*) from public.entries e
+              where e.workspace_id = v_ws and (e.id = v_moved or e.parent_id = v_moved)) = 0,
+        v_moved_result);
+    v_moved_result := public.delete_moved_entry(v_moved, v_stamp, '/moved', null);
+    insert into __results values ('move: a folder already gone reads as gone, not as an error',
+        v_moved_result = 'gone', v_moved_result);
 
     -- a folder that carries ink and an edge, then goes to the trash: readers
     -- must lose both with it (checked in the anon section below)
@@ -1690,6 +1739,7 @@ begin
             ('public.list_pending_derivatives(text[], int, int)', false, false),
             ('public.moderation_digest_payload()', false, false),
             ('public.mark_moderation_digest_sent()', false, false),
+            ('private.entry_subtree_fingerprint(ltree)', false, false),
 
             -- the other half: a revoke sweep must not break public boards or
             -- the predicates the RLS policies themselves evaluate

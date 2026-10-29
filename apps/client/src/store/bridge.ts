@@ -28,12 +28,23 @@ import { extract_pile_to_cache } from '@/services/workspace/pack'
 import store from '@/store'
 import cloud from '@/store/cloud'
 import { link_folder } from '@/store/localSync'
+import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 
 /**
  * Where the copy started. `sync` is the first upload of Auto-sync (store/localSync):
  * the folder stays linked to the new cloud workspace afterwards
  */
 export type BridgeDoor = BridgeEventInput['door']
+
+/**
+ * Opens the cloud workspace a copy made (or found). The Explorer swaps in
+ * its own navigation while it is shown
+ */
+let open_cloud_copy = (item: WorkspacesListItem): Promise<void> => store.load_workspace(item)
+
+export function set_open_cloud_copy(open: ((item: WorkspacesListItem) => Promise<void>) | null): void {
+	open_cloud_copy = open ?? (item => store.load_workspace(item))
+}
 
 export type BridgeSource = {
 	type: 'local' | 'browser'
@@ -361,7 +372,7 @@ async function finish(workspace_id: string, job_key: string): Promise<void> {
 	bridge.step = 'summary'
 	bridge.open = false
 	await run_cleanup()
-	if (item) await store.load_workspace(item)
+	if (item) await open_cloud_copy(item)
 }
 
 /** Stops the running copy after the uploads in flight; it stays resumable. */
@@ -419,7 +430,7 @@ export function open_copied(): void {
 	if (!job) return
 	const item = cloud.workspaces.find(ws => ws.id === job.workspace_id)
 	close_bridge()
-	if (item) void store.load_workspace(item)
+	if (item) void open_cloud_copy(item)
 }
 
 export function toggle_exclude(relative: string): void {

@@ -65,8 +65,7 @@ const store: Store = {
 	async open_demo_workspace(opts?: LoadWorkspaceOptions) {
 		await this.load_workspace({ type: 'demo', id: '/demo', name: 'Demo' }, opts)
 	},
-	async export_current_workspace() {
-		const ws = this.workspace
+	async export_current_workspace(ws = this.workspace ?? undefined) {
 		if (!ws || (ws.type !== 'local' && ws.type !== 'cloud') || !is_desktop) {
 			report_error(this, new Error('Open a local or cloud workspace in the desktop app to export'))
 			return
@@ -114,20 +113,24 @@ const store: Store = {
 			ws.import_progress = null
 		}
 	},
-	async import_workspace_pack(pile_path?: string, opts?: LoadWorkspaceOptions) {
+	async unpack_workspace_pack(pile_path?: string) {
 		this.last_error = null
 		try {
 			const zip_path = pile_path ?? await wm.pick_pile_file()
-			if (!zip_path) return
+			if (!zip_path) return null
 			const dest = await wm.pick_folder({
 				title: 'Choose a folder to import the workspace into',
 			})
-			if (!dest) return
-			const { root, name } = await import_workspace_from_pile(zip_path, dest.folder_id)
-			await this.load_workspace({ type: 'local', id: root, name }, opts)
+			if (!dest) return null
+			return await import_workspace_from_pile(zip_path, dest.folder_id)
 		} catch (error) {
 			report_error(this, error)
+			return null
 		}
+	},
+	async import_workspace_pack(pile_path?: string, opts?: LoadWorkspaceOptions) {
+		const unpacked = await this.unpack_workspace_pack(pile_path)
+		if (unpacked) await this.load_workspace({ type: 'local', id: unpacked.root, name: unpacked.name }, opts)
 	},
 	async load_workspace(ws: WorkspacesListItem, opts?: LoadWorkspaceOptions) {
 		const item: WorkspacesListItem = ws.type === 'local'
@@ -162,6 +165,11 @@ const store: Store = {
 		this.workspace?.dispose()
 		fullscreen_workspace.value = null
 	},
+}
+
+/** Points the shell at a store Drive already holds, without disposing it or any other. */
+export function adopt_workspace(workspace: WorkspaceStore | null) {
+	fullscreen_workspace.value = workspace
 }
 
 export default reactive(store)

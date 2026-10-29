@@ -10,6 +10,9 @@ import HubCard from './HubCard.vue'
 import { type HubTab } from './hubCatalog'
 import { hub_tab as tab } from './hubUi'
 
+/** The new interface's page header already names the Hub */
+defineProps<{ hide_title?: boolean }>()
+
 const query = reactive<Record<HubTab, string>>({
 	workspaces: '',
 	authors: '',
@@ -105,7 +108,7 @@ function select_tag(tag: string | null) {
 
 <template>
 	<div class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
-		<header>
+		<header v-if="!hide_title">
 			<h1 class="text-xl font-semibold text-default">Hub</h1>
 			<p class="text-sm text-muted">Published workspaces from the community</p>
 		</header>

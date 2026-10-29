@@ -9,6 +9,7 @@ import LineEndpointHandles from '../shape/LineEndpointHandles.vue'
 import { useLineShapeMeta } from '../shape/useLineShapeMeta'
 import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveBackground'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
+import { explorer_mounted } from '@/store/explorer/public_view'
 import { useWidgetSelection } from './useWidgetSelection'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 
@@ -135,6 +136,9 @@ const shellClass = computed(() => [
 		// Line/arrow uses endpoint handles instead of a selection ring bbox.
 		'pc-selected': isSelected.value && !(isShapeWidget.value && isLine.value),
 		'pc-cut': isCut.value,
+		// The Explorer rounds files less than folders, and a folder card has a tab
+		'file-card': props.widget.type === 'file',
+		'folder-card': props.widget.type === 'folder_cover',
 	},
 ])
 
@@ -228,7 +232,8 @@ const { setRootRef, style } = useBoardWidget({
 				backgroundColor: 'white',
 				border: isNoteWidget.value && !isWhiteBackground(container.value?.background)
 					? 'none'
-					: '2px solid #eee',
+					// The Explorer's cards are framed as its Gallery tiles
+					: explorer_mounted.value ? '1px solid var(--border)' : '2px solid #eee',
 			}
 		return {
 			...appearance,
@@ -285,6 +290,23 @@ const { setRootRef, style } = useBoardWidget({
 	touch-action: none;
 	position: absolute;
 	box-sizing: border-box;
+}
+/* The Explorer's cards are rounded as its Gallery tiles: folders more, notes and files less */
+.explorer .board-widget:not(.shape-widget) {
+	border-radius: 10px;
+}
+.explorer .board-widget.note-widget,
+.explorer .board-widget.file-card {
+	border-radius: 6px;
+}
+/* The tab's left side runs straight into the folder's, as in Finder */
+.explorer .board-widget.folder-card {
+	border-top-left-radius: 0;
+}
+/* A preview folder's own white page keeps the card's corners */
+.explorer .board-widget.folder-preview-widget :deep(.folder-preview) {
+	border-radius: 9px;
+	overflow: hidden;
 }
 .board-widget:active,
 .board-widget.is-dragging {

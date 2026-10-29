@@ -197,6 +197,50 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 		}
 	}, 15_000)
 
+	for (const edit of ["xattrs", "text save"] as const) {
+		test(`delete_moved_entry waits for a ${edit} in flight and then keeps the changed folder`, async () => {
+			const f = await fixture()
+			const a = await db.reserve()
+			const b = await db.reserve()
+			const open = async (connection: typeof a) => {
+				await connection.unsafe("begin; set local deadlock_timeout = '200ms'; set local role authenticated; set local search_path = public, extensions; set local statement_timeout = '5s'").simple()
+				await connection`select set_config('request.jwt.claims', ${JSON.stringify({ sub: f.owner, role: "authenticated" })}, true)`
+			}
+			try {
+				await open(a)
+				await open(b)
+				// The client stamps the folder before copying it
+				const [folder] = await a`select path from public.entries where id = ${f.folder}::uuid`
+				const [{ stamp }] = await a`select stamp from public.entry_subtree_stamp_at(${f.workspace}::uuid, ${folder.path})`
+				await a.unsafe("commit").simple()
+				await open(a)
+				// Someone edits a file inside the folder; the edit is not committed yet
+				if (edit === "xattrs") {
+					const [{ path }] = await b`select path from public.entries where id = ${f.file}::uuid`
+					await b`select * from public.merge_entry_xattrs(${f.workspace}::uuid, ${JSON.stringify([{ path, xattrs: { position: '{"x":1}' } }])}::text::jsonb, null)`
+				} else {
+					await b`insert into public.entry_contents(entry_id, workspace_id, content)
+						values (${f.file}::uuid, ${f.workspace}::uuid, 'edited while moving')
+						on conflict (entry_id) do update set content = excluded.content, workspace_id = excluded.workspace_id`
+				}
+				const [{ pid }] = await a`select pg_backend_pid() as pid`
+				const removal = a`select public.delete_moved_entry(${f.folder}::uuid, ${stamp}, ${folder.path}, null) as result`
+					.then(rows => rows[0].result as string, (error: Error) => error)
+				expect(await is_waiting_for_lock(pid)).toBe(true)
+				await b.unsafe("commit").simple()
+				// No deadlock, and the edit is not lost
+				expect(await removal).toBe("changed")
+				const [row] = await db`select deleted_at from public.entries where id = ${f.folder}::uuid`
+				expect(row.deleted_at).toBeNull()
+			} finally {
+				await a.unsafe("rollback").simple()
+				await b.unsafe("rollback").simple()
+				a.release()
+				b.release()
+			}
+		}, 15_000)
+	}
+
 	function blob_key(workspace: string): string {
 		return `${workspace}/${crypto.randomUUID()}.png`
 	}

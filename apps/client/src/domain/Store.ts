@@ -27,8 +27,11 @@ type Store = {
 	open_local_workspace(path?: string, opts?: LoadWorkspaceOptions): Promise<void>
 	/** Opens an in-memory demo workspace (works in web without Tauri FS). */
 	open_demo_workspace(opts?: LoadWorkspaceOptions): Promise<void>
-	/** Exports the open local or cloud workspace to a `.pile` archive. Desktop only. */
-	export_current_workspace(): Promise<void>
+	/**
+	 * Exports the open local or cloud workspace (or `ws`, e.g. the Explorer's
+	 * cloud folder) to a `.pile` archive. Desktop only.
+	 */
+	export_current_workspace(ws?: WorkspaceStore): Promise<void>
 	/**
 	 * Saves a public cloud workspace whose author allows forks and downloads as a
 	 * `.pile` on this device: a save dialog in the desktop app, a browser
@@ -40,6 +43,8 @@ type Store = {
 	 * When `pile_path` is set (Open With / double-click), skips the file picker.
 	 */
 	import_workspace_pack(pile_path?: string, opts?: LoadWorkspaceOptions): Promise<void>
+	/** The unpacking half of import_workspace_pack: the new folder, or null when cancelled or failed */
+	unpack_workspace_pack(pile_path?: string): Promise<{ root: string; name: string } | null>
 	load_workspace(ws: WorkspacesListItem, opts?: LoadWorkspaceOptions): Promise<void>
 	/** Closes the open workspace (e.g. after its cloud workspace was removed). */
 	close_workspace(): void
@@ -110,6 +115,8 @@ type WorkspaceStore = {
 
 	/** Stops the FS watcher. Called when replacing or unloading the workspace. */
 	dispose(): void
+	/** True after `dispose()`. A closed store must not be reused. */
+	is_disposed: boolean
 
 	/**
 	 * Session caches of entry text content (note markdown, shape SVG), owned
@@ -175,7 +182,18 @@ type WorkspaceStore = {
 	/** Closes a tab; no-op for the last remaining tab. Activates a neighbor if the closed tab was active. */
 	close_tab(tab_id: string): Promise<void>
 
-	show_folder_children(folder_id: string, should_apply?: () => boolean): Promise<void>
+	/**
+	 * Reads a tree folder's children. A failed read sets `last_error`;
+	 * `silent: true` throws it to the caller instead, e.g. a background
+	 * look-ahead that must not toast for every unreadable folder.
+	 * `refresh: true` reads it again even when it is cached: a collapsed
+	 * folder is not watched in the Explorer, so its cache may be stale.
+	 */
+	show_folder_children(
+		folder_id: string,
+		should_apply?: () => boolean,
+		options?: { silent?: boolean; refresh?: boolean },
+	): Promise<void>
 	open_folder(folder_id: string, options?: { fromBack?: boolean; skipHistory?: boolean }): Promise<void>
 	/**
 	 * Shared navigation body (fetch, cache, watch, sidebar expand) used by
@@ -215,6 +233,10 @@ type WorkspaceStore = {
 
 	// opened folder
 	change_folder_view(folder_id: string, new_view: FolderView): Promise<void>
+	/** The folder's own cover: a color or a picture link. Written on the folder itself, as its view */
+	change_folder_cover(folder_id: string, cover: string): Promise<void>
+	/** The folder's own icon, "<name>;<color>" ("none" clears it). Written on the folder itself */
+	change_folder_icon(folder_id: string, icon: string): Promise<void>
 	change_selected_slide_index(folder_id: string, index: number): Promise<void>
 	change_snap_to_grid(folder_id: string, snap_to_grid: boolean): Promise<void>
 	change_grid_size(folder_id: string, grid_size: number): Promise<void>

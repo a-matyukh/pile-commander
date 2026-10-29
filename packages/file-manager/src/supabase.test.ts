@@ -159,7 +159,7 @@ describe("upload_file put_blob", () => {
 			})
 			expect(puts).toEqual([{ url: "https://b2.example/put", type: "video/mp4", size: 4 }])
 			expect(progress).toEqual([4])
-			expect(child).toEqual({ id: "/sea.mp4", name: "sea.mp4", type: "file" })
+			expect(child).toMatchObject({ id: "/sea.mp4", name: "sea.mp4", type: "file" })
 		} finally {
 			globalThis.fetch = original
 		}

@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { resolve_slide_index } from './slidesUtils'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import IconButton from '@/ui/kit/IconButton.vue'
 
 defineProps<{
 	compact?: boolean
@@ -38,7 +40,13 @@ function goNext() {
 </script>
 
 <template>
-	<div v-if="total > 0" class="slide-switcher">
+	<!-- In the Explorer its own buttons and grays -->
+	<div v-if="total > 0 && explorer_mounted" class="slide-switcher ex">
+		<IconButton icon="tabler:chevron-left" :disabled="!canGoPrev" @click="canGoPrev && goPrev()" />
+		<span class="slide-counter">{{ currentIndex + 1 }} / {{ total }}</span>
+		<IconButton icon="tabler:chevron-right" :disabled="!canGoNext" @click="canGoNext && goNext()" />
+	</div>
+	<div v-else-if="total > 0" class="slide-switcher">
 		<UButton
 			icon="i-lucide-chevron-left"
 			color="neutral"
@@ -64,6 +72,11 @@ function goNext() {
 	display: flex;
 	align-items: center;
 	gap: 0.25rem;
+}
+
+.slide-switcher.ex .slide-counter {
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
 }
 
 .slide-counter {

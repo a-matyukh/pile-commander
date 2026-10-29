@@ -102,7 +102,7 @@ type Segment =
 
 const segments: Segment[] = [
 	{ name: "01-title", kind: "card", card: "title", dur: 3.4 },
-	{ name: "02-views", kind: "shot", src: "views.mp4", caption: "One folder. Seven ways to look at it.", sub: "List · Grid · Board · Canvas · Stack · Masonry · Slides", start: 0.3, speed: 1.6, dur: 11.2 },
+	{ name: "02-views", kind: "shot", src: "views.mp4", caption: "One folder. Seven ways to look at it.", sub: "List · Gallery · Board · Canvas · Stack · Masonry · Slides", start: 0.3, speed: 1.6, dur: 11.2 },
 	{ name: "03-media", kind: "shot", src: "media.mp4", caption: "Notes, media, 3D models — shown as themselves.", start: 0.2, speed: 1.2, dur: 7.4 },
 	{ name: "04-canvas", kind: "shot", src: "canvas.mp4", caption: "When a pile needs a map.", sub: "An infinite canvas with a pen, connectors and pan & zoom", start: 0.3, speed: 1.9, dur: 10.4 },
 	{ name: "05-kanban", kind: "shot", src: "kanban.mp4", caption: "Folders inside folders — live.", sub: "Each column is a folder. Each card is a file.", start: 0.2, speed: 1.15, dur: 5.6 },

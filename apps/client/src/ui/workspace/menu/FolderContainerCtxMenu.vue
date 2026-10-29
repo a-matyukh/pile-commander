@@ -6,6 +6,11 @@ import MenuSwatchDot from './MenuSwatchDot.vue'
 import PresetColorsMenuSlot from './PresetColorsMenuSlot.vue'
 import ViewMenuTrailing from './ViewMenuTrailing.vue'
 import { useFolderContainerMenuItems } from './useFolderContainerMenuItems'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import ItemsCtxMenu from '@/ui/kit/ItemsCtxMenu.vue'
+import { item_look, view_label } from '@/ui/kit/items_menu_labels'
+import { t } from '@/i18n'
+import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const props = defineProps<{
 	loading?: boolean
@@ -16,6 +21,7 @@ const props = defineProps<{
 
 const {
 	items,
+	background,
 	gridSize,
 	onGridSizeChange,
 	pickerColor,
@@ -31,8 +37,51 @@ const {
 </script>
 
 <template>
+	<!-- In the Explorer the same items, in its own menu style -->
+	<ItemsCtxMenu v-if="!props.disabled && explorer_mounted" :items="items" :width="240">
+		<slot />
+		<template #explorer-color>
+			<ColorPanel
+				:value="background"
+				:label="t('style.background_color')"
+				picture
+				:reset_label="t('style.remove_background')"
+				@set="value => void applyColor(value)"
+			/>
+		</template>
+		<template #view-trailing="{ item }">{{ view_label((item as { currentViewLabel?: string }).currentViewLabel) }}</template>
+		<template #toolbar-side-trailing="{ item }">{{ item_look((item as { currentSideLabel?: string }).currentSideLabel ?? '').label }}</template>
+		<template #preset-colors>
+			<PresetColorsMenuSlot :apply-color="applyColor" />
+		</template>
+		<template #color-picker>
+			<ColorPickerMenuSlot
+				v-model="pickerColor"
+				:on-picker-pointer-down="onPickerPointerDown"
+				:commit-picker-color="commitPickerColor"
+				:show-hex-input="false"
+			/>
+		</template>
+		<template #background-value>
+			<BackgroundValueMenuSlot
+				v-model="customValue"
+				:commit-custom-value="commitCustomValue"
+			/>
+		</template>
+		<template #grid-size-trailing>
+			<UInput
+				:model-value="gridSize"
+				type="number"
+				min="1"
+				class="w-16"
+				@click.stop
+				@keydown.stop
+				@update:model-value="onGridSizeChange"
+			/>
+		</template>
+	</ItemsCtxMenu>
 	<UContextMenu
-		v-if="!props.disabled"
+		v-else-if="!props.disabled"
 		:modal="false"
 		:items="items"
 		:ui="{

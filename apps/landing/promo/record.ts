@@ -170,7 +170,7 @@ async function shoot_clean(page: Page, path: string) {
 }
 
 /** The Moodboard in other views, for the slides. */
-const view_stills = ["Masonry", "Slides", "List", "Canvas", "Grid"]
+const view_stills = ["Masonry", "Slides", "List", "Canvas", "Gallery"]
 
 const only = process.argv.slice(2)
 const { browser, context } = await launch(2)

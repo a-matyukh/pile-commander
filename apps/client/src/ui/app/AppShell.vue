@@ -2,12 +2,19 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import store from '@/store'
 import { is_desktop } from '@/isDesktop'
+import { report_error } from '@/store/helpers/reportError'
+import { explorer_enabled } from '@/store/explorer/enabled'
+import { explorer_public_open } from '@/store/explorer/public_view'
+import { add_bookmark } from '@/store/explorer/bookmarks'
+import { explorer_navigation } from '@/store/explorer/navigation'
+import { local_bookmark_ref, point_in_rect } from '@/ui/explorer/top-bar/folderDrop'
 import {
 	listenFolderDrop,
 	type DroppedFilesPayload,
 	type DroppedFolderPayload,
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
+import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import WorkspaceWindow from '@/ui/workspace/WorkspaceWindow.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
@@ -23,7 +30,38 @@ import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 const dragOver = ref(false)
 
 function on_folder_drop(payload: DroppedFolderPayload) {
-	void store.open_local_workspace(payload.path)
+	if (explorer_enabled.value && point_in_rect(payload.client, top_bar_rect())) {
+		void bookmark_dropped_folder(payload.path).catch(error => report_error(store, error))
+		return
+	}
+	void open_dropped_folder(payload.path)
+}
+
+function top_bar_rect() {
+	const bar = document.querySelector('.explorer .bb')
+	return bar ? bar.getBoundingClientRect() : null
+}
+
+async function bookmark_dropped_folder(path: string) {
+	const { homeDir } = await import('@tauri-apps/api/path')
+	add_bookmark(local_bookmark_ref(path, await homeDir()))
+}
+
+function open_dropped_folder(path: string): Promise<void> {
+	const opening = explorer_enabled.value
+		? explorer_navigation.open_local_path(path)
+		: store.open_local_workspace(path)
+	return Promise.resolve(opening).catch(error => report_error(store, error))
+}
+
+/** A .pile unpacks into a folder the person picks; the new interface opens it as a folder of its own */
+async function open_pile(path: string) {
+	if (!explorer_enabled.value) {
+		await store.import_workspace_pack(path)
+		return
+	}
+	const unpacked = await store.unpack_workspace_pack(path)
+	if (unpacked) await open_dropped_folder(unpacked.root)
 }
 
 function on_files_drop(payload: DroppedFilesPayload) {
@@ -44,13 +82,13 @@ onMounted(async () => {
 	unlistenDrop = await listenFolderDrop({
 		onFolderDrop: on_folder_drop,
 		onFilesDrop: on_files_drop,
-		onPileOpen: (path) => store.import_workspace_pack(path),
+		onPileOpen: (path) => { void open_pile(path) },
 		onError: (message) => { store.last_error = message },
 		dragOver,
 	})
 	unlistenOpened = await listenOpenedPaths({
-		onFolderDrop: (path) => store.open_local_workspace(path),
-		onPileOpen: (path) => store.import_workspace_pack(path),
+		onFolderDrop: (path) => open_dropped_folder(path),
+		onPileOpen: (path) => { void open_pile(path) },
 		onError: (message) => { store.last_error = message },
 	})
 })
@@ -72,7 +110,9 @@ onUnmounted(() => {
 			</div>
 		</Teleport>
 		<SyncKeptHiddenToast />
-		<WorkspaceWindow />
+		<!-- A publication from the Explorer's Hub opens in the current viewer (step 3.6 replaces it) -->
+		<ExplorerShell v-if="explorer_enabled && !explorer_public_open" />
+		<WorkspaceWindow v-else />
 		<QuotaWallDialog />
 		<BridgeDialog />
 		<PasswordDialog />

@@ -182,14 +182,25 @@ const same_workspace_ids = (a: WorkspacesList, b: WorkspacesList): boolean => {
 }
 
 /**
+ * The same existence checks `sync_workspaces_list` uses: local folders on
+ * desktop, browser entries on the web. Cloud is not checked here.
+ */
+export function workspace_existence_checks(): {
+	local?: (path: string) => Promise<boolean>
+	browser?: (path: string) => Promise<boolean>
+} {
+	return is_desktop
+		? { local: local_folder_exists }
+		: { browser: browser_entry_exists }
+}
+
+/**
  * Drops workspaces whose backing folders no longer exist: local (Tauri fs)
  * on desktop, browser (IndexedDB) on the web. Cloud entries are handled by
  * sync_cloud_workspaces_list after fetch_workspaces.
  */
 export async function sync_workspaces_list(): Promise<void> {
-	const exists = is_desktop
-		? { local: local_folder_exists }
-		: { browser: browser_entry_exists }
+	const exists = workspace_existence_checks()
 
 	const [next_bookmarks, next_last_opened] = await Promise.all([
 		filter_existing_workspaces(bookmarks.value, exists),
