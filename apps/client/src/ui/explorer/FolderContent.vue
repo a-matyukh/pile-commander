@@ -81,4 +81,10 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 	height: 100%;
 	min-height: 0;
 }
+/* The current views' "Select" and clipboard panel line up with the folder header */
+.fc :deep(.folder-actions-panel) {
+	top: 16px;
+	left: 16px;
+	max-width: calc(100% - 32px);
+}
 </style>
