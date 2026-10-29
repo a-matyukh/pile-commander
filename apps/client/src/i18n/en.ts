@@ -125,6 +125,9 @@ export const en: typeof ru = {
 		title: 'Folder view',
 		settings: '{view} settings',
 		icon_size: 'Icon size',
+		row_size: 'Row size',
+		reset_size: 'Default',
+		reset_hint: 'Double-click for the default size',
 	},
 	view_settings: {
 		columns: 'Columns…',

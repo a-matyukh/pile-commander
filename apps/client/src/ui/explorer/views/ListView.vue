@@ -7,6 +7,7 @@ import type { FolderContainerWidget } from '@/domain/Widget'
 import { t } from '@/i18n'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
 import { format_bytes } from '@/utils/format_bytes'
+import { explorer_settings } from '@/store/explorer/settings'
 import ItemDialogs from './ItemDialogs.vue'
 import ItemMenu from './ItemMenu.vue'
 import { use_items } from './use_items'
@@ -45,7 +46,7 @@ watch(children, (list) => {
 </script>
 
 <template>
-	<div class="lv" @click="items.blank_click">
+	<div class="lv" :style="{ '--row': explorer_settings.list_row + 'px' }" @click="items.blank_click">
 		<div class="li head">
 			<span class="hn">{{ t('list.name') }}</span>
 			<span class="rt">{{ t('list.size') }}</span>
@@ -74,7 +75,9 @@ watch(children, (list) => {
 </template>
 
 <style scoped>
+/* The View menu's "Row size" sets --row; the type and icons follow it (13px and 16px at 32) */
 .lv {
+	--row-h: var(--row);
 	min-height: 100%;
 	user-select: none;
 	-webkit-user-select: none;
@@ -83,7 +86,8 @@ watch(children, (list) => {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) 90px 90px;
 	align-items: center;
-	height: 32px;
+	height: var(--row-h);
+	font-size: calc(var(--row-h) * .4);
 	padding: 0 16px;
 	border-bottom: 0.5px solid var(--border);
 	color: var(--text-primary);
@@ -103,7 +107,7 @@ watch(children, (list) => {
 	overflow: hidden;
 }
 .n :deep(svg) {
-	font-size: 16px;
+	font-size: calc(var(--row-h) * .5);
 	flex: none;
 }
 .nm {
@@ -114,7 +118,7 @@ watch(children, (list) => {
 	color: var(--text-secondary);
 }
 .m {
-	font-size: 12px;
+	font-size: calc(var(--row-h) * .375);
 	color: var(--text-muted);
 }
 .rt {
@@ -143,8 +147,10 @@ watch(children, (list) => {
 	font-size: 12px;
 	color: var(--text-muted);
 }
+.explorer.lg .lv {
+	--row-h: calc(var(--row) * 1.3);
+}
 .explorer.lg .li {
-	height: 42px;
 	grid-template-columns: minmax(0, 1fr) 104px 104px;
 }
 .explorer.lg .li.head {
@@ -152,11 +158,5 @@ watch(children, (list) => {
 }
 .explorer.lg .hn {
 	padding-left: 2.5px;
-}
-.explorer.lg .n :deep(svg) {
-	font-size: 19px;
-}
-.explorer.lg .m {
-	font-size: 13px;
 }
 </style>

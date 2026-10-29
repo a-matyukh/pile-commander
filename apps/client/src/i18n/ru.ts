@@ -122,6 +122,9 @@ export const ru = {
 		title: 'Вид папки',
 		settings: 'Настройки вида «{view}»',
 		icon_size: 'Размер иконок',
+		row_size: 'Размер строк',
+		reset_size: 'Стандартный',
+		reset_hint: 'Двойной клик — стандартный размер',
 	},
 	view_settings: {
 		columns: 'Колонки…',
