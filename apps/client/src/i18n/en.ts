@@ -276,6 +276,13 @@ export const en: typeof ru = {
 		no_color: 'No color',
 		icon: 'Icon',
 		default_icon: 'Default icon',
+		search_icons: 'Search icons…',
+		no_icons: 'No icons found',
+		cover: 'Cover',
+		cover_color: 'Cover color',
+		cover_custom: 'Color or picture link',
+		cover_hint: 'A CSS color or a picture link.',
+		remove_cover: 'Remove cover',
 	},
 	item: {
 		actions: 'Actions',

@@ -26,6 +26,12 @@ function glyph_of(item: (typeof roots.value)[number]) {
 	return folder_glyph(xattrs, null)
 }
 
+/** Its cover, once its store is read */
+function cover_of(item: (typeof roots.value)[number]) {
+	const store = item.workspace
+	return store && !store.is_disposed ? store.folders['/']?.xattrs.find(xattr => xattr.name === 'cover')?.value : undefined
+}
+
 function open(item: (typeof roots.value)[number]) {
 	void explorer_navigation.open_folder({ drive_id: 'cloud', root_id: item.root.id, folder_id: '/' })
 }
@@ -70,6 +76,7 @@ async function create() {
 					:key="item.root.id"
 					folder
 					:glyph="glyph_of(item)"
+					:cover="cover_of(item)"
 					:name="item.root.name"
 					tabindex="0"
 					:data-tip="t('cloud_page.open_hint')"

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { explorer_settings } from '@/store/explorer/settings'
 import { splitFileName } from '@/ui/workspace/folder-container/widgets/fileNameParts'
+import { backgroundStyle, isImageBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import type { ItemGlyph } from './item_glyph'
 
 /**
@@ -13,12 +14,26 @@ import type { ItemGlyph } from './item_glyph'
  * view's at the size the View menu sets, the name below. The "⋯" sits in
  * the corner, shown on hover or while selected
  */
-const props = defineProps<{ glyph: ItemGlyph; name: string; folder?: boolean; selected?: boolean; dim?: boolean }>()
+const props = defineProps<{
+	glyph: ItemGlyph
+	name: string
+	folder?: boolean
+	/** A folder's cover: its color fills the tile, a picture covers the body */
+	cover?: string
+	selected?: boolean
+	dim?: boolean
+}>()
 
 /** Both shapes are as tall; a folder's tab takes from its body */
 const height = computed(() => Math.round(explorer_settings.gallery_icon * 1.5 + 64))
 const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.85)))
 const parts = computed(() => splitFileName(props.name))
+
+const cover_style = computed<{ fill?: string; picture?: Record<string, string> }>(() => {
+	const cover = props.folder && props.cover && props.cover !== 'none' ? props.cover : ''
+	if (!cover) return {}
+	return isImageBackground(cover) ? { picture: backgroundStyle(cover) } : { fill: cover }
+})
 
 /** Finder's tab: a rounded top left corner, a smooth slope down on the right; the folder's top line stays under it */
 const TAB_H = 13
@@ -35,12 +50,12 @@ const tab_path = computed(() => {
 	<div
 		class="tile"
 		:class="{ folder, s: selected, dim }"
-		:style="{ '--ic': explorer_settings.gallery_icon + 'px', width: width + 'px', height: height + 'px' }"
+		:style="{ '--ic': explorer_settings.gallery_icon + 'px', width: width + 'px', height: height + 'px', '--fill': cover_style.fill }"
 	>
 		<svg v-if="folder" class="tab" :width="tab_w" :height="TAB_H" aria-hidden="true">
 			<path :d="tab_path" />
 		</svg>
-		<div v-if="folder" class="body">
+		<div v-if="folder" class="body" :style="cover_style.picture">
 			<div class="dots"><slot name="menu" /></div>
 			<Icon :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 			<span class="nm" :title="name">{{ name }}</span>

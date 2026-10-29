@@ -233,11 +233,10 @@ type WorkspaceStore = {
 
 	// opened folder
 	change_folder_view(folder_id: string, new_view: FolderView): Promise<void>
-	/**
-	 * The folder's own cover: a color, a picture link, or an icon with its
-	 * color ("icon:<name>;<color>"). Written on the folder itself, as its view
-	 */
+	/** The folder's own cover: a color or a picture link. Written on the folder itself, as its view */
 	change_folder_cover(folder_id: string, cover: string): Promise<void>
+	/** The folder's own icon, "<name>;<color>" ("none" clears it). Written on the folder itself */
+	change_folder_icon(folder_id: string, icon: string): Promise<void>
 	change_selected_slide_index(folder_id: string, index: number): Promise<void>
 	change_snap_to_grid(folder_id: string, snap_to_grid: boolean): Promise<void>
 	change_grid_size(folder_id: string, grid_size: number): Promise<void>

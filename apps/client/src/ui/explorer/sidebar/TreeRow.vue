@@ -19,7 +19,8 @@ import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
 import { shows_synced } from '@/store/explorer/share'
-import { read_folder_icon, standard_folder_icon, system_folder } from '@/store/explorer/folder_cover'
+import { folder_icon_of, standard_folder_icon, system_folder } from '@/store/explorer/folder_cover'
+import { shown_icon } from '@/store/explorer/icon_catalog'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
@@ -125,9 +126,8 @@ const glyph = computed(() => {
 	// Written on the folder itself: its own read first, then the parent's listing
 	const store = workspace.value
 	const own_read = store && !store.is_disposed ? store.folders[folder_id.value]?.xattrs : undefined
-	const cover = (own_read ?? entry.value?.xattrs)?.find(xattr => xattr.name === 'cover')?.value
-	const own = read_folder_icon(cover)
-	if (own) return { icon: own.icon, color: own.color || undefined, plain: !own.color }
+	const own = folder_icon_of(own_read ?? entry.value?.xattrs)
+	if (own) return { icon: shown_icon(own.icon), color: own.color || undefined, plain: !own.color }
 	if (view_meta.value) return { icon: view_meta.value.icon, color: view_meta.value.color ?? undefined, plain: false }
 	const standard = standard_folder_icon(row_ref.value, home.value)
 	if (standard) return { icon: standard, color: undefined, plain: true }

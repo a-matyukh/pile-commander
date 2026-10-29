@@ -619,7 +619,7 @@ export function create_explorer_tree(
 	}
 
 	/**
-	 * A folder's own cover (its icon in the tree, its tile on a board). A
+	 * A folder's own cover (a color or a picture: its tile on a board). A
 	 * folder the tree lists but has not read yet is read first: the cover is
 	 * written on the folder itself
 	 */
@@ -628,6 +628,17 @@ export function create_explorer_tree(
 			const workspace = await ensure_workspace(item)
 			if (!workspace.resolve_folder_data(folder_id)) await workspace.show_folder_children(folder_id, undefined, { silent: true })
 			await workspace.change_folder_cover(folder_id, cover)
+		} catch (error) {
+			deps.on_error(error)
+		}
+	}
+
+	/** A folder's own icon ("<name>;<color>", "none" clears it), read first as its cover */
+	async function set_folder_icon(item: ExplorerTreeRoot, folder_id: string, icon: string) {
+		try {
+			const workspace = await ensure_workspace(item)
+			if (!workspace.resolve_folder_data(folder_id)) await workspace.show_folder_children(folder_id, undefined, { silent: true })
+			await workspace.change_folder_icon(folder_id, icon)
 		} catch (error) {
 			deps.on_error(error)
 		}
@@ -914,6 +925,7 @@ export function create_explorer_tree(
 		copy_folder,
 		duplicate_folder,
 		set_folder_cover,
+		set_folder_icon,
 		transfer_folder_to_cloud_root,
 		transfer_cloud_root,
 		remove_folder,

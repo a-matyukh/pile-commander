@@ -37,9 +37,21 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 		return workspace.folders[location.folder_id]?.children.find(entry => entry.id === child.id)
 	}
 
+	/**
+	 * A folder's attributes, newest first: the icon and the cover are written
+	 * on the folder itself, so its own read wins over the open folder's list
+	 */
+	function folder_xattrs(child: FolderContainerWidgetChild) {
+		return source().workspace.folders[child.id]?.xattrs ?? listed(child)?.xattrs
+	}
+
 	function glyph(child: FolderContainerWidgetChild): ItemGlyph {
 		if (!is_folder(child)) return file_glyph(child.name)
-		return folder_glyph(listed(child)?.xattrs, standard_folder_icon(child_ref(child), home.value))
+		return folder_glyph(folder_xattrs(child), standard_folder_icon(child_ref(child), home.value))
+	}
+
+	function cover(child: FolderContainerWidgetChild): string | undefined {
+		return is_folder(child) ? folder_xattrs(child)?.find(xattr => xattr.name === 'cover')?.value : undefined
 	}
 
 	function display_name(child: FolderContainerWidgetChild): string {
@@ -102,6 +114,7 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 		is_folder,
 		child_ref,
 		glyph,
+		cover,
 		display_name,
 		menus,
 		select,

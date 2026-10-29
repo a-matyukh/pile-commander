@@ -12,11 +12,7 @@ import {
 	reveal_in_finder,
 	toggle_bookmark,
 } from '@/store/explorer/folder_menu'
-import { explorer_tree, tree_root_folder_id } from '@/store/explorer/tree'
-import { FOLDER_ICON_COLORS, FOLDER_ICONS, read_folder_icon, write_folder_icon, type FolderIcon } from '@/store/explorer/folder_cover'
-import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
-import { Icon } from '@iconify/vue'
-import MenuLabel from '@/ui/kit/MenuLabel.vue'
+import { explorer_tree } from '@/store/explorer/tree'
 import { use_home } from './use_folder_place'
 import { explorer_folder_clipboard as clipboard } from '@/store/explorer/folder_clipboard'
 import { report_error } from '@/store/helpers/reportError'
@@ -27,6 +23,7 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from '@/ui/explorer/sidebar/RenameFolderDialog.vue'
+import FolderLookItems from './FolderLookItems.vue'
 
 /**
  * A folder's "⋯" menu, the same in the folder header and on a tree row, as
@@ -57,26 +54,6 @@ const items = computed(() => folder_menu_items(props.folder, {
 	home: home.value,
 }))
 const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
-
-/** The folder's own icon and its color, as the prototype's: kept in its cover */
-const folder_icon = computed(() => {
-	const store = item.value?.workspace
-	if (!store) return null
-	const own = store.folders[props.folder.folder_id]?.xattrs
-	const parent = store.folders[parent_folder_id_from_node_id(props.folder.folder_id, tree_root_folder_id(item.value!))]
-	const listed = parent?.children.find(child => child.id === props.folder.folder_id)?.xattrs
-	return read_folder_icon((own ?? listed)?.find(xattr => xattr.name === 'cover')?.value)
-})
-
-function set_icon(next: Partial<FolderIcon>) {
-	if (!item.value) return
-	const icon = { icon: folder_icon.value?.icon ?? 'tabler:folder', color: folder_icon.value?.color ?? '', ...next }
-	void explorer_tree.set_folder_cover(item.value, props.folder.folder_id, write_folder_icon(icon))
-}
-
-function reset_icon() {
-	if (item.value) void explorer_tree.set_folder_cover(item.value, props.folder.folder_id, 'none')
-}
 
 function cut() {
 	if (item.value) clipboard.cut(item.value, node.value, props.name)
@@ -141,38 +118,10 @@ function reveal() {
 			@select="toggle_bookmark(folder)"
 		/>
 		<MenuItem v-if="items.show_in_finder" icon="tabler:external-link" :label="t('menu.show_in_finder')" @select="reveal" />
-		<!-- The folder's own icon, as in the prototype -->
-		<template v-if="items.rename">
+		<!-- Its icon and its cover, kept apart as in Finder and Milanote -->
+		<template v-if="items.rename && item">
 			<MenuSeparator />
-			<MenuLabel :label="t('style.icon_color')" />
-			<div class="swr">
-				<button
-					v-for="color in FOLDER_ICON_COLORS"
-					:key="color || 'none'"
-					type="button"
-					class="swc"
-					:class="{ on: (folder_icon?.color ?? '') === color }"
-					:style="{ background: color || 'var(--surface-0)' }"
-					:aria-label="color || t('style.no_color')"
-					:data-tip="color ? undefined : t('style.no_color')"
-					@click="set_icon({ color })"
-				/>
-			</div>
-			<MenuLabel :label="t('style.icon')" />
-			<div class="swr">
-				<button
-					v-for="icon in FOLDER_ICONS"
-					:key="icon"
-					type="button"
-					class="swi"
-					:class="{ on: folder_icon?.icon === icon }"
-					:aria-label="icon"
-					@click="set_icon({ icon })"
-				>
-					<Icon :icon="icon" :style="{ color: folder_icon?.color || undefined }" />
-				</button>
-			</div>
-			<MenuItem icon="tabler:arrow-back-up" :label="t('style.default_icon')" @select="reset_icon" />
+			<FolderLookItems :item="item" :folder="folder" />
 		</template>
 		<template v-if="items.cut || items.copy || items.paste || items.duplicate">
 			<MenuSeparator />
@@ -214,47 +163,3 @@ function reveal() {
 		</template>
 	</Modal>
 </template>
-
-<style scoped>
-.swr {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	padding: 2px 8px 6px;
-}
-.swc {
-	width: 18px;
-	height: 18px;
-	border: 0;
-	padding: 0;
-	border-radius: 50%;
-	cursor: pointer;
-	box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, .2);
-}
-.swc.on {
-	box-shadow: 0 0 0 2px var(--surface-3), 0 0 0 3.5px var(--fill-accent);
-}
-.swi {
-	width: 26px;
-	height: 26px;
-	border: 0;
-	padding: 0;
-	border-radius: 6px;
-	background: none;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: pointer;
-	color: var(--text-secondary);
-	font-size: 16px;
-}
-.swi.on {
-	background: var(--bg-accent);
-	color: var(--text-accent);
-}
-@media (hover: hover) {
-	.swi:hover {
-		background: var(--surface-1);
-	}
-}
-</style>

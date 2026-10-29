@@ -273,6 +273,13 @@ export const ru = {
 		no_color: 'Без цвета',
 		icon: 'Иконка',
 		default_icon: 'Стандартная иконка',
+		search_icons: 'Поиск иконок…',
+		no_icons: 'Ничего не нашлось',
+		cover: 'Обложка',
+		cover_color: 'Цвет обложки',
+		cover_custom: 'Цвет или картинка по ссылке',
+		cover_hint: 'Цвет CSS или ссылка на картинку.',
+		remove_cover: 'Убрать обложку',
 	},
 	item: {
 		actions: 'Действия',

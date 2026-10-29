@@ -3,41 +3,34 @@ import { t } from '@/i18n'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 
 /**
- * A folder's own icon, as the prototype let you choose it. It lives in the
- * folder's cover, which also holds a color or a picture link (the board's
- * tile): "icon:<name>;<color>". The old interface does not read this value
- * and shows the folder as before
+ * A folder's own icon, as the prototype let you choose it, apart from its
+ * cover (a color or a picture: the board's tile), as Finder and Milanote
+ * keep them apart. It lives in the folder's `icon` attribute:
+ * "<name>;<color>", without a color it is drawn monochrome. "none" clears
+ * it. The old interface does not read it
  */
 export type FolderIcon = { icon: string; color: string }
 
-const ICON_COVER = /^icon:([^;]+)(?:;(.*))?$/
+export const ICON_XATTR = 'icon'
 
-export function read_folder_icon(cover: string | undefined): FolderIcon | null {
-	const match = cover ? ICON_COVER.exec(cover) : null
+const ICON_VALUE = /^([a-z0-9-]+:[a-z0-9-]+)(?:;(.*))?$/
+
+export function read_folder_icon(value: string | undefined): FolderIcon | null {
+	const match = value ? ICON_VALUE.exec(value) : null
 	return match ? { icon: match[1]!, color: match[2] ?? '' } : null
 }
 
 export function write_folder_icon(icon: FolderIcon): string {
-	return icon.color ? `icon:${icon.icon};${icon.color}` : `icon:${icon.icon}`
+	return icon.color ? `${icon.icon};${icon.color}` : icon.icon
+}
+
+/** The folder's own icon from its attributes */
+export function folder_icon_of(xattrs: readonly { name: string; value: string }[] | undefined): FolderIcon | null {
+	return read_folder_icon(xattrs?.find(xattr => xattr.name === ICON_XATTR)?.value)
 }
 
 /** The prototype's choices: no color first */
 export const FOLDER_ICON_COLORS = ['', '#378ADD', '#7F77DD', '#D4537E', '#D85A30', '#BA7517', '#1D9E75', '#5F5E5A']
-
-export const FOLDER_ICONS = [
-	'tabler:folder',
-	'tabler:star',
-	'tabler:heart',
-	'tabler:rocket',
-	'tabler:briefcase',
-	'tabler:camera',
-	'tabler:music',
-	'tabler:book',
-	'tabler:bulb',
-	'tabler:flag',
-	'tabler:package',
-	'tabler:code',
-]
 
 /** macOS's own folders in ~ keep their monochrome icons, as in Finder and the prototype */
 const STANDARD_FOLDERS: Record<string, string> = {

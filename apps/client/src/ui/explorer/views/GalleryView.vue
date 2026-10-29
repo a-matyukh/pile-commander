@@ -28,6 +28,7 @@ const children = computed(() => props.container.children)</script>
 				v-for="child in children"
 				:key="child.id"
 				:folder="items.is_folder(child)"
+				:cover="items.cover(child)"
 				:glyph="items.glyph(child)"
 				:name="items.display_name(child)"
 				:selected="workspace.is_selected(child.id)"
