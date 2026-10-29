@@ -6,6 +6,7 @@ import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveB
 import { useWidgetSelection } from './useWidgetSelection'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { explorer_mounted } from '@/store/explorer/public_view'
 
 defineOptions({ inheritAttrs: false })
 
@@ -77,6 +78,7 @@ const shellClass = computed(() => [
 		container: props.isFolderDropzone,
 		'pc-selected': isSelected.value,
 		'pc-cut': isCut.value,
+		'file-card': props.widget.type === 'file',
 	},
 ])
 
@@ -117,7 +119,8 @@ const style = computed(() => {
 			backgroundColor: 'white',
 			border: isNoteWidget.value && !isWhiteBackground(container.value?.background)
 				? 'none'
-				: '2px solid #eee',
+				// The Explorer's cards are framed as its board's and Gallery's
+				: explorer_mounted.value ? '1px solid var(--border)' : '2px solid #eee',
 		}
 	return {
 		width: '100%',
@@ -165,6 +168,13 @@ const style = computed(() => {
 	touch-action: none;
 	box-sizing: border-box;
 	overflow: hidden;
+}
+/* The Explorer rounds cards as its board: folders more, files less */
+.explorer .masonry-widget {
+	border-radius: 10px;
+}
+.explorer .masonry-widget.file-card {
+	border-radius: 6px;
 }
 .masonry-widget.masonry-shape-widget {
 	border-radius: 0;

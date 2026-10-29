@@ -84,7 +84,7 @@ const glyph = use_widget_glyph(() => props.widget)
 		</div>
 		<div v-else-if="explorer_mounted" class="ex-folder">
 			<!-- Gallery's tab, above the card's top left -->
-			<span class="ex-tab" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
+			<span v-if="layout === 'board'" class="ex-tab" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
 				<span class="ex-tab-flat" />
 				<svg class="ex-tab-slope" width="16" height="13" viewBox="0 0 16 13">
 					<path d="M0 0.5 C8 0.5 8 13 16 13 L0 13 Z" class="fill" />

@@ -105,6 +105,12 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 .fc :deep(.slides-header) {
 	padding-left: 6px;
 }
+/* A preview folder's title: List's type and line */
+.fc :deep(.folder-preview .folder-preview-title) {
+	font-size: 13px;
+	color: var(--text-primary);
+	border-bottom-color: var(--border);
+}
 .fc :deep(.stack-row-main p),
 .fc :deep(.slides-header-main p) {
 	font-weight: 400;

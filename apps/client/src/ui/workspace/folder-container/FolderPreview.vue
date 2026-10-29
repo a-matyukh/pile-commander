@@ -10,6 +10,9 @@ import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import FolderViewRouter from './FolderViewRouter.vue'
 import FolderChrome from './FolderChrome.vue'
 import FolderActionsPanel from './FolderActionsPanel.vue'
+import { Icon } from '@iconify/vue'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import { folder_glyph } from '@/ui/explorer/views/item_glyph'
 
 /** Deeper previews render a static placeholder instead of a live view tree. */
 const MAX_PREVIEW_DEPTH = 2
@@ -74,6 +77,9 @@ const bodyStyle = computed(() => (
 		: backgroundStyle(scopeContainer.value?.background, 'white')
 ))
 
+/** In the Explorer the title carries the folder's icon, as its List row and tree row */
+const glyph = computed(() => folder_glyph(workspace.value?.folders[props.container.id]?.xattrs, null))
+
 function onTitleDblClick() {
 	workspace.value?.open_folder(props.container.id)
 }
@@ -91,6 +97,13 @@ function onTitleDblClick() {
 			:style="chromeStyle"
 			@dblclick="onTitleDblClick"
 		>
+			<Icon
+				v-if="explorer_mounted"
+				:icon="glyph.icon"
+				class="ex-row-icon"
+				:class="{ plain: glyph.plain }"
+				:style="{ color: glyph.color }"
+			/>
 			<span>{{ scopeContainer.name }}</span>
 			<span
 				v-if="can_write"
