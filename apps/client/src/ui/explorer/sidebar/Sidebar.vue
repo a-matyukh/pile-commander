@@ -10,7 +10,7 @@ import cloud from '@/store/cloud'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_drive_locations, explorer_last_location, explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
-import { explorer_sidebar_width } from '@/store/explorer/sidebar'
+import { explorer_drawer_open, explorer_sidebar_width } from '@/store/explorer/sidebar'
 import { explorer_tree, tree_root_folder_id } from '@/store/explorer/tree'
 import { arranged_children, arranged_roots } from '@/store/explorer/tree_arrange'
 import { TREE_FILTERS, explorer_tree_view, is_tree_filtered } from '@/store/explorer/tree_view'
@@ -21,6 +21,9 @@ import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
+
+/** On phones the sidebar is a drawer over the content, as in the prototype */
+defineProps<{ drawer?: boolean }>()
 
 const drives = computed(() => explorer_drives.drives())
 /** The account or settings page is open: its footer button shows it */
@@ -214,9 +217,10 @@ watchEffect(() => {
 <template>
 	<aside
 		class="tree"
-		:style="explorer_sidebar_width ? { width: explorer_sidebar_width + 'px' } : undefined"
+		:class="{ drawer, op: drawer && explorer_drawer_open }"
+		:style="!drawer && explorer_sidebar_width ? { width: explorer_sidebar_width + 'px' } : undefined"
 	>
-		<SidebarResizer />
+		<SidebarResizer v-if="!drawer" />
 		<div class="hd">
 			<IconButton
 				v-for="drive in drives"
@@ -330,6 +334,26 @@ watchEffect(() => {
 	flex-direction: column;
 	background: var(--pn);
 	min-height: 0;
+}
+/* phone drawer */
+.tree.drawer {
+	position: absolute;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	width: min(286px, 86%);
+	z-index: 4;
+	border-right: none;
+	transform: translateX(-100%);
+	visibility: hidden;
+	transition: transform .22s ease, visibility 0s .22s;
+}
+.tree.drawer.op {
+	transform: none;
+	visibility: visible;
+	box-shadow: 6px 0 24px rgba(0, 0, 0, .12);
+	border-right: 0.5px solid var(--border-strong);
+	transition: transform .22s ease;
 }
 .tls {
 	padding: 6px 0 8px;

@@ -25,7 +25,7 @@ import { set_open_cloud_copy, take_bridge_intent } from '@/store/bridge'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
 import FolderHeader from '@/ui/explorer/folder-header/FolderHeader.vue'
-import { explorer_sidebar_open } from '@/store/explorer/sidebar'
+import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open } from '@/store/explorer/sidebar'
 import { explorer_tree } from '@/store/explorer/tree'
 import './tokens.css'
 
@@ -54,6 +54,9 @@ const page_arg = computed(() => {
 watch(page, (value) => {
 	if (value === 'hub' && cloud.is_configured) void cloud.fetch_hub()
 }, { immediate: true })
+
+// A phone's drawer gets out of the way once a folder or a page opens, as in the prototype
+watch(() => explorer_navigation.location, () => { explorer_drawer_open.value = false })
 
 const shell_error = computed(() => store.workspace?.last_error ?? store.last_error)
 
@@ -124,7 +127,7 @@ onUnmounted(() => {
 	<div class="explorer flex h-full min-h-0 flex-col" :class="window_classes">
 		<TopBar />
 		<div class="body">
-			<Sidebar v-if="explorer_sidebar_open" />
+			<Sidebar v-if="!explorer_mobile && explorer_sidebar_open" />
 			<main class="pv">
 				<FolderHeader />
 				<p v-if="shell_error" class="shell-error" role="alert">
@@ -142,6 +145,10 @@ onUnmounted(() => {
 				</div>
 			</main>
 		</div>
+		<template v-if="explorer_mobile">
+			<Sidebar drawer />
+			<div v-if="explorer_drawer_open" class="bd" @click="explorer_drawer_open = false" />
+		</template>
 		<TooltipLayer />
 		<!-- The old interface's dialogs, opened from the Share menu -->
 		<ShareDialog :ref="dialog => share_dialog = dialog as never" @closed="unlock_pointers" />
@@ -150,13 +157,24 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.explorer {
+	position: relative;
+}
+.bd {
+	position: absolute;
+	inset: 0;
+	background: rgba(0, 0, 0, .28);
+	z-index: 3;
+}
 .body {
 	display: flex;
 	flex: 1;
 	min-height: 0;
 	overflow: hidden;
 }
+/* The content's own layers (a board's panels) stay under a phone's drawer */
 .pv {
+	isolation: isolate;
 	position: relative;
 	flex: 1;
 	min-width: 0;

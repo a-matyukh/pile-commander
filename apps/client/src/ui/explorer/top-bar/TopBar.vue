@@ -5,7 +5,7 @@ import { t } from '@/i18n'
 import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
 import { traffic_inset_target } from '@/services/window/trafficInset'
 import { explorer_navigation } from '@/store/explorer/navigation'
-import { explorer_sidebar_open, toggle_explorer_sidebar } from '@/store/explorer/sidebar'
+import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open, toggle_explorer_sidebar } from '@/store/explorer/sidebar'
 import IconButton from '@/ui/kit/IconButton.vue'
 import { actions_on_top, explorer_settings, path_on_top } from '@/store/explorer/settings'
 import Breadcrumbs from '@/ui/explorer/folder-header/Breadcrumbs.vue'
@@ -63,7 +63,7 @@ function go_forward() {
 		:data-tauri-drag-region="window_drag ? '' : undefined"
 	>
 		<IconButton
-			:icon="explorer_sidebar_open ? 'tabler:layout-sidebar' : 'tabler:layout-sidebar-left-expand'"
+			:icon="(explorer_mobile ? explorer_drawer_open : explorer_sidebar_open) ? 'tabler:layout-sidebar' : 'tabler:layout-sidebar-left-expand'"
 			:aria-label="t('top.sidebar')"
 			:data-tip="t('top.sidebar')"
 			:data-tip-key="shortcut.sidebar"

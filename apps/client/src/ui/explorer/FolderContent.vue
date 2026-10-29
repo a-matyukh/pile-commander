@@ -67,8 +67,11 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 			:container="scope.container.value"
 			:location="location"
 		/>
-		<FolderContainer v-else :key="workspace.uid" />
-		<FolderActionsPanel />
+		<!-- The current views keep their touch actions ("Select"); List and Gallery select by tap -->
+		<template v-else>
+			<FolderContainer :key="workspace.uid" />
+			<FolderActionsPanel />
+		</template>
 	</div>
 </template>
 
