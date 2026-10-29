@@ -40,7 +40,15 @@ fn ensure_directory(path: String) -> Result<(), String> {
 /// boards (plugin-fs `remove` is permanent).
 #[tauri::command]
 fn trash_path(path: String) -> Result<(), String> {
-    trash::delete(&path).map_err(|e| e.to_string())
+    let mut ctx = trash::TrashContext::new();
+    // Finder's AppleScript path asks to control Finder. The system call
+    // moves the item into the Trash without that prompt.
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    ctx.delete(&path).map_err(|e| e.to_string())
 }
 
 /// Returns `"directory"`, `"file"`, or `"other"` for an existing path.
