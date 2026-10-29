@@ -48,6 +48,8 @@ function childSignature(children: FolderContainerWidgetChild[]) {
 			child.name,
 			child.type,
 			child.background ?? '',
+			// a folder's or a file's cover fills its card
+			'cover' in child ? child.cover ?? '' : '',
 			child.is_preview ?? '',
 		].join(':')
 	}).join('|')

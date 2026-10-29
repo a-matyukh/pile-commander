@@ -136,6 +136,20 @@ function persist_workspace_xattr(
 	)
 }
 
+/**
+ * A folder's own attribute (its cover, its icon) written on the folder also
+ * shows in the listings that hold it as a child: a board or a canvas draws its
+ * cards from the open folder's list, and would keep the old one until a refresh
+ */
+function mirror_to_listings(store: PersistXattrStore, folder_id: string, name: string, value: string) {
+	for (const [owner_id, owner] of Object.entries(store.folders)) {
+		if (owner_id === folder_id || !owner.children?.some(child => child.id === folder_id)) continue
+		upsert_folder_xattr(owner, folder_id, name, value)
+		notify_entry_xattr_changed(owner, folder_id)
+		store.folders[owner_id] = { ...owner }
+	}
+}
+
 let tab_seq = 0
 const next_tab_id = () => `tab-${++tab_seq}`
 
@@ -857,7 +871,7 @@ export async function createWorkspaceStore(
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
-				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)) mirror_to_listings(this, folder_id, 'cover', cover)
 			},
 
 			async change_folder_icon(folder_id: string, icon: string) {
@@ -865,7 +879,7 @@ export async function createWorkspaceStore(
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
-				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)) mirror_to_listings(this, folder_id, 'icon', icon)
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {
