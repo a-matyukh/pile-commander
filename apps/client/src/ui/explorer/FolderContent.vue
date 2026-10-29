@@ -77,9 +77,46 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 
 <style scoped>
 .fc {
+	/* The current views' lines (stack rows, a slide's header) in the new interface's color */
+	--pc-border: var(--border);
 	position: relative;
 	height: 100%;
 	min-height: 0;
+}
+/* A canvas's grid dots and axes, as the prototype's */
+.fc :deep(.vue-flow__background circle) {
+	fill: var(--border-strong);
+}
+.fc :deep(.canvas-axes__axis) {
+	stroke: var(--border-strong);
+}
+/* Stack rows and a slide's header: List's type, icons and left edge */
+.fc :deep(.stack-row) {
+	padding-left: 16px;
+	padding-right: 16px;
+}
+.fc :deep(.stack-folder-preview-row) {
+	padding: 0;
+}
+.fc :deep(.stack-folder-preview-row .folder-preview-title) {
+	padding-left: 16px;
+}
+/* The slide switcher's "‹" lines up with the header: its button has its own 10px */
+.fc :deep(.slides-header) {
+	padding-left: 6px;
+}
+.fc :deep(.stack-row-main p),
+.fc :deep(.slides-header-main p) {
+	font-weight: 400;
+	font-size: 13px;
+	color: var(--text-primary);
+}
+.fc :deep(.ex-row-icon) {
+	font-size: 16px;
+	flex: none;
+}
+.fc :deep(.ex-row-icon.plain) {
+	color: var(--text-secondary);
 }
 /* The current views' "Select" and clipboard panel line up with the folder header */
 .fc :deep(.folder-actions-panel) {

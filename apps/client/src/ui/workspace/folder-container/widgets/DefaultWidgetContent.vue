@@ -10,9 +10,7 @@ import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
 import { Icon } from '@iconify/vue'
 import { explorer_mounted } from '@/store/explorer/public_view'
-import { file_glyph, folder_glyph } from '@/ui/explorer/views/item_glyph'
-import { useWorkspace } from '@/ui/workspace/useWorkspace'
-import { useFolderContainerScope } from '../useFolderContainerScope'
+import { use_widget_glyph } from '@/ui/explorer/views/use_widget_glyph'
 
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
@@ -60,14 +58,7 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 /** The tab is filled as the card: white, or its cover's color */
 const tabFill = computed(() => extraStyle.value?.backgroundColor ?? 'white')
 
-const workspace = useWorkspace()
-const scope = useFolderContainerScope()
-const glyph = computed(() => {
-	if (isFile.value) return file_glyph(props.widget.name)
-	const ws = workspace.value
-	const listed = ws?.folders[scope.folderId.value]?.children.find(entry => entry.id === props.widget.id)
-	return folder_glyph(ws?.folders[props.widget.id]?.xattrs ?? listed?.xattrs, null)
-})
+const glyph = use_widget_glyph(() => props.widget)
 </script>
 
 <template>
@@ -87,7 +78,7 @@ const glyph = computed(() => {
 		<div v-if="explorer_mounted && isFile && fileParts" class="ex-file">
 			<span class="ex-stem">{{ fileParts.stem }}</span>
 			<span class="ex-foot">
-				<Icon :icon="glyph.icon" class="ex-fi" />
+				<Icon v-if="glyph" :icon="glyph.icon" class="ex-fi" />
 				<span v-if="fileParts.extension" class="ex-ext">{{ fileParts.extension }}</span>
 			</span>
 		</div>
@@ -100,7 +91,7 @@ const glyph = computed(() => {
 					<path d="M0 0.5 C8 0.5 8 13 16 13" class="line" />
 				</svg>
 			</span>
-			<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ex-ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
+			<Icon v-if="glyph && !glyph.generic" :icon="glyph.icon" class="ex-ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 			<span class="ex-name">{{ widget.name }}</span>
 		</div>
 		<div

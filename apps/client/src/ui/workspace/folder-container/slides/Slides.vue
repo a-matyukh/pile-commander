@@ -15,6 +15,9 @@ import { resolve_slide_index } from './slidesUtils'
 import SlideSwitcher from './SlideSwitcher.vue'
 import SlidesNote from './SlidesNote.vue'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
+import { Icon } from '@iconify/vue'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import { use_widget_glyph } from '@/ui/explorer/views/use_widget_glyph'
 import FolderMenu from '@/ui/workspace/menu/FolderMenu.vue'
 import FolderPreview from '../FolderPreview.vue'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
@@ -92,6 +95,9 @@ const ROLE_ICONS: Partial<Record<WidgetRole, string>> = {
 	audio: 'mdi:music',
 }
 
+/** In the Explorer the slide's icon is List's */
+const glyph = use_widget_glyph(() => widget.value)
+
 const iconName = computed(() => {
 	if (!widget.value) return 'mdi:file-outline'
 	return (widgetRole.value && ROLE_ICONS[widgetRole.value]) || widgetIcon(widget.value)
@@ -161,7 +167,14 @@ function onPreviewDblClick() {
 				:class="{ 'pc-selected': isWidgetSelected, 'pc-cut': isWidgetCut }"
 				@click="onSelectClick"
 			>
-				<UIcon :name="iconName" class="size-5 shrink-0" />
+				<Icon
+					v-if="explorer_mounted && glyph"
+					:icon="glyph.icon"
+					class="ex-row-icon"
+					:class="{ plain: glyph.plain }"
+					:style="{ color: glyph.color }"
+				/>
+				<UIcon v-else :name="iconName" class="size-5 shrink-0" />
 				<p class="min-w-0 truncate font-medium text-highlighted">
 					{{ widget.name }}
 				</p>
