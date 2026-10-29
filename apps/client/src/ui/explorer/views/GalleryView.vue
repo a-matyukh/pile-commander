@@ -22,7 +22,7 @@ const items = use_items(() => props)
 const children = computed(() => props.container.children)</script>
 
 <template>
-	<div class="gv">
+	<div class="gv" @click="items.blank_click">
 		<div class="grid">
 			<ItemTile
 				v-for="child in children"
@@ -50,6 +50,8 @@ const children = computed(() => props.container.children)</script>
 
 <style scoped>
 .gv {
+	box-sizing: border-box;
+	min-height: 100%;
 	padding: 16px;
 }
 .grid {

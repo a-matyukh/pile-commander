@@ -45,7 +45,7 @@ watch(children, (list) => {
 </script>
 
 <template>
-	<div class="lv">
+	<div class="lv" @click="items.blank_click">
 		<div class="li head">
 			<span class="hn">{{ t('list.name') }}</span>
 			<span class="rt">{{ t('list.size') }}</span>
@@ -75,6 +75,7 @@ watch(children, (list) => {
 
 <style scoped>
 .lv {
+	min-height: 100%;
 	user-select: none;
 	-webkit-user-select: none;
 }

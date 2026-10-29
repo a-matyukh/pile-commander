@@ -57,7 +57,7 @@ const tab_path = computed(() => {
 		</svg>
 		<div v-if="folder" class="body" :style="cover_style.picture">
 			<div class="dots"><slot name="menu" /></div>
-			<Icon :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
+			<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 			<span class="nm" :title="name">{{ name }}</span>
 		</div>
 		<div v-else class="body file" :title="name">

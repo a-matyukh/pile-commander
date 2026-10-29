@@ -75,6 +75,11 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 		else select(child)
 	}
 
+	/** A click on the free space around the items clears the selection, as on a board */
+	function blank_click(event: MouseEvent) {
+		if (!(event.target as Element | null)?.closest('[data-item-id]')) source().workspace.clear_selection()
+	}
+
 	/**
 	 * A right click opens the item's menu once the button is up: macOS fires
 	 * `contextmenu` on press (WebKit with `buttons` at 0), and a menu opened
@@ -119,6 +124,7 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 		menus,
 		select,
 		click,
+		blank_click,
 		open_menu,
 		renaming,
 		rename_open,

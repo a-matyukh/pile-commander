@@ -5,7 +5,8 @@ import { shown_icon } from '@/store/explorer/icon_catalog'
 import { entry_view } from '@/store/explorer/tree_view'
 import { file_icon } from './entry_icon'
 
-export type ItemGlyph = { icon: string; color?: string; plain: boolean }
+/** `generic`: a plain folder with nothing of its own, which a tile leaves out */
+export type ItemGlyph = { icon: string; color?: string; plain: boolean; generic?: boolean }
 
 /**
  * A folder's icon wherever the Explorer draws one (tree, list, gallery, the
@@ -17,7 +18,7 @@ export function folder_glyph(xattrs: Xattr[] | undefined, standard: string | nul
 	if (own) return { icon: shown_icon(own.icon), color: own.color || undefined, plain: !own.color }
 	const view = entry_view(xattrs ? { xattrs } : undefined)
 	if (view !== 'list') return { icon: FOLDER_VIEW_META[view].icon, color: FOLDER_VIEW_META[view].color ?? undefined, plain: false }
-	return { icon: standard ?? 'tabler:folder', plain: true }
+	return standard ? { icon: standard, plain: true } : { icon: 'tabler:folder', plain: true, generic: true }
 }
 
 export function file_glyph(name: string): ItemGlyph {
