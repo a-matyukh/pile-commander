@@ -108,7 +108,11 @@ function pick_start() {
 	outline: 2px solid var(--fill-accent);
 	outline-offset: 1px;
 }
+/* The picker draws its square a frame later; its height is kept from the
+   start, or the submenu jumps up as it grows (a blink on opening) */
 .pk {
+	box-sizing: border-box;
+	min-height: 160px;
 	padding: 2px 8px 6px;
 }
 .cu {
