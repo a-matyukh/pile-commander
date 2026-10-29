@@ -33,7 +33,7 @@ const children = computed(() => props.container.children)</script>
 				:selected="workspace.is_selected(child.id)"
 				:dim="is_hidden_entry_name(child.name) || workspace.is_cut(child.id)"
 				:data-item-id="child.id"
-				@click="items.select(child)"
+				@click="items.click(child, $event)"
 				@dblclick="workspace.open(child)"
 				@contextmenu.prevent="items.open_menu(child)"
 			>

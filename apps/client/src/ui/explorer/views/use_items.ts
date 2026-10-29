@@ -53,6 +53,17 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 	}
 
 	/**
+	 * A click on an item: selects it, or clears the selection when it is the
+	 * only one selected already. A double click's second click keeps it
+	 */
+	function click(child: FolderContainerWidgetChild, event: MouseEvent) {
+		const workspace = source().workspace
+		if (event.detail > 1) return
+		if (workspace.selection.length === 1 && workspace.is_selected(child.id)) workspace.clear_selection()
+		else select(child)
+	}
+
+	/**
 	 * A right click opens the item's menu once the button is up: macOS fires
 	 * `contextmenu` on press (WebKit with `buttons` at 0), and a menu opened
 	 * under the pointer would take the release as a pick
@@ -94,6 +105,7 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 		display_name,
 		menus,
 		select,
+		click,
 		open_menu,
 		renaming,
 		rename_open,

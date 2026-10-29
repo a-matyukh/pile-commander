@@ -2,20 +2,33 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { explorer_settings } from '@/store/explorer/settings'
+import { splitFileName } from '@/ui/workspace/folder-container/widgets/fileNameParts'
 import type { ItemGlyph } from './item_glyph'
 
 /**
- * A tile of Gallery and of the cloud page, shaped as the old grid's: a file
- * is a portrait card, a folder a landscape one with a tab. Inside, the
- * item's icon (its type, or a folder's own icon) at the size the View menu
- * sets, its name below. The "⋯" sits in the corner, shown on hover or while
- * selected
+ * A tile of Gallery and of the cloud page, shaped as the old grid's. A file
+ * is a portrait card as the old one: its name at the top left, its type's
+ * icon at the bottom left (List's), the extension in gray at the bottom
+ * right. A folder is a landscape card with a tab: its own icon or its
+ * view's at the size the View menu sets, the name below. The "⋯" sits in
+ * the corner, shown on hover or while selected
  */
 const props = defineProps<{ glyph: ItemGlyph; name: string; folder?: boolean; selected?: boolean; dim?: boolean }>()
 
 /** Both shapes are as tall; a folder's tab takes from its body */
 const height = computed(() => Math.round(explorer_settings.gallery_icon * 1.5 + 64))
-const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.8)))
+const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.85)))
+const parts = computed(() => splitFileName(props.name))
+
+/** Finder's tab: a rounded top left corner, a smooth slope down on the right; the folder's top line stays under it */
+const TAB_H = 13
+const tab_w = computed(() => Math.round(width.value * 0.42))
+const tab_path = computed(() => {
+	const w = tab_w.value
+	const h = TAB_H
+	const slope = 16
+	return `M0.5 ${h} V6.5 Q0.5 0.5 6.5 0.5 H${w - slope} C${w - slope / 2} 0.5 ${w - slope / 2} ${h} ${w} ${h} Z`
+})
 </script>
 
 <template>
@@ -24,11 +37,21 @@ const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.8
 		:class="{ folder, s: selected, dim }"
 		:style="{ '--ic': explorer_settings.gallery_icon + 'px', width: width + 'px', height: height + 'px' }"
 	>
-		<span v-if="folder" class="tab" aria-hidden="true" />
-		<div class="body">
+		<svg v-if="folder" class="tab" :width="tab_w" :height="TAB_H" aria-hidden="true">
+			<path :d="tab_path" />
+		</svg>
+		<div v-if="folder" class="body">
 			<div class="dots"><slot name="menu" /></div>
 			<Icon :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 			<span class="nm" :title="name">{{ name }}</span>
+		</div>
+		<div v-else class="body file" :title="name">
+			<div class="dots"><slot name="menu" /></div>
+			<span class="stem">{{ parts.stem }}</span>
+			<div class="foot">
+				<Icon :icon="glyph.icon" class="fi" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
+				<span v-if="parts.extension" class="ext">{{ parts.extension }}</span>
+			</div>
 		</div>
 	</div>
 </template>
@@ -61,13 +84,49 @@ const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.8
 	background: var(--fill);
 }
 .tab {
-	width: 42%;
-	height: 9px;
 	flex: none;
-	border: 1px solid var(--line);
-	border-bottom: none;
-	border-radius: 6px 6px 0 0;
-	background: var(--fill);
+	display: block;
+	overflow: visible;
+}
+.tab path {
+	fill: var(--fill);
+	stroke: var(--line);
+	stroke-width: 1;
+}
+.body.file {
+	align-items: stretch;
+	justify-content: space-between;
+	padding: 10px;
+}
+.stem {
+	padding-right: 14px;
+	font-size: 13px;
+	line-height: 1.3;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	overflow-wrap: break-word;
+}
+.foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	min-width: 0;
+}
+.fi {
+	font-size: 16px;
+	flex: none;
+}
+.ext {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	color: var(--text-muted);
 }
 /* As Finder's: the tab's left side runs straight into the folder's */
 .folder .body {
@@ -102,7 +161,8 @@ const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.8
 	--line: var(--border-accent);
 	--fill: var(--bg-accent);
 }
-.tile.s .nm {
+.tile.s .nm,
+.tile.s .stem {
 	color: var(--text-accent);
 }
 .tile.s .dots,
@@ -110,11 +170,22 @@ const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.8
 	visibility: visible;
 }
 .tile.dim .ic,
-.tile.dim .nm {
+.tile.dim .nm,
+.tile.dim .stem,
+.tile.dim .foot {
 	opacity: .5;
 }
 .explorer.lg .nm {
 	font-size: 14px;
+}
+.explorer.lg .stem {
+	font-size: 15px;
+}
+.explorer.lg .fi {
+	font-size: 19px;
+}
+.explorer.lg .ext {
+	font-size: 13px;
 }
 @media (hover: hover) {
 	.tile:not(.s):hover {
