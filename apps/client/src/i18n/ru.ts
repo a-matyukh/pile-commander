@@ -307,7 +307,7 @@ export const ru = {
 		hide_preview: 'Скрыть превью',
 		show_as_file: 'Показать как файл',
 		show_as_shape: 'Показать как фигуру',
-		uncombine: 'Разобрать',
+		uncombine: 'Разобрать папку',
 		start_arrow: 'Стрелка в начале',
 		end_arrow: 'Стрелка в конце',
 		cut: 'Вырезать',

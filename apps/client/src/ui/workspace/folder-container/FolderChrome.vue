@@ -8,6 +8,9 @@ import { useFolderViewMenuItems } from '@/ui/workspace/menu/useFolderViewMenuIte
 import ViewMenuTrailing from '@/ui/workspace/menu/ViewMenuTrailing.vue'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerScope } from './useFolderContainerScope'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
+import { view_label } from '@/ui/kit/items_menu_labels'
 import { beginRegisteredNoteEditing, armNoteCreateFromMenu } from './panePosition'
 
 const props = defineProps<{
@@ -75,6 +78,9 @@ const showCreateMenu = computed(
 			v-if="isSpatialView"
 			:compact="compact"
 		/>
+		<ItemsDropMenu v-else-if="explorer_mounted" :items="createOnlyItems">
+			<template #view-trailing="{ item }">{{ view_label((item as { currentViewLabel?: string }).currentViewLabel) }}</template>
+		</ItemsDropMenu>
 		<UDropdownMenu
 			v-else
 			:items="createOnlyItems"

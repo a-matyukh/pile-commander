@@ -17,7 +17,8 @@ import { item_look } from './items_menu_labels'
  */
 const props = defineProps<{ items: DropdownMenuItem[] | DropdownMenuItem[][] }>()
 
-type Item = DropdownMenuItem & { swatch?: string }
+/** `raw`: its slot draws whole menu items itself (a submenu), not a panel inside one */
+type Item = DropdownMenuItem & { swatch?: string; raw?: boolean }
 
 const groups = computed(() => {
 	const list = props.items as (Item | Item[])[]
@@ -56,6 +57,7 @@ function choose(item: Item, event: Event) {
 		<template v-for="(item, i) in group" :key="`${g}-${i}`">
 			<MenuSeparator v-if="item.type === 'separator'" />
 			<MenuLabel v-else-if="item.type === 'label'" :label="look(item).label" />
+			<slot v-else-if="item.raw && item.slot && $slots[item.slot]" :name="item.slot" :item="item" />
 			<div v-else-if="item.slot && $slots[item.slot]" class="isl" @keydown.stop>
 				<slot :name="item.slot" :item="item" />
 			</div>

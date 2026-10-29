@@ -17,4 +17,8 @@ const tag = use_menu_kind() === 'context' ? ContextMenuSeparator : DropdownMenuS
 	background: var(--border);
 	margin: 4px 6px;
 }
+/* A group that drew nothing (an item hidden for this folder) leaves no double line */
+.ms + .ms {
+	display: none;
+}
 </style>

@@ -310,7 +310,7 @@ export const en: typeof ru = {
 		hide_preview: 'Hide preview',
 		show_as_file: 'Show as file',
 		show_as_shape: 'Show as shape',
-		uncombine: 'Uncombine',
+		uncombine: 'Ungroup folder',
 		start_arrow: 'Start arrow',
 		end_arrow: 'End arrow',
 		cut: 'Cut',

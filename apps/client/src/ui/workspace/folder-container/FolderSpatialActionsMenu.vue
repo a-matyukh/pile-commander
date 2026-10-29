@@ -6,6 +6,9 @@ import PresetColorsMenuSlot from '@/ui/workspace/menu/PresetColorsMenuSlot.vue'
 import ViewMenuTrailing from '@/ui/workspace/menu/ViewMenuTrailing.vue'
 import { useFolderContainerMenuItems } from '@/ui/workspace/menu/useFolderContainerMenuItems'
 import { useFolderContainerScope } from './useFolderContainerScope'
+import { explorer_mounted } from '@/store/explorer/public_view'
+import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
+import { item_look, view_label } from '@/ui/kit/items_menu_labels'
 import { resolvePaneCenterPosition } from './panePosition'
 
 defineProps<{
@@ -30,7 +33,41 @@ const {
 </script>
 
 <template>
+	<!-- In the Explorer the same items, in its own menu style -->
+	<ItemsDropMenu v-if="explorer_mounted" :items="items">
+		<template #view-trailing="{ item }">{{ view_label((item as { currentViewLabel?: string }).currentViewLabel) }}</template>
+		<template #toolbar-side-trailing="{ item }">{{ item_look((item as { currentSideLabel?: string }).currentSideLabel ?? '').label }}</template>
+		<template #preset-colors>
+			<PresetColorsMenuSlot :apply-color="applyColor" />
+		</template>
+		<template #color-picker>
+			<ColorPickerMenuSlot
+				v-model="pickerColor"
+				:on-picker-pointer-down="onPickerPointerDown"
+				:commit-picker-color="commitPickerColor"
+				:show-hex-input="false"
+			/>
+		</template>
+		<template #background-value>
+			<BackgroundValueMenuSlot
+				v-model="customValue"
+				:commit-custom-value="commitCustomValue"
+			/>
+		</template>
+		<template #grid-size-trailing>
+			<UInput
+				:model-value="gridSize"
+				type="number"
+				min="1"
+				class="w-16"
+				@click.stop
+				@keydown.stop
+				@update:model-value="onGridSizeChange"
+			/>
+		</template>
+	</ItemsDropMenu>
 	<UDropdownMenu
+		v-else
 		:items="items"
 		:content="{
 			align: 'start',

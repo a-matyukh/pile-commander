@@ -12,6 +12,7 @@ import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { explorer_mounted } from '@/store/explorer/public_view'
+import BoardFolderItems from '@/ui/explorer/views/BoardFolderItems.vue'
 
 const props = defineProps<{
 	node: WorkspaceTreeNode
@@ -91,40 +92,57 @@ const items = computed<DropdownMenuItem[][]>(() => {
 
 	const colorItem = colorMenuItem.value
 
+	const open: DropdownMenuItem = {
+		label: 'Open folder',
+		disabled: props.loading,
+		onSelect() {
+			void requireWorkspace().open_folder(props.node.id)
+		},
+	}
+	const preview: DropdownMenuItem[] = props.showPreviewToggle
+		? [{
+			label: previewToggleLabel.value,
+			disabled: readonly.value,
+			onSelect() {
+				void requireWorkspace().change_is_preview(props.node.id, !props.isPreview)
+			},
+		}]
+		: []
+	const uncombine: DropdownMenuItem = {
+		label: 'Uncombine',
+		disabled: props.loading || readonly.value,
+		onSelect() {
+			void requireWorkspace().uncombine_folder(props.node.id)
+		},
+	}
+
+	// The Explorer's folder menu: its bookmark and Finder, its icon and cover,
+	// "Uncombine" beside Rename and Remove as "Ungroup" in its tree
+	if (explorer_mounted.value) {
+		const [rename, ...remove] = rename_remove_items.value
+		return [
+			[open, ...preview],
+			[{ slot: 'explorer-place' as const, raw: true }],
+			[{ slot: 'explorer-look' as const, raw: true }],
+			clipboardItems.value,
+			[...(rename ? [rename] : []), uncombine, ...remove],
+		]
+	}
+
 	return [
 		[
-		{
-			label: 'Open folder',
-			disabled: props.loading,
-			onSelect() {
-				void requireWorkspace().open_folder(props.node.id)
-			},
-		},
-		...(showOpenInNewTab.value
-			? [{
-				label: 'Open folder in new tab',
-				disabled: props.loading,
-				onSelect() {
-					void requireWorkspace().open_folder_in_new_tab(props.node.id)
-				},
-			}]
-			: []),
-			...(props.showPreviewToggle
+			open,
+			...(showOpenInNewTab.value
 				? [{
-					label: previewToggleLabel.value,
-					disabled: readonly.value,
+					label: 'Open folder in new tab',
+					disabled: props.loading,
 					onSelect() {
-						void requireWorkspace().change_is_preview(props.node.id, !props.isPreview)
+						void requireWorkspace().open_folder_in_new_tab(props.node.id)
 					},
 				}]
 				: []),
-			{
-				label: 'Uncombine',
-				disabled: props.loading || readonly.value,
-				onSelect() {
-					void requireWorkspace().uncombine_folder(props.node.id)
-				},
-			},
+			...preview,
+			uncombine,
 			...(props.showPreviewToggle && colorItem ? [colorItem as DropdownMenuItem] : []),
 		],
 		clipboardItems.value,
@@ -144,6 +162,12 @@ const items = computed<DropdownMenuItem[][]>(() => {
 	>
 		<template v-if="$slots.default" #default>
 			<slot />
+		</template>
+		<template #explorer-place>
+			<BoardFolderItems :node_id="node.id" part="place" />
+		</template>
+		<template #explorer-look>
+			<BoardFolderItems :node_id="node.id" part="look" />
 		</template>
 		<template #preset-colors>
 			<PresetColorsMenuSlot :apply-color="activeApplyColor" />
