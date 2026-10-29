@@ -33,7 +33,7 @@ const Content = context ? ContextMenuSubContent : DropdownMenuSubContent
 		<component :is="Portal" to=".explorer">
 			<component
 				:is="Content"
-				class="mn"
+				class="mn sub"
 				:side-offset="4"
 				:collision-padding="8"
 				:style="{ width: width + 'px' }"

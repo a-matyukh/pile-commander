@@ -36,6 +36,11 @@
 .explorer.manim .mn[data-state='closed'] {
 	animation: mn-out .1s ease-in;
 }
+/* A submenu leaves at once: moving from one to the next, the old one fading
+   over the new one read as a blink */
+.explorer.manim .mn.sub[data-state='closed'] {
+	animation: none;
+}
 @keyframes mn-in {
 	from {
 		opacity: 0;
