@@ -24,6 +24,7 @@ import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from '@/ui/explorer/sidebar/RenameFolderDialog.vue'
 import FolderLookItems from './FolderLookItems.vue'
+import { tree_item_for } from '@/store/explorer/tree_item'
 
 /**
  * A folder's "⋯" menu, the same in the folder header and on a tree row, as
@@ -43,8 +44,7 @@ const open = defineModel<boolean>('open', { default: false })
 const rename_open = ref(false)
 const remove_open = ref(false)
 
-const item = computed(() => explorer_tree.roots.find(root =>
-	root.drive.id === props.folder.drive_id && root.root.id === props.folder.root_id) ?? null)
+const item = computed(() => tree_item_for(props.folder))
 const home = use_home()
 const items = computed(() => folder_menu_items(props.folder, {
 	item: item.value,

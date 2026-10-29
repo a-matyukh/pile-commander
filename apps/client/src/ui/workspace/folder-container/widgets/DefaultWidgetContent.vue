@@ -4,7 +4,7 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import FolderMenu from '@/ui/workspace/menu/FolderMenu.vue'
 import WidgetShell from './WidgetShell.vue'
-import { resolveWidgetBackground } from './resolveBackground'
+import { resolveShellFill, resolveWidgetBackground } from './resolveBackground'
 import { splitFileName } from './fileNameParts'
 import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
@@ -55,6 +55,9 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
  * left, its type's icon at the bottom left, the extension in gray at the
  * bottom right; a folder with its own icon or its view's above the name
  */
+/** A cover fills the card and drops its frame, as the board shell does */
+const coverFilled = computed(() => resolveShellFill(props.widget) !== undefined)
+
 /** The tab is filled as the card: white, or its cover's color */
 const tabFill = computed(() => extraStyle.value?.backgroundColor ?? 'white')
 
@@ -84,7 +87,7 @@ const glyph = use_widget_glyph(() => props.widget)
 		</div>
 		<div v-else-if="explorer_mounted" class="ex-folder">
 			<!-- Gallery's tab, above the card's top left -->
-			<span v-if="layout === 'board'" class="ex-tab" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
+			<span v-if="layout === 'board'" class="ex-tab" :class="{ filled: coverFilled }" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
 				<span class="ex-tab-flat" />
 				<svg class="ex-tab-slope" width="16" height="13" viewBox="0 0 16 13">
 					<path d="M0 0.5 C8 0.5 8 13 16 13 L0 13 Z" class="fill" />
@@ -231,6 +234,9 @@ const glyph = use_widget_glyph(() => props.widget)
 .ex-tab-slope {
 	flex: none;
 	overflow: visible;
+	/* Overlaps the flat part a pixel: at a canvas's zoom the two edges round
+	   apart and a light seam showed between them */
+	margin-left: -1px;
 }
 .ex-tab-slope .fill {
 	fill: var(--tab-fill);
@@ -239,6 +245,18 @@ const glyph = use_widget_glyph(() => props.widget)
 	fill: none;
 	stroke: var(--border);
 	stroke-width: 1;
+}
+/* A cover-colored card has no frame: the tab sinks a pixel into it, with no
+   lines, so no light seam shows between them at any zoom or size */
+.ex-tab.filled {
+	top: -12px;
+	left: 0;
+}
+.ex-tab.filled .ex-tab-flat {
+	border-color: transparent;
+}
+.ex-tab.filled .ex-tab-slope .line {
+	stroke: none;
 }
 .ex-ic {
 	font-size: 28px;

@@ -98,15 +98,13 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 .fc :deep(.stack-folder-preview-row) {
 	padding: 0;
 }
-.fc :deep(.stack-folder-preview-row .folder-preview-title) {
-	padding-left: 16px;
-}
 /* The slide switcher's "‹" lines up with the header: its button has its own 10px */
 .fc :deep(.slides-header) {
 	padding-left: 6px;
 }
 /* A preview folder's title: List's type and line */
 .fc :deep(.folder-preview .folder-preview-title) {
+	padding-left: 16px;
 	font-size: 13px;
 	color: var(--text-primary);
 	border-bottom-color: var(--border);

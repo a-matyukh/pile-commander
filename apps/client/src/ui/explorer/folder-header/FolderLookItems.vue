@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { FolderRef } from '@/domain/Drive'
+import type { WorkspaceStore } from '@/domain/Store'
+import app_store from '@/store'
+import { report_error } from '@/store/helpers/reportError'
 import { t } from '@/i18n'
 import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { FOLDER_ICON_COLORS, folder_icon_of, write_folder_icon, type FolderIcon } from '@/store/explorer/folder_cover'
@@ -18,15 +21,22 @@ import MenuSub from '@/ui/kit/MenuSub.vue'
  * cover (a color or a picture: its tile on a board, as the current app's
  * "Cover")
  */
-const props = defineProps<{ item: ExplorerTreeRoot; folder: FolderRef }>()
+const props = defineProps<{
+	/** The tree's root of the folder; a board passes its store instead */
+	item?: ExplorerTreeRoot | null
+	folder: FolderRef
+	/** The store showing the folder (a board's): read and written there, so its card changes at once */
+	store?: WorkspaceStore | null
+}>()
 
 /** Written on the folder itself: its own read first, then its parent's listing */
 const xattrs = computed(() => {
-	const store = props.item.workspace
+	const store = props.store ?? props.item?.workspace
 	if (!store) return undefined
 	const own = store.folders[props.folder.folder_id]?.xattrs
 	if (own) return own
-	const parent = store.folders[parent_folder_id_from_node_id(props.folder.folder_id, tree_root_folder_id(props.item))]
+	const root_folder_id = props.item ? tree_root_folder_id(props.item) : store.id
+	const parent = store.folders[parent_folder_id_from_node_id(props.folder.folder_id, root_folder_id)]
 	return parent?.children.find(child => child.id === props.folder.folder_id)?.xattrs
 })
 const icon = computed(() => folder_icon_of(xattrs.value))
@@ -35,13 +45,29 @@ const cover = computed(() => {
 	return value && value !== 'none' ? value : ''
 })
 
+/** The board's store writes on the folder itself, so it reads the folder first, as the tree does */
+async function in_store(write: (store: WorkspaceStore) => Promise<void>) {
+	const store = props.store!
+	try {
+		if (!store.resolve_folder_data(props.folder.folder_id)) await store.show_folder_children(props.folder.folder_id, undefined, { silent: true })
+		await write(store)
+	} catch (error) {
+		report_error(app_store, error)
+	}
+}
+
+function write_icon(value: string) {
+	if (props.store) void in_store(store => store.change_folder_icon(props.folder.folder_id, value))
+	else if (props.item) void explorer_tree.set_folder_icon(props.item, props.folder.folder_id, value)
+}
+
 function set_icon(next: Partial<FolderIcon>) {
 	const value = { icon: icon.value?.icon ?? 'tabler:folder', color: icon.value?.color ?? '', ...next }
-	void explorer_tree.set_folder_icon(props.item, props.folder.folder_id, write_folder_icon(value))
+	write_icon(write_folder_icon(value))
 }
 
 function reset_icon() {
-	void explorer_tree.set_folder_icon(props.item, props.folder.folder_id, 'none')
+	write_icon('none')
 }
 
 /** Search by name, as Milanote's: all of tabler's load on the first letter */
@@ -63,7 +89,9 @@ const custom = ref('')
 watch(cover, (value) => { custom.value = value.startsWith('data:') ? '' : value }, { immediate: true })
 
 function set_cover(value: string) {
-	void explorer_tree.set_folder_cover(props.item, props.folder.folder_id, value.trim() || 'none')
+	const cover = value.trim() || 'none'
+	if (props.store) void in_store(store => store.change_folder_cover(props.folder.folder_id, cover))
+	else if (props.item) void explorer_tree.set_folder_cover(props.item, props.folder.folder_id, cover)
 }
 
 /**

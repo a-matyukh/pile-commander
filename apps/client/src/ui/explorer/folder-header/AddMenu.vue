@@ -14,6 +14,7 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import MenuSub from '@/ui/kit/MenuSub.vue'
 import { useCreateChildItems } from '@/ui/workspace/menu/useCreateChildItems'
+import { tree_item_for } from '@/store/explorer/tree_item'
 
 /**
  * "Add" in the folder header (prototype AddMenu): the "New" and "Import
@@ -27,8 +28,7 @@ const open = ref(false)
 /** The current menu's create and import, on the open folder (store.workspace) */
 const { create, pick_and_import } = useCreateChildItems(() => props.folder.folder_id)
 
-const item = computed(() => explorer_tree.roots.find(root =>
-	root.drive.id === props.folder.drive_id && root.root.id === props.folder.root_id) ?? null)
+const item = computed(() => tree_item_for(props.folder))
 const pane_items = computed(() =>
 	add_menu_has_pane_items(entry_view(props.workspace.resolve_folder_data(props.folder.folder_id) ?? undefined)))
 
