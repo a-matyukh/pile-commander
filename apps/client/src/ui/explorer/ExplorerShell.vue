@@ -39,6 +39,8 @@ const window_classes = computed(() => ({
 	cg: explorer_settings.gray_content,
 	lg: explorer_settings.size === 'large',
 	thin: explorer_settings.text_smoothing === 'thin',
+	manim: explorer_settings.menu_animation,
+	mshadow: explorer_settings.menu_shadow,
 }))
 
 const page = computed(() => {

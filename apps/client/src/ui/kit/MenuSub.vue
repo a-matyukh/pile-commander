@@ -27,6 +27,7 @@ const Content = context ? ContextMenuSubContent : DropdownMenuSubContent
 		<component :is="Trigger" class="mi">
 			<Icon v-if="icon" :icon="icon" class="ic" />
 			<span class="lb">{{ label }}</span>
+			<span v-if="$slots.trailing" class="tr"><slot name="trailing" /></span>
 			<Icon icon="tabler:chevron-right" class="ch" />
 		</component>
 		<component :is="Portal" to=".explorer">
@@ -65,6 +66,14 @@ const Content = context ? ContextMenuSubContent : DropdownMenuSubContent
 .mi .ic {
 	font-size: 16px;
 	color: var(--text-secondary);
+}
+.mi .tr {
+	margin-left: auto;
+	color: var(--text-muted);
+	font-size: 12px;
+}
+.mi .tr + .ch {
+	margin-left: 4px;
 }
 .mi .ch {
 	margin-left: auto;

@@ -151,6 +151,12 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 						]"
 					/>
 				</SettingRow>
+				<SettingRow :title="t('settings.menu_animation')" :description="t('settings.menu_animation_d')">
+					<Switch v-model="explorer_settings.menu_animation" />
+				</SettingRow>
+				<SettingRow :title="t('settings.menu_shadow')" :description="t('settings.menu_shadow_d')">
+					<Switch v-model="explorer_settings.menu_shadow" />
+				</SettingRow>
 				<SettingRow :title="t('settings.footer')" :description="t('settings.footer_d')">
 					<ViewChoice
 						v-model="explorer_settings.footer_buttons"

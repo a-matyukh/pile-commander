@@ -22,3 +22,33 @@
 	min-width: 250px;
 	font-size: 15px;
 }
+/* "Smooth menus" and "Menu shadow" in the settings, as the current app's menus */
+.explorer.mshadow .mn {
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
+}
+.explorer.manim .mn {
+	transform-origin: var(--reka-popper-transform-origin);
+}
+.explorer.manim .mn[data-state='open'] {
+	animation: mn-in .14s ease-out;
+}
+.explorer.manim .mn[data-state='closed'] {
+	animation: mn-out .1s ease-in;
+}
+@keyframes mn-in {
+	from {
+		opacity: 0;
+		transform: scale(.96);
+	}
+}
+@keyframes mn-out {
+	to {
+		opacity: 0;
+		transform: scale(.96);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.explorer.manim .mn[data-state] {
+		animation: none;
+	}
+}

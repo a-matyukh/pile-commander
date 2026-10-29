@@ -13,24 +13,26 @@ const props = defineProps<{
 	keep_open?: boolean
 	/** Highlighted as the current one (layers, bookmarks) */
 	current?: boolean
+	disabled?: boolean
 }>()
 
-const emit = defineEmits<{ select: [] }>()
+const emit = defineEmits<{ select: [event: Event] }>()
 
 const item = use_menu_kind() === 'context' ? ContextMenuItem : DropdownMenuItem
 
 function on_select(event: Event) {
 	if (props.keep_open) event.preventDefault()
-	emit('select')
+	emit('select', event)
 }
 </script>
 
 <template>
-	<component :is="item" class="mi" :class="{ cur: current }" @select="on_select">
+	<component :is="item" class="mi" :class="{ cur: current }" :disabled="disabled" @select="on_select">
 		<slot name="leading" />
 		<Icon v-if="icon" :icon="icon" class="ic" :style="{ color: icon_color }" />
 		<span class="lb"><slot>{{ label }}</slot></span>
 		<span v-if="shortcut" class="k">{{ shortcut }}</span>
+		<slot name="trailing" />
 		<Icon v-if="checked" icon="tabler:check" class="ck" />
 	</component>
 </template>
@@ -73,6 +75,10 @@ function on_select(event: Event) {
 }
 .mi[data-highlighted] {
 	background: var(--surface-1);
+}
+.mi[data-disabled] {
+	opacity: .45;
+	cursor: default;
 }
 .mi.cur,
 .mi.cur[data-highlighted] {

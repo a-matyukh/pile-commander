@@ -11,6 +11,7 @@ import { useColorSubmenu } from './useColorSubmenu'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
+import { explorer_mounted } from '@/store/explorer/public_view'
 
 const props = defineProps<{
 	node: WorkspaceTreeNode
@@ -51,7 +52,8 @@ const readonly = computed(() => workspace.value?.can_write === false)
 // Tabs live in the window header strip. Hide the new-tab item on narrow
 // screens (same breakpoint as the sidebar's md: drawer switch).
 const isMdUp = useMediaQuery('(min-width: 768px)')
-const showOpenInNewTab = computed(() => isMdUp.value)
+// The Explorer has no tabs
+const showOpenInNewTab = computed(() => isMdUp.value && !explorer_mounted.value)
 
 const colorSubmenuOptions = computed(() => {
 	const child = openedChild.value

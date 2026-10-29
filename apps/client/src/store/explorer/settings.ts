@@ -28,6 +28,10 @@ export type ExplorerSettings = {
 	bookmarks_style: 'pills' | 'list'
 	/** Icon size of Gallery and the cloud page's tiles, px (a slider, as in Finder) */
 	gallery_icon: number
+	/** Menus fade and grow in, as the current app's */
+	menu_animation: boolean
+	/** Menus cast a light shadow, as the current app's */
+	menu_shadow: boolean
 }
 
 export const EXPLORER_SETTINGS_KEY = 'pile_commander_explorer_settings'
@@ -48,6 +52,8 @@ export const EXPLORER_SETTINGS_DEFAULTS: ExplorerSettings = {
 	bookmarks_visible: true,
 	bookmarks_style: 'pills',
 	gallery_icon: 40,
+	menu_animation: true,
+	menu_shadow: true,
 }
 
 export const explorer_settings = toReactive<ExplorerSettings>(
