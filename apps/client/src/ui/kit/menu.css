@@ -22,7 +22,8 @@
 	min-width: 250px;
 	font-size: 15px;
 }
-/* "Smooth menus" and "Menu shadow" in the settings, as the current app's menus */
+/* "Smooth menus" and "Menu shadow" in the settings, as the current app's menus.
+   The switch is the person's own choice, so the system's "Reduce motion" does not override it */
 .explorer.mshadow .mn {
 	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
 }
@@ -45,10 +46,5 @@
 	to {
 		opacity: 0;
 		transform: scale(.96);
-	}
-}
-@media (prefers-reduced-motion: reduce) {
-	.explorer.manim .mn[data-state] {
-		animation: none;
 	}
 }
