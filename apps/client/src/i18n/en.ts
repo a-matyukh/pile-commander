@@ -594,6 +594,9 @@ export const en: typeof ru = {
 		hidden_files: 'Show hidden files',
 		hidden_files_d: 'Files and folders whose names start with a dot. This device only',
 		iteration: 'Iteration features',
+		ai: {
+			agent_access_busy: 'Another instance of the app already has agent access',
+		},
 	},
 	ai_settings: {
 		intro: 'AI suggests names and summarizes folders with a model you choose. Results are plain files and names; nothing changes without your OK',
@@ -638,6 +641,12 @@ export const en: typeof ru = {
 		model_placeholder: 'e.g. gemma3 or openai/gpt-4o-mini',
 		model_pick: 'Pick from the list',
 		model_test_first: 'Test the connection to see models',
+		agent_access: 'Agent access',
+		agent_access_d: 'Local agents on this computer can reach the app while it is open',
+		mcp_copy: 'Copy MCP config',
+		mcp_app_copy: 'Copy app config',
+		mcp_copied: 'Copied',
+		mcp_where: 'Cursor — ~/.cursor/mcp.json. Claude Code — .mcp.json at the project root. Claude Desktop — ~/Library/Application Support/Claude/claude_desktop_config.json.',
 		names: 'Suggested names',
 		names_d: 'How AI writes file and folder names',
 		styles: {
@@ -645,6 +654,19 @@ export const en: typeof ru = {
 			kebab: 'meeting-notes',
 			snake: 'meeting_notes',
 		},
+	},
+	bulk_rename: {
+		agent: 'Agent',
+		hint: 'Uncheck what to keep. Nothing is renamed until you confirm.',
+		to_rename: '{n} to rename',
+		cancel: 'Cancel',
+		rename: 'Rename {n}',
+		renaming: 'Renaming…',
+		close: 'Close',
+		renamed: 'Renamed {renamed} of {total}',
+		failed: '{n} failed',
+		not_renamed: '{n} not renamed',
+		notify: 'Rename {n} in “{folder}”',
 	},
 	features: {
 		folder_search: 'Folder search',

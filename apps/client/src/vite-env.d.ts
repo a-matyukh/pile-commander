@@ -22,6 +22,9 @@ declare module 'virtual:offline-icons'
 
 declare module '@google/model-viewer'
 
+/** Absolute path of `apps/mcp/src/stdio.ts`, injected by Vite and Vitest. */
+declare const __MCP_STDIO_PATH__: string
+
 declare namespace JSX {
 	interface IntrinsicElements {
 		'model-viewer': Record<string, unknown>

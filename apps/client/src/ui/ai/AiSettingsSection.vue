@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
+import { invoke } from '@tauri-apps/api/core'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
+import { agent_access, set_agent_access } from '@/store/agentAccess'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { ai_transport } from '@/services/ai/client'
 import { explain_ai_error } from '@/services/ai/errors'
@@ -58,6 +60,55 @@ const model_items = computed(() => {
 })
 const testing = ref(false)
 const test_result = ref<{ ok: boolean; text: string } | null>(null)
+const agent_busy = ref(false)
+const agent_error = ref<string | null>(null)
+const is_dev = import.meta.env.DEV
+const mcp_copied = ref(false)
+let mcp_copied_timer: ReturnType<typeof setTimeout> | undefined
+
+async function copy_mcp_config() {
+	if (!import.meta.env.DEV) return
+	try {
+		const { mcp_dev_config_json } = await import('@/services/mcp/devConfig')
+		await navigator.clipboard.writeText(mcp_dev_config_json())
+		mark_copied()
+	} catch (error) {
+		console.error('[mcp] copy config', error)
+	}
+}
+
+async function copy_app_config() {
+	if (is_dev) return
+	try {
+		const exe = await invoke<string>('mcp_current_exe')
+		const { mcp_release_config_json } = await import('@/services/mcp/releaseConfig')
+		await navigator.clipboard.writeText(mcp_release_config_json(exe))
+		mark_copied()
+	} catch (error) {
+		console.error('[mcp] copy config', error)
+	}
+}
+
+function mark_copied() {
+	mcp_copied.value = true
+	clearTimeout(mcp_copied_timer)
+	mcp_copied_timer = setTimeout(() => {
+		mcp_copied.value = false
+	}, 2000)
+}
+
+async function on_agent_access(enabled: boolean) {
+	agent_busy.value = true
+	agent_error.value = null
+	try {
+		await set_agent_access(enabled)
+	} catch (error) {
+		const text = error instanceof Error ? error.message : String(error)
+		agent_error.value = text === 'other_instance' ? t('settings.ai.agent_access_busy') : text
+	} finally {
+		agent_busy.value = false
+	}
+}
 
 function select_preset(id: AiPresetId) {
 	const next = ai_preset(id)
@@ -308,6 +359,49 @@ watch(() => ai_settings.value.model, () => {
 					@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
 				/>
 			</UFormField>
+
+			<div v-if="is_desktop" class="mt-6 flex flex-col gap-3 rounded-md border border-default bg-muted/25 px-3 py-4">
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						<p class="text-sm">{{ caption('agent_access', 'Agent access') }}</p>
+						<p class="text-xs leading-relaxed text-muted">
+							{{ caption('agent_access_d', 'Local agents on this computer can reach the app while it is open') }}
+						</p>
+						<p v-if="agent_error" class="mt-1 text-xs text-error">{{ agent_error }}</p>
+					</div>
+					<USwitch
+						:model-value="agent_access"
+						size="sm"
+						:disabled="agent_busy"
+						:aria-label="caption('agent_access', 'Agent access')"
+						@update:model-value="on_agent_access"
+					/>
+				</div>
+				<div v-if="is_dev" class="flex flex-col gap-1.5">
+					<UButton
+						:label="mcp_copied ? t('ai_settings.mcp_copied') : t('ai_settings.mcp_copy')"
+						icon="i-lucide:copy"
+						size="sm"
+						color="neutral"
+						variant="outline"
+						class="self-start"
+						@click="copy_mcp_config"
+					/>
+					<p class="text-xs leading-relaxed text-muted">{{ t('ai_settings.mcp_where') }}</p>
+				</div>
+				<div v-else class="flex flex-col gap-1.5">
+					<UButton
+						:label="mcp_copied ? t('ai_settings.mcp_copied') : t('ai_settings.mcp_app_copy')"
+						icon="i-lucide:copy"
+						size="sm"
+						color="neutral"
+						variant="outline"
+						class="self-start"
+						@click="copy_app_config"
+					/>
+					<p class="text-xs leading-relaxed text-muted">{{ t('ai_settings.mcp_where') }}</p>
+				</div>
+			</div>
 		</div>
 	</section>
 </template>

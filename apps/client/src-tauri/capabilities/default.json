@@ -8,6 +8,8 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-request-user-attention",
+    "notification:default",
     "fs:default",
     "fs:allow-watch",
     "fs:allow-unwatch",

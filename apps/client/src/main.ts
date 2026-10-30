@@ -4,6 +4,7 @@ import AppShell from './ui/app/AppShell.vue'
 import { sync_workspaces_list } from './store/workspaces_list'
 import cloud from './store/cloud'
 import { is_desktop } from './isDesktop'
+import { restore_agent_access } from './store/agentAccess'
 import { check_for_updates } from './store/updater'
 import { browser_storage_available } from './services/workspace/browserStorage'
 import { apply_public_route, resolve_public_route, when_not_prerendering } from './services/publicRoute'
@@ -41,6 +42,9 @@ async function bootstrap() {
 	}
 
 	if (is_desktop) {
+		const { start_mcp_sessions } = await import('./services/mcp/server')
+		await start_mcp_sessions()
+		await restore_agent_access()
 		void check_for_updates().catch((error) => {
 			console.error('[updater] failed to check for updates', error)
 		})

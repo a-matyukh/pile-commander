@@ -591,6 +591,9 @@ export const ru = {
 		hidden_files: 'Показывать скрытые файлы',
 		hidden_files_d: 'Файлы и папки, чьи имена начинаются с точки. Только на этом устройстве',
 		iteration: 'Функции итерации',
+		ai: {
+			agent_access_busy: 'Доступ уже держит другой экземпляр приложения',
+		},
 	},
 	ai_settings: {
 		intro: 'ИИ предлагает имена и пересказывает папки моделью, которую вы выберете. Результат — обычные файлы и имена, ничего не меняется без вашего согласия',
@@ -635,6 +638,12 @@ export const ru = {
 		model_placeholder: 'например, gemma3 или openai/gpt-4o-mini',
 		model_pick: 'Выбрать из списка',
 		model_test_first: 'Проверьте подключение, чтобы увидеть модели',
+		agent_access: 'Доступ для агентов',
+		agent_access_d: 'Локальные агенты на этом компьютере могут обращаться к приложению, пока оно открыто',
+		mcp_copy: 'Скопировать конфиг MCP',
+		mcp_app_copy: 'Скопировать конфиг приложения',
+		mcp_copied: 'Скопировано',
+		mcp_where: 'Cursor — ~/.cursor/mcp.json. Claude Code — .mcp.json в корне проекта. Claude Desktop — ~/Library/Application Support/Claude/claude_desktop_config.json.',
 		names: 'Предлагаемые имена',
 		names_d: 'Как ИИ записывает имена файлов и папок',
 		styles: {
@@ -642,6 +651,19 @@ export const ru = {
 			kebab: 'заметки-встречи',
 			snake: 'заметки_встречи',
 		},
+	},
+	bulk_rename: {
+		agent: 'Агент',
+		hint: 'Снимите галочки с того, что оставить. Пока не подтвердите, ничего не переименуется.',
+		to_rename: '{n} к переименованию',
+		cancel: 'Отмена',
+		rename: 'Переименовать {n}',
+		renaming: 'Переименование…',
+		close: 'Закрыть',
+		renamed: 'Переименовано {renamed} из {total}',
+		failed: 'Не удалось: {n}',
+		not_renamed: 'Не переименовано: {n}',
+		notify: 'Переименовать {n} в папке «{folder}»',
 	},
 	features: {
 		folder_search: 'Поиск папок',

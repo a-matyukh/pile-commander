@@ -4,8 +4,12 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
 mod ai;
+mod mcp_access;
+mod mcp_pipe;
 mod presigned_put;
 mod workspace_pack;
+
+pub use mcp_pipe::mcp_pipe_main;
 
 struct OpenedPaths(Mutex<Vec<String>>);
 
@@ -36,11 +40,27 @@ fn ensure_directory(path: String) -> Result<(), String> {
     ensure_directory_path(&path).map_err(|e| e.to_string())
 }
 
+/// Absolute path of this process. The release MCP config copies it at runtime.
+#[tauri::command]
+fn mcp_current_exe() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
+}
+
 /// Moves a path to the OS trash — the reversible delete used by desktop
 /// boards (plugin-fs `remove` is permanent).
 #[tauri::command]
 fn trash_path(path: String) -> Result<(), String> {
-    trash::delete(&path).map_err(|e| e.to_string())
+    let mut ctx = trash::TrashContext::new();
+    // Finder's AppleScript path asks to control Finder. The system call
+    // moves the item into the Trash without that prompt.
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    ctx.delete(&path).map_err(|e| e.to_string())
 }
 
 /// Returns `"directory"`, `"file"`, or `"other"` for an existing path.
@@ -91,7 +111,9 @@ pub fn run() {
         .manage(OpenedPaths(Mutex::new(vec![])))
         .manage(presigned_put::Uploads::default())
         .manage(ai::Ai::default())
+        .manage(mcp_access::Access::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_xattrs::init())
@@ -112,6 +134,10 @@ pub fn run() {
             ai::ai_list_models,
             ai::ai_chat_stream,
             ai::ai_cancel,
+            mcp_current_exe,
+            mcp_access::mcp_set_access,
+            mcp_access::mcp_session_write,
+            mcp_access::mcp_realpath,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -127,11 +153,21 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // A crashed run leaves the socket and the token. A socket another
+            // process is still accepting is left alone, together with its token.
+            if let Ok(dir) = app.path().app_data_dir() {
+                if let Err(error) = mcp_access::clear_stale_socket(&dir) {
+                    log::warn!("mcp stale socket: {error}");
+                }
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<mcp_access::Access>().shutdown();
+            }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
                 let paths = urls
