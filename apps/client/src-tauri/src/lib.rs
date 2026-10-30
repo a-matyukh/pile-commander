@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
 mod ai;
+mod mcp_access;
 mod presigned_put;
 mod workspace_pack;
 
@@ -99,6 +100,7 @@ pub fn run() {
         .manage(OpenedPaths(Mutex::new(vec![])))
         .manage(presigned_put::Uploads::default())
         .manage(ai::Ai::default())
+        .manage(mcp_access::Access::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -120,6 +122,7 @@ pub fn run() {
             ai::ai_list_models,
             ai::ai_chat_stream,
             ai::ai_cancel,
+            mcp_access::mcp_set_access,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -135,11 +138,21 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // A crashed run leaves the socket and the token. A socket another
+            // process is still accepting is left alone, together with its token.
+            if let Ok(dir) = app.path().app_data_dir() {
+                if let Err(error) = mcp_access::clear_stale_socket(&dir) {
+                    log::warn!("mcp stale socket: {error}");
+                }
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<mcp_access::Access>().shutdown();
+            }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
                 let paths = urls

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
+import { agent_access, set_agent_access } from '@/store/agentAccess'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { ai_transport } from '@/services/ai/client'
 import { explain_ai_error } from '@/services/ai/errors'
@@ -58,6 +59,21 @@ const model_items = computed(() => {
 })
 const testing = ref(false)
 const test_result = ref<{ ok: boolean; text: string } | null>(null)
+const agent_busy = ref(false)
+const agent_error = ref<string | null>(null)
+
+async function on_agent_access(enabled: boolean) {
+	agent_busy.value = true
+	agent_error.value = null
+	try {
+		await set_agent_access(enabled)
+	} catch (error) {
+		const text = error instanceof Error ? error.message : String(error)
+		agent_error.value = text === 'other_instance' ? t('settings.ai.agent_access_busy') : text
+	} finally {
+		agent_busy.value = false
+	}
+}
 
 function select_preset(id: AiPresetId) {
 	const next = ai_preset(id)
@@ -308,6 +324,23 @@ watch(() => ai_settings.value.model, () => {
 					@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
 				/>
 			</UFormField>
+
+			<div v-if="is_desktop" class="flex items-start justify-between gap-3 border-t border-default pt-3">
+				<div class="min-w-0">
+					<p class="text-sm">{{ caption('agent_access', 'Agent access') }}</p>
+					<p class="text-xs leading-relaxed text-muted">
+						{{ caption('agent_access_d', 'Local agents on this computer can reach the app while it is open') }}
+					</p>
+					<p v-if="agent_error" class="mt-1 text-xs text-error">{{ agent_error }}</p>
+				</div>
+				<USwitch
+					:model-value="agent_access"
+					size="sm"
+					:disabled="agent_busy"
+					:aria-label="caption('agent_access', 'Agent access')"
+					@update:model-value="on_agent_access"
+				/>
+			</div>
 		</div>
 	</section>
 </template>

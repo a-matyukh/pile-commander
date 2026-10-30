@@ -594,6 +594,9 @@ export const en: typeof ru = {
 		hidden_files: 'Show hidden files',
 		hidden_files_d: 'Files and folders whose names start with a dot. This device only',
 		iteration: 'Iteration features',
+		ai: {
+			agent_access_busy: 'Another instance of the app already has agent access',
+		},
 	},
 	ai_settings: {
 		intro: 'AI suggests names and summarizes folders with a model you choose. Results are plain files and names; nothing changes without your OK',
@@ -638,6 +641,8 @@ export const en: typeof ru = {
 		model_placeholder: 'e.g. gemma3 or openai/gpt-4o-mini',
 		model_pick: 'Pick from the list',
 		model_test_first: 'Test the connection to see models',
+		agent_access: 'Agent access',
+		agent_access_d: 'Local agents on this computer can reach the app while it is open',
 		names: 'Suggested names',
 		names_d: 'How AI writes file and folder names',
 		styles: {
