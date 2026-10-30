@@ -360,7 +360,7 @@ watch(() => ai_settings.value.model, () => {
 				/>
 			</UFormField>
 
-			<div v-if="is_desktop" class="flex flex-col gap-3 border-t border-default pt-3">
+			<div v-if="is_desktop" class="mt-6 flex flex-col gap-3 rounded-md border border-default bg-muted/25 px-3 py-4">
 				<div class="flex items-start justify-between gap-3">
 					<div class="min-w-0">
 						<p class="text-sm">{{ caption('agent_access', 'Agent access') }}</p>
