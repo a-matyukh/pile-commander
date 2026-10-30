@@ -123,6 +123,8 @@ pub fn run() {
             ai::ai_chat_stream,
             ai::ai_cancel,
             mcp_access::mcp_set_access,
+            mcp_access::mcp_session_write,
+            mcp_access::mcp_realpath,
         ])
         .setup(|app| {
             #[cfg(desktop)]

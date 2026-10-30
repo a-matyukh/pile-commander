@@ -12,7 +12,7 @@
     "dev:desktop": "bun --filter @pile-commander/client tauri:dev",
     "dev:landing": "bun --filter @pile-commander/landing dev",
     "dev:backend": "bun --filter @pile-commander/backend dev",
-    "test": "bun --filter @pile-commander/file-manager test && bun --filter @pile-commander/backend test && bun --filter @pile-commander/client test",
+    "test": "bun --filter @pile-commander/file-manager test && bun --filter @pile-commander/backend test && bun --filter @pile-commander/mcp test && bun --filter @pile-commander/client test",
     "build": "bun run build:file-manager && bun run build:web && bun run build:landing",
     "build:file-manager": "bun --filter @pile-commander/file-manager build",
     "build:web": "bun --filter @pile-commander/client build",

@@ -27,6 +27,7 @@
     "@iconify-json/tabler": "^1.2.38",
     "@iconify-json/weui": "^1.2.4",
     "@iconify/vue": "^5.0.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@nuxt/ui": "^4.9.0",
     "@pile-commander/file-manager": "workspace:*",
     "@pile-commander/tauri-plugin-xattrs": "workspace:*",
@@ -51,7 +52,8 @@
     "tailwindcss": "^4.3.1",
     "vue": "3.5.40",
     "vue-grid-layout-v3": "^3.1.2",
-    "vuedraggable": "^4.1.0"
+    "vuedraggable": "^4.1.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@iconify/types": "^2.0.0",

@@ -1,10 +1,10 @@
-//! Local agent access (MCP plan, slice 1.1).
+//! Local agent access (MCP plan, slices 1.1 and 1.3).
 //!
 //! Turning access on writes a token file and binds a Unix socket, both mode
 //! `0600`, in the app data directory. The first line of a connection is the
-//! token. A wrong or empty line closes the socket. A matching line keeps the
-//! connection open and does not forward any byte to the WebView — the MCP
-//! server arrives in slice 1.3.
+//! token. A wrong or empty line closes the socket. After a matching line the
+//! raw bytes are forwarded to the WebView and back; this process does not
+//! read JSON-RPC. `mcp_realpath` is `std::fs::canonicalize`.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, ErrorKind, Read, Write};
@@ -12,9 +12,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager, State};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const TOKEN_FILE: &str = "mcp.token";
 const SOCKET_FILE: &str = "mcp.sock";
@@ -25,6 +26,50 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// How often the accept loop looks at `stop`. Short enough that Exit does not
 /// wait on a socket path that another process may have replaced.
 const ACCEPT_POLL: Duration = Duration::from_millis(50);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Bytes after the token line, and the close of that connection.
+/// The WebView parses MCP; this process only moves the bytes.
+trait SessionIo: Send + Sync {
+    fn bytes(&self, id: u64, data: &[u8]);
+    fn close(&self, id: u64);
+}
+
+struct SilentIo;
+
+impl SessionIo for SilentIo {
+    fn bytes(&self, _id: u64, _data: &[u8]) {}
+    fn close(&self, _id: u64) {}
+}
+
+struct EmitIo(AppHandle);
+
+#[derive(Clone, Serialize)]
+struct McpSessionBytes {
+    id: u64,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Serialize)]
+struct McpSessionClose {
+    id: u64,
+}
+
+impl SessionIo for EmitIo {
+    fn bytes(&self, id: u64, data: &[u8]) {
+        let _ = self.0.emit(
+            "mcp-session-bytes",
+            McpSessionBytes {
+                id,
+                bytes: data.to_vec(),
+            },
+        );
+    }
+
+    fn close(&self, id: u64) {
+        let _ = self.0.emit("mcp-session-close", McpSessionClose { id });
+    }
+}
 
 pub struct Access {
     inner: Mutex<Option<Running>>,
@@ -64,6 +109,15 @@ impl Access {
     }
 
     pub fn set_enabled(&self, dir: &Path, enabled: bool) -> io::Result<()> {
+        self.set_enabled_with(dir, enabled, Arc::new(SilentIo))
+    }
+
+    fn set_enabled_with(
+        &self,
+        dir: &Path,
+        enabled: bool,
+        io: Arc<dyn SessionIo>,
+    ) -> io::Result<()> {
         if !enabled {
             self.shutdown();
             // Our files are already gone. A live socket here belongs to
@@ -77,9 +131,43 @@ impl Access {
             return Ok(());
         }
 
-        start(dir).map(|running| {
+        start(dir, io).map(|running| {
             *guard = Some(running);
         })
+    }
+
+    /// Writes raw bytes to an accepted session. Unknown ids are an error.
+    /// The socket locks are released before the write, so a client that does
+    /// not read cannot block shutdown.
+    #[cfg(unix)]
+    pub fn write_session(&self, id: u64, bytes: &[u8]) -> io::Result<()> {
+        let mut stream = self.clone_session(id)?;
+        write_with_timeout(&mut stream, bytes)
+    }
+
+    #[cfg(not(unix))]
+    pub fn write_session(&self, id: u64, bytes: &[u8]) -> io::Result<()> {
+        let _ = (id, bytes);
+        Err(io::Error::new(
+            ErrorKind::Unsupported,
+            "agent access uses a unix socket",
+        ))
+    }
+
+    #[cfg(unix)]
+    fn clone_session(&self, id: u64) -> io::Result<std::os::unix::net::UnixStream> {
+        let guard = self.inner.lock().expect("mcp access");
+        let Some(running) = guard.as_ref() else {
+            return Err(io::Error::new(ErrorKind::NotFound, "session"));
+        };
+        let streams = match running.streams.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let Some((_, stream)) = streams.iter().find(|(sid, _)| *sid == id) else {
+            return Err(io::Error::new(ErrorKind::NotFound, "session"));
+        };
+        stream.try_clone()
     }
 }
 
@@ -108,8 +196,82 @@ pub fn mcp_set_access(
         .app_data_dir()
         .map_err(|error| error.to_string())?;
     access
-        .set_enabled(&dir, enabled)
+        .set_enabled_with(&dir, enabled, Arc::new(EmitIo(app)))
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn mcp_session_write(
+    access: State<'_, Access>,
+    id: u64,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
+    // Clone under the locks here, on the async runtime. The write itself
+    // blocks up to WRITE_TIMEOUT and must not run on the main thread.
+    #[cfg(unix)]
+    {
+        let mut stream = access
+            .clone_session(id)
+            .map_err(|error| error.to_string())?;
+        return tauri::async_runtime::spawn_blocking(move || {
+            write_with_timeout(&mut stream, &bytes)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string());
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (access, id, bytes);
+        Err("agent access uses a unix socket".to_string())
+    }
+}
+
+#[cfg(unix)]
+fn write_with_timeout(stream: &mut std::os::unix::net::UnixStream, bytes: &[u8]) -> io::Result<()> {
+    if let Err(error) = stream.set_write_timeout(Some(WRITE_TIMEOUT)) {
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+        return Err(error);
+    }
+    // A timed-out write can still return a short `Ok`. The next call would
+    // wait out the timeout again, so the whole attempt stops at one period.
+    let started = Instant::now();
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        if started.elapsed() >= WRITE_TIMEOUT {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            return Err(io::Error::new(ErrorKind::TimedOut, "session write"));
+        }
+        match stream.write(rest) {
+            Ok(0) => {
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Err(io::Error::new(ErrorKind::WriteZero, "session write"));
+            }
+            Ok(n) => rest = &rest[n..],
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => {
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Err(error);
+            }
+        }
+    }
+    if let Err(error) = stream.flush() {
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// Resolves symlinks. A path that does not exist is an error, not the path unchanged.
+#[tauri::command]
+pub fn mcp_realpath(path: String) -> Result<String, String> {
+    canonicalize_path(Path::new(&path))
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
+}
+
+pub fn canonicalize_path(path: &Path) -> io::Result<PathBuf> {
+    fs::canonicalize(path)
 }
 
 #[cfg(unix)]
@@ -149,7 +311,7 @@ fn accepted(line: &str, token: &str) -> bool {
 }
 
 #[cfg(unix)]
-fn start(dir: &Path) -> io::Result<Running> {
+fn start(dir: &Path, io: Arc<dyn SessionIo>) -> io::Result<Running> {
     fs::create_dir_all(dir)?;
     if socket_is_live(dir) {
         return Err(other_instance());
@@ -174,9 +336,18 @@ fn start(dir: &Path) -> io::Result<Running> {
     let streams = Arc::new(Mutex::new(Vec::new()));
     let stop_for_thread = Arc::clone(&stop);
     let streams_for_thread = Arc::clone(&streams);
+    let io_for_thread = Arc::clone(&io);
     let thread = thread::Builder::new()
         .name("mcp-access".into())
-        .spawn(move || serve(listener, token, stop_for_thread, streams_for_thread))?;
+        .spawn(move || {
+            serve(
+                listener,
+                token,
+                stop_for_thread,
+                streams_for_thread,
+                io_for_thread,
+            )
+        })?;
     Ok(Running {
         dir: dir.to_path_buf(),
         stop,
@@ -186,7 +357,7 @@ fn start(dir: &Path) -> io::Result<Running> {
 }
 
 #[cfg(not(unix))]
-fn start(_dir: &Path) -> io::Result<Running> {
+fn start(_dir: &Path, _io: Arc<dyn SessionIo>) -> io::Result<Running> {
     Err(io::Error::new(
         ErrorKind::Unsupported,
         "agent access uses a unix socket",
@@ -223,6 +394,7 @@ fn serve(
     token: String,
     stop: Arc<AtomicBool>,
     streams: Arc<Mutex<Vec<(u64, std::os::unix::net::UnixStream)>>>,
+    io: Arc<dyn SessionIo>,
 ) {
     if listener.set_nonblocking(true).is_err() {
         return;
@@ -248,8 +420,9 @@ fn serve(
                 }
                 let token = token.clone();
                 let streams = Arc::clone(&streams);
+                let io = Arc::clone(&io);
                 thread::spawn(move || {
-                    session(stream, &token);
+                    session(stream, &token, id, io);
                     release_stream(&streams, id);
                 });
             }
@@ -277,7 +450,12 @@ fn release_stream(streams: &Mutex<Vec<(u64, std::os::unix::net::UnixStream)>>, i
 }
 
 #[cfg(unix)]
-fn session(mut stream: std::os::unix::net::UnixStream, token: &str) {
+fn session(
+    mut stream: std::os::unix::net::UnixStream,
+    token: &str,
+    id: u64,
+    io: Arc<dyn SessionIo>,
+) {
     let line = match read_first_line(&mut stream) {
         Ok(Some(line)) => line,
         _ => return,
@@ -285,9 +463,18 @@ fn session(mut stream: std::os::unix::net::UnixStream, token: &str) {
     if !accepted(&line, token) {
         return;
     }
-    // Slice 1.3 replaces this with the MCP byte stream. Until then the
-    // connection stays open and nothing is delivered to the WebView.
-    hold(stream);
+    // The token line is not part of MCP. Everything after it is forwarded raw.
+    let _ = stream.set_read_timeout(None);
+    let mut buf = [0u8; 8192];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => io.bytes(id, &buf[..n]),
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+    io.close(id);
 }
 
 #[cfg(unix)]
@@ -313,18 +500,6 @@ fn read_first_line(stream: &mut std::os::unix::net::UnixStream) -> io::Result<Op
         line.pop();
     }
     Ok(Some(String::from_utf8(line).unwrap_or_default()))
-}
-
-#[cfg(unix)]
-fn hold(mut stream: std::os::unix::net::UnixStream) {
-    let _ = stream.set_read_timeout(None);
-    let mut buf = [0u8; 4096];
-    loop {
-        match stream.read(&mut buf) {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {}
-        }
-    }
 }
 
 #[cfg(unix)]
@@ -370,10 +545,13 @@ fn random_token() -> io::Result<String> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
+    use std::io::{Read, Write};
+    use std::os::unix::fs::{symlink, PermissionsExt};
     use std::os::unix::net::UnixStream;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
+    use std::thread;
+    use std::time::Instant;
 
     use super::*;
 
@@ -557,6 +735,114 @@ mod tests {
         access.set_enabled(&dir, true).unwrap();
         assert!(socket_path(&dir).exists());
         access.set_enabled(&dir, false).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    struct RecordIo(Mutex<Vec<(u64, Vec<u8>)>>);
+
+    impl SessionIo for RecordIo {
+        fn bytes(&self, id: u64, data: &[u8]) {
+            self.0.lock().expect("record").push((id, data.to_vec()));
+        }
+
+        fn close(&self, _id: u64) {}
+    }
+
+    #[test]
+    fn bytes_after_the_token_are_forwarded_and_a_reply_is_written_back() {
+        let dir = scratch();
+        let record = Arc::new(RecordIo(Mutex::new(Vec::new())));
+        let access = Access::default();
+        access.set_enabled_with(&dir, true, record.clone()).unwrap();
+        let token = fs::read_to_string(token_path(&dir)).unwrap();
+
+        let mut client = connect(&dir);
+        write!(client, "{token}\nhello").unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut session_id = None;
+        while Instant::now() < deadline {
+            let guard = record.0.lock().expect("record");
+            if let Some((id, _)) = guard
+                .iter()
+                .find(|(_, data)| data.windows(5).any(|w| w == b"hello"))
+            {
+                session_id = Some(*id);
+                break;
+            }
+            drop(guard);
+            thread::sleep(Duration::from_millis(20));
+        }
+        let id = session_id.expect("forwarded bytes");
+        access.write_session(id, b"pong").unwrap();
+
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut buf = [0u8; 4];
+        client.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"pong");
+
+        drop(client);
+        access.set_enabled(&dir, false).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_write_the_client_does_not_read_times_out_and_shutdown_returns() {
+        let dir = scratch();
+        let access = Access::default();
+        access.set_enabled(&dir, true).unwrap();
+        let token = fs::read_to_string(token_path(&dir)).unwrap();
+        let mut client = connect(&dir);
+        write!(client, "{token}\n").unwrap();
+
+        let ready = Instant::now() + Duration::from_secs(2);
+        loop {
+            match access.write_session(0, b"x") {
+                Ok(()) => break,
+                Err(error) if error.kind() == ErrorKind::NotFound && Instant::now() < ready => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("session did not accept a small write: {error}"),
+            }
+        }
+
+        let started = Instant::now();
+        let error = access
+            .write_session(0, &vec![b'y'; 8 * 1024 * 1024])
+            .expect_err("a full socket should time out");
+        let waited = started.elapsed();
+        assert!(
+            waited < WRITE_TIMEOUT + Duration::from_secs(2),
+            "write did not return on the timeout: {waited:?} {error}"
+        );
+        assert!(
+            waited >= WRITE_TIMEOUT - Duration::from_millis(500),
+            "write returned before the timeout: {waited:?} {error}"
+        );
+
+        let started = Instant::now();
+        access.set_enabled(&dir, false).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "shutdown hung after a timed-out write"
+        );
+        drop(client);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn canonicalize_resolves_a_symlink_and_rejects_a_missing_path() {
+        let dir = scratch();
+        let file = dir.join("file");
+        fs::write(&file, b"x").unwrap();
+        let link = dir.join("link");
+        symlink(&file, &link).unwrap();
+
+        let resolved = canonicalize_path(&link).unwrap();
+        assert_eq!(resolved, fs::canonicalize(&file).unwrap());
+        assert!(canonicalize_path(&dir.join("missing")).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 }

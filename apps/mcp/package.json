@@ -1,0 +1,8 @@
+{
+  "name": "@pile-commander/mcp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  }
+}

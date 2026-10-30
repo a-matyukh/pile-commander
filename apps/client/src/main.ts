@@ -42,6 +42,8 @@ async function bootstrap() {
 	}
 
 	if (is_desktop) {
+		const { start_mcp_sessions } = await import('./services/mcp/server')
+		await start_mcp_sessions()
 		await restore_agent_access()
 		void check_for_updates().catch((error) => {
 			console.error('[updater] failed to check for updates', error)
