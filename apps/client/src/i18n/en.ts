@@ -644,6 +644,7 @@ export const en: typeof ru = {
 		agent_access: 'Agent access',
 		agent_access_d: 'Local agents on this computer can reach the app while it is open',
 		mcp_copy: 'Copy MCP config',
+		mcp_app_copy: 'Copy app config',
 		mcp_copied: 'Copied',
 		mcp_where: 'Cursor — ~/.cursor/mcp.json. Claude Code — .mcp.json at the project root. Claude Desktop — ~/Library/Application Support/Claude/claude_desktop_config.json.',
 		names: 'Suggested names',

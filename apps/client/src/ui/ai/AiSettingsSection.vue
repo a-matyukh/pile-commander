@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
+import { invoke } from '@tauri-apps/api/core'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { agent_access, set_agent_access } from '@/store/agentAccess'
@@ -70,14 +71,30 @@ async function copy_mcp_config() {
 	try {
 		const { mcp_dev_config_json } = await import('@/services/mcp/devConfig')
 		await navigator.clipboard.writeText(mcp_dev_config_json())
-		mcp_copied.value = true
-		clearTimeout(mcp_copied_timer)
-		mcp_copied_timer = setTimeout(() => {
-			mcp_copied.value = false
-		}, 2000)
+		mark_copied()
 	} catch (error) {
 		console.error('[mcp] copy config', error)
 	}
+}
+
+async function copy_app_config() {
+	if (is_dev) return
+	try {
+		const exe = await invoke<string>('mcp_current_exe')
+		const { mcp_release_config_json } = await import('@/services/mcp/releaseConfig')
+		await navigator.clipboard.writeText(mcp_release_config_json(exe))
+		mark_copied()
+	} catch (error) {
+		console.error('[mcp] copy config', error)
+	}
+}
+
+function mark_copied() {
+	mcp_copied.value = true
+	clearTimeout(mcp_copied_timer)
+	mcp_copied_timer = setTimeout(() => {
+		mcp_copied.value = false
+	}, 2000)
 }
 
 async function on_agent_access(enabled: boolean) {
@@ -369,6 +386,18 @@ watch(() => ai_settings.value.model, () => {
 						variant="outline"
 						class="self-start"
 						@click="copy_mcp_config"
+					/>
+					<p class="text-xs leading-relaxed text-muted">{{ t('ai_settings.mcp_where') }}</p>
+				</div>
+				<div v-else class="flex flex-col gap-1.5">
+					<UButton
+						:label="mcp_copied ? t('ai_settings.mcp_copied') : t('ai_settings.mcp_app_copy')"
+						icon="i-lucide:copy"
+						size="sm"
+						color="neutral"
+						variant="outline"
+						class="self-start"
+						@click="copy_app_config"
 					/>
 					<p class="text-xs leading-relaxed text-muted">{{ t('ai_settings.mcp_where') }}</p>
 				</div>

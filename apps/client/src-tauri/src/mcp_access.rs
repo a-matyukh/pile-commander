@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const TOKEN_FILE: &str = "mcp.token";
 const SOCKET_FILE: &str = "mcp.sock";
+const VERSION_FILE: &str = "mcp.version";
 const OWNER_ONLY: u32 = 0o600;
 /// Hex token is 64 characters. Longer first lines are refused.
 const MAX_TOKEN_LINE: usize = 128;
@@ -180,9 +181,7 @@ pub fn clear_stale_socket(dir: &Path) -> io::Result<()> {
     if socket_is_live(dir) {
         return Ok(());
     }
-    remove_file_if_exists(&socket_path(dir))?;
-    remove_file_if_exists(&token_path(dir))?;
-    Ok(())
+    remove_access_files(dir)
 }
 
 #[tauri::command]
@@ -305,6 +304,17 @@ fn socket_path(dir: &Path) -> PathBuf {
     dir.join(SOCKET_FILE)
 }
 
+fn version_path(dir: &Path) -> PathBuf {
+    dir.join(VERSION_FILE)
+}
+
+fn remove_access_files(dir: &Path) -> io::Result<()> {
+    remove_file_if_exists(&socket_path(dir))?;
+    remove_file_if_exists(&token_path(dir))?;
+    remove_file_if_exists(&version_path(dir))?;
+    Ok(())
+}
+
 /// The whole first line, and only that, must equal the token.
 fn accepted(line: &str, token: &str) -> bool {
     !line.is_empty() && line == token
@@ -317,18 +327,21 @@ fn start(dir: &Path, io: Arc<dyn SessionIo>) -> io::Result<Running> {
         return Err(other_instance());
     }
     // The previous process crashed, or never removed its files.
-    remove_file_if_exists(&socket_path(dir))?;
-    remove_file_if_exists(&token_path(dir))?;
+    remove_access_files(dir)?;
     let token = random_token()?;
     if let Err(error) = write_secret(&token_path(dir), token.as_bytes()) {
-        let _ = remove_file_if_exists(&token_path(dir));
+        let _ = remove_access_files(dir);
+        return Err(error);
+    }
+    let version = format!("{}\n", env!("CARGO_PKG_VERSION"));
+    if let Err(error) = write_secret(&version_path(dir), version.as_bytes()) {
+        let _ = remove_access_files(dir);
         return Err(error);
     }
     let listener = match bind_socket(&socket_path(dir)) {
         Ok(listener) => listener,
         Err(error) => {
-            let _ = remove_file_if_exists(&socket_path(dir));
-            let _ = remove_file_if_exists(&token_path(dir));
+            let _ = remove_access_files(dir);
             return Err(error);
         }
     };
@@ -380,8 +393,7 @@ fn stop_listener(mut running: Running) {
     // After the listener is dropped, a path that still accepts belongs to
     // another instance that replaced the file. Leave that pair alone.
     if !socket_is_live(&running.dir) {
-        let _ = remove_file_if_exists(&socket_path(&running.dir));
-        let _ = remove_file_if_exists(&token_path(&running.dir));
+        let _ = remove_access_files(&running.dir);
     }
 }
 
@@ -656,6 +668,11 @@ mod tests {
         access.set_enabled(&dir, true).unwrap();
         assert_eq!(mode_of(&token_path(&dir)), OWNER_ONLY);
         assert_eq!(mode_of(&socket_path(&dir)), OWNER_ONLY);
+        assert_eq!(mode_of(&version_path(&dir)), OWNER_ONLY);
+        assert_eq!(
+            fs::read_to_string(version_path(&dir)).unwrap().trim(),
+            env!("CARGO_PKG_VERSION")
+        );
         access.set_enabled(&dir, false).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
@@ -668,6 +685,7 @@ mod tests {
         access.set_enabled(&dir, false).unwrap();
         assert!(!socket_path(&dir).exists());
         assert!(!token_path(&dir).exists());
+        assert!(!version_path(&dir).exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -707,6 +725,7 @@ mod tests {
         clear_stale_socket(&dir).unwrap();
         assert_eq!(fs::read_to_string(token_path(&dir)).unwrap(), token);
         assert!(socket_path(&dir).exists());
+        assert!(version_path(&dir).exists());
 
         let second = Access::default();
         let error = second.set_enabled(&dir, true).unwrap_err();
@@ -727,9 +746,11 @@ mod tests {
         let dir = scratch();
         fs::write(socket_path(&dir), b"leftover").unwrap();
         fs::write(token_path(&dir), b"old-token").unwrap();
+        fs::write(version_path(&dir), b"0.0.0\n").unwrap();
         clear_stale_socket(&dir).unwrap();
         assert!(!socket_path(&dir).exists());
         assert!(!token_path(&dir).exists());
+        assert!(!version_path(&dir).exists());
 
         let access = Access::default();
         access.set_enabled(&dir, true).unwrap();

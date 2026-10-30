@@ -5,8 +5,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 mod ai;
 mod mcp_access;
+mod mcp_pipe;
 mod presigned_put;
 mod workspace_pack;
+
+pub use mcp_pipe::mcp_pipe_main;
 
 struct OpenedPaths(Mutex<Vec<String>>);
 
@@ -35,6 +38,14 @@ fn ensure_directory_path(path: &str) -> IoResult<()> {
 #[tauri::command]
 fn ensure_directory(path: String) -> Result<(), String> {
     ensure_directory_path(&path).map_err(|e| e.to_string())
+}
+
+/// Absolute path of this process. The release MCP config copies it at runtime.
+#[tauri::command]
+fn mcp_current_exe() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
 }
 
 /// Moves a path to the OS trash — the reversible delete used by desktop
@@ -123,6 +134,7 @@ pub fn run() {
             ai::ai_list_models,
             ai::ai_chat_stream,
             ai::ai_cancel,
+            mcp_current_exe,
             mcp_access::mcp_set_access,
             mcp_access::mcp_session_write,
             mcp_access::mcp_realpath,
