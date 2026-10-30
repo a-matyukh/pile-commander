@@ -20,11 +20,14 @@ export type McpErrorCode = (typeof MCP_ERROR_CODES)[number]
 
 export class McpError extends Error {
 	readonly code: McpErrorCode
+	/** Set for `busy`: the proposal the open dialog already shows. */
+	readonly proposal_id?: string
 
-	constructor(code: McpErrorCode) {
+	constructor(code: McpErrorCode, proposal_id?: string) {
 		super(code)
 		this.name = 'McpError'
 		this.code = code
+		this.proposal_id = proposal_id
 	}
 }
 

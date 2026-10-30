@@ -651,6 +651,18 @@ export const en: typeof ru = {
 			snake: 'meeting_notes',
 		},
 	},
+	bulk_rename: {
+		agent: 'Agent',
+		hint: 'Uncheck what to keep. Nothing is renamed until you confirm.',
+		to_rename: '{n} to rename',
+		cancel: 'Cancel',
+		rename: 'Rename {n}',
+		renaming: 'Renaming…',
+		close: 'Close',
+		renamed: 'Renamed {renamed} of {total}',
+		failed: '{n} failed',
+		not_renamed: '{n} not renamed',
+	},
 	features: {
 		folder_search: 'Folder search',
 		folder_search_d: 'Search button in the sidebar toolbar',

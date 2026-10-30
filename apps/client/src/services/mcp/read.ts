@@ -141,6 +141,34 @@ export async function read_text(ctx: McpContext, args: ReadTextArgs): Promise<Re
 	}
 }
 
+/** Real path of a granted entry. A symlink that leaves the root is `path_outside_root`. */
+export function granted_path(
+	ctx: McpContext,
+	drive_id: string,
+	root_id: string,
+	relative: string,
+): Promise<string> {
+	return resolve_granted(ctx, drive_id, root_id, relative)
+}
+
+/** The folder `get_folder` would list. `propose_rename` renames its direct children. */
+export async function load_granted_folder(
+	ctx: McpContext,
+	folder: FolderAddress,
+): Promise<{ id: string; folder: FolderAddress; data: FolderWithChildrenXattrs }> {
+	const id = await granted_path(ctx, folder.drive_id, folder.root_id, folder.path)
+	const data = await folder_data(ctx, id)
+	return {
+		id,
+		folder: {
+			drive_id: folder.drive_id,
+			root_id: normalize_workspace_id(folder.root_id),
+			path: folder.path,
+		},
+		data,
+	}
+}
+
 function require_enabled(ctx: McpContext) {
 	if (!ctx.enabled) throw new McpError('mcp_disabled')
 }
