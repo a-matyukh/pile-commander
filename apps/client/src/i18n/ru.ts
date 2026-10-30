@@ -640,6 +640,9 @@ export const ru = {
 		model_test_first: 'Проверьте подключение, чтобы увидеть модели',
 		agent_access: 'Доступ для агентов',
 		agent_access_d: 'Локальные агенты на этом компьютере могут обращаться к приложению, пока оно открыто',
+		mcp_copy: 'Скопировать конфиг MCP',
+		mcp_copied: 'Скопировано',
+		mcp_where: 'Cursor — ~/.cursor/mcp.json. Claude Code — .mcp.json в корне проекта. Claude Desktop — ~/Library/Application Support/Claude/claude_desktop_config.json.',
 		names: 'Предлагаемые имена',
 		names_d: 'Как ИИ записывает имена файлов и папок',
 		styles: {

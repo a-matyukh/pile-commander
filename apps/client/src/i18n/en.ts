@@ -643,6 +643,9 @@ export const en: typeof ru = {
 		model_test_first: 'Test the connection to see models',
 		agent_access: 'Agent access',
 		agent_access_d: 'Local agents on this computer can reach the app while it is open',
+		mcp_copy: 'Copy MCP config',
+		mcp_copied: 'Copied',
+		mcp_where: 'Cursor — ~/.cursor/mcp.json. Claude Code — .mcp.json at the project root. Claude Desktop — ~/Library/Application Support/Claude/claude_desktop_config.json.',
 		names: 'Suggested names',
 		names_d: 'How AI writes file and folder names',
 		styles: {

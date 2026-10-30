@@ -5,12 +5,17 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 import ui from '@nuxt/ui/vite'
 import { offlineIconsPlugin } from './offlineIconsPlugin.ts'
 import { unfurlPlugin } from './unfurlPlugin.ts'
+import { mcp_stdio_path } from './mcpStdioPath.ts'
 
 const cursorGoto = fileURLToPath(new URL('./scripts/cursor-goto.sh', import.meta.url))
 const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+	define: {
+		// The dev pipe path must not be baked into a production bundle.
+		__MCP_STDIO_PATH__: JSON.stringify(mode === 'production' ? '' : mcp_stdio_path),
+	},
 	server: {
 		port: 5173,
 		strictPort: true,
@@ -66,4 +71,4 @@ export default defineConfig({
 		},
 		}),
 	],
-})
+}))
