@@ -659,6 +659,7 @@ export const ru = {
 		renamed: 'Переименовано {renamed} из {total}',
 		failed: 'Не удалось: {n}',
 		not_renamed: 'Не переименовано: {n}',
+		notify: 'Переименовать {n} в папке «{folder}»',
 	},
 	features: {
 		folder_search: 'Поиск папок',

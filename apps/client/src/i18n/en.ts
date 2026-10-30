@@ -662,6 +662,7 @@ export const en: typeof ru = {
 		renamed: 'Renamed {renamed} of {total}',
 		failed: '{n} failed',
 		not_renamed: '{n} not renamed',
+		notify: 'Rename {n} in “{folder}”',
 	},
 	features: {
 		folder_search: 'Folder search',

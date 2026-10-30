@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window'
 import { t } from '@/i18n'
+import { is_desktop } from '@/isDesktop'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { bulk_rename_request, close_bulk_rename } from '@/store/aiBulkRename'
 import { new_row, planned_names, rename_entry, type BulkRow } from '@/services/ai/bulkRename'
 import { suggest_batch } from '@/services/ai/bulkSuggest'
+import { notify_proposal, signal_unfocused_proposal } from '@/services/mcp/attention'
+import { basename_of } from '@/services/mcp/path'
 import { close_proposal, confirm_proposal, proposal_decisions, ready_proposal_rows } from '@/services/mcp/propose'
 import AiReachBadge from './AiReachBadge.vue'
 
 type Phase = 'working' | 'review' | 'applying' | 'done'
 
 const toast = useToast()
+/** Proposal id that already bounced the Dock and posted its notification. */
+let signaled_proposal: string | null = null
 
 const rows = ref<BulkRow[]>([])
 const phase = ref<Phase>('working')
@@ -43,6 +49,32 @@ const answered = computed(() => rows.value.filter(row => !['waiting', 'preparing
 /** rows read so far; null once everything is read and the model is being asked */
 const prepared = ref<number | null>(0)
 
+function signal_proposal() {
+	if (!is_desktop) return
+	const id = bulk_rename_request.proposal_id
+	if (!id || signaled_proposal === id) return
+	signaled_proposal = id
+	const title = bulk_rename_request.client_name || t('bulk_rename.agent')
+	const body = t('bulk_rename.notify', {
+		n: bulk_rename_request.entries.length,
+		folder: basename_of(bulk_rename_request.folder_id),
+	})
+	void (async () => {
+		try {
+			const win = getCurrentWindow()
+			const focused = await win.isFocused()
+			await signal_unfocused_proposal({
+				focused,
+				already: false,
+				bounce: () => win.requestUserAttention(UserAttentionType.Informational),
+				notify: () => notify_proposal(title, body),
+			})
+		} catch (error) {
+			console.error('[mcp] proposal attention', error)
+		}
+	})()
+}
+
 async function start() {
 	controller?.abort()
 	const ws = workspace.value
@@ -58,6 +90,7 @@ async function start() {
 		phase.value = 'review'
 		notice.value = null
 		prepared.value = null
+		signal_proposal()
 		await ws.ensure_preview_folder(bulk_rename_request.folder_id)
 		return
 	}
