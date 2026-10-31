@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { resolve_slide_index } from './slidesUtils'
+import { resolve_slide_index, set_local_slide_index, viewer_slide_scope } from './slidesUtils'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { explorer_mounted } from '@/store/explorer/public_view'
@@ -13,8 +13,10 @@ defineProps<{
 const scope = useFolderContainerScope()
 const workspace = useWorkspace()
 
+const slideScope = computed(() => viewer_slide_scope(workspace.value, scope.folderId.value))
+
 const currentIndex = computed(() =>
-	scope.container.value ? resolve_slide_index(scope.container.value) : 0,
+	resolve_slide_index(scope.container.value, slideScope.value),
 )
 const total = computed(() => scope.container.value?.children.length ?? 0)
 
@@ -22,8 +24,13 @@ const canGoPrev = computed(() => currentIndex.value > 0)
 const canGoNext = computed(() => total.value > 0 && currentIndex.value < total.value - 1)
 
 function goTo(index: number) {
-	if (workspace.value?.can_write === false) return
-	workspace.value?.change_selected_slide_index(scope.folderId.value, index)
+	const ws = workspace.value
+	if (!ws) return
+	if (ws.can_write === false) {
+		set_local_slide_index(ws.uid, scope.folderId.value, index)
+		return
+	}
+	void ws.change_selected_slide_index(scope.folderId.value, index)
 }
 
 function goPrev() {

@@ -11,7 +11,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import PreviewContent from '../widgets/PreviewContent.vue'
-import { resolve_slide_index } from './slidesUtils'
+import { resolve_slide_index, viewer_slide_scope } from './slidesUtils'
 import SlideSwitcher from './SlideSwitcher.vue'
 import SlidesNote from './SlidesNote.vue'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
@@ -47,7 +47,7 @@ onUnmounted(() => {
 const { onSectionClick } = useClickOutsideEditingNote('.slides-note', editingNoteId)
 
 const currentIndex = computed(() =>
-	container.value ? resolve_slide_index(container.value) : 0,
+	resolve_slide_index(container.value, viewer_slide_scope(ws, folderId.value)),
 )
 const total = computed(() => container.value?.children.length ?? 0)
 const widget = computed<FolderContainerWidgetChild | undefined>(
