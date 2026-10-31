@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { useFolderContainerScope } from '../useFolderContainerScope'
-import { backgroundStyle, resolveWidgetBackground } from '../widgets/resolveBackground'
+import { backgroundStyle, defaultViewBackground, resolveWidgetBackground } from '../widgets/resolveBackground'
 import { resolvePreviewKind, resolveWidgetRole, type WidgetRole } from '../widgets/widgetRegistry'
 import { widgetIcon } from '../widgets/widgetIcon'
 import { splitFileName } from '../widgets/fileNameParts'
@@ -62,7 +62,7 @@ const previewKind = computed(
 	() => widget.value !== undefined ? resolvePreviewKind(widget.value) : null,
 )
 
-const sectionStyle = computed(() => backgroundStyle(container.value?.background, 'white'))
+const sectionStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
 
 const cardStyle = computed(() => {
 	if (!widget.value) return {}

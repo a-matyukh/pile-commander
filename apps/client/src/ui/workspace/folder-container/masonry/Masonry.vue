@@ -8,7 +8,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import WidgetTypeSwitch from '../widgets/WidgetTypeSwitch.vue'
-import { backgroundStyle } from '../widgets/resolveBackground'
+import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
 import {
 	MASONRY_GAP,
 	MASONRY_UNIT,
@@ -45,7 +45,7 @@ const widgetById = computed(() => {
 	return map
 })
 
-const sectionStyle = computed(() => backgroundStyle(container.value?.background, 'white'))
+const sectionStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
 
 const margin = [MASONRY_GAP, MASONRY_GAP] as [number, number]
 

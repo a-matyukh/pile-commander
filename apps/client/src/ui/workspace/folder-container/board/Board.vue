@@ -10,7 +10,7 @@ import { useFolderPaneActions } from '../useFolderPaneActions'
 import FolderContainerCtxMenu from '@/ui/workspace/menu/FolderContainerCtxMenu.vue'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { board_content_extent } from '@/services/board/layout'
-import { backgroundStyle } from '../widgets/resolveBackground'
+import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
 import { useBoardMarqueeSelection } from './useBoardMarqueeSelection'
 import { isEmptyBoardPointerTarget } from './isEmptyBoardPointerTarget'
 import { useMoveSelectedWidgets } from '../useMoveSelectedWidgets'
@@ -144,7 +144,7 @@ function onBoardPaneClick(event: MouseEvent) {
 }
 
 const boardChromeStyle = computed(() => ({
-	...backgroundStyle(container.value?.background, 'white'),
+	...backgroundStyle(container.value?.background, defaultViewBackground),
 	cursor: lineDraw.cursor.value
 		?? (boardPlacementTemplate.value ? 'crosshair' : undefined),
 }))

@@ -37,6 +37,13 @@ export function isEmbeddedDataUrl(value: string): boolean {
 	return /^data:/i.test(value.trim())
 }
 
+/**
+ * Pane fill when a folder has no background of its own.
+ * In the Explorer this is `--ct`: white, or gray when "folder content" is gray.
+ * Outside that shell the variable is unset, so the pane stays white.
+ */
+export const defaultViewBackground = 'var(--ct, white)'
+
 /** CSS fill for a stored background: a color, or a cover image URL. */
 export function backgroundStyle(
 	bg: string | undefined,
