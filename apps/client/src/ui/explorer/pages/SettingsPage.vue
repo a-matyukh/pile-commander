@@ -235,7 +235,7 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 			</TabsContent>
 		<TabsContent v-if="is_desktop" value="updates" class="pane">
 			<div class="card pad">
-				<DesktopUpdateControls />
+				<DesktopUpdateControls class="upd" />
 			</div>
 		</TabsContent>
 	</TabsRoot>
@@ -248,6 +248,15 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 	flex-direction: column;
 	gap: 14px;
 	max-width: 720px;
+	/* Nuxt UI's neutral is slate, so its text and field rings read blue beside this shell. */
+	--ui-text-dimmed: var(--text-muted);
+	--ui-text-muted: var(--text-muted);
+	--ui-text-toned: var(--text-secondary);
+	--ui-text: var(--text-primary);
+	--ui-text-highlighted: var(--text-primary);
+	--ui-border: var(--border);
+	--ui-border-muted: var(--border);
+	--ui-border-accented: var(--border-strong);
 }
 .tabs {
 	display: flex;
@@ -314,6 +323,10 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 }
 .card.pad {
 	padding: 14px 16px;
+}
+/* The check control is a ghost button; keep it in the same gray as the other tab labels. */
+.settings :deep(.upd) button {
+	color: var(--text-secondary);
 }
 .note {
 	font-size: 12px;
