@@ -1109,6 +1109,104 @@ describe('sync engine', () => {
 			vi.useRealTimers()
 		}
 	})
+
+	test('a missing root pauses without a pass, then syncs once the folder is back', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+		try {
+			const { local, stat } = make_local()
+			local.seed_file('/ws/note.md', 'mine')
+			const cloud = make_cloud()
+			const { deps } = make_deps(local, stat, cloud)
+			let present = false
+			const watch = vi.fn(async () => () => {})
+			const watch_cloud = vi.fn(async () => () => {})
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => new_state(),
+				save_state: async () => {},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				root_present: async () => present,
+				watch,
+				watch_cloud,
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+
+			await engine.start()
+			expect(statuses.at(-1)).toMatchObject({
+				phase: 'paused',
+				reason: 'folder_missing',
+				message: 'This folder is not on this computer.',
+			})
+			expect(watch).not.toHaveBeenCalled()
+			expect(watch_cloud).not.toHaveBeenCalled()
+			expect(cloud.list_cloud).not.toHaveBeenCalled()
+			expect(spy).not.toHaveBeenCalled()
+
+			await vi.advanceTimersByTimeAsync(60_000)
+			expect(cloud.list_cloud).not.toHaveBeenCalled()
+
+			present = true
+			await vi.advanceTimersByTimeAsync(60_000)
+			await vi.waitFor(() => expect(statuses.at(-1)?.phase).toBe('idle'))
+			expect(watch).toHaveBeenCalledOnce()
+			expect(watch_cloud).toHaveBeenCalledOnce()
+			expect(cloud.fake.has('/note.md')).toBe(true)
+			expect(spy).not.toHaveBeenCalled()
+			engine.stop()
+		} finally {
+			spy.mockRestore()
+			vi.useRealTimers()
+		}
+	})
+
+	test('a cloud subscribe CHANNEL_ERROR is retried without a log, then live updates arrive', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+		try {
+			const { local, stat } = make_local()
+			local.seed_file('/ws/note.md', 'mine')
+			const cloud = make_cloud()
+			const { deps } = make_deps(local, stat, cloud)
+			let on_cloud_change = () => {}
+			let fail = true
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => new_state(),
+				save_state: async () => {},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				root_present: async () => true,
+				watch: async () => () => {},
+				watch_cloud: async (callback) => {
+					if (fail) throw new Error('entries watch subscribe failed: CHANNEL_ERROR')
+					on_cloud_change = callback
+					return () => {}
+				},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+
+			await engine.start()
+			expect(statuses.at(-1)?.phase).toBe('idle')
+			expect(cloud.list_cloud).toHaveBeenCalled()
+			expect(spy).not.toHaveBeenCalled()
+
+			fail = false
+			await vi.advanceTimersByTimeAsync(1_100)
+			await vi.waitFor(() => expect(statuses.at(-1)?.phase).toBe('idle'))
+
+			await cloud.edit('/note.md', 'edited in the web')
+			on_cloud_change()
+			await vi.advanceTimersByTimeAsync(150)
+			await vi.waitFor(async () => expect(await local_text(local, '/ws/note.md')).toBe('edited in the web'))
+			expect(spy).not.toHaveBeenCalled()
+			engine.stop()
+		} finally {
+			spy.mockRestore()
+			vi.useRealTimers()
+		}
+	})
 })
 
 describe('two-way pass', () => {

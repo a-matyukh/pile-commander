@@ -1,18 +1,22 @@
+import { is_missing_path_error } from '@/store/helpers/fsErrors'
 import { run_sync_pass, type SyncPassDeps, type SyncProgress, type SyncReport } from './syncPass'
 import type { SyncState } from './types'
 
 export type SyncStatus = {
 	/**
 	 * idle: synced, waiting for a change · syncing: a pass is running ·
-	 * paused: waits for the person (mass delete, the plan) · error: retried soon
+	 * paused: waits for the person (mass delete, the plan) or for the folder
+	 * to come back · error: retried soon
 	 */
 	phase: 'idle' | 'syncing' | 'paused' | 'error'
 	/**
 	 * mass_delete_cloud: most of the cloud copy would go to the cloud trash
-	 * (the folder was emptied or unmounted here); mass_delete_local: most of the
-	 * folder would go to the system trash (the cloud workspace was emptied)
+	 * (the folder was emptied here); mass_delete_local: most of the folder
+	 * would go to the system trash (the cloud workspace was emptied);
+	 * folder_missing: the linked folder is not on this computer (moved,
+	 * deleted, or the disk is unplugged). The link stays.
 	 */
-	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked'
+	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked' | 'folder_missing'
 	message?: string
 	last_synced_at?: number
 	/** Files a paused pass would trash (on the side `reason` names). */
@@ -38,6 +42,11 @@ export type SyncEngineDeps = {
 	save_state(state: SyncState): Promise<void>
 	pass_deps(state: SyncState): SyncPassDeps
 	max_file_bytes(): number
+	/**
+	 * False when the linked folder is not a directory on this computer.
+	 * Omitted means it is here. A missing root pauses; it is not scanned.
+	 */
+	root_present?(): Promise<boolean>
 	/** Calls back on any change in the folder; resolves to the unwatch. */
 	watch(on_change: () => void): Promise<() => void>
 	/** Calls back on any change of the cloud workspace made elsewhere; resolves to the unwatch. */
@@ -79,12 +88,21 @@ function message_of(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
 
+/** First join failed because the socket was not up. A later join uses a fresh topic. */
+function is_retryable_subscribe(error: unknown): boolean {
+	return /watch subscribe failed: (CHANNEL_ERROR|TIMED_OUT)/.test(message_of(error))
+}
+
+const FOLDER_MISSING = 'This folder is not on this computer.'
+
 /**
  * Keeps one linked folder in sync while the app runs: a pass at start, after
  * changes here or in the cloud settle, every few minutes, and again after a
- * failure with backoff. Passes never overlap; a change during a pass queues
- * one more. A pass reads the cloud only when it may have changed: at start,
- * after a cloud event, on the interval and on Sync now.
+ * failure with backoff. A missing folder pauses until it is back: no pass,
+ * no watch, no log. A cloud subscribe that fails to join is retried with the
+ * same backoff and is not logged. Passes never overlap; a change during a
+ * pass queues one more. A pass reads the cloud only when it may have changed:
+ * at start, after a cloud event, on the interval and on Sync now.
  */
 export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DEFAULT_SYNC_TIMING): SyncEngine {
 	let state: SyncState | null = null
@@ -97,6 +115,7 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 	let cloud_dirty = true
 	let stopped = true
 	let failures = 0
+	let cloud_watch_failures = 0
 	let timer: ReturnType<typeof setTimeout> | null = null
 	let interval: ReturnType<typeof setInterval> | null = null
 	let unwatch: (() => void) | null = null
@@ -114,6 +133,90 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 			timer = null
 			void run()
 		}, delay_ms)
+	}
+
+	function release_watches() {
+		unwatch?.()
+		unwatch_cloud?.()
+		unwatch = null
+		unwatch_cloud = null
+	}
+
+	/** The link stays. The interval looks again; nothing is scanned until the folder is back. */
+	function pause_for_missing_root() {
+		if (stopped) return
+		release_watches()
+		failures = 0
+		cloud_watch_failures = 0
+		if (timer) clearTimeout(timer)
+		timer = null
+		if (status.phase === 'paused' && status.reason === 'folder_missing') return
+		publish({
+			phase: 'paused',
+			reason: 'folder_missing',
+			message: FOLDER_MISSING,
+			progress: undefined,
+			pending_deletes: undefined,
+			errors: [],
+		})
+	}
+
+	async function root_is_here(): Promise<boolean> {
+		if (!deps.root_present) return true
+		const here = await deps.root_present()
+		if (stopped) return false
+		if (here) return true
+		pause_for_missing_root()
+		return false
+	}
+
+	/** False when the folder is gone, so the caller skips the cloud watch and the pass. */
+	async function arm_local_watch(): Promise<boolean> {
+		if (stopped) return false
+		if (unwatch) return true
+		try {
+			const next = await deps.watch(() => schedule(timing.debounce_ms))
+			if (stopped) {
+				next()
+				return false
+			}
+			unwatch = next
+			return true
+		} catch (error) {
+			if (stopped) return false
+			if (is_missing_path_error(error)) {
+				pause_for_missing_root()
+				return false
+			}
+			// without a watcher the interval still catches up
+			console.error('[sync] watch failed', error)
+			return true
+		}
+	}
+
+	async function arm_cloud_watch(): Promise<void> {
+		if (unwatch_cloud || stopped || !deps.watch_cloud) return
+		try {
+			const next = await deps.watch_cloud(() => {
+				cloud_dirty = true
+				schedule(timing.debounce_ms)
+			})
+			if (stopped) {
+				next()
+				return
+			}
+			unwatch_cloud = next
+			cloud_watch_failures = 0
+		} catch (error) {
+			if (stopped) return
+			if (!is_retryable_subscribe(error)) {
+				console.error('[sync] cloud watch failed', error)
+				return
+			}
+			const delay = timing.retry_ms[Math.min(cloud_watch_failures, timing.retry_ms.length - 1)] ?? timing.interval_ms
+			cloud_watch_failures += 1
+			schedule(delay)
+		}
 	}
 
 	async function pass(confirm: SyncNowOptions): Promise<void> {
@@ -212,8 +315,19 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		}
 		running = (async () => {
 			try {
+				if (!(await root_is_here())) return
+				if (stopped) return
+				if (!(await arm_local_watch())) return
+				if (stopped) return
+				await arm_cloud_watch()
+				if (stopped) return
 				await pass(confirm)
 			} catch (error) {
+				if (stopped) return
+				if (is_missing_path_error(error)) {
+					pause_for_missing_root()
+					return
+				}
 				failures += 1
 				publish({ phase: 'error', reason: undefined, message: message_of(error) })
 				schedule(timing.retry_ms[Math.min(failures, timing.retry_ms.length) - 1] ?? timing.interval_ms)
@@ -237,28 +351,8 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 				cloud_dirty = true
 				void run()
 			}, timing.interval_ms)
-			try {
-				unwatch = await deps.watch(() => schedule(timing.debounce_ms))
-			} catch (error) {
-				// without a watcher the interval still catches up
-				console.error('[sync] watch failed', error)
-			}
-			try {
-				unwatch_cloud = await deps.watch_cloud?.(() => {
-					cloud_dirty = true
-					schedule(timing.debounce_ms)
-				}) ?? null
-			} catch (error) {
-				console.error('[sync] cloud watch failed', error)
-			}
-			if (stopped) {
-				unwatch?.()
-				unwatch_cloud?.()
-				unwatch = null
-				unwatch_cloud = null
-				return
-			}
 			await run()
+			if (stopped) release_watches()
 		},
 		stop() {
 			stopped = true
@@ -266,10 +360,7 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 			if (interval) clearInterval(interval)
 			timer = null
 			interval = null
-			unwatch?.()
-			unwatch_cloud?.()
-			unwatch = null
-			unwatch_cloud = null
+			release_watches()
 		},
 		async sync_now(options = {}) {
 			if (timer) clearTimeout(timer)

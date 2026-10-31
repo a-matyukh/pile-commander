@@ -18,6 +18,7 @@ const {
 	dismiss_update,
 	install_update,
 	reset_updater_state,
+	SILENT_UPDATE_RETRY_MS,
 } = await import('./updater')
 
 function make_update(version = '0.9.0') {
@@ -55,13 +56,28 @@ describe('updater store', () => {
 		expect(updater.dismissed).toBe(false)
 	})
 
-	it('logs a silent check failure without surfacing an error', async () => {
+	it('retries a silent check once without logging or surfacing an error', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-		checkForDesktopUpdate.mockRejectedValue(new Error('offline'))
-		await check_for_updates()
-		expect(updater.status).toBe('idle')
-		expect(updater.error).toBeNull()
-		spy.mockRestore()
+		try {
+			checkForDesktopUpdate
+				.mockRejectedValueOnce(new Error('offline'))
+				.mockResolvedValueOnce(make_update())
+			await check_for_updates()
+			expect(updater.status).toBe('idle')
+			expect(updater.error).toBeNull()
+			expect(spy).not.toHaveBeenCalled()
+			expect(checkForDesktopUpdate).toHaveBeenCalledTimes(1)
+			await vi.advanceTimersByTimeAsync(SILENT_UPDATE_RETRY_MS)
+			await vi.waitFor(() => expect(updater.status).toBe('available'))
+			expect(updater.version).toBe('0.9.0')
+			expect(checkForDesktopUpdate).toHaveBeenCalledTimes(2)
+			await vi.advanceTimersByTimeAsync(SILENT_UPDATE_RETRY_MS)
+			expect(checkForDesktopUpdate).toHaveBeenCalledTimes(2)
+		} finally {
+			spy.mockRestore()
+			vi.useRealTimers()
+		}
 	})
 
 	it('surfaces a manual check failure', async () => {

@@ -233,11 +233,15 @@ decided one by one.
 
 - **Mass delete pauses, separately per side.** A pass that would trash at
   least 20 files **and** over half of one side pauses:
-  - `mass_delete_cloud`: the folder was emptied or unmounted here;
+  - `mass_delete_cloud`: the folder was emptied here;
   - `mass_delete_local`: the cloud workspace was emptied.
 
   Each has its own confirmation in the popover, and confirming one does not
   confirm the other.
+- **A missing root pauses.** The folder was moved, deleted, or the disk is
+  unplugged: the engine pauses as `folder_missing` and does not run a pass.
+  That is not a mass delete and not an error that retries the pass. The link
+  stays. The interval looks again and syncs once the folder is back.
 - **The system trash is only reached inside the root.** `local_trash` never
   touches the root itself or a `.pile` path, and `store/localSync.ts` checks
   the path again before calling `trash_path`.

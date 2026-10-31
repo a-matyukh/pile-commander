@@ -170,6 +170,14 @@ function start_engine(link: SyncLink): void {
 			purge: cloud_id => purge_entry_id(require_supabase(), cloud_id),
 		}),
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,
+		root_present: async () => {
+			try {
+				const info = await (await fs()).stat(link.root)
+				return info.isDirectory
+			} catch {
+				return false
+			}
+		},
 		// joins the workspace's realtime channels itself, board open or not
 		watch_cloud: on_change => cloud_fm.watch_workspace(on_change),
 		watch: async (on_change) => {
