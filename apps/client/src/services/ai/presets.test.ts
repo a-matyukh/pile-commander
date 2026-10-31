@@ -5,6 +5,7 @@ describe('preset_for_url', () => {
 	test('recognizes a preset address, with or without the trailing slash', () => {
 		expect(preset_for_url('http://localhost:11434/v1')).toBe('ollama')
 		expect(preset_for_url('https://openrouter.ai/api/v1/')).toBe('openrouter')
+		expect(preset_for_url('https://api.deepseek.com/v1')).toBe('deepseek')
 		expect(preset_for_url('https://api.fireworks.ai/inference/v1')).toBe('fireworks')
 		expect(preset_for_url('https://example.com/v1')).toBe('custom')
 	})

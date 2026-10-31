@@ -605,6 +605,7 @@ export const ru = {
 			ollama: 'Ollama',
 			lmstudio: 'LM Studio',
 			openai: 'OpenAI',
+			deepseek: 'DeepSeek',
 			openrouter: 'OpenRouter',
 			fireworks: 'Fireworks',
 			custom: 'Свой адрес',
@@ -621,6 +622,7 @@ export const ru = {
 		key_optional: 'Необязательно',
 		key_hints: {
 			openai: 'platform.openai.com → API keys',
+			deepseek: 'platform.deepseek.com → API keys',
 			openrouter: 'openrouter.ai → Keys. Даёт доступ к Claude, Gemini и другим',
 			fireworks: 'fireworks.ai → API Keys. Открытые модели: DeepSeek, Qwen, Llama',
 		},

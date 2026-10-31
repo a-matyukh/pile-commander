@@ -608,6 +608,7 @@ export const en: typeof ru = {
 			ollama: 'Ollama',
 			lmstudio: 'LM Studio',
 			openai: 'OpenAI',
+			deepseek: 'DeepSeek',
 			openrouter: 'OpenRouter',
 			fireworks: 'Fireworks',
 			custom: 'Custom address',
@@ -624,6 +625,7 @@ export const en: typeof ru = {
 		key_optional: 'Optional',
 		key_hints: {
 			openai: 'platform.openai.com → API keys',
+			deepseek: 'platform.deepseek.com → API keys',
 			openrouter: 'openrouter.ai → Keys. Gives access to Claude, Gemini and others',
 			fireworks: 'fireworks.ai → API Keys. Open models such as DeepSeek, Qwen and Llama',
 		},

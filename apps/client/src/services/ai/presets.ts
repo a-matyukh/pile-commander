@@ -1,4 +1,4 @@
-export type AiPresetId = 'ollama' | 'lmstudio' | 'openai' | 'openrouter' | 'fireworks' | 'custom'
+export type AiPresetId = 'ollama' | 'lmstudio' | 'openai' | 'deepseek' | 'openrouter' | 'fireworks' | 'custom'
 
 export type AiPreset = {
 	id: AiPresetId
@@ -30,6 +30,13 @@ export const AI_PRESETS: readonly AiPreset[] = [
 		label: 'OpenAI',
 		base_url: 'https://api.openai.com/v1',
 		key_hint: 'platform.openai.com → API keys',
+		desktop_only: false,
+	},
+	{
+		id: 'deepseek',
+		label: 'DeepSeek',
+		base_url: 'https://api.deepseek.com/v1',
+		key_hint: 'platform.deepseek.com → API keys',
 		desktop_only: false,
 	},
 	{
