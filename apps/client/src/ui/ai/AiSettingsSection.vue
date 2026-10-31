@@ -14,11 +14,18 @@ import { AI_PRESETS, ai_preset, model_label, preset_for_url, type AiPresetId } f
 import AiReachBadge from './AiReachBadge.vue'
 
 /**
- * `bare`: inside the explorer's settings page, which gives the card and the
+ * `bare`: inside the explorer's settings page, which gives the cards and the
  * "AI" tab. No own heading or frame, and the captions follow the interface
- * language. Without it (the old window) it stays as it was, in English
+ * language. `part` renders one group into the page's own card. Without `bare`
+ * (the old window) both groups stay here, in English.
  */
-const props = withDefaults(defineProps<{ bare?: boolean }>(), { bare: false })
+const props = withDefaults(defineProps<{
+	bare?: boolean
+	part?: 'providers' | 'mcp'
+}>(), { bare: false })
+
+const show_providers = computed(() => props.part !== 'mcp')
+const show_mcp = computed(() => props.part !== 'providers' && is_desktop)
 
 /** The interface language in `bare`, the old English text otherwise */
 function caption(key: string, english: string, params?: Record<string, string | number>): string {
@@ -208,159 +215,170 @@ async function test_connection() {
 	}
 }
 
-watchDebounced(
-	() => ai_settings.value.base_url,
-	() => {
-		models.value = []
-		test_result.value = null
-		void refresh_key_status()
-	},
-	{ debounce: 400, immediate: true },
-)
+if (props.part !== 'mcp') {
+	watchDebounced(
+		() => ai_settings.value.base_url,
+		() => {
+			models.value = []
+			test_result.value = null
+			void refresh_key_status()
+		},
+		{ debounce: 400, immediate: true },
+	)
 
-watch(() => ai_settings.value.model, () => {
-	test_result.value = null
-})
+	watch(() => ai_settings.value.model, () => {
+		test_result.value = null
+	})
+}
 </script>
 
 <template>
-	<section class="flex flex-col gap-2">
-		<h3 v-if="!bare" class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
-			<UIcon name="i-lucide:sparkles" class="size-3.5 shrink-0" />
-			AI
-		</h3>
+	<div class="ai-settings" :class="{ split: !part }">
+		<div v-if="show_providers" class="group">
+			<h3 v-if="!part" class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
+				<UIcon name="i-lucide:sparkles" class="size-3.5 shrink-0" />
+				{{ caption('group_providers', 'Providers') }}
+			</h3>
 
-		<div class="flex flex-col gap-3" :class="bare ? 'px-4 py-3.5' : 'rounded-md border border-default p-2.5'">
-			<p v-if="bare" class="text-xs leading-relaxed text-muted">{{ t('ai_settings.intro') }}</p>
-			<p v-else class="text-xs leading-relaxed text-muted">
-				Suggest names and summarize boards with a model you choose. Results are
-				plain files and names; nothing changes without your OK.
-			</p>
+			<div class="flex flex-col gap-3" :class="part ? 'px-4 py-3.5' : 'rounded-md border border-default p-2.5'">
+				<p v-if="bare" class="text-xs leading-relaxed text-muted">{{ t('ai_settings.intro') }}</p>
+				<p v-else class="text-xs leading-relaxed text-muted">
+					Suggest names and summarize boards with a model you choose. Results are
+					plain files and names; nothing changes without your OK.
+				</p>
 
-			<UFormField :label="caption('provider', 'Provider')" size="sm">
-				<div class="flex items-center gap-2">
-					<USelect
-						:model-value="ai_settings.preset"
-						:items="preset_items"
-						size="sm"
-						class="min-w-0 flex-1"
-						@update:model-value="(value) => select_preset(value as AiPresetId)"
-					/>
-					<AiReachBadge
-						v-if="ai_base_check.ok"
-						:reach="ai_base_check.reach"
-						:label="bare ? t(`ai_settings.reach.${ai_base_check.reach}`) : undefined"
-					/>
-				</div>
-			</UFormField>
+				<UFormField :label="caption('provider', 'Provider')" size="sm">
+					<div class="flex items-center gap-2">
+						<USelect
+							:model-value="ai_settings.preset"
+							:items="preset_items"
+							size="sm"
+							class="min-w-0 flex-1"
+							@update:model-value="(value) => select_preset(value as AiPresetId)"
+						/>
+						<AiReachBadge
+							v-if="ai_base_check.ok"
+							:reach="ai_base_check.reach"
+							:label="bare ? t(`ai_settings.reach.${ai_base_check.reach}`) : undefined"
+						/>
+					</div>
+				</UFormField>
 
-			<UFormField
-				:label="caption('address', 'Address')"
-				size="sm"
-				:error="ai_settings.base_url && !ai_base_check.ok ? ai_base_check.message : false"
-			>
-				<UInput
-					:model-value="ai_settings.base_url"
-					placeholder="https://…/v1"
+				<UFormField
+					:label="caption('address', 'Address')"
 					size="sm"
-					class="w-full"
-					spellcheck="false"
-					autocomplete="off"
-					@update:model-value="(value) => set_base_url(String(value))"
-				/>
-			</UFormField>
-
-			<UFormField
-				:label="caption('key', 'API key')"
-				size="sm"
-				:hint="has_key ? caption('key_saved', 'Saved') : caption('key_optional', 'Optional')"
-				:help="!key_allowed && ai_base_check.ok
-					? caption('key_plain_http', 'A key is never sent over plain http on the network.')
-					: key_hint"
-				:error="key_error ?? false"
-			>
-				<div class="flex items-center gap-1.5">
+					:error="ai_settings.base_url && !ai_base_check.ok ? ai_base_check.message : false"
+				>
 					<UInput
-						v-model="key_input"
-						type="password"
-						:placeholder="has_key ? '••••••••' : 'sk-…'"
+						:model-value="ai_settings.base_url"
+						placeholder="https://…/v1"
 						size="sm"
-						class="min-w-0 flex-1"
+						class="w-full"
+						spellcheck="false"
 						autocomplete="off"
-						:disabled="!key_allowed || key_busy"
-						@keydown.enter="save_key"
+						@update:model-value="(value) => set_base_url(String(value))"
 					/>
+				</UFormField>
+
+				<UFormField
+					:label="caption('key', 'API key')"
+					size="sm"
+					:hint="has_key ? caption('key_saved', 'Saved') : caption('key_optional', 'Optional')"
+					:help="!key_allowed && ai_base_check.ok
+						? caption('key_plain_http', 'A key is never sent over plain http on the network.')
+						: key_hint"
+					:error="key_error ?? false"
+				>
+					<div class="flex items-center gap-1.5">
+						<UInput
+							v-model="key_input"
+							type="password"
+							:placeholder="has_key ? '••••••••' : 'sk-…'"
+							size="sm"
+							class="min-w-0 flex-1"
+							autocomplete="off"
+							:disabled="!key_allowed || key_busy"
+							@keydown.enter="save_key"
+						/>
+						<UButton
+							:label="caption('key_save', 'Save')"
+							size="sm"
+							color="neutral"
+							variant="outline"
+							:disabled="!key_allowed || !key_input.trim()"
+							:loading="key_busy"
+							@click="save_key"
+						/>
+						<UButton
+							v-if="has_key"
+							icon="i-lucide:trash-2"
+							size="sm"
+							color="neutral"
+							variant="ghost"
+							:aria-label="caption('key_remove', 'Remove the key')"
+							:disabled="key_busy"
+							@click="remove_key"
+						/>
+					</div>
+				</UFormField>
+				<p v-if="!is_desktop" class="-mt-2 text-xs text-muted">
+					{{ caption('key_tab_only', 'In the browser the key is kept for this tab only and never stored.') }}
+				</p>
+
+				<div class="flex flex-col gap-1.5">
 					<UButton
-						:label="caption('key_save', 'Save')"
+						:label="caption('test_button', 'Test connection')"
+						icon="i-lucide:plug-zap"
 						size="sm"
 						color="neutral"
 						variant="outline"
-						:disabled="!key_allowed || !key_input.trim()"
-						:loading="key_busy"
-						@click="save_key"
+						class="self-start"
+						:loading="testing"
+						:disabled="!ai_base_check.ok"
+						@click="test_connection"
 					/>
-					<UButton
-						v-if="has_key"
-						icon="i-lucide:trash-2"
-						size="sm"
-						color="neutral"
-						variant="ghost"
-						:aria-label="caption('key_remove', 'Remove the key')"
-						:disabled="key_busy"
-						@click="remove_key"
-					/>
+					<p
+						v-if="test_result"
+						class="text-xs leading-relaxed"
+						:class="test_result.ok ? 'text-success' : 'text-error'"
+					>
+						{{ test_result.text }}
+					</p>
 				</div>
-			</UFormField>
-			<p v-if="!is_desktop" class="-mt-2 text-xs text-muted">
-				{{ caption('key_tab_only', 'In the browser the key is kept for this tab only and never stored.') }}
-			</p>
 
-			<div class="flex flex-col gap-1.5">
-				<UButton
-					:label="caption('test_button', 'Test connection')"
-					icon="i-lucide:plug-zap"
-					size="sm"
-					color="neutral"
-					variant="outline"
-					class="self-start"
-					:loading="testing"
-					:disabled="!ai_base_check.ok"
-					@click="test_connection"
-				/>
-				<p
-					v-if="test_result"
-					class="text-xs leading-relaxed"
-					:class="test_result.ok ? 'text-success' : 'text-error'"
-				>
-					{{ test_result.text }}
-				</p>
+				<UFormField :label="caption('model', 'Model')" size="sm">
+					<UInputMenu
+						:model-value="ai_settings.model || undefined"
+						:items="model_items"
+						value-key="value"
+						create-item
+						:placeholder="caption('model_placeholder', 'e.g. gemma3 or openai/gpt-4o-mini')"
+						size="sm"
+						class="w-full"
+						@update:model-value="(value) => set_model(value as string | undefined)"
+						@create="add_model"
+					/>
+				</UFormField>
+
+				<UFormField :label="caption('names', 'Suggested names')" size="sm">
+					<USelect
+						:model-value="ai_settings.name_style"
+						:items="name_style_items"
+						size="sm"
+						class="w-full"
+						@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
+					/>
+				</UFormField>
 			</div>
+		</div>
 
-			<UFormField :label="caption('model', 'Model')" size="sm">
-				<UInputMenu
-					:model-value="ai_settings.model || undefined"
-					:items="model_items"
-					value-key="value"
-					create-item
-					:placeholder="caption('model_placeholder', 'e.g. gemma3 or openai/gpt-4o-mini')"
-					size="sm"
-					class="w-full"
-					@update:model-value="(value) => set_model(value as string | undefined)"
-					@create="add_model"
-				/>
-			</UFormField>
+		<div v-if="show_mcp" class="group">
+			<h3 v-if="!part" class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
+				<UIcon name="i-lucide:server" class="size-3.5 shrink-0" />
+				{{ caption('group_mcp', 'MCP server') }}
+			</h3>
 
-			<UFormField :label="caption('names', 'Suggested names')" size="sm">
-				<USelect
-					:model-value="ai_settings.name_style"
-					:items="name_style_items"
-					size="sm"
-					class="w-full"
-					@update:model-value="(value) => ai_settings = { ...ai_settings, name_style: value as NameStyle }"
-				/>
-			</UFormField>
-
-			<div v-if="is_desktop" class="mt-6 flex flex-col gap-3 rounded-md border border-default bg-muted/25 px-3 py-4">
+			<div class="flex flex-col gap-3" :class="part ? 'px-4 py-3.5' : 'rounded-md border border-default p-2.5'">
 				<div class="flex items-start justify-between gap-3">
 					<div class="min-w-0">
 						<p class="text-sm">{{ caption('agent_access', 'Agent access') }}</p>
@@ -403,5 +421,18 @@ watch(() => ai_settings.value.model, () => {
 				</div>
 			</div>
 		</div>
-	</section>
+	</div>
 </template>
+
+<style scoped>
+.split {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.split .group {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+</style>

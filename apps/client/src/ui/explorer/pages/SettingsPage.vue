@@ -212,10 +212,16 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 
 		</TabsContent>
 		<TabsContent value="ai" class="pane">
+			<div class="sh">{{ t('ai_settings.group_providers') }}</div>
 			<div class="card">
-				<AiSettingsSection bare />
+				<AiSettingsSection bare part="providers" />
 			</div>
-
+			<template v-if="is_desktop">
+				<div class="sh">{{ t('ai_settings.group_mcp') }}</div>
+				<div class="card">
+					<AiSettingsSection bare part="mcp" />
+				</div>
+			</template>
 		</TabsContent>
 		<TabsContent value="other" class="pane">
 			<div class="sh">{{ t('settings.files') }}</div>

@@ -599,6 +599,8 @@ export const en: typeof ru = {
 		},
 	},
 	ai_settings: {
+		group_providers: 'Providers',
+		group_mcp: 'MCP server',
 		intro: 'AI suggests names and summarizes folders with a model you choose. Results are plain files and names; nothing changes without your OK',
 		provider: 'Provider',
 		provider_d: 'Where the model runs',
