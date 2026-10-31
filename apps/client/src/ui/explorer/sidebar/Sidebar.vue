@@ -20,7 +20,7 @@ import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
-import { cloud_source_opens_page } from './source_open'
+import { cloud_source_opens_page, source_tree_visible } from './source_open'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
 /** On phones the sidebar is a drawer over the content, as in the prototype */
@@ -176,6 +176,15 @@ const listing = computed(() => !!active_drive.value && explorer_tree.listed_driv
  * only a spinner, not the old drive's tree or the steps in between
  */
 const switching = ref(false)
+/**
+ * Rows of the drive on screen. A click selects the new source at once, and
+ * the previous drive's rows stay up until its list is replaced — hide them.
+ */
+const tree_visible = computed(() => source_tree_visible(
+	switching.value,
+	explorer_tree.listed_drive_id,
+	active_drive.value?.id ?? null,
+))
 const settled = computed(() => {
 	const drive = active_drive.value
 	if (!drive || picked_source.value || explorer_tree.listed_drive_id !== drive.id) return false
@@ -255,7 +264,7 @@ watchEffect(() => {
 			:data-drop-root="primary_spot?.root_key"
 			:data-drop-folder="primary_spot?.folder_id"
 		>
-			<template v-if="!hub_open && !switching">
+			<template v-if="!hub_open && tree_visible">
 				<template v-if="primary_root">
 					<TreeRow
 						v-for="node in primary_children"
