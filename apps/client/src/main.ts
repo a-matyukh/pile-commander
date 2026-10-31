@@ -12,6 +12,7 @@ import { public_route_deps } from './services/navigatePublic'
 import { install_document_title } from './services/documentTitle'
 import { notify_demo_embed_ready } from './services/demoEmbed'
 import { strip_empty_location_hash } from './services/cloud/stripEmptyLocationHash'
+import { drop_stale_workspace_sidebar_keys } from './services/window/workspaceSidebarStorage'
 import './modelViewer'
 import './main.css'
 import 'virtual:offline-icons'
@@ -37,6 +38,8 @@ async function bootstrap() {
 	try {
 		localStorage.removeItem('desktops_state')
 		localStorage.removeItem('pile_commander_experimental_desktops')
+		// Sidebar used to persist under a fresh useId() on every mount.
+		drop_stale_workspace_sidebar_keys()
 	} catch {
 		// storage blocked: nothing to clean
 	}

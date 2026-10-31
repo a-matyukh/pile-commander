@@ -28,6 +28,7 @@ import type { WorkspaceTab } from '@/domain/Store'
 import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
 import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
 import { traffic_inset_target } from '@/services/window/trafficInset'
+import { WORKSPACE_SIDEBAR_ID } from '@/services/window/workspaceSidebarStorage'
 import { explorer_enabled } from '@/store/explorer/enabled'
 import { back_to_explorer_hub } from '@/store/explorer/public_view'
 
@@ -538,6 +539,7 @@ watch(
 			>
 				<UDashboardSidebar
 					v-if="!showing_catalog"
+					:id="WORKSPACE_SIDEBAR_ID"
 					v-model:open="sidebarOpen"
 					v-model:collapsed="sidebarCollapsed"
 					mode="drawer"
