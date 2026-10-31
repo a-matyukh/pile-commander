@@ -62,7 +62,10 @@ async function create() {
 
 <template>
 	<div class="page">
-		<p v-if="!cloud.user" class="muted">{{ t('cloud_sign_in.text') }}</p>
+		<div v-if="!cloud.user" class="muted signin">
+			<p>{{ t('cloud_sign_in.text') }}</p>
+			<Button variant="link" @click="explorer_navigation.open_page('account')">{{ t('cloud_sign_in.button') }}</Button>
+		</div>
 		<template v-else>
 			<div class="bar">
 				<Button icon="tabler:folder-plus" :loading="creating" @click="create">{{ t('cloud_page.new_folder') }}</Button>
@@ -104,6 +107,20 @@ async function create() {
 	margin: 0;
 	font-size: 12px;
 	color: var(--text-muted);
+}
+.signin {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 8px;
+}
+.signin p {
+	margin: 0;
+}
+.signin :deep(.btn) {
+	color: var(--text-accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
 }
 .bad {
 	color: var(--text-danger);

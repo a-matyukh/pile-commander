@@ -505,7 +505,7 @@ export const en: typeof ru = {
 	},
 	cloud_sign_in: {
 		text: 'Sign in to see your cloud folders',
-		button: 'Sign in',
+		button: 'Sign in or sign up',
 	},
 	dialog: {
 		cancel: 'Cancel',

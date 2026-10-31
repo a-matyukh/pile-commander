@@ -502,7 +502,7 @@ export const ru = {
 	},
 	cloud_sign_in: {
 		text: 'Войдите, чтобы видеть облачные папки',
-		button: 'Войти',
+		button: 'Войти или зарегистрироваться',
 	},
 	dialog: {
 		cancel: 'Отмена',

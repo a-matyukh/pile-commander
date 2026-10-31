@@ -20,6 +20,7 @@ import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
+import { cloud_source_opens_page } from './source_open'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
 /** On phones the sidebar is a drawer over the content, as in the prototype */
@@ -100,8 +101,13 @@ function source_is_open(drive: Drive): boolean {
 async function open_drive(drive: Drive) {
 	const location = explorer_navigation.location
 	// The cloud's own "root" is the page of its top-level folders: when the
-	// cloud is already shown, or nothing in it was opened before
-	if (drive.kind === 'cloud' && (active_source.value === 'cloud' || !explorer_drive_locations.value.cloud)) {
+	// cloud is already shown, or nothing in it was opened before. Signed out,
+	// that page asks to sign in — a saved folder cannot be opened.
+	if (drive.kind === 'cloud' && cloud_source_opens_page(
+		cloud_signed_in.value,
+		active_source.value,
+		!!explorer_drive_locations.value.cloud,
+	)) {
 		void explorer_navigation.open_page('cloud')
 		return
 	}
