@@ -7,8 +7,9 @@ import { useWorkspace } from '@/ui/workspace/useWorkspace'
 export const PRESET_COLORS: { label: string; color: Color }[] = [
 	{ label: 'Transparent', color: 'transparent' },
 	{ label: 'White', color: '#FFFFFF' },
-	{ label: 'Gray', color: 'var(--pc-gray-muted)' },
-	{ label: 'Slate', color: 'var(--pc-gray-header)' },
+	// Fixed grays: the surface tokens are both 96% lightness and read as one swatch.
+	{ label: 'Gray', color: '#E5E7EB' },
+	{ label: 'Slate', color: '#94A3B8' },
 	{ label: 'Cream', color: '#FEF3C7' },
 	{ label: 'Rose', color: '#FECACA' },
 	{ label: 'Pink', color: '#FBCFE8' },
