@@ -23,8 +23,14 @@ import TreeRow from './TreeRow.vue'
 import { cloud_source_opens_page, source_tree_visible } from './source_open'
 import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
 
-/** On phones the sidebar is a drawer over the content, as in the prototype */
-defineProps<{ drawer?: boolean }>()
+/**
+ * `drawer` — a phone: the sidebar covers the content and a tap outside closes it.
+ * `overlay` — a closed sidebar on a wide window. It stays mounted, off to the
+ * left, and slides over the page while the pointer rests on the left edge.
+ * `shown` is that slide. The saved open flag is untouched, so pinning is still
+ * the top-bar button.
+ */
+defineProps<{ drawer?: boolean, overlay?: boolean, shown?: boolean }>()
 
 const drives = computed(() => explorer_drives.drives())
 /** The account or settings page is open: its footer button shows it */
@@ -232,10 +238,12 @@ watchEffect(() => {
 <template>
 	<aside
 		class="tree"
-		:class="{ drawer, op: drawer && explorer_drawer_open }"
+		:class="{ drawer, op: drawer && explorer_drawer_open, overlay, show: overlay && shown }"
+		:inert="overlay && !shown ? true : undefined"
+		:aria-hidden="overlay && !shown ? 'true' : undefined"
 		:style="!drawer && explorer_sidebar_width ? { width: explorer_sidebar_width + 'px' } : undefined"
 	>
-		<SidebarResizer v-if="!drawer" />
+		<SidebarResizer v-if="!drawer && !overlay" />
 		<div class="hd">
 			<IconButton
 				v-for="drive in drives"
@@ -369,6 +377,27 @@ watchEffect(() => {
 	box-shadow: 6px 0 24px rgba(0, 0, 0, .12);
 	border-right: 0.5px solid var(--border-strong);
 	transition: transform .22s ease;
+}
+/* Closed, but still here so a hover can slide it over the page. Out of the row,
+   so the page keeps its width. Inert while it sits off-screen. */
+.tree.overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	z-index: 5;
+	transform: translateX(-100%);
+	visibility: hidden;
+	pointer-events: none;
+	transition: transform .22s ease, visibility 0s linear .22s;
+}
+.tree.overlay.show {
+	transform: none;
+	visibility: visible;
+	pointer-events: auto;
+	box-shadow: 6px 0 24px rgba(0, 0, 0, .12);
+	border-right: 0.5px solid var(--border-strong);
+	transition: transform .22s ease, visibility 0s;
 }
 .tls {
 	padding: 6px 0 8px;

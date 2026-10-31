@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useEventListener, useMediaQuery } from '@vueuse/core'
 import { locale, t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
 import { start_explorer_list_migration } from '@/store/explorer/bookmarks'
@@ -24,6 +25,7 @@ import { publish_dialog, share_dialog, unlock_pointers } from './dialogs'
 import { set_open_cloud_copy, take_bridge_intent } from '@/store/bridge'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
+import { tree_drag } from '@/ui/explorer/sidebar/tree_drag'
 import FolderHeader from '@/ui/explorer/folder-header/FolderHeader.vue'
 import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open } from '@/store/explorer/sidebar'
 import { explorer_tree } from '@/store/explorer/tree'
@@ -66,6 +68,163 @@ function dismiss_error() {
 	store.workspace?.clear_error()
 	store.clear_error()
 }
+
+/** How long the pointer must rest on the left edge before the sidebar slides in */
+const PEEK_SHOW_MS = 120
+/** After the pointer leaves, long enough to cross from the edge onto the sidebar */
+const PEEK_HIDE_MS = 300
+/** While a menu, a dialog, or a folder drag holds it open, look again until the pointer can dismiss it */
+const PEEK_HOLD_MS = 200
+
+const fine_pointer = useMediaQuery('(hover: hover) and (pointer: fine)')
+const root_el = ref<HTMLElement | null>(null)
+const edge_el = ref<HTMLElement | null>(null)
+/** The closed sidebar, drawn over the page. Not the saved open flag */
+const peek = ref(false)
+
+let inside_edge = false
+let inside_sidebar = false
+let last_x = -1
+let last_y = -1
+let show_timer: ReturnType<typeof setTimeout> | null = null
+let hide_timer: ReturnType<typeof setTimeout> | null = null
+
+/** A mouse on a wide window, and the sidebar is pinned shut */
+function peek_allowed() {
+	return !explorer_mobile.value && !explorer_sidebar_open.value && fine_pointer.value
+}
+
+function clear_show() {
+	if (show_timer) clearTimeout(show_timer)
+	show_timer = null
+}
+
+function clear_hide() {
+	if (hide_timer) clearTimeout(hide_timer)
+	hide_timer = null
+}
+
+function release_peek() {
+	peek.value = false
+	inside_edge = false
+	inside_sidebar = false
+	clear_show()
+	clear_hide()
+}
+
+function pointer_in_sidebar(target: Element | null): boolean {
+	if (!target || target.closest('.gh')) return false
+	const aside = target.closest('aside.tree')
+	return !!aside && !aside.classList.contains('drawer')
+}
+
+/** A menu, a dialog, or its dimmer covers the page: the edge underneath is not what the pointer is on */
+function pointer_on_layer(target: Element | null): boolean {
+	return !!target?.closest('.mn, [role="dialog"], .ov')
+}
+
+/**
+ * A folder menu or a rename dialog portaled out of the sidebar, or a row being
+ * dragged onto the page. The sidebar stays out until that finishes.
+ */
+function sidebar_ui_open(): boolean {
+	const root = root_el.value
+	if (!root) return false
+	if (tree_drag.source) return true
+	if (root.querySelector('aside.tree [data-state="open"]')) return true
+	if (root.querySelector('.mn[data-state="open"]')) return true
+	if (root.querySelector('[role="dialog"][data-state="open"]')) return true
+	return false
+}
+
+/** Where the pointer is now: the hidden sidebar does not take the hit, the edge box does */
+function read_pointer() {
+	if (last_x < 0) {
+		inside_edge = false
+		inside_sidebar = false
+		return
+	}
+	const edge = edge_el.value?.getBoundingClientRect()
+	const hit = document.elementFromPoint(last_x, last_y)
+	inside_sidebar = pointer_in_sidebar(hit)
+	inside_edge = !!edge
+		&& !inside_sidebar
+		&& !pointer_on_layer(hit)
+		&& last_x >= edge.left && last_x < edge.right
+		&& last_y >= edge.top && last_y < edge.bottom
+}
+
+function sync_peek() {
+	if (!alive || !peek_allowed()) {
+		release_peek()
+		return
+	}
+	if (inside_edge || inside_sidebar) {
+		clear_hide()
+		if (peek.value || show_timer) return
+		show_timer = setTimeout(() => {
+			show_timer = null
+			if (!alive || !peek_allowed()) return
+			read_pointer()
+			if (inside_edge || inside_sidebar) peek.value = true
+		}, PEEK_SHOW_MS)
+		return
+	}
+	clear_show()
+	if (!peek.value || hide_timer) return
+	hide_timer = setTimeout(try_hide, sidebar_ui_open() ? PEEK_HOLD_MS : PEEK_HIDE_MS)
+}
+
+function try_hide() {
+	hide_timer = null
+	if (!alive || !peek_allowed()) return
+	read_pointer()
+	if (inside_edge || inside_sidebar) {
+		sync_peek()
+		return
+	}
+	if (sidebar_ui_open()) {
+		hide_timer = setTimeout(try_hide, PEEK_HOLD_MS)
+		return
+	}
+	peek.value = false
+}
+
+useEventListener(window, 'pointermove', (e: PointerEvent) => {
+	last_x = e.clientX
+	last_y = e.clientY
+	if (!peek_allowed() || e.pointerType === 'touch') return
+	// Most moves are over the page. The rect check is enough until the pointer
+	// actually reaches the edge, or the sidebar is already out.
+	if (!peek.value && !inside_edge && !inside_sidebar) {
+		const edge = edge_el.value?.getBoundingClientRect()
+		const on_edge = !!edge
+			&& e.clientX >= edge.left && e.clientX < edge.right
+			&& e.clientY >= edge.top && e.clientY < edge.bottom
+		if (!on_edge) return
+	}
+	const was_edge = inside_edge
+	const was_sidebar = inside_sidebar
+	read_pointer()
+	if (inside_edge === was_edge && inside_sidebar === was_sidebar) return
+	sync_peek()
+})
+
+// Leaving the window does not move across the edge; the sidebar should not stay out.
+// Forget the last point: a later check would still see it sitting on the edge.
+useEventListener(window, 'pointerout', (e: PointerEvent) => {
+	if (e.relatedTarget) return
+	if (!inside_edge && !inside_sidebar && !peek.value) return
+	last_x = -1
+	last_y = -1
+	inside_edge = false
+	inside_sidebar = false
+	sync_peek()
+})
+
+watch([explorer_sidebar_open, explorer_mobile, fine_pointer], () => {
+	if (!peek_allowed()) release_peek()
+})
 
 // The old interface stays English. The document language follows the Explorer
 // only while its shell is on screen.
@@ -114,6 +273,8 @@ onMounted(async () => {
 onUnmounted(() => {
 	explorer_mounted.value = false
 	alive = false
+	clear_show()
+	clear_hide()
 	set_open_cloud_copy(null)
 	explorer_navigation.cancel()
 	explorer_tree.reset()
@@ -126,10 +287,12 @@ onUnmounted(() => {
 <template>
 	<!-- Replaces WorkspaceWindow while the flag is on. Menus and dialogs portal
 	     into this element to inherit its tokens. -->
-	<div class="explorer flex h-full min-h-0 flex-col" :class="window_classes">
+	<div ref="root_el" class="explorer flex h-full min-h-0 flex-col" :class="window_classes">
 		<TopBar />
 		<div class="body">
-			<Sidebar v-if="!explorer_mobile && explorer_sidebar_open" />
+			<!-- The zone is only a measure. Clicks pass through to the page. -->
+			<div v-if="peek_allowed()" ref="edge_el" class="edge" aria-hidden="true" />
+			<Sidebar v-if="!explorer_mobile" :overlay="!explorer_sidebar_open" :shown="peek" />
 			<main class="pv">
 				<FolderHeader />
 				<p v-if="shell_error" class="shell-error" role="alert">
@@ -169,10 +332,20 @@ onUnmounted(() => {
 	z-index: 3;
 }
 .body {
+	position: relative;
 	display: flex;
 	flex: 1;
 	min-height: 0;
 	overflow: hidden;
+}
+/* Left edge of the content, under the top bar. Hovering it slides the closed sidebar in. */
+.edge {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 16px;
+	pointer-events: none;
 }
 /* The content's own layers (a board's panels) stay under a phone's drawer */
 .pv {
