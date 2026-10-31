@@ -9,6 +9,7 @@ import { name_target_kind } from '@/services/ai/naming'
 import { ask_name, collect_name_target, NameSkipped } from '@/services/ai/suggestName'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import AiReachBadge from '@/ui/ai/AiReachBadge.vue'
+import { t } from '@/i18n'
 
 const { initial_name, entry_type } = defineProps<{
 	initial_name: string
@@ -27,7 +28,7 @@ const name_input = ref<{ inputRef: HTMLInputElement | null } | null>(null)
 const draft_name = ref('')
 const opened_name = ref('')
 const target_id = ref('')
-const confirm_label = ref('Rename')
+const confirm_key = ref('board_menu.rename')
 
 const suggesting = ref(false)
 const suggestion = ref<string | null>(null)
@@ -57,12 +58,12 @@ async function focus_input(select: boolean) {
 	if (select) input?.select()
 }
 
-async function open(name = initial_name, id = '', label = 'Rename') {
+async function open(name = initial_name, id = '', confirm = 'board_menu.rename') {
 	reset_suggestion()
 	opened_name.value = name
 	draft_name.value = name
 	target_id.value = id
-	confirm_label.value = label
+	confirm_key.value = confirm
 	is_open.value = true
 	await focus_input(true)
 }
@@ -74,7 +75,7 @@ async function suggest() {
 	const { base_url, model } = ai_settings.value
 	const is_image = target_kind.value === 'image'
 	if (is_image && vision_support(base_url, model) === false) {
-		suggest_error.value = `The model “${model}” doesn't accept images. Pick a vision model in Settings → AI.`
+		suggest_error.value = t('rename_dialog.no_vision', { model })
 		return
 	}
 	const controller = new AbortController()
@@ -138,7 +139,7 @@ defineExpose({ open })
 <template>
 	<UModal
 		v-model:open="is_open"
-		title="New name"
+		:title="t('rename_dialog.title')"
 		:ui="{ footer: 'justify-end' }"
 		@update:open="on_open_change"
 	>
@@ -154,7 +155,7 @@ defineExpose({ open })
 					<template v-if="can_suggest">
 						<UButton
 							v-if="suggesting"
-							label="Stop"
+							:label="t('rename_dialog.stop')"
 							icon="i-lucide:square"
 							color="neutral"
 							variant="outline"
@@ -162,7 +163,7 @@ defineExpose({ open })
 						/>
 						<UButton
 							v-else
-							label="Suggest"
+							:label="t('rename_dialog.suggest')"
 							icon="i-lucide:sparkles"
 							color="neutral"
 							variant="outline"
@@ -173,11 +174,11 @@ defineExpose({ open })
 
 				<div v-if="suggesting" class="flex items-center gap-2 text-xs text-muted">
 					<UIcon name="i-lucide:loader-circle" class="size-3.5 animate-spin" />
-					<span>Asking {{ model_label(ai_settings.model) }}…</span>
+					<span>{{ t('rename_dialog.asking', { model: model_label(ai_settings.model) }) }}</span>
 					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
 				</div>
 				<div v-else-if="suggestion" class="flex items-center gap-2 text-xs">
-					<span class="text-muted">Suggested:</span>
+					<span class="text-muted">{{ t('rename_dialog.suggested') }}</span>
 					<UButton
 						:label="suggestion"
 						size="xs"
@@ -194,8 +195,8 @@ defineExpose({ open })
 		</template>
 
 		<template #footer>
-			<UButton label="Cancel" color="neutral" variant="outline" @click="cancel" />
-			<UButton :label="confirm_label" @click="commit" />
+			<UButton :label="t('dialog.cancel')" color="neutral" variant="outline" @click="cancel" />
+			<UButton :label="t(confirm_key)" @click="commit" />
 		</template>
 	</UModal>
 </template>

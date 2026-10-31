@@ -185,7 +185,7 @@ function cloud_menu_items(ws: WorkspacesListItem): DropdownMenuItem[] {
 async function create_cloud_workspace() {
 	const workspace_id = await cloud.create('New workspace')
 	if (!workspace_id) return
-	rename_dialog.value?.open('New workspace', workspace_id, 'Create')
+	rename_dialog.value?.open('New workspace', workspace_id, 'rename_dialog.create')
 }
 
 async function confirm_cloud_rename({ id, name }: { id: string; name: string }) {

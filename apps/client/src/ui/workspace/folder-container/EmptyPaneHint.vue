@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { useFolderContainerScope } from './useFolderContainerScope'
 import { useEmptyPaneHintDismissed } from './emptyPaneHintDismissed'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
 
 const props = defineProps<{
 	empty: boolean
@@ -41,19 +42,19 @@ function dismiss() {
 		>
 			<ul class="empty-pane-hint__list">
 				<li>
-					<span class="empty-pane-hint__label">New note</span>
-					<span class="empty-pane-hint__shortcut">Double click</span>
+					<span class="empty-pane-hint__label">{{ t('add.new_note_name') }}</span>
+					<span class="empty-pane-hint__shortcut">{{ t('empty_pane.double_click') }}</span>
 				</li>
 				<li>
-					<span class="empty-pane-hint__label">New folder</span>
-					<span class="empty-pane-hint__shortcut">Shift + double click</span>
+					<span class="empty-pane-hint__label">{{ t('add.new_folder_name') }}</span>
+					<span class="empty-pane-hint__shortcut">{{ t('empty_pane.shift_double_click') }}</span>
 				</li>
 			</ul>
 			<UButton
 				color="neutral"
 				variant="soft"
 				size="sm"
-				label="I remembered"
+				:label="t('empty_pane.remembered')"
 				@click="dismiss"
 			/>
 		</div>

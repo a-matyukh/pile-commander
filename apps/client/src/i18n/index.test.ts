@@ -20,10 +20,18 @@ describe('t', () => {
 		explorer_language.value = 'en'
 		expect(t('top.back')).toBe('Back')
 		expect(t('bookmarks.added', { name: 'Notes' })).toBe('“Notes” bookmarked')
+		expect(t('updates.latest', { version: '2.3.0' })).toBe('Pile Commander 2.3.0 is the latest version')
+		expect(t('rename_dialog.title')).toBe('New name')
+		expect(t('board_chrome.combine')).toBe('Combine')
+		expect(t('empty_pane.remembered')).toBe('I remembered')
 
 		explorer_language.value = 'ru'
 		expect(t('top.back')).toBe('Назад')
 		expect(t('bookmarks.added', { name: 'Заметки' })).toBe('«Заметки» в закладках')
+		expect(t('updates.latest', { version: '2.3.0' })).toBe('Pile Commander 2.3.0 — последняя версия')
+		expect(t('rename_dialog.title')).toBe('Новое имя')
+		expect(t('board_chrome.combine')).toBe('Объединить в папку')
+		expect(t('empty_pane.remembered')).toBe('Я запомнил')
 	})
 
 	test('returns the key when the dictionary has no such string', () => {

@@ -675,6 +675,35 @@ export const ru = {
 		move_kept_both: 'Папку «{name}» изменили, пока она переносилась. Ничего не потеряно: копия в новом месте, оригинал остался на прежнем.',
 		folder_access_denied: 'Нет доступа к папке «{name}». Разрешите Pile Commander доступ в Системных настройках → Конфиденциальность и безопасность → Полный доступ к диску',
 	},
+	board_chrome: {
+		select: 'Выбрать',
+		deselect: 'Снять выбор',
+		combine: 'Объединить в папку',
+		combine_selected: 'Объединить выбранное в папку',
+		remove_selected: 'Удалить выбранное',
+	},
+	empty_pane: {
+		double_click: 'Двойной клик',
+		shift_double_click: 'Shift + двойной клик',
+		remembered: 'Я запомнил',
+	},
+	updates: {
+		check: 'Проверить обновления',
+		up_to_date: 'У вас последняя версия',
+		latest: 'Pile Commander {version} — последняя версия',
+		latest_plain: 'Pile Commander — последняя версия',
+		failed: 'Не удалось проверить обновления',
+		try_later: 'Попробуйте позже',
+	},
+	rename_dialog: {
+		title: 'Новое имя',
+		stop: 'Стоп',
+		suggest: 'Предложить',
+		asking: 'Спрашиваю {model}…',
+		suggested: 'Предложено:',
+		no_vision: 'Модель «{model}» не принимает изображения. Выберите модель с поддержкой изображений в Настройках → ИИ.',
+		create: 'Создать',
+	},
 	plural: {
 		items: {
 			one: '{n} элемент',

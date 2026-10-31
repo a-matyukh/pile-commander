@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { t } from '@/i18n'
 import updater, { check_for_updates, load_current_version } from '@/store/updater'
 
 const toast = useToast()
@@ -16,10 +17,10 @@ async function on_check() {
 	await check_for_updates({ manual: true })
 	if (updater.status === 'idle') {
 		toast.add({
-			title: "You're up to date",
+			title: t('updates.up_to_date'),
 			description: updater.current_version
-				? `Pile Commander ${updater.current_version} is the latest version`
-				: 'Pile Commander is the latest version',
+				? t('updates.latest', { version: updater.current_version })
+				: t('updates.latest_plain'),
 			color: 'success',
 			icon: 'i-lucide:check',
 		})
@@ -27,8 +28,8 @@ async function on_check() {
 	}
 	if (updater.status === 'error') {
 		toast.add({
-			title: 'Could not check for updates',
-			description: updater.error ?? 'Try again later',
+			title: t('updates.failed'),
+			description: updater.error ?? t('updates.try_later'),
 			color: 'error',
 			icon: 'mdi:alert-circle-outline',
 		})
@@ -42,7 +43,7 @@ async function on_check() {
 			v{{ updater.current_version }}
 		</span>
 		<UButton
-			label="Check for updates"
+			:label="t('updates.check')"
 			icon="i-lucide:refresh-cw"
 			color="neutral"
 			variant="ghost"

@@ -678,6 +678,35 @@ export const en: typeof ru = {
 		move_kept_both: 'The folder “{name}” changed while it was being moved. Nothing was lost: a copy is in the new place, and the original stayed where it was.',
 		folder_access_denied: 'No access to the folder “{name}”. Allow Pile Commander access in System Settings → Privacy & Security → Full Disk Access',
 	},
+	board_chrome: {
+		select: 'Select',
+		deselect: 'Deselect',
+		combine: 'Combine',
+		combine_selected: 'Combine selected',
+		remove_selected: 'Remove selected',
+	},
+	empty_pane: {
+		double_click: 'Double click',
+		shift_double_click: 'Shift + double click',
+		remembered: 'I remembered',
+	},
+	updates: {
+		check: 'Check for updates',
+		up_to_date: 'You’re up to date',
+		latest: 'Pile Commander {version} is the latest version',
+		latest_plain: 'Pile Commander is the latest version',
+		failed: 'Could not check for updates',
+		try_later: 'Try again later',
+	},
+	rename_dialog: {
+		title: 'New name',
+		stop: 'Stop',
+		suggest: 'Suggest',
+		asking: 'Asking {model}…',
+		suggested: 'Suggested:',
+		no_vision: 'The model “{model}” doesn’t accept images. Pick a vision model in Settings → AI.',
+		create: 'Create',
+	},
 	plural: {
 		items: {
 			one: '{n} item',

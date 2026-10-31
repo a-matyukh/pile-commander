@@ -11,6 +11,7 @@ import { useFolderContainerScope } from './useFolderContainerScope'
 import { useDeleteSelectedWidgets } from './useDeleteSelectedWidgets'
 import { useCombineSelectedWidgets } from './useCombineSelectedWidgets'
 import { canvasToolbarInset } from './canvas/canvasToolbarInset'
+import { t } from '@/i18n'
 
 defineProps<{
 	compact?: boolean
@@ -84,29 +85,29 @@ const panelStyle = computed(() => {
 			<FolderChromeActionButton
 				v-if="showSelect"
 				icon="i-lucide-mouse-pointer-2"
-				label="Select"
+				:label="t('board_chrome.select')"
 				:compact="compact"
 				@click="ws.enter_selection_mode()"
 			/>
 			<FolderChromeActionButton
 				v-else-if="showDeselect"
 				icon="i-lucide-x"
-				label="Deselect"
+				:label="t('board_chrome.deselect')"
 				:compact="compact"
 				@click="ws.exit_selection_mode()"
 			/>
 			<FolderChromeActionButton
 				icon="i-lucide-folders"
-				label="Combine selected"
-				text="Combine"
+				:label="t('board_chrome.combine_selected')"
+				:text="t('board_chrome.combine')"
 				:visible="showCombineButton"
 				:compact="compact"
 				@click="() => void combineSelected()"
 			/>
 			<FolderChromeActionButton
 				icon="i-lucide-trash-2"
-				label="Remove selected"
-				text="Remove"
+				:label="t('board_chrome.remove_selected')"
+				:text="t('board_menu.remove')"
 				:visible="showBulkRemoveButton"
 				:compact="compact"
 				@click="openConfirm"
