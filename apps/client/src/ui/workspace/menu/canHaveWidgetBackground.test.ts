@@ -23,6 +23,12 @@ describe('canHaveWidgetBackground', () => {
 		expect(canHaveWidgetBackground(file('a.txt'))).toBe(true)
 		expect(canHaveWidgetBackground(file('readme.md'))).toBe(true)
 		expect(canHaveWidgetBackground(file('pic.png'))).toBe(true)
+		expect(canHaveWidgetBackground({
+			id: '/ws/pic.png',
+			name: 'pic.png',
+			type: 'file',
+		})).toBe(true)
+		expect(canHaveWidgetBackground(file('pic.png', { is_preview: false }))).toBe(false)
 		expect(canHaveWidgetBackground(file('clip.mp4'))).toBe(true)
 		expect(canHaveWidgetBackground(file('track.mp3'))).toBe(true)
 		expect(canHaveWidgetBackground(file('mesh.glb'))).toBe(true)

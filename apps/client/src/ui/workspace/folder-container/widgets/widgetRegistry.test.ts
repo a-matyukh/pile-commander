@@ -40,6 +40,14 @@ describe('resolveWidgetRole', () => {
 		expect(resolveWidgetRole(file('pic.png', { is_preview: false }))).toBe('default')
 		expect(resolveWidgetRole(file('mesh.glb', { is_preview: false }))).toBe('default')
 	})
+
+	test('an image without the attribute is still a preview', () => {
+		const png: FolderContainerWidgetChild = { id: '/ws/pic.png', name: 'pic.png', type: 'file' }
+		const note: FolderContainerWidgetChild = { id: '/ws/a.txt', name: 'a.txt', type: 'file' }
+		expect(resolveWidgetRole(png)).toBe('image')
+		expect(resolvePreviewKind(png)).toBe('image')
+		expect(resolveWidgetRole(note)).toBe('default')
+	})
 })
 
 describe('resolvePreviewKind', () => {
@@ -59,7 +67,7 @@ describe('PREVIEW_KIND_CONFIG', () => {
 			const config = PREVIEW_KIND_CONFIG[kind]
 			expect(config.borderColor).toMatch(/^#/)
 			expect(config.boardMinSize.width).toBeGreaterThan(0)
-			expect(config.masonryMinSize.height).toBeGreaterThan(0)
+			expect(config.dashboardMinSize.height).toBeGreaterThan(0)
 			expect(config.stackMinHeight).toMatch(/rem$/)
 			expect(config.boardRootClass).toContain(kind === 'shape' ? 'shape' : kind)
 		}

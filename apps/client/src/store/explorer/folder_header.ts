@@ -14,6 +14,7 @@ export const FOLDER_VIEW_META: Record<FolderView, { icon: string; color: string 
 	canvas: { icon: 'tabler:artboard', color: '#1D9E75', label_key: 'views.canvas' },
 	stack: { icon: 'tabler:layout-rows', color: '#BA7517', label_key: 'views.stack' },
 	masonry: { icon: 'tabler:layout-cards', color: '#D85A30', label_key: 'views.masonry' },
+	dashboard: { icon: 'tabler:layout-dashboard', color: '#3B6FB6', label_key: 'views.dashboard' },
 	slides: { icon: 'tabler:presentation', color: '#639922', label_key: 'views.slides' },
 }
 

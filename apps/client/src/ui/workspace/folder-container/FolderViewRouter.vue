@@ -27,6 +27,10 @@ const Masonry = defineAsyncComponent({
 	loader: () => import('./masonry/Masonry.vue'),
 	...asyncViewOptions,
 })
+const Dashboard = defineAsyncComponent({
+	loader: () => import('./dashboard/Dashboard.vue'),
+	...asyncViewOptions,
+})
 
 defineProps<{
 	view: FolderView
@@ -41,4 +45,5 @@ defineProps<{
 	<Stack v-else-if="view === 'stack'" />
 	<Slides v-else-if="view === 'slides'" />
 	<Masonry v-else-if="view === 'masonry'" />
+	<Dashboard v-else-if="view === 'dashboard'" />
 </template>

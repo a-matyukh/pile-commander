@@ -14,7 +14,7 @@ import { use_widget_glyph } from '@/ui/explorer/views/use_widget_glyph'
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
 	index: number
-	layout: 'board' | 'masonry'
+	layout: 'board' | 'dashboard'
 }>()
 
 const menuComponent = computed(() => {

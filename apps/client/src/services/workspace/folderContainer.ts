@@ -1,5 +1,5 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
-import { folder_view_from_stored, type FolderContainerWidget, type FolderContainerWidgetChild } from '@/domain/Widget'
+import { dashboard_cell_from_stored, folder_view_from_stored, type FolderContainerWidget, type FolderContainerWidgetChild } from '@/domain/Widget'
 import { entry_is_dimmed, entry_is_listed } from '@/store/hiddenPaths'
 import { find_entry_owner_folder, xattrs_map } from './xattrs'
 
@@ -61,6 +61,11 @@ export function collect_preview_folder_ids(entries: EntryWithXattrs[]): string[]
 	return ids
 }
 
+function dashboard_from(attrs: Record<string, unknown>) {
+	const dashboard = dashboard_cell_from_stored(attrs.dashboard)
+	return dashboard ? { dashboard } : {}
+}
+
 function child_from_entry(
 	entry: EntryWithXattrs,
 	attrs: Record<string, unknown>,
@@ -70,6 +75,7 @@ function child_from_entry(
 		id: entry.id,
 		name: entry.name,
 		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order']),
+		...dashboard_from(attrs),
 	}
 
 	if (entry.type === 'file') {
@@ -87,6 +93,7 @@ function child_from_entry(
 		return {
 			...container,
 			...pick(attrs, ['position', 'size', 'background', 'order', 'is_preview']),
+			...dashboard_from(attrs),
 		}
 	}
 
@@ -94,6 +101,7 @@ function child_from_entry(
 		id: entry.id,
 		name: entry.name,
 		...pick(attrs, ['position', 'size', 'is_preview', 'order', 'cover']),
+		...dashboard_from(attrs),
 		type: 'folder_cover',
 	}
 }
@@ -168,7 +176,7 @@ export function to_folder_container(
 		name: folder.name,
 		type: 'folder_container',
 		view,
-		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order', 'snap_to_grid', 'grid_size', 'show_grid_dots', 'show_axes', 'selected_slide_index']),
+		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order', 'snap_to_grid', 'grid_size', 'show_grid_dots', 'show_axes', 'selected_slide_index', 'dashboard_compact', 'masonry_column_width', 'masonry_columns']),
 		children,
 	}
 }
@@ -197,6 +205,7 @@ export function resolve_embedded_folder_container(
 	return {
 		...fresh,
 		...pick(entry_attrs, ['position', 'size', 'background', 'order', 'is_preview']),
+		...dashboard_from(entry_attrs),
 	}
 }
 

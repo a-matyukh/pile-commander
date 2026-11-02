@@ -7,12 +7,26 @@ import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
  * A file's actions, as the prototype's item menu: open, rename, the
  * clipboard and the trash. The list owns the dialogs: a menu closes first
  */
-defineProps<{ can_write: boolean }>()
-const emit = defineEmits<{ open: []; rename: []; cut: []; copy: []; duplicate: []; trash: [] }>()
+defineProps<{ can_write: boolean; preview_label?: string }>()
+const emit = defineEmits<{
+	open: []
+	rename: []
+	cut: []
+	copy: []
+	duplicate: []
+	trash: []
+	toggle_preview: []
+}>()
 </script>
 
 <template>
 	<MenuItem icon="tabler:eye" :label="t('menu.open')" @select="emit('open')" />
+	<MenuItem
+		v-if="can_write && preview_label"
+		icon="tabler:photo"
+		:label="preview_label"
+		@select="emit('toggle_preview')"
+	/>
 	<MenuItem v-if="can_write" icon="tabler:pencil" :label="t('menu.rename')" @select="emit('rename')" />
 	<MenuSeparator />
 	<MenuItem v-if="can_write" icon="tabler:cut" :label="t('menu.cut')" @select="emit('cut')" />

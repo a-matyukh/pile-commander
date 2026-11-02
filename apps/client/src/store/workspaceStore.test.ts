@@ -1110,6 +1110,18 @@ describe('createWorkspaceStore: watch', () => {
 		expect(store.folder_container.view).toBe('grid')
 	})
 
+	test('change_folder_view clears the selection', async () => {
+		const { store } = await makeStore()
+		await store.open_folder('/ws/pics')
+		store.enter_selection_mode()
+		store.set_selection(['/ws/pics/a'])
+
+		await store.change_folder_view('/ws/pics', 'grid')
+
+		expect(store.selection).toEqual([])
+		expect(store.selection_mode).toBe(false)
+	})
+
 	test('stale watch refresh during change_folder_view does not revert view', async () => {
 		const { fake, store } = await makeStore()
 		await store.open_folder('/ws/pics')
@@ -1171,6 +1183,23 @@ describe('createWorkspaceStore: watch', () => {
 
 		expect(fake.get_xattr('/ws/pics', 'view')).toBe('masonry')
 		expect(store.folder_container.view).toBe('masonry')
+	})
+
+	test('a dashboard cell is stored apart from position and size', async () => {
+		const { fake, store } = await makeStore()
+		fake.set_xattr('/ws/note.txt', 'position', '{"x":40,"y":80}')
+		fake.set_xattr('/ws/note.txt', 'size', '{"width":220,"height":80}')
+		fake.calls.length = 0
+		await store.change_dashboard_cell('/ws/note.txt', { x: 2, y: 3, w: 4, h: 1 })
+
+		expect(fake.get_xattr('/ws/note.txt', 'dashboard')).toBe('{"x":2,"y":3,"w":4,"h":1}')
+		expect(fake.get_xattr('/ws/note.txt', 'position')).toBe('{"x":40,"y":80}')
+		expect(fake.get_xattr('/ws/note.txt', 'size')).toBe('{"width":220,"height":80}')
+		expect(store.folder_container.children.find(child => child.id === '/ws/note.txt')?.dashboard)
+			.toEqual({ x: 2, y: 3, w: 4, h: 1 })
+
+		await store.change_dashboard_cell('/ws/note.txt', { x: 2, y: 3, w: 4, h: 1 })
+		expect(fake.calls.filter(call => call.method === 'set_xattr' && call.args[1] === 'dashboard')).toHaveLength(1)
 	})
 
 	test('external create refreshes opened folder children and tree', async () => {

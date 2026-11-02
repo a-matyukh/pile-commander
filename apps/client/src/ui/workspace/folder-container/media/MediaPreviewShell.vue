@@ -27,7 +27,7 @@ const showTitle = computed(() => props.kind === 'video' || props.kind === 'audio
 		<MediaPreviewTitle
 			v-if="showTitle"
 			:filename="filename"
-			handle-class="masonry-drag-handle"
+			handle-class="dashboard-drag-handle"
 		/>
 		<div class="media-preview-body" :class="{ 'board-no-drag': showTitle }">
 			<div v-if="loading" class="media-preview-loading text-muted text-sm">…</div>

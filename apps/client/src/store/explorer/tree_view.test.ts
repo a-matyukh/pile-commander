@@ -115,7 +115,8 @@ describe('folder view attribute', () => {
 		expect(of('gallery')).toBe('grid')
 		expect(of('grid')).toBe('grid')
 		expect(of('board')).toBe('board')
-		expect(of('dashboard')).toBe('list')
+		expect(of('dashboard')).toBe('dashboard')
+		expect(of('nope')).toBe('list')
 	})
 })
 

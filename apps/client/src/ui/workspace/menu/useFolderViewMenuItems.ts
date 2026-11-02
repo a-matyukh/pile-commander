@@ -11,6 +11,7 @@ const FOLDER_VIEW_LABELS: Record<FolderView, string> = {
 	canvas: 'Canvas',
 	stack: 'Stack',
 	masonry: 'Masonry',
+	dashboard: 'Dashboard',
 	slides: 'Slides',
 }
 

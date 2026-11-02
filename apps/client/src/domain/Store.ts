@@ -4,7 +4,7 @@ import type { ShapeTemplate } from '@/domain/shapes'
 import type { LinePlug, LineAxis } from '@/services/board/shapes'
 import type { EntryContentCaches } from '@/ui/workspace/folder-container/textContentCache'
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
-import { Color, Connection, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
+import { Color, Connection, DashboardCell, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
 
 export
@@ -231,6 +231,11 @@ type WorkspaceStore = {
 	change_grid_size(folder_id: string, grid_size: number): Promise<void>
 	change_show_grid_dots(folder_id: string, show_grid_dots: boolean): Promise<void>
 	change_show_axes(folder_id: string, show_axes: boolean): Promise<void>
+	change_dashboard_cell(id: string, cell: DashboardCell): Promise<void>
+	change_dashboard_compact(folder_id: string, compact: boolean): Promise<void>
+	change_masonry_column_width(folder_id: string, width: number): Promise<void>
+	/** `0` is Auto: as many columns as fit. */
+	change_masonry_columns(folder_id: string, columns: number): Promise<void>
 
 	// canvas ink: entity-level per-stroke storage (see fm.strokes)
 	strokes_for(folder_id: string): StrokeNode[]

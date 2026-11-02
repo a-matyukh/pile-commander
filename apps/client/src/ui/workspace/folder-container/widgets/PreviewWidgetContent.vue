@@ -14,7 +14,7 @@ const props = defineProps<{
 	widget: FolderContainerWidgetChild
 	index: number
 	kind: PreviewKind
-	layout: 'board' | 'masonry'
+	layout: 'board' | 'dashboard'
 }>()
 
 const config = computed(() => PREVIEW_KIND_CONFIG[props.kind])
@@ -24,13 +24,13 @@ const menuNode = useMenuNode(() => props.widget)
 const rootClass = computed(() => ({
 	[props.layout === 'board'
 		? config.value.boardRootClass
-		: config.value.masonryRootClass]: true,
+		: config.value.dashboardRootClass]: true,
 }))
 
 const minSize = computed(() =>
 	props.layout === 'board'
 		? config.value.boardMinSize
-		: config.value.masonryMinSize,
+		: config.value.dashboardMinSize,
 )
 
 const extraStyle = computed(() => {
@@ -75,11 +75,11 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 :deep(.audio-widget),
 :deep(.model-widget),
 :deep(.shape-widget),
-:deep(.masonry-image-widget),
-:deep(.masonry-video-widget),
-:deep(.masonry-audio-widget),
-:deep(.masonry-model-widget),
-:deep(.masonry-shape-widget) {
+:deep(.dashboard-image-widget),
+:deep(.dashboard-video-widget),
+:deep(.dashboard-audio-widget),
+:deep(.dashboard-model-widget),
+:deep(.dashboard-shape-widget) {
 	padding: 0;
 	overflow: hidden;
 }
@@ -88,10 +88,10 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 :deep(.video-widget),
 :deep(.audio-widget),
 :deep(.model-widget),
-:deep(.masonry-image-widget),
-:deep(.masonry-video-widget),
-:deep(.masonry-audio-widget),
-:deep(.masonry-model-widget) {
+:deep(.dashboard-image-widget),
+:deep(.dashboard-video-widget),
+:deep(.dashboard-audio-widget),
+:deep(.dashboard-model-widget) {
 	transition: border-color 0.15s ease;
 }
 
@@ -99,15 +99,15 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 :deep(.video-widget:hover),
 :deep(.audio-widget:hover),
 :deep(.model-widget:hover),
-:deep(.masonry-image-widget:hover),
-:deep(.masonry-video-widget:hover),
-:deep(.masonry-audio-widget:hover),
-:deep(.masonry-model-widget:hover) {
+:deep(.dashboard-image-widget:hover),
+:deep(.dashboard-video-widget:hover),
+:deep(.dashboard-audio-widget:hover),
+:deep(.dashboard-model-widget:hover) {
 	border-color: v-bind('MEDIA_CHROME_FILL') !important;
 }
 
 :deep(.shape-widget),
-:deep(.masonry-shape-widget) {
+:deep(.dashboard-shape-widget) {
 	border-radius: 0;
 }
 
@@ -119,24 +119,24 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 	height: 100%;
 }
 
-:deep(.masonry-image-widget .masonry-widget-content),
-:deep(.masonry-video-widget .masonry-widget-content),
-:deep(.masonry-audio-widget .masonry-widget-content),
-:deep(.masonry-model-widget .masonry-widget-content),
-:deep(.masonry-shape-widget .masonry-widget-content) {
+:deep(.dashboard-image-widget .dashboard-widget-content),
+:deep(.dashboard-video-widget .dashboard-widget-content),
+:deep(.dashboard-audio-widget .dashboard-widget-content),
+:deep(.dashboard-model-widget .dashboard-widget-content),
+:deep(.dashboard-shape-widget .dashboard-widget-content) {
 	flex: 1;
 	min-height: 0;
 }
 
 /* Full-bleed <video> paints above inner overlays — ring on the widget shell. */
 :deep(.board-widget.video-widget.pc-selected),
-:deep(.masonry-widget.masonry-video-widget.pc-selected) {
+:deep(.dashboard-widget.dashboard-video-widget.pc-selected) {
 	background-color: transparent;
 	box-shadow: none;
 }
 
 :deep(.board-widget.video-widget.pc-selected::after),
-:deep(.masonry-widget.masonry-video-widget.pc-selected::after) {
+:deep(.dashboard-widget.dashboard-video-widget.pc-selected::after) {
 	content: '';
 	position: absolute;
 	inset: 0;

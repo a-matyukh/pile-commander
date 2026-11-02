@@ -105,7 +105,7 @@ onUnmounted(() => {
 	<div class="model-preview">
 		<MediaPreviewTitle
 			:filename="filename"
-			handle-class="masonry-drag-handle"
+			handle-class="dashboard-drag-handle"
 		/>
 		<div class="model-preview-body board-no-drag">
 			<div v-if="loading" class="model-preview-status text-muted text-sm">…</div>

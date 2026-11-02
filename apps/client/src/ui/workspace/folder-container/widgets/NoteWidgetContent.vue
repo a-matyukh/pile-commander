@@ -12,7 +12,7 @@ import { useIsCanvasWidgetLayout } from '../useIsCanvasWidgetLayout'
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
 	index: number
-	layout: 'board' | 'masonry'
+	layout: 'board' | 'dashboard'
 }>()
 
 const isCanvas = useIsCanvasWidgetLayout()
@@ -51,7 +51,7 @@ const rootClass = computed(() =>
 			nodrag: isCanvas.value && isEditing.value,
 			nopan: isCanvas.value && isEditing.value,
 		}
-		: { 'masonry-note-widget': true, is_edit: isEditing.value },
+		: { 'dashboard-note-widget': true, is_edit: isEditing.value },
 )
 
 const ignoreFrom = computed(() =>
@@ -128,7 +128,7 @@ const ignoreFrom = computed(() =>
 	-webkit-user-select: text;
 }
 
-:deep(.masonry-note-widget) {
+:deep(.dashboard-note-widget) {
 	padding: 8px;
 }
 </style>

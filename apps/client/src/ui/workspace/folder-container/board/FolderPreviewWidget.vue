@@ -11,7 +11,7 @@ import { backgroundStyle } from '../widgets/resolveBackground'
 const props = withDefaults(defineProps<{
 	widget: FolderContainerWidget
 	index?: number
-	layout?: 'board' | 'masonry'
+	layout?: 'board' | 'dashboard'
 }>(), {
 	layout: 'board',
 })
@@ -60,7 +60,7 @@ const { onSelectStart } = useWidgetInteraction(() => props.widget, 'none')
 }
 
 :deep(.folder-preview-widget .board-widget-content),
-:deep(.folder-preview-widget .masonry-widget-content) {
+:deep(.folder-preview-widget .dashboard-widget-content) {
 	display: flex;
 	flex-direction: column;
 }

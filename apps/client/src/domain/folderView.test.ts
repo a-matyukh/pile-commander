@@ -14,8 +14,13 @@ describe('a folder view as stored', () => {
 		expect(folder_view_from_stored(stored_folder_view('slides'))).toBe('slides')
 	})
 
+	test('dashboard is its own view', () => {
+		expect(folder_view_from_stored('dashboard')).toBe('dashboard')
+		expect(stored_folder_view('dashboard')).toBe('dashboard')
+	})
+
 	test('none or anything unknown is a list', () => {
 		expect(folder_view_from_stored(undefined)).toBe('list')
-		expect(folder_view_from_stored('dashboard')).toBe('list')
+		expect(folder_view_from_stored('nope')).toBe('list')
 	})
 })

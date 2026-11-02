@@ -10,6 +10,27 @@ export type Size = {
 	width: number
 	height: number
 }
+
+/** Dashboard grid cell. Column count is fixed, so these survive a pane resize. */
+export type DashboardCell = {
+	x: number
+	y: number
+	w: number
+	h: number
+}
+
+export function dashboard_cell_from_stored(value: unknown): DashboardCell | undefined {
+	if (!value || typeof value !== 'object') return undefined
+	const cell = value as Record<string, unknown>
+	const { x, y, w, h } = cell
+	if (
+		typeof x !== 'number' || typeof y !== 'number'
+		|| typeof w !== 'number' || typeof h !== 'number'
+	) return undefined
+	if (![x, y, w, h].every(Number.isFinite)) return undefined
+	if (x < 0 || y < 0 || w < 1 || h < 1) return undefined
+	return { x, y, w, h }
+}
 // export type ISODate = string
 // export type Path = string
 
@@ -19,6 +40,8 @@ export type Size = {
 type CommonXattrs = Partial<{
 	position: Position
 	size: Size
+	/** Grid cell for the dashboard view. Board and canvas keep using position and size. */
+	dashboard: DashboardCell
 	background: ImageBase64 | Color
 	is_preview: boolean // is_preview, is opened, is expanded
 	order: number
@@ -46,7 +69,8 @@ export const FOLDER_VIEWS = [
 	"board",
 	"canvas",
 	"stack",  // sortable
-	"masonry",  // also sortable
+	"masonry",
+	"dashboard",
 	"slides",
   ] as const
 
@@ -105,6 +129,12 @@ type FolderContainerXattrs = CommonXattrs & {
 	show_grid_dots: boolean
 	show_axes: boolean
 	selected_slide_index: number
+	/** When true, the dashboard pulls cards up. Absent is off, and toggling it does not rewrite cells. */
+	dashboard_compact: boolean
+	/** Masonry column width in pixels. Absent is the M preset (240). */
+	masonry_column_width: number
+	/** Masonry column cap. Absent or 0 means as many as fit. */
+	masonry_columns: number
 }>
 
 ///////////////////////// Widgets

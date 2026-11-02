@@ -2,7 +2,7 @@ import type { Component } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 
-/** Props shared by BoardWidgetShell and MasonryWidgetShell. */
+/** Props shared by BoardWidgetShell and DashboardWidgetShell. */
 export type WidgetShellVariantProps = {
 	widget: FolderContainerWidgetChild
 	index: number

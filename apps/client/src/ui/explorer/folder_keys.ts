@@ -8,7 +8,7 @@ import { root_folder_id } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
 
 /** Views where the arrows move the selection; on a board or canvas they move the selected items */
-const ARROW_VIEWS: FolderView[] = ['list', 'grid', 'stack', 'masonry']
+const ARROW_VIEWS: FolderView[] = ['list', 'grid', 'stack', 'masonry', 'dashboard']
 
 type Dir = 'up' | 'down' | 'left' | 'right'
 

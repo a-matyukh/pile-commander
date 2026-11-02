@@ -48,9 +48,16 @@ export function is_shape_widget(widget: FolderContainerWidgetChild): boolean {
 		&& widget.name.endsWith('.svg')
 }
 
+/** A picture is on screen until the file explicitly opts out. Nothing is written for the absence. */
+export function image_shows_preview(widget: FolderContainerWidgetChild): boolean {
+	return widget.type === 'file'
+		&& get_media_kind(widget.name) === 'image'
+		&& widget.is_preview !== false
+}
+
 function is_media_preview_widget(
 	widget: FolderContainerWidgetChild,
-	kind: 'image' | 'video' | 'audio' | 'model',
+	kind: 'video' | 'audio' | 'model',
 ): boolean {
 	return widget.type === 'file'
 		&& widget.is_preview === true
@@ -58,7 +65,7 @@ function is_media_preview_widget(
 }
 
 export function is_image_widget(widget: FolderContainerWidgetChild): boolean {
-	return is_media_preview_widget(widget, 'image')
+	return image_shows_preview(widget)
 }
 
 export function is_video_widget(widget: FolderContainerWidgetChild): boolean {
