@@ -127,9 +127,21 @@ function onDblClick(event: MouseEvent) {
 
 <style scoped>
 .masonry-card {
+	position: relative;
 	border-radius: 6px;
 	overflow: hidden;
 	box-sizing: border-box;
+}
+
+/* A full-bleed image covers the inset ring, so paint it above the picture. */
+.masonry-card.pc-selected::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+	border-radius: inherit;
+	box-shadow: inset 0 0 0 2px var(--pc-selection-ring);
 }
 
 .masonry-card.masonry-note {
