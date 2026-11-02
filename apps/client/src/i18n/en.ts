@@ -366,6 +366,12 @@ export const en: typeof ru = {
 		file_trash_description: 'You can get the file back from the trash.',
 		file_delete_title: 'Delete “{name}” forever?',
 		file_delete_description: 'The file will be deleted for good.',
+		bulk_trash_title: 'Move {items} to the trash?',
+		bulk_trash_description: 'You can get them back from the trash.',
+		bulk_trash_folders_description: 'You can get them back from the trash, including everything inside the folders.',
+		bulk_delete_title: 'Delete {items} permanently?',
+		bulk_delete_description: 'This cannot be undone.',
+		bulk_delete_folders_description: 'The folders and everything inside them will be deleted permanently. This cannot be undone.',
 		empty: 'This folder is empty',
 	},
 	size: {

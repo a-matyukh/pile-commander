@@ -19,10 +19,13 @@ const emit = defineEmits<{
 const is_open = ref(false)
 const display_name = ref(name)
 const target_id = ref('')
+/** The prop, unless `open` names a file or a folder for this one ask */
+const kind = ref(type)
 
-function open(item_name = name, id = '') {
+function open(item_name = name, id = '', item_type: 'folder' | 'file' = type) {
 	display_name.value = item_name
 	target_id.value = id
+	kind.value = item_type
 	is_open.value = true
 }
 
@@ -46,7 +49,7 @@ const explorer_text = computed(() => {
 	const location = explorer_navigation.location
 	const trash = location?.kind === 'folder' ? explorer_drives.drive(location.ref.drive_id)?.trash ?? null : null
 	const folder = remove_confirm_text(trash)
-	if (type === 'folder') return folder
+	if (kind.value === 'folder') return folder
 	const to_trash = folder.confirm !== 'tree.delete_permanently'
 	return {
 		title: to_trash ? 'list.file_trash_title' : 'list.file_delete_title',

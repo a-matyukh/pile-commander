@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import { BROWSER_ROOT } from './drives'
 import { explorer_bookmarks, explorer_last_opened, is_bookmarked } from './bookmarks'
-import { t } from '@/i18n'
-import { create_child_folder, folder_menu_items, folder_menu_node, remove_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
+import { count_items, t } from '@/i18n'
+import { bulk_remove_confirm_text, create_child_folder, folder_menu_items, folder_menu_node, remove_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
 import { explorer_language } from './language'
 import { explorer_tree, type ExplorerTreeRoot } from './tree'
 
@@ -176,6 +176,23 @@ describe('folder menu: "Move to trash" confirmation', () => {
 		explorer_language.value = 'ru'
 		expect(render(null)).toEqual(['Удалить папку безвозвратно?', 'Удалить безвозвратно'])
 		expect(t(remove_confirm_text(null).description, { name: 'A' })).toContain('«A»')
+	})
+
+	test('several selected items ask once, and mention folders when one is selected', () => {
+		const ask = (trash: Drive['trash'], has_folder: boolean) => {
+			const text = bulk_remove_confirm_text(trash, has_folder)
+			return [t(text.title, { items: count_items(2) }), t(text.description), t(text.confirm)]
+		}
+		explorer_language.value = 'ru'
+		expect(ask('system', false)).toEqual([
+			'Переместить 2 элемента в корзину?',
+			'Их можно будет вернуть из корзины.',
+			'Переместить в корзину',
+		])
+		expect(ask('system', true)[1]).toContain('со всем содержимым папок')
+		expect(ask(null, true)[0]).toBe('Удалить 2 элемента безвозвратно?')
+		explorer_language.value = 'en'
+		expect(ask('page', false)[0]).toBe('Move 2 items to the trash?')
 	})
 })
 

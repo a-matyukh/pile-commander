@@ -363,6 +363,12 @@ export const ru = {
 		file_trash_description: 'Файл можно будет вернуть из корзины.',
 		file_delete_title: 'Удалить «{name}» навсегда?',
 		file_delete_description: 'Файл удалится без возможности восстановления.',
+		bulk_trash_title: 'Переместить {items} в корзину?',
+		bulk_trash_description: 'Их можно будет вернуть из корзины.',
+		bulk_trash_folders_description: 'Их можно будет вернуть из корзины вместе со всем содержимым папок.',
+		bulk_delete_title: 'Удалить {items} безвозвратно?',
+		bulk_delete_description: 'Это действие нельзя отменить.',
+		bulk_delete_folders_description: 'Папки со всем содержимым будут удалены безвозвратно. Это действие нельзя отменить.',
 		empty: 'Папка пустая',
 	},
 	size: {

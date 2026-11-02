@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { count_items, t } from '@/i18n'
+import { explorer_drives } from '@/store/explorer/drives'
+import { bulk_remove_confirm_text } from '@/store/explorer/folder_menu'
+import { explorer_navigation } from '@/store/explorer/navigation'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
 
 export type BulkRemoveItem = {
 	id: string
@@ -15,23 +21,15 @@ const emit = defineEmits<{
 const is_open = ref(false)
 const items = ref<BulkRemoveItem[]>([])
 
-const description = computed(() => {
-	const list = items.value
-	if (list.length === 0) return ''
-
-	if (list.length === 1) {
-		const item = list[0]!
-		return item.isFolder
-			? `Remove folder "${item.name}"? This will delete all contents.`
-			: `Remove file "${item.name}"?`
+const text = computed(() => {
+	const location = explorer_navigation.location
+	const trash = location?.kind === 'folder' ? explorer_drives.drive(location.ref.drive_id)?.trash ?? null : null
+	const copy = bulk_remove_confirm_text(trash, items.value.some(item => item.isFolder))
+	return {
+		title: t(copy.title, { items: count_items(items.value.length) }),
+		description: t(copy.description),
+		confirm: copy.confirm,
 	}
-
-	const folderCount = list.filter(item => item.isFolder).length
-	const base = `Remove ${list.length} selected items?`
-	if (folderCount > 0) {
-		return `${base} This will also delete contents of ${folderCount === 1 ? 'the selected folder' : `${folderCount} selected folders`}.`
-	}
-	return base
 })
 
 function open(nextItems: BulkRemoveItem[]) {
@@ -43,7 +41,6 @@ function open(nextItems: BulkRemoveItem[]) {
 function commit() {
 	const ids = items.value.map(item => item.id)
 	is_open.value = false
-	items.value = []
 	if (ids.length > 0) {
 		emit('confirm', { ids })
 	}
@@ -51,22 +48,20 @@ function commit() {
 
 function cancel() {
 	is_open.value = false
-	items.value = []
 }
 
 defineExpose({ open })
 </script>
 
 <template>
-	<UModal
+	<Modal
 		v-model:open="is_open"
-		title="Remove"
-		:description="description"
-		:ui="{ footer: 'justify-end' }"
+		:title="text.title"
+		:description="text.description"
 	>
 		<template #footer>
-			<UButton label="Cancel" color="neutral" variant="outline" @click="cancel" />
-			<UButton label="Remove" color="error" @click="commit" />
+			<Button @click="cancel">{{ t('dialog.cancel') }}</Button>
+			<Button variant="danger" @click="commit">{{ t(text.confirm) }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>

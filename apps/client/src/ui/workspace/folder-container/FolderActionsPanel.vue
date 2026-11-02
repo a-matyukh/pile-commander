@@ -5,6 +5,7 @@ import cloud from '@/store/cloud'
 import { entry_clipboard } from '@/store/entryClipboard'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import BulkRemoveDialog from '@/ui/workspace/menu/BulkRemoveDialog.vue'
+import RemoveDialog from '@/ui/workspace/menu/RemoveDialog.vue'
 import FolderChromeActionButton from './FolderChromeActionButton.vue'
 import ClipboardBanner from './ClipboardBanner.vue'
 import { useFolderContainerScope } from './useFolderContainerScope'
@@ -41,7 +42,7 @@ const showDeselect = computed(() =>
 	!isEmbedded && ws.can_write && ws.selection_mode,
 )
 
-const { dialogRef, onConfirm, openConfirm, showBulkRemoveButton } =
+const { dialogRef, removeDialogRef, onConfirm, onConfirmOne, openConfirm, showBulkRemoveButton } =
 	useDeleteSelectedWidgets({
 		children,
 		editingNoteId,
@@ -115,6 +116,7 @@ const panelStyle = computed(() => {
 			<ClipboardBanner v-if="!isEmbedded" />
 		</div>
 		<div class="folder-actions-dialog">
+			<RemoveDialog ref="removeDialogRef" name="" type="file" @confirm="onConfirmOne" />
 			<BulkRemoveDialog ref="dialogRef" @confirm="onConfirm" />
 		</div>
 	</div>

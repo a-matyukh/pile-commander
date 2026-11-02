@@ -105,3 +105,18 @@ export function remove_confirm_text(trash: Drive['trash']): RemoveConfirmText {
 			confirm: 'menu.move_to_trash',
 		}
 }
+
+/** The same ask for several selected files and folders at once */
+export function bulk_remove_confirm_text(trash: Drive['trash'], has_folder: boolean): RemoveConfirmText {
+	return trash === null
+		? {
+			title: 'list.bulk_delete_title',
+			description: has_folder ? 'list.bulk_delete_folders_description' : 'list.bulk_delete_description',
+			confirm: 'tree.delete_permanently',
+		}
+		: {
+			title: 'list.bulk_trash_title',
+			description: has_folder ? 'list.bulk_trash_folders_description' : 'list.bulk_trash_description',
+			confirm: 'menu.move_to_trash',
+		}
+}

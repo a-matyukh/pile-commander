@@ -10,7 +10,9 @@ import {
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import type BulkRemoveDialog from '@/ui/workspace/menu/BulkRemoveDialog.vue'
 import type { BulkRemoveItem } from '@/ui/workspace/menu/BulkRemoveDialog.vue'
+import type RemoveDialog from '@/ui/workspace/menu/RemoveDialog.vue'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
+import { menuNodeFor } from './widgets/useMenuNode'
 
 type UseDeleteSelectedWidgetsOptions = {
 	children: MaybeRefOrGetter<FolderContainerWidgetChild[]>
@@ -36,6 +38,7 @@ function toBulkItem(widget: FolderContainerWidgetChild): BulkRemoveItem {
 
 export function useDeleteSelectedWidgets(options: UseDeleteSelectedWidgetsOptions) {
 	const dialogRef = ref<InstanceType<typeof BulkRemoveDialog> | null>(null)
+	const removeDialogRef = ref<InstanceType<typeof RemoveDialog> | null>(null)
 	const ws = useRequireWorkspace()()
 
 	function selectedChildren(): FolderContainerWidgetChild[] {
@@ -63,6 +66,13 @@ export function useDeleteSelectedWidgets(options: UseDeleteSelectedWidgetsOption
 		const selected = selectedChildren()
 		if (selected.length === 0) return
 
+		// One item: the same dialog as the context menu's Remove. Several: the bulk ask.
+		if (selected.length === 1) {
+			const node = menuNodeFor(selected[0]!)
+			removeDialogRef.value?.open(node.name, node.id, node.type)
+			return
+		}
+
 		dialogRef.value?.open(selected.map(toBulkItem))
 	}
 
@@ -71,6 +81,10 @@ export function useDeleteSelectedWidgets(options: UseDeleteSelectedWidgetsOption
 			await ws.remove(id)
 		}
 		ws.exit_selection_mode()
+	}
+
+	function onConfirmOne(payload: { id: string }) {
+		return onConfirm({ ids: [payload.id] })
 	}
 
 	function onKeyDown(event: KeyboardEvent) {
@@ -96,7 +110,9 @@ export function useDeleteSelectedWidgets(options: UseDeleteSelectedWidgetsOption
 
 	return {
 		dialogRef,
+		removeDialogRef,
 		onConfirm,
+		onConfirmOne,
 		openConfirm,
 		selectedCount,
 		showBulkRemoveButton,
