@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
@@ -15,6 +16,7 @@ import {
 } from './masonryLayout'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
+const workspace = useWorkspace()
 
 const editingNoteId = ref<string | null>(null)
 provideEditingNoteId(editingNoteId)
@@ -138,7 +140,15 @@ onBeforeUnmount(() => {
 	observed.clear()
 })
 
-const { onSectionClick } = useClickOutsideEditingNote('.masonry-note', editingNoteId)
+const { onSectionClick: exitEditing } = useClickOutsideEditingNote('.masonry-note', editingNoteId)
+
+/** A click on the gaps and the padding clears the selection, as in List and Gallery. */
+function onSectionClick(event: MouseEvent) {
+	exitEditing(event)
+	const target = event.target as Element | null
+	if (target?.closest('[data-item-id]')) return
+	workspace.value?.clear_selection()
+}
 </script>
 
 <template>

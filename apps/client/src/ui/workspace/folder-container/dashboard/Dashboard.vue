@@ -134,7 +134,16 @@ async function persistLayout() {
 	}
 }
 
-const { onSectionClick } = useClickOutsideEditingNote('.dashboard-note-widget', editingNoteId)
+const { onSectionClick: exitEditing } = useClickOutsideEditingNote('.dashboard-note-widget', editingNoteId)
+
+/** A click on the gaps and the padding clears the selection, as in List and Gallery. */
+function onSectionClick(event: MouseEvent) {
+	exitEditing(event)
+	const target = event.target as Element | null
+	// The resize handle sits on the card, outside the item itself.
+	if (target?.closest('[data-item-id], .vue-grid-item')) return
+	workspace.value?.clear_selection()
+}
 </script>
 
 <template>
