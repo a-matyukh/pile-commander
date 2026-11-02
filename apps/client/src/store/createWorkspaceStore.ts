@@ -866,6 +866,7 @@ export async function createWorkspaceStore(
 				if (container.view === new_view) {
 					return
 				}
+				this.exit_selection_mode()
 				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
 			},
 

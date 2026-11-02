@@ -1110,6 +1110,18 @@ describe('createWorkspaceStore: watch', () => {
 		expect(store.folder_container.view).toBe('grid')
 	})
 
+	test('change_folder_view clears the selection', async () => {
+		const { store } = await makeStore()
+		await store.open_folder('/ws/pics')
+		store.enter_selection_mode()
+		store.set_selection(['/ws/pics/a'])
+
+		await store.change_folder_view('/ws/pics', 'grid')
+
+		expect(store.selection).toEqual([])
+		expect(store.selection_mode).toBe(false)
+	})
+
 	test('stale watch refresh during change_folder_view does not revert view', async () => {
 		const { fake, store } = await makeStore()
 		await store.open_folder('/ws/pics')
