@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import {
 	DASHBOARD_COLS,
+	compactDashboardLayout,
 	dashboardCellsToWrite,
 	widgetsToDashboardLayout,
 } from './dashboardLayout'
@@ -52,5 +53,18 @@ describe('dashboard layout', () => {
 			['moved', { x: 3, y: 0, w: 2, h: 1 }],
 		])
 		expect(dashboardCellsToWrite(layout, current).map(item => item.i)).toEqual(['moved', 'new'])
+	})
+
+	test('compact pulls a card up through an empty row and leaves a side-by-side card', () => {
+		const layout = [
+			{ i: 'top', x: 0, y: 0, w: 4, h: 1 },
+			{ i: 'gap', x: 0, y: 3, w: 4, h: 2 },
+			{ i: 'beside', x: 4, y: 3, w: 4, h: 1 },
+		]
+		expect(compactDashboardLayout(layout)).toEqual([
+			{ i: 'top', x: 0, y: 0, w: 4, h: 1 },
+			{ i: 'gap', x: 0, y: 1, w: 4, h: 2 },
+			{ i: 'beside', x: 4, y: 0, w: 4, h: 1 },
+		])
 	})
 })

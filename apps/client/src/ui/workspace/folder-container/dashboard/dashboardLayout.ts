@@ -114,6 +114,29 @@ export function widgetsToDashboardLayout(
 	return placed
 }
 
+/**
+ * Pull every card up to the first free row, keeping x/w/h.
+ * vue-grid only compacts while dragging, so a toggle has to do this itself.
+ * The result is what is drawn; saved cells stay until a card is moved.
+ */
+export function compactDashboardLayout(layout: DashboardLayoutItem[]): DashboardLayoutItem[] {
+	const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x)
+	const placed: DashboardLayoutItem[] = []
+	const byId = new Map<string, DashboardLayoutItem>()
+	for (const item of sorted) {
+		const next = { ...item }
+		while (next.y > 0 && !placed.some(other => collides(next, other))) next.y -= 1
+		let hit = placed.find(other => collides(next, other))
+		while (hit) {
+			next.y = hit.y + hit.h
+			hit = placed.find(other => collides(next, other))
+		}
+		placed.push(next)
+		byId.set(next.i, next)
+	}
+	return layout.map(item => byId.get(item.i) ?? item)
+}
+
 /** Cards whose cell changed, or that have never been saved. */
 export function dashboardCellsToWrite(
 	layout: DashboardLayoutItem[],

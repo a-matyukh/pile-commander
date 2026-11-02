@@ -13,6 +13,7 @@ import {
 	DASHBOARD_COLS,
 	DASHBOARD_GAP,
 	DASHBOARD_ROW_HEIGHT,
+	compactDashboardLayout,
 	dashboardCellsToWrite,
 	widgetsToDashboardLayout,
 	type DashboardLayoutItem,
@@ -57,7 +58,8 @@ function childrenSyncKey(list: FolderContainerWidgetChild[]): string {
 }
 
 function rebuildLayout() {
-	layout.value = widgetsToDashboardLayout(children.value)
+	const next = widgetsToDashboardLayout(children.value)
+	layout.value = compact.value ? compactDashboardLayout(next) : next
 }
 
 watch(
@@ -69,10 +71,11 @@ watch(
 	{ immediate: true },
 )
 
-// Turning compact off discards the in-memory pull-up and shows saved cells.
-// Turning it on only changes what vue-grid draws; the cells stay on disk.
-watch(compact, (on, was) => {
-	if (was && !on) rebuildLayout()
+// The flag lives on the folder. vue-grid does not watch verticalCompact,
+// so the pull-up is applied here. Cells on disk stay until a card is moved.
+watch(compact, () => {
+	if (isInteracting.value || isPersisting.value) return
+	rebuildLayout()
 })
 
 onMounted(() => {
