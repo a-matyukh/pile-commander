@@ -9,7 +9,6 @@ import LineEndpointHandles from '../shape/LineEndpointHandles.vue'
 import { useLineShapeMeta } from '../shape/useLineShapeMeta'
 import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveBackground'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import { useWidgetSelection } from './useWidgetSelection'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 
@@ -232,8 +231,7 @@ const { setRootRef, style } = useBoardWidget({
 				backgroundColor: 'white',
 				border: isNoteWidget.value && !isWhiteBackground(container.value?.background)
 					? 'none'
-					// The Explorer's cards are framed as its Gallery tiles
-					: explorer_mounted.value ? '1px solid var(--border)' : '2px solid #eee',
+					: '1px solid var(--border)',
 			}
 		return {
 			...appearance,

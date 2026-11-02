@@ -11,7 +11,6 @@ import FolderViewRouter from './FolderViewRouter.vue'
 import FolderChrome from './FolderChrome.vue'
 import FolderActionsPanel from './FolderActionsPanel.vue'
 import { Icon } from '@iconify/vue'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import { folder_glyph } from '@/ui/explorer/views/item_glyph'
 
 /** Deeper previews render a static placeholder instead of a live view tree. */
@@ -98,7 +97,6 @@ function onTitleDblClick() {
 			@dblclick="onTitleDblClick"
 		>
 			<Icon
-				v-if="explorer_mounted"
 				:icon="glyph.icon"
 				class="ex-row-icon"
 				:class="{ plain: glyph.plain }"
@@ -109,7 +107,7 @@ function onTitleDblClick() {
 				v-if="can_write"
 				class="folder-preview-title-actions"
 			>
-				<FolderChrome :view="scopeContainer.view" compact />
+				<FolderChrome :view="scopeContainer.view" />
 			</span>
 		</p>
 		<div class="folder-preview-stage">

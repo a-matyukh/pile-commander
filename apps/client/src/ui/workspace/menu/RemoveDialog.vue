@@ -4,7 +4,6 @@ import { t } from '@/i18n'
 import { explorer_drives } from '@/store/explorer/drives'
 import { remove_confirm_text } from '@/store/explorer/folder_menu'
 import { explorer_navigation } from '@/store/explorer/navigation'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 
@@ -20,12 +19,6 @@ const emit = defineEmits<{
 const is_open = ref(false)
 const display_name = ref(name)
 const target_id = ref('')
-
-const description = computed(() =>
-	type === 'folder'
-		? `Remove folder "${display_name.value}"? This will delete all contents.`
-		: `Remove file "${display_name.value}"?`,
-)
 
 function open(item_name = name, id = '') {
 	display_name.value = item_name
@@ -67,7 +60,6 @@ defineExpose({ open })
 
 <template>
 	<Modal
-		v-if="explorer_mounted"
 		v-model:open="is_open"
 		:title="t(explorer_text.title, { name: display_name })"
 		:description="t(explorer_text.description, { name: display_name })"
@@ -77,16 +69,4 @@ defineExpose({ open })
 			<Button variant="danger" @click="commit">{{ t(explorer_text.confirm) }}</Button>
 		</template>
 	</Modal>
-	<UModal
-		v-else
-		v-model:open="is_open"
-		title="Remove"
-		:description="description"
-		:ui="{ footer: 'justify-end' }"
-	>
-		<template #footer>
-			<UButton label="Cancel" color="neutral" variant="outline" @click="cancel" />
-			<UButton label="Remove" color="error" @click="commit" />
-		</template>
-	</UModal>
 </template>

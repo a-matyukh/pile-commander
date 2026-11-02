@@ -21,7 +21,6 @@ import { useFolderViewMenuItems } from './useFolderViewMenuItems'
 import { ai_available } from '@/store/ai'
 import { open_summary } from '@/store/aiSummary'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
-import { explorer_mounted } from '@/store/explorer/public_view'
 
 type FolderContainerMenuOptions = {
 	position?: MaybeRefOrGetter<Position | null | undefined>
@@ -98,17 +97,11 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 			entityId: scope.folderId.value,
 			mode: 'background' as const,
 			currentColor: scope.container.value?.background,
-			includeCustomValue: true,
 		}
 	})
 
 	const {
 		colorMenuItem,
-		pickerColor,
-		onPickerPointerDown,
-		commitPickerColor,
-		customValue,
-		commitCustomValue,
 		applyColor,
 	} = useColorSubmenu(colorSubmenuOptions)
 
@@ -325,10 +318,7 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 					],
 				},
 				...(backgroundItem
-					// The Explorer's color panel in place of the presets, the picker and the field
-					? [explorer_mounted.value
-						? { label: backgroundItem.label, disabled: backgroundItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }
-						: backgroundItem as DropdownMenuItem]
+					? [{ label: backgroundItem.label, disabled: backgroundItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }]
 					: []),
 			],
 			summarizeItems.value,
@@ -342,11 +332,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 		background: computed(() => scope.container.value?.background),
 		gridSize,
 		onGridSizeChange,
-		pickerColor,
-		onPickerPointerDown,
-		commitPickerColor,
-		customValue,
-		commitCustomValue,
 		applyColor,
 	}
 }

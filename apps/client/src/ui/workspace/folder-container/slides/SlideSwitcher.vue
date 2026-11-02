@@ -3,12 +3,7 @@ import { computed } from 'vue'
 import { resolve_slide_index, set_local_slide_index, viewer_slide_scope } from './slidesUtils'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import IconButton from '@/ui/kit/IconButton.vue'
-
-defineProps<{
-	compact?: boolean
-}>()
 
 const scope = useFolderContainerScope()
 const workspace = useWorkspace()
@@ -47,30 +42,10 @@ function goNext() {
 </script>
 
 <template>
-	<!-- In the Explorer its own buttons and grays -->
-	<div v-if="total > 0 && explorer_mounted" class="slide-switcher ex">
+	<div v-if="total > 0" class="slide-switcher ex">
 		<IconButton icon="tabler:chevron-left" :disabled="!canGoPrev" @click="canGoPrev && goPrev()" />
 		<span class="slide-counter">{{ currentIndex + 1 }} / {{ total }}</span>
 		<IconButton icon="tabler:chevron-right" :disabled="!canGoNext" @click="canGoNext && goNext()" />
-	</div>
-	<div v-else-if="total > 0" class="slide-switcher">
-		<UButton
-			icon="i-lucide-chevron-left"
-			color="neutral"
-			variant="ghost"
-			:size="compact ? 'xs' : 'sm'"
-			:disabled="!canGoPrev"
-			@click="goPrev"
-		/>
-		<span class="slide-counter">{{ currentIndex + 1 }} / {{ total }}</span>
-		<UButton
-			icon="i-lucide-chevron-right"
-			color="neutral"
-			variant="ghost"
-			:size="compact ? 'xs' : 'sm'"
-			:disabled="!canGoNext"
-			@click="goNext"
-		/>
 	</div>
 </template>
 

@@ -1,5 +1,4 @@
 import { reactive, ref } from 'vue'
-import { basename } from '@tauri-apps/api/path'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import type { ImportProgress, LoadWorkspaceOptions, Store, WorkspaceStore } from '../domain/Store'
 import { is_desktop } from '@/isDesktop'
@@ -31,19 +30,6 @@ const store: Store = {
 		this.last_error = null
 	},
 
-	async open_local_workspace(path?: string, opts?: LoadWorkspaceOptions) {
-		if (path) {
-			const name = await basename(path)
-			await this.load_workspace({ type: 'local', id: path, name }, opts)
-			return
-		}
-		const picked = await wm.pick_folder()
-		if (!picked) return
-		await this.load_workspace({ type: 'local', id: picked.folder_id, name: picked.name }, opts)
-	},
-	async open_demo_workspace(opts?: LoadWorkspaceOptions) {
-		await this.load_workspace({ type: 'demo', id: '/demo', name: 'Demo' }, opts)
-	},
 	async export_current_workspace(ws = this.workspace ?? undefined) {
 		if (!ws || (ws.type !== 'local' && ws.type !== 'cloud') || !is_desktop) {
 			report_error(this, new Error('Open a local or cloud workspace in the desktop app to export'))
@@ -106,10 +92,6 @@ const store: Store = {
 			report_error(this, error)
 			return null
 		}
-	},
-	async import_workspace_pack(pile_path?: string, opts?: LoadWorkspaceOptions) {
-		const unpacked = await this.unpack_workspace_pack(pile_path)
-		if (unpacked) await this.load_workspace({ type: 'local', id: unpacked.root, name: unpacked.name }, opts)
 	},
 	async load_workspace(ws: WorkspacesListItem, opts?: LoadWorkspaceOptions) {
 		const item: WorkspacesListItem = ws.type === 'local'

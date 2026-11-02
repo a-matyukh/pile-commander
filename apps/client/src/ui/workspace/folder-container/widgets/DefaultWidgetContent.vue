@@ -9,7 +9,6 @@ import { splitFileName } from './fileNameParts'
 import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
 import { Icon } from '@iconify/vue'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import { use_widget_glyph } from '@/ui/explorer/views/use_widget_glyph'
 
 const props = defineProps<{
@@ -78,14 +77,14 @@ const glyph = use_widget_glyph(() => props.widget)
 		@dragstart="onDragStart"
 		@dblclick="onDblClick"
 	>
-		<div v-if="explorer_mounted && isFile && fileParts" class="ex-file">
+		<div v-if="isFile && fileParts" class="ex-file">
 			<span class="ex-stem">{{ fileParts.stem }}</span>
 			<span class="ex-foot">
 				<Icon v-if="glyph" :icon="glyph.icon" class="ex-fi" />
 				<span v-if="fileParts.extension" class="ex-ext">{{ fileParts.extension }}</span>
 			</span>
 		</div>
-		<div v-else-if="explorer_mounted" class="ex-folder">
+		<div v-else class="ex-folder">
 			<!-- Gallery's tab, above the card's top left -->
 			<span v-if="layout === 'board'" class="ex-tab" :class="{ filled: coverFilled }" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
 				<span class="ex-tab-flat" />
@@ -97,73 +96,11 @@ const glyph = use_widget_glyph(() => props.widget)
 			<Icon v-if="glyph && !glyph.generic" :icon="glyph.icon" class="ex-ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 			<span class="ex-name">{{ widget.name }}</span>
 		</div>
-		<div
-			v-else-if="isFile && fileParts"
-			class="default-file-content"
-		>
-			<p class="default-file-stem font-medium text-highlighted">
-				{{ fileParts.stem }}
-			</p>
-			<p
-				v-if="fileParts.extension"
-				class="default-file-ext font-medium text-highlighted"
-			>
-				{{ fileParts.extension }}
-			</p>
-		</div>
-		<div
-			v-else
-			class="default-folder-content"
-		>
-			<p class="default-folder-name font-medium text-highlighted">
-				{{ widget.name }}
-			</p>
-		</div>
 	</WidgetShell>
 </template>
 
 <style scoped>
-.default-file-content {
-	position: relative;
-	height: 100%;
-	min-height: 0;
-}
-
-.default-file-stem {
-	position: absolute;
-	top: 0;
-	left: 0;
-	max-width: 100%;
-	margin: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.default-file-ext {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	max-width: 100%;
-	margin: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	opacity: 0.7;
-	font-size: 0.85em;
-}
-
-.default-folder-content {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	height: 100%;
-	min-height: 0;
-	padding: 0.25rem;
-	text-align: center;
-}
-
-/* The Explorer's cards, as Gallery's tiles */
+/* Cards, as Gallery's tiles */
 .ex-file {
 	display: flex;
 	flex-direction: column;
@@ -285,15 +222,5 @@ const glyph = use_widget_glyph(() => props.widget)
 }
 .explorer.lg .ex-fi {
 	font-size: 19px;
-}
-
-.default-folder-name {
-	margin: 0;
-	overflow: hidden;
-	display: -webkit-box;
-	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 4;
-	line-clamp: 4;
-	word-break: break-word;
 }
 </style>

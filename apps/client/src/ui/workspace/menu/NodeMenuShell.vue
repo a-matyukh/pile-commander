@@ -4,15 +4,12 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import RenameDialog from './RenameDialog.vue'
 import RemoveDialog from './RemoveDialog.vue'
-import MenuSwatchDot from './MenuSwatchDot.vue'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import ItemsCtxMenu from '@/ui/kit/ItemsCtxMenu.vue'
 import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
 
 const props = defineProps<{
 	node: WorkspaceTreeNode
 	items: DropdownMenuItem[][]
-	dropdownWidth?: string
 	/** Reka touch/pen hold delay. Board passes Infinity and owns long-press itself. */
 	pressOpenDelay?: number
 }>()
@@ -56,8 +53,7 @@ defineExpose({ open_rename, open_remove })
 
 <template>
 	<span class="contents contents-menu-root">
-		<!-- In the Explorer the same items, in its own menu style -->
-		<ItemsDropMenu v-if="!hasContextTrigger && explorer_mounted" :items="items">
+		<ItemsDropMenu v-if="!hasContextTrigger" :items="items">
 			<template
 				v-for="name in forwardedSlotNames"
 				:key="name"
@@ -66,36 +62,8 @@ defineExpose({ open_rename, open_remove })
 				<slot :name="name" v-bind="slotProps" />
 			</template>
 		</ItemsDropMenu>
-		<UDropdownMenu
-			v-else-if="!hasContextTrigger"
-			class="shrink-0"
-			:items="items"
-			:content="{
-				align: 'start',
-				side: 'bottom',
-				sideOffset: 8,
-			}"
-			:ui="{
-				content: dropdownWidth ?? 'min-w-48',
-			}"
-		>
-			<UButton icon="i-lucide-ellipsis" color="neutral" variant="ghost" size="xs" />
-
-			<template #item-leading="{ item }">
-				<MenuSwatchDot :color="(item as { swatch?: string }).swatch" />
-			</template>
-
-			<template
-				v-for="name in forwardedSlotNames"
-				:key="name"
-				#[name]="slotProps"
-			>
-				<slot :name="name" v-bind="slotProps" />
-			</template>
-		</UDropdownMenu>
-		<!-- In the Explorer the same items, in its own menu style -->
 		<ItemsCtxMenu
-			v-else-if="explorer_mounted"
+			v-else
 			:items="items"
 			:press_open_delay="pressOpenDelay ?? 700"
 		>
@@ -108,29 +76,6 @@ defineExpose({ open_rename, open_remove })
 				<slot :name="name" v-bind="slotProps" />
 			</template>
 		</ItemsCtxMenu>
-		<UContextMenu
-			v-else
-			:modal="false"
-			:items="items"
-			:press-open-delay="pressOpenDelay ?? 700"
-			:ui="{
-				content: 'min-w-48',
-			}"
-		>
-			<slot />
-
-			<template #item-leading="{ item }">
-				<MenuSwatchDot :color="(item as { swatch?: string }).swatch" />
-			</template>
-
-			<template
-				v-for="name in forwardedSlotNames"
-				:key="name"
-				#[name]="slotProps"
-			>
-				<slot :name="name" v-bind="slotProps" />
-			</template>
-		</UContextMenu>
 
 		<RenameDialog
 			ref="rename_dialog"
