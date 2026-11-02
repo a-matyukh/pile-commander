@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
-import { is_note_widget } from '@/services/board/layout'
-import { get_media_kind } from '@/services/board/media'
+import { image_shows_preview, is_note_widget } from '@/services/board/layout'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import FolderMenu from '@/ui/workspace/menu/FolderMenu.vue'
 import { Icon } from '@iconify/vue'
@@ -58,14 +57,12 @@ const cardStyle = computed(() => {
 			: '1px solid var(--border)',
 	}
 })
-const isImage = computed(() =>
-	props.widget.type === 'file' && get_media_kind(props.widget.name) === 'image',
-)
+const isImage = computed(() => image_shows_preview(props.widget))
 
 const menuComponent = computed(() => props.widget.type === 'file' ? FileMenu : FolderMenu)
 const menuNode = useMenuNode(() => props.widget)
 const menuProps = computed(() => ({
-	isPreview: props.widget.is_preview ?? false,
+	isPreview: image_shows_preview(props.widget) || props.widget.is_preview === true,
 	showPreviewToggle: props.widget.type === 'file',
 }))
 

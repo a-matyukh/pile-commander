@@ -5,6 +5,7 @@ import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import NodeMenuShell from './NodeMenuShell.vue'
 import { useNodeMenu } from './useNodeMenu'
 import { useColorSubmenu } from './useColorSubmenu'
+import { image_shows_preview } from '@/services/board/layout'
 import { get_preview_toggle_label, is_previewable_file } from '@/services/board/media'
 import {
 	is_line_shape,
@@ -96,7 +97,7 @@ const colorSubmenuOptions = computed(() => {
 		}
 	}
 
-	if (child.is_preview) {
+	if (image_shows_preview(child) || child.is_preview) {
 		return {
 			label: 'Background',
 			entityId: child.id,

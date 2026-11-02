@@ -5,6 +5,7 @@ import {
 	board_content_extent,
 	board_position,
 	board_size,
+	image_shows_preview,
 	is_audio_widget,
 	is_folder_preview_widget,
 	is_image_widget,
@@ -46,6 +47,11 @@ function file(
 	}
 }
 
+/** The usual helper writes is_preview, so a missing attribute needs its own object. */
+function bare(name: string): FolderContainerWidgetChild {
+	return { id: `/ws/${name}`, name, type: 'file' }
+}
+
 describe('media', () => {
 	test('detects extension, kind and mime', () => {
 		expect(get_file_extension('Photo.PNG')).toBe('.png')
@@ -80,6 +86,8 @@ describe('board layout', () => {
 		expect(is_note_widget(file('a.md', { is_preview: false }))).toBe(false)
 		expect(is_shape_widget(file('a.svg'))).toBe(true)
 		expect(is_image_widget(file('a.png'))).toBe(true)
+		expect(is_image_widget(bare('a.png'))).toBe(true)
+		expect(is_image_widget(file('a.png', { is_preview: false }))).toBe(false)
 		expect(is_video_widget(file('a.mp4'))).toBe(true)
 		expect(is_audio_widget(file('a.mp3'))).toBe(true)
 		expect(is_model_widget(file('a.glb'))).toBe(true)
@@ -98,6 +106,7 @@ describe('board layout', () => {
 		expect(board_position(file('a.txt', { position: { x: 1, y: 2 } }), 0)).toEqual({ x: 1, y: 2 })
 		expect(board_size(file('a.txt'))).toEqual(NOTE_DEFAULT_SIZE)
 		expect(board_size(file('a.png'))).toEqual(IMAGE_DEFAULT_SIZE)
+		expect(board_size(bare('a.png'))).toEqual(IMAGE_DEFAULT_SIZE)
 		expect(board_size(file('a.glb'))).toEqual(MODEL_DEFAULT_SIZE)
 		expect(board_size(file('a.svg'))).toEqual(SHAPE_SQUARE_DEFAULT_SIZE)
 		expect(board_size(file('Shape line.svg'))).toEqual(SHAPE_LINE_DEFAULT_SIZE)
@@ -105,6 +114,17 @@ describe('board layout', () => {
 			width: 9,
 			height: 8,
 		})
+	})
+
+	test('an image shows until preview is turned off', () => {
+		expect(image_shows_preview(bare('a.png'))).toBe(true)
+		expect(image_shows_preview(file('a.png', { is_preview: false }))).toBe(false)
+		expect(image_shows_preview(bare('a.jpg'))).toBe(true)
+		expect(image_shows_preview(bare('a.svg'))).toBe(false)
+		expect(is_shape_widget(bare('a.svg'))).toBe(false)
+		expect(image_shows_preview(bare('a.txt'))).toBe(false)
+		expect(is_note_widget(bare('a.txt'))).toBe(false)
+		expect(is_note_widget(bare('a.md'))).toBe(false)
 	})
 
 	test('board_content_extent returns zero for empty board', () => {

@@ -1,10 +1,10 @@
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
+import { image_shows_preview } from '@/services/board/layout'
 
 /** Preview files (notes, media) can set `background`. Shapes use fill instead. */
 export function canHaveWidgetBackground(widget: FolderContainerWidgetChild): boolean {
-	return widget.type === 'file'
-		&& widget.is_preview === true
-		&& !widget.name.endsWith('.svg')
+	if (widget.type !== 'file' || widget.name.endsWith('.svg')) return false
+	return image_shows_preview(widget) || widget.is_preview === true
 }
 
 /** Shared Background menu: every selected pane child must support a background. */

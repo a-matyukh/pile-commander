@@ -10,6 +10,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import PreviewContent from '../widgets/PreviewContent.vue'
+import { image_shows_preview } from '@/services/board/layout'
 import { resolve_slide_index, viewer_slide_scope } from './slidesUtils'
 import SlideSwitcher from './SlideSwitcher.vue'
 import SlidesNote from './SlidesNote.vue'
@@ -168,7 +169,7 @@ function onPreviewDblClick() {
 				<FileMenu
 					v-if="widget.type === 'file'"
 					:node="menuNodeFor(widget)"
-					:is-preview="widget.is_preview ?? false"
+					:is-preview="image_shows_preview(widget) || widget.is_preview === true"
 					:show-preview-toggle="true"
 				/>
 				<FolderMenu

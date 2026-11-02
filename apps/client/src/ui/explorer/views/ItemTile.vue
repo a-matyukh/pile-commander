@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { explorer_settings } from '@/store/explorer/settings'
+import { useMediaSrc } from '@/ui/workspace/folder-container/media/useMediaSrc'
 import { splitFileName } from '@/ui/workspace/folder-container/widgets/fileNameParts'
 import { backgroundStyle, isImageBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import type { ItemGlyph } from './item_glyph'
@@ -22,7 +23,12 @@ const props = defineProps<{
 	cover?: string
 	selected?: boolean
 	dim?: boolean
+	/** Set for a picture that should fill the tile. The cloud page leaves this empty. */
+	file_id?: string
 }>()
+
+const { src, error } = useMediaSrc(() => props.file_id ?? '', () => props.name)
+const shows_shot = computed(() => Boolean(props.file_id && src.value && !error.value))
 
 /** Both shapes are as tall; a folder's tab takes from its body */
 const height = computed(() => Math.round(explorer_settings.gallery_icon * 1.5 + 64))
@@ -60,10 +66,11 @@ const tab_path = computed(() => {
 			<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 			<span class="nm" :title="name">{{ name }}</span>
 		</div>
-		<div v-else class="body file" :title="name">
+		<div v-else class="body file" :class="{ shot: shows_shot }" :title="name">
+			<img v-if="shows_shot" class="pic" :src="src" :alt="name" draggable="false">
 			<div class="dots"><slot name="menu" /></div>
-			<span class="stem">{{ parts.stem }}</span>
-			<div class="foot">
+			<span v-if="!shows_shot" class="stem">{{ parts.stem }}</span>
+			<div v-if="!shows_shot" class="foot">
 				<Icon :icon="glyph.icon" class="fi" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 				<span v-if="parts.extension" class="ext">{{ parts.extension }}</span>
 			</div>
@@ -112,6 +119,17 @@ const tab_path = computed(() => {
 	align-items: stretch;
 	justify-content: space-between;
 	padding: 10px;
+}
+.body.file.shot {
+	padding: 0;
+	overflow: hidden;
+}
+.pic {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
 }
 .stem {
 	padding-right: 14px;
@@ -168,6 +186,7 @@ const tab_path = computed(() => {
 }
 .dots {
 	position: absolute;
+	z-index: 1;
 	top: 3px;
 	right: 3px;
 	visibility: hidden;

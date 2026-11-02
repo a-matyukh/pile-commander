@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { t } from '@/i18n'
+import { image_shows_preview } from '@/services/board/layout'
+import { get_media_kind } from '@/services/board/media'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
 import FileMenuItems from './FileMenuItems.vue'
@@ -10,6 +13,14 @@ import type { Items } from './use_items'
 
 /** An item's "⋯": a folder shares the tree's menu; a file has its own */
 const props = defineProps<{ items: Items; child: FolderContainerWidgetChild; workspace: WorkspaceStore }>()
+
+const preview_label = computed(() => {
+	const child = props.child
+	if (child.type !== 'file' || get_media_kind(child.name) !== 'image') return undefined
+	return image_shows_preview(child)
+		? t('board_menu.show_as_file')
+		: t('board_menu.preview')
+})
 </script>
 
 <template>
@@ -35,12 +46,14 @@ const props = defineProps<{ items: Items; child: FolderContainerWidgetChild; wor
 		</template>
 		<FileMenuItems
 			:can_write="workspace.can_write"
+			:preview_label="preview_label"
 			@open="workspace.open(props.child)"
 			@rename="items.start_rename(props.child)"
 			@cut="workspace.cut_entries([props.child.id])"
 			@copy="workspace.copy_entries([props.child.id])"
 			@duplicate="workspace.duplicate_entries([props.child.id])"
 			@trash="items.trashing = props.child"
+			@toggle_preview="workspace.change_is_preview(props.child.id, !image_shows_preview(props.child))"
 		/>
 	</DropMenu>
 </template>
