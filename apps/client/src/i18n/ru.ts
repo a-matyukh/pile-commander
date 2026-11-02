@@ -11,6 +11,12 @@ export const ru = {
 		add_current: 'Добавить текущую папку',
 		added: '«{name}» в закладках',
 		empty: 'Пока пусто',
+		cloud_folder: 'Облачная папка',
+	},
+	drop: {
+		bookmark: 'Отпустите здесь — папка попадёт в закладки',
+		open: 'Отпустите, чтобы открыть папку',
+		open_more: 'Файл .pile импортируется, остальные файлы — в открытую папку',
 	},
 	source: {
 		local: 'Домашняя папка',
@@ -415,6 +421,24 @@ export const ru = {
 		report_send: 'Отправить',
 		report_failed: 'Не удалось отправить жалобу',
 	},
+	invite: {
+		loading: 'Загрузка приглашения…',
+		invited: '{inviter} приглашает вас в «{workspace}»',
+		someone: 'Кто-то',
+		join_as: 'Войти как {role}, адрес {email}.',
+		role_viewer: 'наблюдатель',
+		role_editor: 'редактор',
+		signed_in: 'Вы вошли как {email}',
+		open_app: 'Открыть приложение',
+	},
+	publication: {
+		not_found: 'Публикация не найдена',
+		not_found_tail: 'не опубликована',
+		back_to_hub: 'В Хаб',
+	},
+	importing: {
+		count: '{done} из {total}',
+	},
 	account: {
 		cloud_folders: '{n} облачных папок',
 		in_hub: '{n} в Хабе',
@@ -546,8 +570,6 @@ export const ru = {
 		language: 'Язык',
 		language_d: '«Как в системе» берёт язык вашей системы',
 		language_system: 'Как в системе',
-		new_interface: 'Новый интерфейс',
-		new_interface_d: 'Выключите, чтобы вернуться к прежнему окну',
 		size: 'Размер интерфейса',
 		size_d: 'Крупный удобнее на тач-экранах',
 		size_phone_default: ' · на телефоне по умолчанию крупный',

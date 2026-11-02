@@ -39,6 +39,21 @@ export const tree_drag = reactive({
 
 export const tree_root_key = (drive_id: string, root_id: string) => `${drive_id}\0${root_id}`
 
+/**
+ * A folder row can be dragged. The drive's own root row can, only when it
+ * is a cloud workspace. macOS's own folders stay put, as in Finder.
+ */
+export function row_can_drag(row: {
+	can_write: boolean
+	system: boolean
+	/** False for the drive's own root row */
+	folder: boolean
+	drive_kind: string
+}): boolean {
+	if (!row.can_write || row.system) return false
+	return row.folder || row.drive_kind === 'cloud'
+}
+
 /** The cloud's empty tree space: a drop here creates a new top-level folder. */
 export const CLOUD_ROOT_DROP_KEY = tree_root_key('cloud', '')
 

@@ -61,14 +61,10 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 			: undefined
 	})
 
-	const {
-		colorMenuItem,
-		pickerColor,
-		onPickerPointerDown,
-		commitPickerColor,
-		applyColor,
-	} = useColorSubmenu(() => {
-		if (!selectionCanSetSharedBackground(selectedChildren.value)) return null
+	const canColor = computed(() => selectionCanSetSharedBackground(selectedChildren.value))
+
+	const { applyColor } = useColorSubmenu(() => {
+		if (!canColor.value) return null
 		const firstId = selectedIds.value[0]
 		if (!firstId) return null
 		return {
@@ -181,7 +177,11 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 	})
 
 	const selectionMenuItems = computed<DropdownMenuItem[][]>(() => [
-		...(colorMenuItem.value ? [[colorMenuItem.value]] : []),
+		...(canColor.value ? [[{
+			label: 'Background',
+			disabled: readonly.value,
+			children: [{ slot: 'selection-color' as const, raw: true }],
+		}]] : []),
 		...(aiItems.value.length ? [aiItems.value] : []),
 		clipboardItems.value,
 		[{
@@ -195,11 +195,9 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		isMultiSelection,
 		clipboardItems,
 		selectionMenuItems,
+		sharedBackground,
 		dialogRef,
 		onConfirm,
-		pickerColor,
-		onPickerPointerDown,
-		commitPickerColor,
 		applyColor,
 	}
 }

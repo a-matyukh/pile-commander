@@ -9,7 +9,6 @@ import {
 function deps(overrides: Partial<Pick<ApplyPublicRouteDeps, 'is_cloud_configured'>> = {}) {
 	return {
 		is_cloud_configured: true,
-		open_demo_workspace: vi.fn<() => void>(),
 		fetch_hub: vi.fn<() => void>(),
 		open_profile: vi.fn<(username: string) => void>(),
 		open_public: vi.fn<(username: string, slug: string) => void>(),
@@ -107,10 +106,13 @@ describe('apply_public_route', () => {
 		expect(d.open_public).toHaveBeenCalledWith('anna', 'my-workspace')
 	})
 
-	it('opens the demo workspace', () => {
+	it('leaves /demo to the Explorer', () => {
 		const d = deps()
 		apply_public_route({ kind: 'demo' }, d)
-		expect(d.open_demo_workspace).toHaveBeenCalledOnce()
+		expect(d.fetch_hub).not.toHaveBeenCalled()
+		expect(d.open_public).not.toHaveBeenCalled()
+		expect(d.open_profile).not.toHaveBeenCalled()
+		expect(d.open_invite).not.toHaveBeenCalled()
 	})
 
 	it('does not fetch public cloud routes when cloud is not configured', () => {
@@ -124,7 +126,6 @@ describe('apply_public_route', () => {
 	it('does nothing for the app route', () => {
 		const d = deps()
 		apply_public_route({ kind: 'app' }, d)
-		expect(d.open_demo_workspace).not.toHaveBeenCalled()
 		expect(d.fetch_hub).not.toHaveBeenCalled()
 		expect(d.open_public).not.toHaveBeenCalled()
 		expect(d.open_profile).not.toHaveBeenCalled()

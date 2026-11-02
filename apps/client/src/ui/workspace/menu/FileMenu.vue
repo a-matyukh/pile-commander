@@ -3,8 +3,6 @@ import { computed, ref, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import NodeMenuShell from './NodeMenuShell.vue'
-import ColorPickerMenuSlot from './ColorPickerMenuSlot.vue'
-import PresetColorsMenuSlot from './PresetColorsMenuSlot.vue'
 import { useNodeMenu } from './useNodeMenu'
 import { useColorSubmenu } from './useColorSubmenu'
 import { get_preview_toggle_label, is_previewable_file } from '@/services/board/media'
@@ -18,7 +16,6 @@ import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { t } from '@/i18n'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const props = defineProps<{
@@ -40,11 +37,9 @@ const {
 	isMultiSelection,
 	clipboardItems,
 	selectionMenuItems,
+	sharedBackground,
 	dialogRef,
 	onConfirm,
-	pickerColor: selectionPickerColor,
-	onPickerPointerDown: selectionOnPickerPointerDown,
-	commitPickerColor: selectionCommitPickerColor,
 	applyColor: selectionApplyColor,
 } = useSelectionMenu(() => props.node)
 
@@ -118,24 +113,7 @@ const colorSubmenuOptions = computed(() => {
 	}
 })
 
-const { colorMenuItem, pickerColor, onPickerPointerDown, commitPickerColor, applyColor } = useColorSubmenu(colorSubmenuOptions)
-
-const activePickerColor = computed({
-	get: () => isMultiSelection.value ? selectionPickerColor.value : pickerColor.value,
-	set: (value: string) => {
-		if (isMultiSelection.value) selectionPickerColor.value = value
-		else pickerColor.value = value
-	},
-})
-const activeApplyColor = computed(() =>
-	isMultiSelection.value ? selectionApplyColor : applyColor,
-)
-const activeOnPickerPointerDown = computed(() =>
-	isMultiSelection.value ? selectionOnPickerPointerDown : onPickerPointerDown,
-)
-const activeCommitPickerColor = computed(() =>
-	isMultiSelection.value ? selectionCommitPickerColor : commitPickerColor,
-)
+const { colorMenuItem, applyColor } = useColorSubmenu(colorSubmenuOptions)
 
 /** The Explorer's color panel: what it colors and how its reset reads */
 const colorPanel = computed(() => {
@@ -210,10 +188,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
 			}]
 			: []),
 		...(props.showPreviewToggle && colorItem
-			// The Explorer's color panel in place of the presets and the picker
-			? [explorer_mounted.value
-				? { label: colorItem.label, disabled: colorItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }
-				: colorItem as DropdownMenuItem]
+			? [{ label: colorItem.label, disabled: colorItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }]
 			: []),
 		...plugItems,
 	]
@@ -232,7 +207,6 @@ const items = computed<DropdownMenuItem[][]>(() => {
 		:node="node"
 		:items="items"
 		:press-open-delay="pressOpenDelay"
-		dropdown-width="min-w-50"
 		@confirm-rename="commit_rename"
 		@confirm-remove="commit_remove"
 	>
@@ -249,14 +223,12 @@ const items = computed<DropdownMenuItem[][]>(() => {
 				@set="value => void applyColor(value)"
 			/>
 		</template>
-		<template #preset-colors>
-			<PresetColorsMenuSlot :apply-color="activeApplyColor" />
-		</template>
-		<template #color-picker>
-			<ColorPickerMenuSlot
-				v-model="activePickerColor"
-				:on-picker-pointer-down="activeOnPickerPointerDown"
-				:commit-picker-color="activeCommitPickerColor"
+		<template #selection-color>
+			<ColorPanel
+				:value="sharedBackground"
+				:label="t('style.background_color')"
+				:reset_label="t('style.remove_background')"
+				@set="value => void selectionApplyColor(value)"
 			/>
 		</template>
 	</NodeMenuShell>

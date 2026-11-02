@@ -4,7 +4,6 @@ import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import { is_desktop } from '@/isDesktop'
 import DesktopUpdateControls from '@/ui/app/DesktopUpdateControls.vue'
 import { t } from '@/i18n'
-import { explorer_enabled } from '@/store/explorer/enabled'
 import { explorer_language } from '@/store/explorer/language'
 import { explorer_settings, path_in_header, settings_tab, SETTINGS_TABS as TABS } from '@/store/explorer/settings'
 import { show_hidden_files } from '@/store/showHiddenFiles'
@@ -115,9 +114,6 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 
 			<div class="sh">{{ t('settings.interface') }}</div>
 			<div class="card">
-				<SettingRow :title="t('settings.new_interface')" :description="t('settings.new_interface_d')">
-					<Switch v-model="explorer_enabled" />
-				</SettingRow>
 				<SettingRow :title="t('settings.language')" :description="t('settings.language_d')">
 					<Segmented
 						v-model="explorer_language"

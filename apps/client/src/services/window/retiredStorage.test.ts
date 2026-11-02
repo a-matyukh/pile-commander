@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { drop_stale_workspace_sidebar_keys, WORKSPACE_SIDEBAR_ID } from './workspaceSidebarStorage'
+import { drop_retired_storage_keys } from './retiredStorage'
 
 function memory(keys: string[]): Storage {
-	const map = new Map(keys.map(key => [key, '']))
+	const map = new Map(keys.map(key => [key, '1']))
 	return {
 		get length() { return map.size },
 		key(index: number) { return [...map.keys()][index] ?? null },
@@ -13,19 +13,25 @@ function memory(keys: string[]): Storage {
 	}
 }
 
-describe('drop_stale_workspace_sidebar_keys', () => {
-	test('drops useId keys and keeps the stable sidebar entry', () => {
+describe('drop_retired_storage_keys', () => {
+	test('drops the old window keys and keeps the Explorer settings', () => {
 		const storage = memory([
-			`workspace-sidebar-${WORKSPACE_SIDEBAR_ID}`,
+			'workspaces_list_bookmarks',
+			'workspaces_list_last_opened',
+			'workspaces_list_accordion_open',
+			'pile_commander_explorer',
+			'pile_commander_explorer_lists_migrated',
+			'workspace-sidebar-main',
 			'workspace-sidebar-v-0',
-			'workspace-sidebar-v-12',
-			'workspace-sidebar-v-0-3',
 			'pile_commander_explorer_settings',
+			'pile_commander_explorer_bookmarks',
+			'pile_commander_show_hidden_files',
 		])
-		drop_stale_workspace_sidebar_keys(storage)
+		drop_retired_storage_keys(storage)
 		expect([...Array(storage.length)].map((_, index) => storage.key(index)).sort()).toEqual([
+			'pile_commander_explorer_bookmarks',
 			'pile_commander_explorer_settings',
-			`workspace-sidebar-${WORKSPACE_SIDEBAR_ID}`,
+			'pile_commander_show_hidden_files',
 		])
 	})
 })

@@ -5,17 +5,14 @@ import type { FolderView } from '@/domain/Widget'
 import FolderSpatialActionsMenu from './FolderSpatialActionsMenu.vue'
 import { useCreateChildItems } from '@/ui/workspace/menu/useCreateChildItems'
 import { useFolderViewMenuItems } from '@/ui/workspace/menu/useFolderViewMenuItems'
-import ViewMenuTrailing from '@/ui/workspace/menu/ViewMenuTrailing.vue'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerScope } from './useFolderContainerScope'
-import { explorer_mounted } from '@/store/explorer/public_view'
 import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
 import { view_label } from '@/ui/kit/items_menu_labels'
 import { beginRegisteredNoteEditing, armNoteCreateFromMenu } from './panePosition'
 
 const props = defineProps<{
 	view: FolderView
-	compact?: boolean
 }>()
 
 const requireWorkspace = useRequireWorkspace()
@@ -74,37 +71,10 @@ const showCreateMenu = computed(
 
 <template>
 	<span v-if="showCreateMenu" class="folder-chrome board-no-drag" @click.stop @dblclick.stop>
-		<FolderSpatialActionsMenu
-			v-if="isSpatialView"
-			:compact="compact"
-		/>
-		<ItemsDropMenu v-else-if="explorer_mounted" :items="createOnlyItems">
+		<FolderSpatialActionsMenu v-if="isSpatialView" />
+		<ItemsDropMenu v-else :items="createOnlyItems">
 			<template #view-trailing="{ item }">{{ view_label((item as { currentViewLabel?: string }).currentViewLabel) }}</template>
 		</ItemsDropMenu>
-		<UDropdownMenu
-			v-else
-			:items="createOnlyItems"
-			:content="{
-				align: 'start',
-				side: 'bottom',
-				sideOffset: 8,
-			}"
-			:ui="{
-				content: 'min-w-56',
-			}"
-		>
-			<UButton
-				icon="i-lucide-ellipsis"
-				color="neutral"
-				variant="ghost"
-				:size="compact ? 'xs' : 'sm'"
-				aria-label="Create"
-				title="Create"
-			/>
-			<template #view-trailing="{ item }">
-				<ViewMenuTrailing :label="(item as { currentViewLabel?: string }).currentViewLabel" />
-			</template>
-		</UDropdownMenu>
 	</span>
 </template>
 

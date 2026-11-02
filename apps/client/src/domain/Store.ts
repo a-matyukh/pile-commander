@@ -1,4 +1,4 @@
-import type { WorkspacesListItem, WorkspacesList, WorkspaceType } from '@/domain/WorkspacesList'
+import type { WorkspacesListItem, WorkspaceType } from '@/domain/WorkspacesList'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import type { ShapeTemplate } from '@/domain/shapes'
 import type { LinePlug, LineAxis } from '@/services/board/shapes'
@@ -23,10 +23,6 @@ type Store = {
 	/** Message of the last failed root-level operation (e.g. workspace load). */
 	last_error: string | null
 	clear_error(): void
-	/** Opens a folder picker when `path` is omitted; otherwise opens that folder as a local workspace. */
-	open_local_workspace(path?: string, opts?: LoadWorkspaceOptions): Promise<void>
-	/** Opens an in-memory demo workspace (works in web without Tauri FS). */
-	open_demo_workspace(opts?: LoadWorkspaceOptions): Promise<void>
 	/**
 	 * Exports the open local or cloud workspace (or `ws`, e.g. the Explorer's
 	 * cloud folder) to a `.pile` archive. Desktop only.
@@ -39,21 +35,14 @@ type Store = {
 	 * to them.
 	 */
 	download_public_workspace(ws: WorkspaceStore): Promise<void>
-	/** Imports a `.pile` archive into a chosen folder and opens it. Desktop only.
+	/** Unpacks a `.pile` into a chosen folder. The new folder, or null when cancelled or failed.
 	 * When `pile_path` is set (Open With / double-click), skips the file picker.
 	 */
-	import_workspace_pack(pile_path?: string, opts?: LoadWorkspaceOptions): Promise<void>
-	/** The unpacking half of import_workspace_pack: the new folder, or null when cancelled or failed */
 	unpack_workspace_pack(pile_path?: string): Promise<{ root: string; name: string } | null>
 	load_workspace(ws: WorkspacesListItem, opts?: LoadWorkspaceOptions): Promise<void>
 	/** Closes the open workspace (e.g. after its cloud workspace was removed). */
 	close_workspace(): void
 	workspace: WorkspaceStore | null
-
-	bookmarks: WorkspacesList
-	last_opened: WorkspacesList
-	add_to_bookmarks(ws: WorkspacesListItem): void
-	remove_from_bookmarks(ws: WorkspacesListItem): void
 }
 
 export

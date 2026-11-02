@@ -1,7 +1,6 @@
 import { createApp } from 'vue'
 import ui from '@nuxt/ui/vue-plugin'
 import AppShell from './ui/app/AppShell.vue'
-import { sync_workspaces_list } from './store/workspaces_list'
 import cloud from './store/cloud'
 import { is_desktop } from './isDesktop'
 import { restore_agent_access } from './store/agentAccess'
@@ -12,7 +11,7 @@ import { public_route_deps } from './services/navigatePublic'
 import { install_document_title } from './services/documentTitle'
 import { notify_demo_embed_ready } from './services/demoEmbed'
 import { strip_empty_location_hash } from './services/cloud/stripEmptyLocationHash'
-import { drop_stale_workspace_sidebar_keys } from './services/window/workspaceSidebarStorage'
+import { drop_retired_storage_keys } from './services/window/retiredStorage'
 import './modelViewer'
 import './main.css'
 import 'virtual:offline-icons'
@@ -25,21 +24,15 @@ async function bootstrap() {
 	// Cached session only. A token refresh talks to Supabase and must not
 	// hold the shell — local workspaces start reading disk as soon as we mount.
 	await cloud.init()
-	// Pruning bookmarks stats every folder. A disconnected network volume
-	// can hang that stat; the sidebar updates when it finishes.
-	void sync_workspaces_list().catch((error) => {
-		console.error('[workspaces] failed to prune missing folders', error)
-	})
 	strip_empty_location_hash()
 
-	// Leftover keys from the removed desktops experiment. Nothing reads them.
+	// Leftover keys nothing reads: the desktops experiment, the old window and its lists.
 	// localStorage throws when the browser blocks storage; that must not
 	// stop the app from mounting.
 	try {
 		localStorage.removeItem('desktops_state')
 		localStorage.removeItem('pile_commander_experimental_desktops')
-		// Sidebar used to persist under a fresh useId() on every mount.
-		drop_stale_workspace_sidebar_keys()
+		drop_retired_storage_keys()
 	} catch {
 		// storage blocked: nothing to clean
 	}

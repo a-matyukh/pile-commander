@@ -6,8 +6,6 @@ import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveB
 import { useWidgetSelection } from './useWidgetSelection'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
-import { explorer_mounted } from '@/store/explorer/public_view'
-
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<WidgetShellVariantProps>(), {
@@ -119,8 +117,7 @@ const style = computed(() => {
 			backgroundColor: 'white',
 			border: isNoteWidget.value && !isWhiteBackground(container.value?.background)
 				? 'none'
-				// The Explorer's cards are framed as its board's and Gallery's
-				: explorer_mounted.value ? '1px solid var(--border)' : '2px solid #eee',
+				: '1px solid var(--border)',
 		}
 	return {
 		width: '100%',

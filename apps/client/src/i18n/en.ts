@@ -14,6 +14,12 @@ export const en: typeof ru = {
 		add_current: 'Bookmark this folder',
 		added: '“{name}” bookmarked',
 		empty: 'Nothing here yet',
+		cloud_folder: 'Cloud folder',
+	},
+	drop: {
+		bookmark: 'Drop here to bookmark the folder',
+		open: 'Drop to open the folder',
+		open_more: 'A .pile imports; other files go into the open folder',
 	},
 	source: {
 		local: 'Home folder',
@@ -418,6 +424,24 @@ export const en: typeof ru = {
 		report_send: 'Send report',
 		report_failed: 'Could not send the report',
 	},
+	invite: {
+		loading: 'Loading invitation…',
+		invited: '{inviter} invited you to {workspace}',
+		someone: 'Someone',
+		join_as: 'Join as {role} using {email}.',
+		role_viewer: 'viewer',
+		role_editor: 'editor',
+		signed_in: 'Signed in as {email}',
+		open_app: 'Open the app',
+	},
+	publication: {
+		not_found: 'Workspace not found',
+		not_found_tail: 'is not a published workspace (anymore)',
+		back_to_hub: 'Back to Hub',
+	},
+	importing: {
+		count: '{done} of {total}',
+	},
 	account: {
 		cloud_folders: '{n} cloud folders',
 		in_hub: '{n} in the Hub',
@@ -548,8 +572,6 @@ export const en: typeof ru = {
 		interface: 'Interface',
 		language: 'Language',
 		language_d: 'Same as system follows your system language',
-		new_interface: 'New interface',
-		new_interface_d: 'Turn off to go back to the previous window',
 		language_system: 'Same as system',
 		size: 'Interface size',
 		size_d: 'Large is easier on touch screens',

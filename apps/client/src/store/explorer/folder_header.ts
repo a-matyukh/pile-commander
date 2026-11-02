@@ -32,7 +32,7 @@ export type CrumbNames = {
 	is_home(root_id: string): boolean
 	/** Name of a root: a cloud workspace, a folder outside ~, browser storage */
 	root_name(ref: FolderRef): string
-	/** Name of a folder below its root (a browser folder keeps its old list name) */
+	/** Name of a folder below its root */
 	folder_name(ref: FolderRef): string
 	cloud_name: string
 	/** A publication's path starts at the Hub and its author */

@@ -8,7 +8,6 @@ import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import {
 	explorer_tree,
-	is_legacy_browser_folder,
 	tree_root_folder_id,
 	type ExplorerTreeRoot,
 } from '@/store/explorer/tree'
@@ -27,7 +26,7 @@ import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
-import { CLOUD_ROOT_DROP_KEY, is_drop_target, press_tree_row, register_drop_opener, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, press_tree_row, register_drop_opener, row_can_drag, tree_drag, tree_root_key } from './tree_drag'
 
 const props = defineProps<{
 	item: ExplorerTreeRoot
@@ -74,7 +73,7 @@ const home = use_home()
 /** macOS's own folders in ~ show Finder's name ("Загрузки"); the folder on disk keeps its own */
 const system = computed(() => props.node ? system_folder({ drive_id: props.item.drive.id, root_id: props.item.root.id, folder_id: props.node.id }, home.value) : null)
 const name = computed(() => props.node
-	? (system.value ? t(`system_folders.${system.value}`) : explorer_tree.node_name(props.item, props.node))
+	? (system.value ? t(`system_folders.${system.value}`) : props.node.name)
 	: props.item.root.name)
 const hidden = computed(() => props.node ? is_hidden_entry_name(props.node.name) : false)
 const can_write = computed(() => workspace.value?.can_write ?? props.item.root.can_write)
@@ -169,16 +168,13 @@ function confirm_root_move() {
 }
 
 /**
- * Nested folders and cloud roots are drag sources. A legacy browser folder
- * stays put: the old interface finds it by its path until step 4.2. The
- * chevron and the menu keep their own clicks
+ * Nested folders and cloud roots are drag sources. The chevron and the
+ * menu keep their own clicks
  */
 function press(event: PointerEvent) {
 	const node = props.node
 	// macOS's own folders stay where they are, as in Finder
-	if (!can_write.value || system.value || (node
-		? is_legacy_browser_folder(props.item, node)
-		: props.item.drive.kind !== 'cloud')) return
+	if (!row_can_drag({ can_write: can_write.value, system: !!system.value, folder: !!node, drive_kind: props.item.drive.kind })) return
 	if (event.target instanceof Element && event.target.closest('.tg, .cv')) return
 	// A press on a row starts a drag, not a text selection
 	event.preventDefault()

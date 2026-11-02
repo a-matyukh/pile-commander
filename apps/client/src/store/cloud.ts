@@ -61,10 +61,8 @@ import {
 } from '@/services/cloud/client'
 import store from '@/store'
 import {
+	notify_cloud_workspaces_synced,
 	register_cloud_workspaces_refetch,
-	remove_workspace_from_lists,
-	rename_in_workspaces_lists,
-	sync_cloud_workspaces_list,
 } from './workspaces_list'
 import { owned_hub_hidden, owned_hub_listed, owned_public_slugs, owned_shared_out, publication_view_ids } from './helpers/publicationMapping'
 import {
@@ -79,8 +77,8 @@ import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
  * "Edit" of one's own publication, a publication (read-only). True when it
- * opened. The new interface (store/explorer/public_view.ts) opens it as a
- * folder of its own instead of loading the old window's store
+ * opened. The Explorer (store/explorer/public_view.ts) opens it as a
+ * folder of its own
  */
 type OpenWorkspace = (item: WorkspacesListItem, opts?: LoadWorkspaceOptions) => Promise<boolean>
 
@@ -531,7 +529,7 @@ const cloud: CloudStore = {
 			this.last_error = `Account deletion failed: ${response.status} ${await response.text()}`
 			return
 		}
-		sync_cloud_workspaces_list(new Set())
+		notify_cloud_workspaces_synced()
 		// auth.signOut() always POSTs /logout — after deleteUser that is a 403
 		// (auth-js swallows it, but the browser still logs the failed request).
 		// Clear storage + emit SIGNED_OUT the same way signOut does, without
@@ -613,7 +611,7 @@ const cloud: CloudStore = {
 				id: ws.id,
 				name: ws.name,
 			}))
-			sync_cloud_workspaces_list(new Set(this.workspaces.map(ws => ws.id)))
+			notify_cloud_workspaces_synced()
 
 			const roles: Record<string, WorkspaceAccess> = {}
 			for (const ws of rows) {
@@ -666,7 +664,6 @@ const cloud: CloudStore = {
 		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
 			store.workspace.name = name
 		}
-		rename_in_workspaces_lists(workspace_id, name)
 		await this.fetch_workspaces()
 	},
 
@@ -685,7 +682,6 @@ const cloud: CloudStore = {
 			this.publication_view = null
 			this.public_not_found = null
 		}
-		remove_workspace_from_lists(workspace_id)
 		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
 			store.close_workspace()
 		}

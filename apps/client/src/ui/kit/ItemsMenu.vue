@@ -18,7 +18,7 @@ import { item_look } from './items_menu_labels'
 const props = defineProps<{ items: DropdownMenuItem[] | DropdownMenuItem[][] }>()
 
 /** `raw`: its slot draws whole menu items itself (a submenu), not a panel inside one */
-type Item = DropdownMenuItem & { swatch?: string; raw?: boolean }
+type Item = DropdownMenuItem & { raw?: boolean }
 
 const groups = computed(() => {
 	const list = props.items as (Item | Item[])[]
@@ -86,9 +86,6 @@ function choose(item: Item, event: Event) {
 				:disabled="!!item.disabled"
 				@select="choose(item, $event)"
 			>
-				<template v-if="item.swatch" #leading>
-					<span class="sw" :class="{ ck: item.swatch === 'transparent' }" :style="item.swatch === 'transparent' ? undefined : { background: item.swatch }" />
-				</template>
 				<template v-if="item.slot && $slots[`${item.slot}-trailing`]" #trailing>
 					<span class="tr" @click.stop @pointerdown.stop><slot :name="`${item.slot}-trailing`" :item="item" /></span>
 				</template>
@@ -103,22 +100,5 @@ function choose(item: Item, event: Event) {
 }
 .tr {
 	margin-left: auto;
-}
-.sw {
-	width: 12px;
-	height: 12px;
-	flex: none;
-	border-radius: 50%;
-	box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, .25);
-}
-.sw.ck {
-	background-color: #fff;
-	background-image:
-		linear-gradient(45deg, #d4d4d8 25%, transparent 25%),
-		linear-gradient(-45deg, #d4d4d8 25%, transparent 25%),
-		linear-gradient(45deg, transparent 75%, #d4d4d8 75%),
-		linear-gradient(-45deg, transparent 75%, #d4d4d8 75%);
-	background-size: 6px 6px;
-	background-position: 0 0, 0 3px, 3px -3px, -3px 0;
 }
 </style>
