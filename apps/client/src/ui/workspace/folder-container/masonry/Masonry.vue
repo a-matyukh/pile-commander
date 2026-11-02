@@ -1,138 +1,142 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { GridItem, GridLayout } from 'vue-grid-layout-v3'
-import type { FolderContainerWidgetChild } from '@/domain/Widget'
-import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
-import WidgetTypeSwitch from '../widgets/WidgetTypeSwitch.vue'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import MasonryCard from './MasonryCard.vue'
 import {
 	MASONRY_GAP,
-	MASONRY_UNIT,
-	colNumFromWidth,
-	layoutReadingOrder,
-	widgetsToLayout,
-	whToSize,
-	type MasonryLayoutItem,
+	layoutMasonry,
+	masonryColumnCount,
+	masonryColumnWidth,
+	sameMasonryColumns,
 } from './masonryLayout'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
-
-const requireWorkspace = useRequireWorkspace()
-const workspace = useWorkspace()
 
 const editingNoteId = ref<string | null>(null)
 provideEditingNoteId(editingNoteId)
 
 const sectionEl = useTemplateRef<HTMLElement>('sectionEl')
-const layout = ref<MasonryLayoutItem[]>([])
-const colNum = ref(12)
-const isInteracting = ref(false)
-const isPersisting = ref(false)
+const paneWidth = ref(0)
+const columnsOf = ref<number[][]>([])
+const heightById = new Map<string, number>()
+let lastIds = ''
+let lastCount = -1
+let frame = 0
+let resizeObserver: ResizeObserver | null = null
+const observed = new Set<Element>()
 
 const children = computed(() => container.value?.children ?? [])
-
-const can_write = computed(() => workspace.value?.can_write !== false)
-
-const widgetById = computed(() => {
-	const map = new Map<string, FolderContainerWidgetChild>()
-	for (const child of children.value) {
-		map.set(child.id, child)
-	}
-	return map
+const childKey = computed(() => children.value.map(child => child.id).join('\0'))
+const columnWidth = computed(() => masonryColumnWidth(container.value?.masonry_column_width))
+const maxColumns = computed(() => {
+	const stored = container.value?.masonry_columns
+	return typeof stored === 'number' && stored >= 1 ? stored : null
 })
+const columnCount = computed(() => masonryColumnCount(paneWidth.value, columnWidth.value, maxColumns.value))
 
 const sectionStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
 
-const margin = [MASONRY_GAP, MASONRY_GAP] as [number, number]
-
-function childrenSyncKey(list: FolderContainerWidgetChild[]): string {
-	return list
-		.map(c => [
-			c.id,
-			c.size?.width ?? '',
-			c.size?.height ?? '',
-			c.position?.x ?? '',
-			c.position?.y ?? '',
-		].join(':'))
-		.join('|')
-}
-
-function rebuildLayout() {
-	layout.value = widgetsToLayout(children.value, colNum.value)
-}
-
-watch(
-	() => [childrenSyncKey(children.value), colNum.value] as const,
-	() => {
-		if (isInteracting.value || isPersisting.value) return
-		rebuildLayout()
-	},
-	{ immediate: true },
-)
-
-function updateColNum() {
-	const el = sectionEl.value
-	if (!el) return
-	const next = colNumFromWidth(el.clientWidth)
-	if (next !== colNum.value) {
-		colNum.value = next
+const stripStyle = computed(() => {
+	const count = Math.max(1, columnsOf.value.length || columnCount.value)
+	const width = count * columnWidth.value + Math.max(0, count - 1) * MASONRY_GAP
+	return {
+		width: `${width}px`,
+		gap: `${MASONRY_GAP}px`,
 	}
+})
+
+const colStyle = computed(() => ({
+	width: `${columnWidth.value}px`,
+	gap: `${MASONRY_GAP}px`,
+}))
+
+function heightsOf(): number[] {
+	return children.value.map(child => heightById.get(child.id) ?? 0)
 }
 
-let resizeObserver: ResizeObserver | null = null
+function assign(force: boolean) {
+	const next = layoutMasonry(heightsOf(), columnCount.value)
+	if (force || !sameMasonryColumns(columnsOf.value, next)) columnsOf.value = next
+	lastIds = childKey.value
+	lastCount = columnCount.value
+}
+
+function measureAndApply() {
+	const root = sectionEl.value
+	if (!root) return
+	paneWidth.value = root.clientWidth
+	// Editing freezes only height-driven reflow. A new child or a new column
+	// count still lays out, or the new card never appears and a resize keeps
+	// the old number of columns.
+	const structural = childKey.value !== lastIds || columnCount.value !== lastCount
+	if (editingNoteId.value && !structural) return
+	for (const el of root.querySelectorAll<HTMLElement>('[data-masonry-card]')) {
+		const id = el.dataset.itemId
+		if (id) heightById.set(id, el.offsetHeight)
+	}
+	assign(structural)
+}
+
+function schedule() {
+	if (frame) return
+	frame = requestAnimationFrame(() => {
+		frame = 0
+		measureAndApply()
+		void nextTick(syncObserved)
+	})
+}
+
+function syncObserved() {
+	const root = sectionEl.value
+	if (!root || !resizeObserver) return
+	const next = new Set<Element>([root, ...root.querySelectorAll('[data-masonry-card]')])
+	for (const el of observed) {
+		if (!next.has(el)) resizeObserver.unobserve(el)
+	}
+	for (const el of next) {
+		if (!observed.has(el)) resizeObserver.observe(el)
+	}
+	observed.clear()
+	for (const el of next) observed.add(el)
+}
+
+watch([childKey, columnCount], () => {
+	assign(true)
+	void nextTick(() => {
+		syncObserved()
+		schedule()
+	})
+}, { immediate: true })
+
+watch(editingNoteId, (id, prev) => {
+	if (prev && !id) schedule()
+})
 
 onMounted(() => {
 	registerPaneEditingNoteSetter(folderId.value, (noteId) => {
 		editingNoteId.value = noteId
 	})
-	updateColNum()
 	const el = sectionEl.value
 	if (!el) return
-	resizeObserver = new ResizeObserver(() => updateColNum())
+	resizeObserver = new ResizeObserver(() => schedule())
 	resizeObserver.observe(el)
+	syncObserved()
+	schedule()
 })
 
 onBeforeUnmount(() => {
 	registerPaneEditingNoteSetter(folderId.value, null)
+	if (frame) cancelAnimationFrame(frame)
 	resizeObserver?.disconnect()
 	resizeObserver = null
+	observed.clear()
 })
 
-function onInteractionStart() {
-	isInteracting.value = true
-}
-
-async function persistLayout() {
-	if (isPersisting.value) return
-	if (workspace.value?.can_write === false) return
-	isPersisting.value = true
-	isInteracting.value = false
-	try {
-		const ws = requireWorkspace()
-		const items = layout.value
-		for (const item of items) {
-			await ws.change_position(item.i, { x: item.x, y: item.y })
-			await ws.change_size(item.i, whToSize({ w: item.w, h: item.h }))
-		}
-		await ws.reorder_children(folderId.value, layoutReadingOrder(items))
-	} finally {
-		isPersisting.value = false
-	}
-}
-
-function onMoved() {
-	void persistLayout()
-}
-
-function onResized() {
-	void persistLayout()
-}
-
-const { onSectionClick } = useClickOutsideEditingNote('.masonry-note-widget', editingNoteId)
+const { onSectionClick } = useClickOutsideEditingNote('.masonry-note', editingNoteId)
 </script>
 
 <template>
@@ -146,45 +150,20 @@ const { onSectionClick } = useClickOutsideEditingNote('.masonry-note-widget', ed
 		<div v-if="children.length === 0" class="masonry-empty">
 			<p class="text-muted">No items</p>
 		</div>
-		<GridLayout
-			v-else
-			v-model:layout="layout"
-			class="masonry-grid"
-			:col-num="colNum"
-			:row-height="MASONRY_UNIT"
-			:margin="margin"
-			:is-draggable="can_write"
-			:is-resizable="can_write"
-			:vertical-compact="true"
-			:use-css-transforms="true"
-			:auto-size="true"
-		>
-			<GridItem
-				v-for="(item, index) in layout"
-				:key="item.i"
-				:i="item.i"
-				:x="item.x"
-				:y="item.y"
-				:w="item.w"
-				:h="item.h"
-				:min-w="1"
-				:min-h="1"
-				drag-allow-from=".masonry-drag-handle"
-				drag-ignore-from="a, button, textarea, input"
-				resize-ignore-from="a, button, textarea, input, .masonry-drag-handle"
-				@move="onInteractionStart"
-				@resize="onInteractionStart"
-				@moved="onMoved"
-				@resized="onResized"
+		<div v-else class="masonry-strip" :style="stripStyle">
+			<div
+				v-for="(column, colIndex) in columnsOf"
+				:key="colIndex"
+				class="masonry-col"
+				:style="colStyle"
 			>
-				<WidgetTypeSwitch
-					v-if="widgetById.get(item.i)"
-					layout="masonry"
-					:widget="widgetById.get(item.i)!"
-					:index="index"
+				<MasonryCard
+					v-for="index in column"
+					:key="children[index]!.id"
+					:widget="children[index]!"
 				/>
-			</GridItem>
-		</GridLayout>
+			</div>
+		</div>
 	</section>
 	<USeparator v-if="!isEmbedded" />
 </template>
@@ -192,6 +171,9 @@ const { onSectionClick } = useClickOutsideEditingNote('.masonry-note-widget', ed
 <style scoped>
 .masonry {
 	min-height: 100%;
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
 }
 
 .masonry-empty {
@@ -199,45 +181,19 @@ const { onSectionClick } = useClickOutsideEditingNote('.masonry-note-widget', ed
 	align-items: center;
 	justify-content: center;
 	padding: 2rem;
-}
-
-.masonry-grid {
-	min-height: 100%;
-}
-
-.masonry :deep(.vue-grid-item) {
-	touch-action: none;
-}
-
-/* Fill the cell with the widget only — never stretch .vue-resizable-handle
-   (that would cover the whole item and steal drag). */
-.masonry :deep(.vue-grid-item > .masonry-widget),
-.masonry :deep(.vue-grid-item > :not(.vue-resizable-handle):not(.vue-rtl-resizable-handle)) {
 	width: 100%;
-	height: 100%;
+}
+
+.masonry-strip {
+	display: flex;
+	align-items: flex-start;
+	max-width: 100%;
+}
+
+.masonry-col {
+	display: flex;
+	flex-direction: column;
+	flex: none;
 	min-width: 0;
-	min-height: 0;
-}
-
-.masonry :deep(.vue-grid-item.vue-grid-placeholder) {
-	background: var(--ui-primary, #3b82f6);
-	opacity: 0.15;
-	border-radius: 5px;
-}
-
-.masonry :deep(.vue-grid-item > .vue-resizable-handle) {
-	width: 20px;
-	height: 20px;
-	opacity: 0.45;
-	z-index: 3;
-}
-
-.masonry :deep(.vue-grid-item:hover > .vue-resizable-handle) {
-	opacity: 0.85;
-}
-
-.masonry :deep(.vue-grid-item:has(.is_edit) > .vue-resizable-handle) {
-	pointer-events: none;
-	visibility: hidden;
 }
 </style>

@@ -31,6 +31,10 @@ const ITEMS: Record<string, [key: string, icon: string]> = {
 	'Toolbar': ['toolbar', 'tabler:tools'],
 	'Hide': ['hide', 'tabler:eye-off'],
 	'Compact view': ['compact', 'tabler:layout-navbar-collapse'],
+	'Compact': ['dashboard_compact', 'tabler:arrows-vertical'],
+	'Column width': ['column_width', 'tabler:columns-3'],
+	'Columns': ['columns', 'tabler:layout-columns'],
+	'Auto': ['columns_auto', 'tabler:arrows-horizontal'],
 	'Side': ['side', 'tabler:layout-sidebar'],
 	'Top': ['top', 'tabler:arrow-bar-to-up'],
 	'Bottom': ['bottom', 'tabler:arrow-bar-to-down'],
@@ -67,6 +71,7 @@ const VIEWS: Record<string, FolderView> = {
 	Canvas: 'canvas',
 	Stack: 'stack',
 	Masonry: 'masonry',
+	Dashboard: 'dashboard',
 	Slides: 'slides',
 }
 

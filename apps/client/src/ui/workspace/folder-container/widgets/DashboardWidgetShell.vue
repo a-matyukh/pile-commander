@@ -25,7 +25,7 @@ const isShapeWidget = computed(() => {
 		return rootClass.includes('shape-widget')
 	}
 	if (rootClass && typeof rootClass === 'object') {
-		return 'masonry-shape-widget' in rootClass || 'shape-widget' in rootClass
+		return 'dashboard-shape-widget' in rootClass || 'shape-widget' in rootClass
 	}
 	return false
 })
@@ -36,7 +36,7 @@ const isModelWidget = computed(() => {
 		return rootClass.includes('model-widget')
 	}
 	if (rootClass && typeof rootClass === 'object') {
-		return 'masonry-model-widget' in rootClass || 'model-widget' in rootClass
+		return 'dashboard-model-widget' in rootClass || 'model-widget' in rootClass
 	}
 	return false
 })
@@ -50,7 +50,7 @@ const isMediaChromeWidget = computed(() => {
 			: []
 	return tokens.some(token =>
 		/(^|-)(image|audio|video|model)-widget$/.test(token)
-		|| /(^|-)masonry-(image|audio|video|model)-widget$/.test(token),
+		|| /(^|-)dashboard-(image|audio|video|model)-widget$/.test(token),
 	)
 })
 
@@ -60,7 +60,7 @@ const isNoteWidget = computed(() => {
 		return rootClass.includes('note-widget')
 	}
 	if (rootClass && typeof rootClass === 'object') {
-		return 'note-widget' in rootClass || 'masonry-note-widget' in rootClass
+		return 'note-widget' in rootClass || 'dashboard-note-widget' in rootClass
 	}
 	return false
 })
@@ -70,7 +70,7 @@ const shellFill = computed(() => resolveShellFill(props.widget))
 const { isSelected, isCut, onSelectClick } = useWidgetSelection(() => props.widget.id)
 
 const shellClass = computed(() => [
-	'masonry-widget',
+	'dashboard-widget',
 	props.rootClass,
 	{
 		container: props.isFolderDropzone,
@@ -141,11 +141,11 @@ const style = computed(() => {
 	>
 		<DragHandle
 			v-if="showDragHandle"
-			handle-class="masonry-drag-handle"
+			handle-class="dashboard-drag-handle"
 			icon-class="size-4 shrink-0 cursor-grab active:cursor-grabbing"
 		/>
 		<component :is="menuComponent" :node="menuNode" v-bind="menuProps ?? {}">
-			<div class="masonry-widget-content">
+			<div class="dashboard-widget-content">
 				<slot />
 			</div>
 		</component>
@@ -153,7 +153,7 @@ const style = computed(() => {
 </template>
 
 <style scoped>
-.masonry-widget {
+.dashboard-widget {
 	position: relative;
 	display: flex;
 	flex-direction: column;
@@ -167,19 +167,19 @@ const style = computed(() => {
 	overflow: hidden;
 }
 /* The Explorer rounds cards as its board: folders more, files less */
-.explorer .masonry-widget {
+.explorer .dashboard-widget {
 	border-radius: 10px;
 }
-.explorer .masonry-widget.file-card {
+.explorer .dashboard-widget.file-card {
 	border-radius: 6px;
 }
-.masonry-widget.masonry-shape-widget {
+.dashboard-widget.dashboard-shape-widget {
 	border-radius: 0;
 }
-.masonry-widget.masonry-note-widget {
+.dashboard-widget.dashboard-note-widget {
 	border-radius: 0;
 }
-.masonry-widget.masonry-note-widget.is_edit {
+.dashboard-widget.dashboard-note-widget.is_edit {
 	overflow: visible;
 	box-shadow: var(--pc-edit-shadow);
 	z-index: 2;
@@ -187,10 +187,10 @@ const style = computed(() => {
 	user-select: text;
 	-webkit-user-select: text;
 }
-.masonry-widget.folder-preview-widget {
+.dashboard-widget.folder-preview-widget {
 	padding: 0;
 }
-:deep(.masonry-drag-handle) {
+:deep(.dashboard-drag-handle) {
 	position: absolute;
 	top: 4px;
 	right: 4px;
@@ -199,10 +199,10 @@ const style = computed(() => {
 	align-items: center;
 	opacity: 0.6;
 }
-.masonry-widget:hover :deep(.masonry-drag-handle) {
+.dashboard-widget:hover :deep(.dashboard-drag-handle) {
 	opacity: 1;
 }
-.masonry-widget-content {
+.dashboard-widget-content {
 	flex: 1;
 	min-height: 0;
 	overflow: hidden;

@@ -80,6 +80,31 @@ describe('to_folder_container', () => {
 		})
 	})
 
+	test('reads a dashboard cell without treating it as board position', () => {
+		const container = to_folder_container(folder(
+			'/ws',
+			'ws',
+			[
+				entry('/ws/note.txt', 'note.txt', 'file', [
+					{ name: 'position', value: '{"x":40,"y":80}' },
+					{ name: 'dashboard', value: '{"x":2,"y":3,"w":4,"h":1}' },
+				]),
+			],
+			[
+				{ name: 'view', value: 'dashboard' },
+				{ name: 'dashboard_compact', value: 'false' },
+				{ name: 'masonry_column_width', value: '180' },
+			],
+		))
+		expect(container.view).toBe('dashboard')
+		expect(container.dashboard_compact).toBe(false)
+		expect(container.masonry_column_width).toBe(180)
+		expect(container.children[0]).toMatchObject({
+			position: { x: 40, y: 80 },
+			dashboard: { x: 2, y: 3, w: 4, h: 1 },
+		})
+	})
+
 	test('embeds preview folders when cached', () => {
 		const preview = folder('/ws/docs', 'docs', [
 			entry('/ws/docs/a.txt', 'a.txt', 'file'),

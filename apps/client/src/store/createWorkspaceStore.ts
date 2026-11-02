@@ -68,6 +68,7 @@ import {
 	Color,
 	Connection,
 	FolderContainerWidgetChild,
+	DashboardCell,
 	FolderView,
 	ImageBase64,
 	ModelCameraState,
@@ -981,6 +982,88 @@ export async function createWorkspaceStore(
 					folder_id,
 					'show_axes',
 					String(show_axes),
+				)
+			},
+
+			async change_dashboard_cell(id: string, cell: DashboardCell) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const container = to_folder_container(this.opened_folder, this.preview_folders)
+				const entity = find_widget(container, id)
+				const current = entity?.dashboard
+				if (
+					current?.x === cell.x
+					&& current?.y === cell.y
+					&& current?.w === cell.w
+					&& current?.h === cell.h
+				) {
+					return
+				}
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					id,
+					'dashboard',
+					JSON.stringify(cell),
+				)
+			},
+
+			async change_dashboard_compact(folder_id: string, compact: boolean) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+
+				const container = to_folder_container(folder_data, this.preview_folders)
+				if ((container.dashboard_compact === true) === compact) return
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					folder_id,
+					'dashboard_compact',
+					String(compact),
+				)
+			},
+
+			async change_masonry_column_width(folder_id: string, width: number) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+				if (width !== 180 && width !== 240 && width !== 320) return
+
+				const container = to_folder_container(folder_data, this.preview_folders)
+				const current = container.masonry_column_width ?? 240
+				if (current === width) return
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					folder_id,
+					'masonry_column_width',
+					String(width),
+				)
+			},
+
+			async change_masonry_columns(folder_id: string, columns: number) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+				// 0 is Auto: as many columns as fit. Absent reads the same way.
+				if (!Number.isInteger(columns) || columns < 0) return
+
+				const container = to_folder_container(folder_data, this.preview_folders)
+				const current = container.masonry_columns ?? 0
+				if (current === columns) return
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					folder_id,
+					'masonry_columns',
+					String(columns),
 				)
 			},
 

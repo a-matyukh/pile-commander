@@ -59,7 +59,7 @@ describe('PREVIEW_KIND_CONFIG', () => {
 			const config = PREVIEW_KIND_CONFIG[kind]
 			expect(config.borderColor).toMatch(/^#/)
 			expect(config.boardMinSize.width).toBeGreaterThan(0)
-			expect(config.masonryMinSize.height).toBeGreaterThan(0)
+			expect(config.dashboardMinSize.height).toBeGreaterThan(0)
 			expect(config.stackMinHeight).toMatch(/rem$/)
 			expect(config.boardRootClass).toContain(kind === 'shape' ? 'shape' : kind)
 		}

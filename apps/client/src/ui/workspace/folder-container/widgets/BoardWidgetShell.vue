@@ -30,7 +30,7 @@ const isShapeWidget = computed(() => {
 		return rootClass.includes('shape-widget')
 	}
 	if (rootClass && typeof rootClass === 'object') {
-		return 'shape-widget' in rootClass || 'masonry-shape-widget' in rootClass
+		return 'shape-widget' in rootClass || 'dashboard-shape-widget' in rootClass
 	}
 	return false
 })
@@ -41,7 +41,7 @@ const isModelWidget = computed(() => {
 		return rootClass.includes('model-widget')
 	}
 	if (rootClass && typeof rootClass === 'object') {
-		return 'model-widget' in rootClass || 'masonry-model-widget' in rootClass
+		return 'model-widget' in rootClass || 'dashboard-model-widget' in rootClass
 	}
 	return false
 })
@@ -56,7 +56,7 @@ const isMediaChromeWidget = computed(() => {
 			: []
 	return tokens.some(token =>
 		/(^|-)(image|audio|video|model)-widget$/.test(token)
-		|| /(^|-)masonry-(image|audio|video|model)-widget$/.test(token),
+		|| /(^|-)dashboard-(image|audio|video|model)-widget$/.test(token),
 	)
 })
 
@@ -71,7 +71,7 @@ const isNoteWidget = computed(() => {
 		return rootClass.includes('note-widget')
 	}
 	if (rootClass && typeof rootClass === 'object') {
-		return 'note-widget' in rootClass || 'masonry-note-widget' in rootClass
+		return 'note-widget' in rootClass || 'dashboard-note-widget' in rootClass
 	}
 	return false
 })

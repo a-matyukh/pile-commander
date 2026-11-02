@@ -18,7 +18,7 @@ const FolderPreviewWidget = defineAsyncComponent(
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
 	index?: number
-	layout: 'board' | 'masonry' | 'stack'
+	layout: 'board' | 'dashboard' | 'stack'
 }>()
 
 const previewKind = computed(() => resolvePreviewKind(props.widget))
@@ -54,7 +54,7 @@ const paneLayout = computed(() => props.layout === 'stack' ? 'board' : props.lay
 		/>
 	</template>
 
-	<!-- board / canvas / masonry -->
+	<!-- board / canvas / dashboard -->
 	<template v-else>
 		<NoteWidgetContent
 			v-if="isNote"

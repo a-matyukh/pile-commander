@@ -258,14 +258,16 @@ function onTitleDblClick() {
 	width: 100%;
 }
 
-.folder-preview-body.masonry {
+.folder-preview-body.masonry,
+.folder-preview-body.dashboard {
 	display: flex;
 	flex-direction: column;
 	padding: 0;
 	min-height: 0;
 }
 
-.folder-preview-body.masonry :deep(.masonry) {
+.folder-preview-body.masonry :deep(.masonry),
+.folder-preview-body.dashboard :deep(.dashboard) {
 	flex: 1;
 	min-height: 0;
 }

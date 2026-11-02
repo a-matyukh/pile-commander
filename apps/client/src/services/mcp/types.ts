@@ -39,7 +39,7 @@ export type FolderAddress = {
 }
 
 export type FolderViewName =
-	| 'list' | 'gallery' | 'board' | 'canvas' | 'stack' | 'masonry' | 'slides'
+	| 'list' | 'gallery' | 'board' | 'canvas' | 'stack' | 'masonry' | 'dashboard' | 'slides'
 
 export type EntryBrief = {
 	name: string

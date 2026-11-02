@@ -1,174 +1,59 @@
-import type { FolderContainerWidgetChild, Position, Size } from '@/domain/Widget'
-import {
-	AUDIO_DEFAULT_SIZE,
-	FOLDER_PREVIEW_DEFAULT_SIZE,
-	IMAGE_DEFAULT_SIZE,
-	is_audio_widget,
-	is_folder_preview_widget,
-	is_image_widget,
-	is_model_widget,
-	is_note_widget,
-	is_shape_widget,
-	is_video_widget,
-	MODEL_DEFAULT_SIZE,
-	NOTE_DEFAULT_SIZE,
-	SHAPE_DEFAULT_SIZE,
-	VIDEO_DEFAULT_SIZE,
-} from '@/services/board/layout'
-
-export const MASONRY_UNIT = 80
+/** Gap between masonry cards, horizontal and vertical. */
 export const MASONRY_GAP = 12
-export const MASONRY_DEFAULT_SIZE: Size = { width: 240, height: 240 }
 
-export type MasonryLayoutItem = {
-	i: string
-	x: number
-	y: number
-	w: number
-	h: number
+export const MASONRY_COLUMN_PRESETS = [
+	{ id: 'S', width: 180 },
+	{ id: 'M', width: 240 },
+	{ id: 'L', width: 320 },
+] as const
+
+export const MASONRY_DEFAULT_COLUMN_WIDTH = 240
+
+export function masonryColumnWidth(stored: number | undefined): number {
+	if (stored === 180 || stored === 320 || stored === 240) return stored
+	return MASONRY_DEFAULT_COLUMN_WIDTH
 }
 
-export function masonrySize(widget: FolderContainerWidgetChild): Size {
-	if (widget.size) return widget.size
-	if (is_folder_preview_widget(widget)) return FOLDER_PREVIEW_DEFAULT_SIZE
-	if (is_note_widget(widget)) return NOTE_DEFAULT_SIZE
-	if (is_shape_widget(widget)) return SHAPE_DEFAULT_SIZE
-	if (is_image_widget(widget)) return IMAGE_DEFAULT_SIZE
-	if (is_video_widget(widget)) return VIDEO_DEFAULT_SIZE
-	if (is_audio_widget(widget)) return AUDIO_DEFAULT_SIZE
-	if (is_model_widget(widget)) return MODEL_DEFAULT_SIZE
-	return MASONRY_DEFAULT_SIZE
+/**
+ * How many columns fit. `maxColumns` null is Auto (as many as fit).
+ * A cap never exceeds what the pane can hold, and the pane always gets at least one.
+ */
+export function masonryColumnCount(
+	paneWidth: number,
+	columnWidth: number,
+	maxColumns: number | null,
+): number {
+	const fit = Math.max(1, Math.floor((Math.max(0, paneWidth) + MASONRY_GAP) / (columnWidth + MASONRY_GAP)))
+	if (maxColumns == null || !Number.isFinite(maxColumns) || maxColumns < 1) return fit
+	return Math.max(1, Math.min(Math.floor(maxColumns), fit))
 }
 
-export function masonrySpan(size: Size): { colSpan: number; rowSpan: number } {
-	return {
-		colSpan: Math.max(1, Math.round(size.width / MASONRY_UNIT)),
-		rowSpan: Math.max(1, Math.round(size.height / MASONRY_UNIT)),
-	}
-}
-
-export function sizeToWH(size: Size): { w: number; h: number } {
-	const { colSpan, rowSpan } = masonrySpan(size)
-	return { w: colSpan, h: rowSpan }
-}
-
-export function whToSize(wh: { w: number; h: number }): Size {
-	return {
-		width: Math.max(MASONRY_UNIT, wh.w * MASONRY_UNIT),
-		height: Math.max(MASONRY_UNIT, wh.h * MASONRY_UNIT),
-	}
-}
-
-/** Grid-cell coords (not board pixels). Board pixel x is usually >= colNum. */
-export function isGridPosition(
-	pos: Position | undefined,
-	colNum: number,
-): pos is Position {
-	if (!pos) return false
-	const { x, y } = pos
-	if (!Number.isFinite(x) || !Number.isFinite(y)) return false
-	if (!Number.isInteger(x) || !Number.isInteger(y)) return false
-	if (x < 0 || y < 0) return false
-	if (x >= colNum) return false
-	return true
-}
-
-export function colNumFromWidth(width: number, padding = 16): number {
-	const available = Math.max(0, width - padding * 2)
-	return Math.max(1, Math.floor((available + MASONRY_GAP) / (MASONRY_UNIT + MASONRY_GAP)))
-}
-
-function collides(
-	a: Pick<MasonryLayoutItem, 'x' | 'y' | 'w' | 'h'>,
-	b: Pick<MasonryLayoutItem, 'x' | 'y' | 'w' | 'h'>,
-): boolean {
-	if (a.x + a.w <= b.x) return false
-	if (a.x >= b.x + b.w) return false
-	if (a.y + a.h <= b.y) return false
-	if (a.y >= b.y + b.h) return false
-	return true
-}
-
-function findSlot(
-	placed: MasonryLayoutItem[],
-	w: number,
-	h: number,
-	colNum: number,
-): { x: number; y: number } {
-	const maxY = placed.reduce((max, item) => Math.max(max, item.y + item.h), 0) + 1
-	for (let y = 0; y <= maxY; y++) {
-		for (let x = 0; x <= colNum - w; x++) {
-			const candidate = { x, y, w, h }
-			if (!placed.some(item => collides(item, candidate))) {
-				return { x, y }
-			}
+/**
+ * Pinterest order: each next item goes to the shortest column, and to the
+ * left one when lengths tie. Returns column lists of input indexes.
+ * Column length includes the gap between cards, matching the rendered strip.
+ */
+export function layoutMasonry(heights: number[], columns: number): number[][] {
+	const count = Math.max(1, Math.floor(columns) || 1)
+	const cols: number[][] = Array.from({ length: count }, () => [])
+	const totals = Array<number>(count).fill(0)
+	for (let index = 0; index < heights.length; index++) {
+		let best = 0
+		for (let col = 1; col < count; col++) {
+			if (totals[col]! < totals[best]!) best = col
 		}
+		const column = cols[best]!
+		const gap = column.length > 0 ? MASONRY_GAP : 0
+		column.push(index)
+		totals[best] = totals[best]! + gap + Math.max(0, heights[index] ?? 0)
 	}
-	return { x: 0, y: maxY }
+	return cols
 }
 
-function clampWH(
-	widget: FolderContainerWidgetChild,
-	colNum: number,
-): { w: number; h: number } {
-	const { w, h } = sizeToWH(masonrySize(widget))
-	return {
-		w: Math.min(Math.max(1, w), colNum),
-		h: Math.max(1, h),
-	}
-}
-
-export function packMasonryLayout(
-	widgets: FolderContainerWidgetChild[],
-	colNum: number,
-): MasonryLayoutItem[] {
-	const placed: MasonryLayoutItem[] = []
-	for (const widget of widgets) {
-		const { w, h } = clampWH(widget, colNum)
-		const { x, y } = findSlot(placed, w, h, colNum)
-		placed.push({ i: widget.id, x, y, w, h })
-	}
-	return placed
-}
-
-export function widgetsToLayout(
-	widgets: FolderContainerWidgetChild[],
-	colNum: number,
-): MasonryLayoutItem[] {
-	const placed: MasonryLayoutItem[] = []
-	const needsPack: FolderContainerWidgetChild[] = []
-
-	for (const widget of widgets) {
-		const { w, h } = clampWH(widget, colNum)
-		if (!isGridPosition(widget.position, colNum)) {
-			needsPack.push(widget)
-			continue
-		}
-		const x = Math.min(widget.position.x, colNum - w)
-		placed.push({ i: widget.id, x, y: widget.position.y, w, h })
-	}
-
-	for (let i = 0; i < placed.length; i++) {
-		for (let j = i + 1; j < placed.length; j++) {
-			const a = placed[i]
-			const b = placed[j]
-			if (a && b && collides(a, b)) {
-				return packMasonryLayout(widgets, colNum)
-			}
-		}
-	}
-
-	for (const widget of needsPack) {
-		const { w, h } = clampWH(widget, colNum)
-		const { x, y } = findSlot(placed, w, h, colNum)
-		placed.push({ i: widget.id, x, y, w, h })
-	}
-
-	return placed
-}
-
-export function layoutReadingOrder(layout: MasonryLayoutItem[]): string[] {
-	return [...layout]
-		.sort((a, b) => a.y - b.y || a.x - b.x)
-		.map(item => item.i)
+export function sameMasonryColumns(a: number[][], b: number[][]): boolean {
+	if (a.length !== b.length) return false
+	return a.every((col, i) => {
+		const other = b[i]
+		return !!other && col.length === other.length && col.every((index, j) => index === other[j])
+	})
 }
