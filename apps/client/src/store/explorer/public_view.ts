@@ -12,9 +12,8 @@ import { DEMO_ROOT, public_roots, type PublicRoot } from './public_roots'
  * Public addresses and cloud flows in the new interface. A publication opens
  * as a read-only folder of the "public" drive; a fork, "Edit" of one's own
  * publication and an accepted invitation open their cloud folder; /demo opens
- * the demo. An author's profile, an invitation still being accepted and a
- * publication that is gone show in the current app's screens until the
- * Explorer has its own (from there "Back to Hub" comes back to its Hub page)
+ * the demo. An invitation and a missing publication are drawn by PublicScreen
+ * instead of the shell (from there "Back to Hub" comes back to its Hub page).
  */
 export const explorer_public_open = computed(() => explorer_enabled.value && !!(
 	cloud.public_not_found
@@ -61,6 +60,12 @@ export function back_to_explorer_hub(): void {
 	cloud.profile_view = null
 	cloud.profile_not_found = null
 	explorer_return.value = { kind: 'page', page: 'hub' }
+	leave_public_address()
+}
+
+/** Drops an invitation and the /invite address, so the shell opens the last folder */
+export function leave_invite(): void {
+	cloud.invite_view = null
 	leave_public_address()
 }
 

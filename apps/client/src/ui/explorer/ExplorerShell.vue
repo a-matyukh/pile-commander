@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useEventListener, useMediaQuery } from '@vueuse/core'
-import { locale, t } from '@/i18n'
+import { t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
 import { start_explorer_list_migration } from '@/store/explorer/bookmarks'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import store, { adopt_workspace } from '@/store'
-import { explorer_settings } from '@/store/explorer/settings'
+import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
+import { explorer_window_classes } from '@/ui/explorer/window_classes'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
@@ -31,19 +32,8 @@ import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open } from '@/
 import { explorer_tree } from '@/store/explorer/tree'
 import './tokens.css'
 
-const previous_lang = document.documentElement.lang
 const restore_workspace = store.workspace
 let alive = true
-
-/** The interface settings that shape the whole window, as the prototype's window classes */
-const window_classes = computed(() => ({
-	gr: explorer_settings.gray_panels,
-	cg: explorer_settings.gray_content,
-	lg: explorer_settings.size === 'large',
-	thin: explorer_settings.text_smoothing === 'thin',
-	manim: explorer_settings.menu_animation,
-	mshadow: explorer_settings.menu_shadow,
-}))
 
 const page = computed(() => {
 	const location = explorer_navigation.location
@@ -226,12 +216,6 @@ watch([explorer_sidebar_open, explorer_mobile, fine_pointer], () => {
 	if (!peek_allowed()) release_peek()
 })
 
-// The old interface stays English. The document language follows the Explorer
-// only while its shell is on screen.
-watch(locale, (value) => {
-	document.documentElement.lang = value
-}, { immediate: true })
-
 const toast = useToast()
 
 /**
@@ -280,14 +264,13 @@ onUnmounted(() => {
 	explorer_tree.reset()
 	explorer_drives.dispose_all()
 	adopt_workspace(restore_workspace)
-	document.documentElement.lang = previous_lang
 })
 </script>
 
 <template>
 	<!-- Replaces WorkspaceWindow while the flag is on. Menus and dialogs portal
 	     into this element to inherit its tokens. -->
-	<div ref="root_el" class="explorer flex h-full min-h-0 flex-col" :class="window_classes">
+	<div ref="root_el" class="explorer flex h-full min-h-0 flex-col" :class="explorer_window_classes">
 		<TopBar />
 		<div class="body">
 			<!-- The zone is only a measure. Clicks pass through to the page. -->
@@ -308,6 +291,7 @@ onUnmounted(() => {
 					<ProfilePage v-else-if="page === 'profile' && page_arg" :username="page_arg" />
 					<FolderContent v-else-if="!page" />
 				</div>
+				<ImportProgressOverlay :progress="store.workspace?.import_progress ?? null" />
 			</main>
 		</div>
 		<template v-if="explorer_mobile">

@@ -418,6 +418,24 @@ export const en: typeof ru = {
 		report_send: 'Send report',
 		report_failed: 'Could not send the report',
 	},
+	invite: {
+		loading: 'Loading invitation…',
+		invited: '{inviter} invited you to {workspace}',
+		someone: 'Someone',
+		join_as: 'Join as {role} using {email}.',
+		role_viewer: 'viewer',
+		role_editor: 'editor',
+		signed_in: 'Signed in as {email}',
+		open_app: 'Open the app',
+	},
+	publication: {
+		not_found: 'Workspace not found',
+		not_found_tail: 'is not a published workspace (anymore)',
+		back_to_hub: 'Back to Hub',
+	},
+	importing: {
+		count: '{done} of {total}',
+	},
 	account: {
 		cloud_folders: '{n} cloud folders',
 		in_hub: '{n} in the Hub',

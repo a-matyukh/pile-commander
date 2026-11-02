@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { back_to_explorer_hub, explorer_return, take_explorer_start } from './public_view'
+import cloud from '@/store/cloud'
+import { back_to_explorer_hub, explorer_return, leave_invite, take_explorer_start } from './public_view'
 
 // Node tests: an address bar of one path
 const location = { pathname: '/' }
@@ -10,6 +11,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	explorer_return.value = null
+	cloud.invite_view = null
 	location.pathname = '/'
 	vi.unstubAllGlobals()
 })
@@ -40,5 +42,15 @@ describe('explorer start after public screens', () => {
 		const ref = { drive_id: 'cloud', root_id: 'w1', folder_id: '/' }
 		explorer_return.value = { kind: 'folder', ref }
 		expect(take_explorer_start()).toEqual({ kind: 'folder', ref })
+	})
+
+	test('"Open the app" drops the invitation and the address, and starts on the last folder', () => {
+		cloud.invite_view = { token: 'ab', preview: null, loading: false, error: 'Sign in with the email this invite was sent to' }
+		history.replaceState(null, '', '/invite/ab')
+		leave_invite()
+		expect(cloud.invite_view).toBeNull()
+		expect(window.location.pathname).toBe('/')
+		expect(explorer_return.value).toBeNull()
+		expect(take_explorer_start()).toBeNull()
 	})
 })

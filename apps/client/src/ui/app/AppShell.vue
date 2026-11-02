@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watchEffect } from 'vue'
+import { locale } from '@/i18n'
 import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import { report_error } from '@/store/helpers/reportError'
@@ -15,6 +16,7 @@ import {
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
+import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
 import WorkspaceWindow from '@/ui/workspace/WorkspaceWindow.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
@@ -28,6 +30,14 @@ import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 // OS-level drop/open events live here (the shell never unmounts); the
 // workspace window handles browser drops through its own DOM.
 const dragOver = ref(false)
+
+// One place for the document language. A screen must not set it on mount and
+// restore it on unmount: the old screen's unmount runs after the new one's
+// setup and puts the start language back.
+const document_lang_at_start = document.documentElement.lang
+watchEffect(() => {
+	document.documentElement.lang = explorer_enabled.value ? locale.value : document_lang_at_start
+})
 
 function on_folder_drop(payload: DroppedFolderPayload) {
 	if (explorer_enabled.value && point_in_rect(payload.client, top_bar_rect())) {
@@ -110,8 +120,9 @@ onUnmounted(() => {
 			</div>
 		</Teleport>
 		<SyncKeptHiddenToast />
-		<!-- A publication from the Explorer's Hub opens in the current viewer (step 3.6 replaces it) -->
+		<!-- Flag on: the Explorer, or the invitation and missing-publication screen in its place. Flag off: the old window. -->
 		<ExplorerShell v-if="explorer_enabled && !explorer_public_open" />
+		<PublicScreen v-else-if="explorer_public_open" />
 		<WorkspaceWindow v-else />
 		<QuotaWallDialog />
 		<BridgeDialog />

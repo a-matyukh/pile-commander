@@ -415,6 +415,24 @@ export const ru = {
 		report_send: 'Отправить',
 		report_failed: 'Не удалось отправить жалобу',
 	},
+	invite: {
+		loading: 'Загрузка приглашения…',
+		invited: '{inviter} приглашает вас в «{workspace}»',
+		someone: 'Кто-то',
+		join_as: 'Войти как {role}, адрес {email}.',
+		role_viewer: 'наблюдатель',
+		role_editor: 'редактор',
+		signed_in: 'Вы вошли как {email}',
+		open_app: 'Открыть приложение',
+	},
+	publication: {
+		not_found: 'Публикация не найдена',
+		not_found_tail: 'не опубликована',
+		back_to_hub: 'В Хаб',
+	},
+	importing: {
+		count: '{done} из {total}',
+	},
 	account: {
 		cloud_folders: '{n} облачных папок',
 		in_hub: '{n} в Хабе',
