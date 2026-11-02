@@ -12,6 +12,10 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import { EXPLORER_SETTINGS_DEFAULTS, explorer_settings } from '@/store/explorer/settings'
+import { xattrs_map } from '@/services/workspace/xattrs'
+import { MASONRY_COLUMN_PRESETS, masonryColumnWidth } from '@/ui/workspace/folder-container/masonry/masonryLayout'
+
+const MASONRY_COLUMN_COUNTS = [2, 3, 4, 5, 6] as const
 
 /** Folder view switch. Stored in the folder's attributes, so it survives a restart */
 const props = defineProps<{ workspace: WorkspaceStore; folder_id: string; align: 'start' | 'end' }>()
@@ -25,6 +29,30 @@ const current = computed<FolderView>(() => {
 	return entry_view(props.workspace.resolve_folder_data(props.folder_id) ?? undefined)
 })
 const meta = computed(() => FOLDER_VIEW_META[current.value])
+
+const folder_attrs = computed(() => {
+	const data = props.workspace.resolve_folder_data(props.folder_id)
+	return data ? xattrs_map(data.xattrs) : {}
+})
+const masonry_width = computed(() => {
+	const width = folder_attrs.value.masonry_column_width
+	return masonryColumnWidth(typeof width === 'number' ? width : undefined)
+})
+const masonry_columns = computed(() => {
+	const stored = folder_attrs.value.masonry_columns
+	return typeof stored === 'number' ? stored : 0
+})
+const dashboard_compact = computed(() => folder_attrs.value.dashboard_compact === true)
+
+function set_column_width(width: number) {
+	void props.workspace.change_masonry_column_width(props.folder_id, width)
+}
+function set_columns(count: number) {
+	void props.workspace.change_masonry_columns(props.folder_id, count)
+}
+function toggle_compact() {
+	void props.workspace.change_dashboard_compact(props.folder_id, !dashboard_compact.value)
+}
 
 /** A size slider's way back: a double click on it, or the button by its title */
 type SizeSetting = 'gallery_icon' | 'list_row'
@@ -124,6 +152,43 @@ function set_view(view: FolderView) {
 				>
 				<Icon icon="tabler:list" class="lg" />
 			</div>
+		</template>
+		<template v-if="current === 'masonry'">
+			<MenuSeparator />
+			<MenuLabel :label="t('view_menu.column_width')" />
+			<MenuItem
+				v-for="preset in MASONRY_COLUMN_PRESETS"
+				:key="preset.id"
+				:label="preset.id"
+				:checked="masonry_width === preset.width"
+				keep_open
+				@select="set_column_width(preset.width)"
+			/>
+			<MenuSeparator />
+			<MenuLabel :label="t('view_menu.columns')" />
+			<MenuItem
+				:label="t('view_menu.columns_auto')"
+				:checked="masonry_columns < 1"
+				keep_open
+				@select="set_columns(0)"
+			/>
+			<MenuItem
+				v-for="count in MASONRY_COLUMN_COUNTS"
+				:key="count"
+				:label="String(count)"
+				:checked="masonry_columns === count"
+				keep_open
+				@select="set_columns(count)"
+			/>
+		</template>
+		<template v-if="current === 'dashboard'">
+			<MenuSeparator />
+			<MenuItem
+				:label="t('view_menu.compact')"
+				:checked="dashboard_compact"
+				keep_open
+				@select="toggle_compact"
+			/>
 		</template>
 	</DropMenu>
 </template>

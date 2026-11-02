@@ -3,7 +3,6 @@ import { useMediaQuery } from '@vueuse/core'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Position } from '@/domain/Widget'
 import { DEFAULT_GRID_SIZE, SHAPE_LINE_DEFAULT_SIZE } from '@/services/board/layout'
-import { MASONRY_COLUMN_PRESETS, MASONRY_DEFAULT_COLUMN_WIDTH } from '@/ui/workspace/folder-container/masonry/masonryLayout'
 import type { LinePlug } from '@/services/board/shapes'
 import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import {
@@ -88,13 +87,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 	const isCanvasView = computed(
 		() => scope.container.value?.view === 'canvas',
 	)
-	const folderView = computed(() => scope.container.value?.view ?? 'list')
-	const dashboardCompact = computed(() => scope.container.value?.dashboard_compact === true)
-	const masonryWidth = computed(() => {
-		const width = scope.container.value?.masonry_column_width
-		return width === 180 || width === 240 || width === 320 ? width : MASONRY_DEFAULT_COLUMN_WIDTH
-	})
-	const masonryColumns = computed(() => scope.container.value?.masonry_columns)
 	const toolbarPrefs = useCanvasToolbarPrefs()
 
 	const colorSubmenuOptions = computed(() => {
@@ -265,66 +257,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 									},
 								],
 							},
-						],
-					}]
-					: []),
-				...(folderView.value === 'dashboard'
-					? [{
-						label: 'Compact',
-						type: 'checkbox' as const,
-						checked: dashboardCompact.value,
-						disabled: readonly,
-						onUpdateChecked(checked: boolean) {
-							const ws = workspace.value
-							if (!ws) return
-							void ws.change_dashboard_compact(scope.folderId.value, checked)
-						},
-						onSelect(e: Event) {
-							e.preventDefault()
-						},
-					}]
-					: []),
-				...(folderView.value === 'masonry'
-					? [{
-						label: 'Column width',
-						disabled: readonly,
-						children: MASONRY_COLUMN_PRESETS.map(preset => ({
-							label: preset.id,
-							type: 'checkbox' as const,
-							checked: masonryWidth.value === preset.width,
-							disabled: readonly,
-							onSelect() {
-								const ws = workspace.value
-								if (!ws) return
-								void ws.change_masonry_column_width(scope.folderId.value, preset.width)
-							},
-						})),
-					}, {
-						label: 'Columns',
-						disabled: readonly,
-						children: [
-							{
-								label: 'Auto',
-								type: 'checkbox' as const,
-								checked: masonryColumns.value == null || masonryColumns.value < 1,
-								disabled: readonly,
-								onSelect() {
-									const ws = workspace.value
-									if (!ws) return
-									void ws.change_masonry_columns(scope.folderId.value, 0)
-								},
-							},
-							...[2, 3, 4, 5, 6].map(count => ({
-								label: String(count),
-								type: 'checkbox' as const,
-								checked: masonryColumns.value === count,
-								disabled: readonly,
-								onSelect() {
-									const ws = workspace.value
-									if (!ws) return
-									void ws.change_masonry_columns(scope.folderId.value, count)
-								},
-							})),
 						],
 					}]
 					: []),

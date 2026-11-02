@@ -68,7 +68,9 @@ function assign(force: boolean) {
 function measureAndApply() {
 	const root = sectionEl.value
 	if (!root) return
-	paneWidth.value = root.clientWidth
+	const style = getComputedStyle(root)
+	const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+	paneWidth.value = Math.max(0, root.clientWidth - pad)
 	// Editing freezes only height-driven reflow. A new child or a new column
 	// count still lays out, or the new card never appears and a resize keeps
 	// the old number of columns.
@@ -174,6 +176,8 @@ const { onSectionClick } = useClickOutsideEditingNote('.masonry-note', editingNo
 	display: flex;
 	justify-content: center;
 	align-items: flex-start;
+	box-sizing: border-box;
+	padding: 20px;
 }
 
 .masonry-empty {
