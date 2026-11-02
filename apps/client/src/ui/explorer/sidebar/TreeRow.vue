@@ -3,6 +3,7 @@ import { computed, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { t } from '@/i18n'
+import { entry_is_dimmed } from '@/store/hiddenPaths'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
 import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { explorer_navigation } from '@/store/explorer/navigation'
@@ -75,7 +76,7 @@ const system = computed(() => props.node ? system_folder({ drive_id: props.item.
 const name = computed(() => props.node
 	? (system.value ? t(`system_folders.${system.value}`) : props.node.name)
 	: props.item.root.name)
-const hidden = computed(() => props.node ? is_hidden_entry_name(props.node.name) : false)
+const hidden = computed(() => props.node ? entry_is_dimmed(props.node.name, props.node.id) : false)
 const can_write = computed(() => workspace.value?.can_write ?? props.item.root.can_write)
 
 watch(

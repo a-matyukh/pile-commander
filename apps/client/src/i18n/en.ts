@@ -614,7 +614,11 @@ export const en: typeof ru = {
 		},
 		files: 'Files',
 		hidden_files: 'Show hidden files',
-		hidden_files_d: 'Files and folders whose names start with a dot. This device only',
+		hidden_files_d: 'Files and folders whose names start with a dot, and the paths below. This device only',
+		hidden_paths: 'Hidden paths',
+		hidden_paths_d: 'Hidden together with files whose names start with a dot. This device only',
+		hidden_paths_add: 'Add',
+		hidden_paths_remove: 'Remove',
 		iteration: 'Iteration features',
 		ai: {
 			agent_access_busy: 'Another instance of the app already has agent access',

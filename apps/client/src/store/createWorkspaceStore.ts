@@ -44,6 +44,7 @@ import {
 	children_orders_match,
 	complete_visible_order,
 } from '../services/workspace/folderContainer'
+import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
 import { persist_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
@@ -2432,9 +2433,9 @@ export async function createWorkspaceStore(
 			},
 		})
 
-		stop_show_hidden_watch = watch(show_hidden_files, () => {
+		stop_show_hidden_watch = watch([show_hidden_files, hidden_paths], () => {
 			sync_tree_from_folders(workspace)
-		})
+		}, { deep: true })
 
 		if (shallow_root) {
 			// One subscription for every change to the open branch, including

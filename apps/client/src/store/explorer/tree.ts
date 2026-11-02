@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspaceTree, WorkspaceTreeNode } from '@/domain/WorkspaceTree'
+import { entry_is_dimmed } from '@/store/hiddenPaths'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
 import { normalize_workspace_id, parent_folder_id_from_node_id, path_separator } from '@/services/workspace/paths'
 import store from '@/store'
@@ -63,7 +64,7 @@ export function tree_root_folder_id(item: ExplorerTreeRoot): string {
 }
 
 export function visible_folder_children(nodes: WorkspaceTree, show_hidden: boolean): WorkspaceTree {
-	return nodes.filter(node => node.type === 'folder' && (show_hidden || !is_hidden_entry_name(node.name)))
+	return nodes.filter(node => node.type === 'folder' && (show_hidden || !entry_is_dimmed(node.name, node.id)))
 }
 
 /** What a look-ahead read learned about a folder's subfolders */
@@ -81,11 +82,15 @@ export type FolderProbe = {
  */
 export type FolderProbeState = FolderProbe | 'unknown'
 
-export function folder_probe_from_children(children: readonly { type: string; name: string }[]): FolderProbe {
+export function folder_probe_from_children(children: readonly { type: string; name: string; id?: string }[]): FolderProbe {
 	const folders = children.filter(child => child.type === 'folder')
 	return {
 		subfolders: folders.length > 0,
-		visible_subfolders: folders.some(child => !is_hidden_entry_name(child.name)),
+		visible_subfolders: folders.some(child => {
+			// A probe row without an id can only be judged by its name.
+			if (child.id === undefined) return !is_hidden_entry_name(child.name)
+			return !entry_is_dimmed(child.name, child.id)
+		}),
 	}
 }
 

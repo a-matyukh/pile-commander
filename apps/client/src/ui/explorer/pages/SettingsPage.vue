@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import { is_desktop } from '@/isDesktop'
 import DesktopUpdateControls from '@/ui/app/DesktopUpdateControls.vue'
@@ -7,13 +7,27 @@ import { t } from '@/i18n'
 import { explorer_language } from '@/store/explorer/language'
 import { explorer_settings, path_in_header, settings_tab, SETTINGS_TABS as TABS } from '@/store/explorer/settings'
 import { show_hidden_files } from '@/store/showHiddenFiles'
+import { add_hidden_path, display_hidden_path, hidden_paths, remove_hidden_path } from '@/store/hiddenPaths'
+import { explorer_home } from '@/store/explorer/home'
 import AiSettingsSection from '@/ui/ai/AiSettingsSection.vue'
+import Button from '@/ui/kit/Button.vue'
 import Segmented from '@/ui/kit/Segmented.vue'
 import Switch from '@/ui/kit/Switch.vue'
+import TextField from '@/ui/kit/TextField.vue'
 import SettingRow from './SettingRow.vue'
 import ViewChoice from './ViewChoice.vue'
 
 const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
+
+const path_draft = ref('')
+const path_invalid = ref(false)
+watch(path_draft, () => { path_invalid.value = false })
+
+function submit_hidden_path() {
+	const result = add_hidden_path(path_draft.value, explorer_home.value)
+	path_invalid.value = result === 'invalid'
+	if (result !== 'invalid') path_draft.value = ''
+}
 
 /**
  * The settings page, as in the prototype: "Interface" (path, bookmarks,
@@ -225,6 +239,27 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 				<SettingRow :title="t('settings.hidden_files')" :description="t('settings.hidden_files_d')">
 					<Switch v-model="show_hidden_files" />
 				</SettingRow>
+				<div class="hpaths">
+					<div>
+						<div>{{ t('settings.hidden_paths') }}</div>
+						<div class="hd">{{ t('settings.hidden_paths_d') }}</div>
+					</div>
+					<ul v-if="hidden_paths.length" class="hlist">
+						<li v-for="path in hidden_paths" :key="path">
+							<span class="hp" :title="path">{{ display_hidden_path(path, explorer_home) }}</span>
+							<Button variant="link" @click="remove_hidden_path(path)">{{ t('settings.hidden_paths_remove') }}</Button>
+						</li>
+					</ul>
+					<form class="hadd" @submit.prevent="submit_hidden_path">
+						<TextField
+							v-model="path_draft"
+							placeholder="~/Library"
+							autocomplete="off"
+							:invalid="path_invalid"
+						/>
+						<Button type="submit" :disabled="!path_draft.trim()">{{ t('settings.hidden_paths_add') }}</Button>
+					</form>
+				</div>
 			</div>
 
 
@@ -348,5 +383,44 @@ const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
 .explorer.lg .sh {
 	font-size: 12px;
 	min-height: 38px;
+}
+.hpaths {
+	padding: 12px 16px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.hd {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+.hlist {
+	list-style: none;
+	margin: 2px 0 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.hlist li {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.hp {
+	flex: 1;
+	min-width: 0;
+	font-size: 13px;
+	word-break: break-all;
+}
+.hadd {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.hadd :deep(.tf) {
+	flex: 1;
+	min-width: 0;
 }
 </style>

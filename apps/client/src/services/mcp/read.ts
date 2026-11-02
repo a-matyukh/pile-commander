@@ -2,6 +2,7 @@ import type { FolderRef } from '@/domain/Drive'
 import type { EntryWithXattrs, FolderWithChildrenXattrs, Xattr } from '@pile-commander/file-manager'
 import { folder_view_from_stored, stored_folder_view } from '@/domain/Widget'
 import { xattrs_map } from '@/services/workspace/xattrs'
+import { is_user_hidden_path } from '@/store/hiddenPaths'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import {
 	basename_of,
@@ -260,7 +261,9 @@ async function folder_data(ctx: McpContext, folder_id: string): Promise<FolderWi
 }
 
 function visible_children(folder: FolderWithChildrenXattrs, show_hidden: boolean): EntryWithXattrs[] {
-	return (folder.children ?? []).filter(child => !name_is_hidden(child.name, show_hidden))
+	return (folder.children ?? []).filter(child =>
+		!name_is_hidden(child.name, show_hidden) && (show_hidden || !is_user_hidden_path(child.id)),
+	)
 }
 
 function entry_brief(root_id: string, child: EntryWithXattrs, parent_relative?: string): EntryBrief {

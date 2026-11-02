@@ -4,7 +4,7 @@ import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { FolderContainerWidget } from '@/domain/Widget'
 import { t } from '@/i18n'
-import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
+import { entry_is_dimmed } from '@/store/hiddenPaths'
 import ItemDialogs from './ItemDialogs.vue'
 import ItemMenu from './ItemMenu.vue'
 import ItemTile from './ItemTile.vue'
@@ -32,7 +32,7 @@ const children = computed(() => props.container.children)</script>
 				:glyph="items.glyph(child)"
 				:name="items.display_name(child)"
 				:selected="workspace.is_selected(child.id)"
-				:dim="is_hidden_entry_name(child.name) || workspace.is_cut(child.id)"
+				:dim="entry_is_dimmed(child.name, child.id) || workspace.is_cut(child.id)"
 				:data-item-id="child.id"
 				@click="items.click(child, $event)"
 				@dblclick="workspace.open(child)"

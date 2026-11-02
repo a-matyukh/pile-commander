@@ -1,13 +1,12 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import { folder_view_from_stored, type FolderContainerWidget, type FolderContainerWidgetChild } from '@/domain/Widget'
-import { show_hidden_files } from '@/store/showHiddenFiles'
-import { is_hidden_entry_name } from './hiddenName'
+import { entry_is_dimmed, entry_is_listed } from '@/store/hiddenPaths'
 import { find_entry_owner_folder, xattrs_map } from './xattrs'
 
 /**
- * Visible drag order plus any hidden children the list left out, in their
- * current order. Returns null when an id is unknown or a non-hidden child
- * is missing — that is an incomplete reorder, not a hidden-file omission.
+ * Visible drag order plus any dot names and listed paths the list left out,
+ * in their current order. Returns null when an id is unknown or a shown
+ * child is missing — that is an incomplete reorder, not a hidden omission.
  */
 export function complete_visible_order(
 	children: EntryWithXattrs[],
@@ -20,7 +19,7 @@ export function complete_visible_order(
 
 	const ordered = new Set(ordered_ids)
 	const missing = children.filter(child => !ordered.has(child.id))
-	if (missing.some(child => !is_hidden_entry_name(child.name))) return null
+	if (missing.some(child => !entry_is_dimmed(child.name, child.id))) return null
 	if (missing.length === 0) return ordered_ids
 
 	return [
@@ -146,7 +145,7 @@ export function to_folder_container(
 	const view = folder_view_from_stored(attrs.view)
 
 	const raw_children = (folder.children ?? []).filter(entry =>
-		show_hidden_files.value || !is_hidden_entry_name(entry.name),
+		entry_is_listed(entry.name, entry.id),
 	)
 	const attrs_by_id = new Map<string, Record<string, unknown>>()
 	for (const entry of raw_children) {

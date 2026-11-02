@@ -15,8 +15,13 @@ import {
 import type { ExplorerLocation } from './navigation'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
 import { explorer_language } from './language'
+import { hidden_paths } from '@/store/hiddenPaths'
 
 vi.spyOn(console, 'error').mockImplementation(() => {})
+
+afterEach(() => {
+	hidden_paths.value = []
+})
 
 const ROOT: DriveRoot = { id: '/browser-desktops', name: 'Browser storage', can_write: true }
 
@@ -359,6 +364,30 @@ describe('explorer tree', () => {
 		]
 		expect(visible_folder_children(folders, false).map(item => item.id)).toEqual(['/visible'])
 		expect(visible_folder_children(folders, true).map(item => item.id)).toEqual(['/visible', '/.hidden'])
+	})
+
+	test('a listed path is hidden with dot names, and a probe without an id still uses the name', () => {
+		hidden_paths.value = ['/home/Library']
+		const folders: WorkspaceTreeNode[] = [
+			node('/home/Desktop', 'Desktop'),
+			node('/home/Library', 'Library'),
+			node('/home/.git', '.git'),
+		]
+		expect(visible_folder_children(folders, false).map(item => item.id)).toEqual(['/home/Desktop'])
+		expect(visible_folder_children(folders, true).map(item => item.id)).toEqual([
+			'/home/Desktop',
+			'/home/Library',
+			'/home/.git',
+		])
+
+		const probed = folder_probe_from_children([
+			{ type: 'folder', name: 'Library', id: '/home/Library' },
+			{ type: 'file', name: 'note.txt', id: '/home/note.txt' },
+		])
+		expect(probed).toEqual({ subfolders: true, visible_subfolders: false })
+		expect(folder_probe_from_children([{ type: 'folder', name: 'Library' }]).visible_subfolders).toBe(true)
+		expect(folder_has_chevron(node('/home'), false, probed)).toBe(false)
+		expect(folder_has_chevron(node('/home'), true, probed)).toBe(true)
 	})
 
 	test('creating in an unloaded folder expands and loads it first', async () => {

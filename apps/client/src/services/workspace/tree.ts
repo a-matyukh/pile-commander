@@ -1,16 +1,14 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { WorkspaceTree, WorkspaceTreeNode } from '@/domain/WorkspaceTree'
-import { show_hidden_files } from '@/store/showHiddenFiles'
+import { entry_is_listed } from '@/store/hiddenPaths'
 import { sort_entries_by_order_then_name } from './folderContainer'
-import { is_hidden_entry_name } from './hiddenName'
 import {
 	parent_folder_id_from_node_id,
 	rename_ids_in_set,
 } from './paths'
 
 function listed_entries(entries: EntryWithXattrs[]): EntryWithXattrs[] {
-	if (show_hidden_files.value) return entries
-	return entries.filter(entry => !is_hidden_entry_name(entry.name))
+	return entries.filter(entry => entry_is_listed(entry.name, entry.id))
 }
 
 export type TreeProjectionState = {

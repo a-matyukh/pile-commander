@@ -1,10 +1,15 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test } from 'vitest'
+import { hidden_paths } from '@/store/hiddenPaths'
 import { createFakeFileManager, type FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { DriveKind, FolderRef } from '@/domain/Drive'
 import { get_context, get_folder, list_bookmarks, read_text } from './read'
 import { FOLDER_ENTRY_LIMIT, McpError, TEXT_BYTE_LIMIT, TEXT_READ_LIMIT, type McpContext } from './types'
 
 const HOME = '/home'
+
+afterEach(() => {
+	hidden_paths.value = []
+})
 
 function local(folder_id: string, root_id = HOME): FolderRef {
 	return { drive_id: 'local', root_id, folder_id }
@@ -119,6 +124,29 @@ describe('mcp read', () => {
 		shown.fake.seed_file(`${HOME}/note.txt`, 'n')
 		const open = await get_folder(shown.ctx, root_address)
 		expect(open.entries.map(entry => entry.name).sort()).toEqual(['.secret', 'note.txt'])
+	})
+
+	test('a user-hidden path leaves the listing and stays readable by its path', async () => {
+		hidden_paths.value = [`${HOME}/Library`, `${HOME}/secret.txt`]
+		const hidden = world()
+		hidden.fake.seed_folder(HOME)
+		hidden.fake.seed_folder(`${HOME}/Library`)
+		hidden.fake.seed_file(`${HOME}/secret.txt`, 's')
+		hidden.fake.seed_file(`${HOME}/note.txt`, 'n')
+
+		const closed = await get_folder(hidden.ctx, root_address)
+		expect(closed.entries.map(entry => entry.name)).toEqual(['note.txt'])
+		const library = await get_folder(hidden.ctx, { ...root_address, path: 'Library' })
+		expect(library.entries).toEqual([])
+		expect((await read_text(hidden.ctx, { folder: root_address, path: 'secret.txt' })).text).toBe('s')
+
+		const shown = world({ show_hidden: true })
+		shown.fake.seed_folder(HOME)
+		shown.fake.seed_folder(`${HOME}/Library`)
+		shown.fake.seed_file(`${HOME}/secret.txt`, 's')
+		shown.fake.seed_file(`${HOME}/note.txt`, 'n')
+		const open = await get_folder(shown.ctx, root_address)
+		expect(open.entries.map(entry => entry.name).sort()).toEqual(['Library', 'note.txt', 'secret.txt'])
 	})
 
 	test('a symlink that leaves the root is path_outside_root', async () => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest'
+import { hidden_paths } from '@/store/hiddenPaths'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
@@ -120,10 +121,38 @@ describe('project_tree', () => {
 		expect(shown.map(n => n.name)).toEqual(['.git', 'docs', 'note.txt'])
 		expect(find_tree_node(shown, '/ws/docs')?.children?.map(c => c.name)).toEqual(['.env', 'a.txt'])
 	})
+
+	test('hides a listed path at the level where it sits, and shows it with the switch on', () => {
+		hidden_paths.value = ['/ws/Library']
+		const state: TreeProjectionState = {
+			id: '/ws',
+			tree: [],
+			folders: {
+				'/ws': folder('/ws', 'ws', [
+					entry('/ws/docs', 'docs', 'folder'),
+					entry('/ws/Library', 'Library', 'folder'),
+				]),
+				'/ws/Library': folder('/ws/Library', 'Library', [
+					entry('/ws/Library/Caches', 'Caches', 'folder'),
+				]),
+			},
+			tree_loaded_folder_ids: new Set(['/ws/Library']),
+		}
+
+		show_hidden_files.value = false
+		const hidden = project_tree(state)
+		expect(hidden.map(n => n.name)).toEqual(['docs'])
+
+		show_hidden_files.value = true
+		const shown = project_tree(state)
+		expect(shown.map(n => n.name)).toEqual(['docs', 'Library'])
+		expect(find_tree_node(shown, '/ws/Library')?.children?.map(c => c.name)).toEqual(['Caches'])
+	})
 })
 
 afterEach(() => {
 	show_hidden_files.value = false
+	hidden_paths.value = []
 })
 
 describe('is_descendant', () => {

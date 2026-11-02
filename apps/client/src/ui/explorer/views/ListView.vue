@@ -5,7 +5,7 @@ import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { FolderContainerWidget } from '@/domain/Widget'
 import { t } from '@/i18n'
-import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
+import { entry_is_dimmed } from '@/store/hiddenPaths'
 import { format_bytes } from '@/utils/format_bytes'
 import { explorer_settings } from '@/store/explorer/settings'
 import ItemDialogs from './ItemDialogs.vue'
@@ -56,7 +56,7 @@ watch(children, (list) => {
 			v-for="child in children"
 			:key="child.id"
 			class="li"
-			:class="{ s: workspace.is_selected(child.id), hid: is_hidden_entry_name(child.name), cut: workspace.is_cut(child.id) }"
+			:class="{ s: workspace.is_selected(child.id), hid: entry_is_dimmed(child.name, child.id), cut: workspace.is_cut(child.id) }"
 			:data-item-id="child.id"
 			@click="items.click(child, $event)"
 			@dblclick="workspace.open(child)"

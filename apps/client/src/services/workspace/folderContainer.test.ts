@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
+import { hidden_paths } from '@/store/hiddenPaths'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import {
 	children_orders_match,
@@ -19,6 +20,7 @@ function entry(
 
 afterEach(() => {
 	show_hidden_files.value = false
+	hidden_paths.value = []
 })
 
 function folder(
@@ -125,6 +127,20 @@ describe('to_folder_container', () => {
 		])
 	})
 
+	test('hides a listed path unless show hidden files is on', () => {
+		hidden_paths.value = ['/ws/Library']
+		const with_library = folder('/ws', 'ws', [
+			entry('/ws/note.txt', 'note.txt', 'file'),
+			entry('/ws/Library', 'Library', 'folder'),
+		])
+
+		show_hidden_files.value = false
+		expect(to_folder_container(with_library).children.map(c => c.name)).toEqual(['note.txt'])
+
+		show_hidden_files.value = true
+		expect(to_folder_container(with_library).children.map(c => c.name)).toEqual(['Library', 'note.txt'])
+	})
+
 	test('hides a dotfile inside an embedded preview', () => {
 		show_hidden_files.value = false
 		const preview = folder('/ws/docs', 'docs', [
@@ -170,5 +186,19 @@ describe('complete_visible_order', () => {
 			'/ws/git',
 		])
 		expect(complete_visible_order(children, ['/ws/missing', '/ws/a'])).toBeNull()
+	})
+
+	test('keeps a listed path that the visible order left out', () => {
+		hidden_paths.value = ['/ws/Library']
+		const children = [
+			entry('/ws/a', 'a.txt', 'file', [{ name: 'order', value: '0' }]),
+			entry('/ws/Library', 'Library', 'folder', [{ name: 'order', value: '1' }]),
+			entry('/ws/b', 'b.txt', 'file', [{ name: 'order', value: '2' }]),
+		]
+		expect(complete_visible_order(children, ['/ws/b', '/ws/a'])).toEqual([
+			'/ws/b',
+			'/ws/a',
+			'/ws/Library',
+		])
 	})
 })
