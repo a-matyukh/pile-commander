@@ -16,6 +16,11 @@ export const en: typeof ru = {
 		empty: 'Nothing here yet',
 		cloud_folder: 'Cloud folder',
 	},
+	drop: {
+		bookmark: 'Drop here to bookmark the folder',
+		open: 'Drop to open the folder',
+		open_more: 'A .pile imports; other files go into the open folder',
+	},
 	source: {
 		local: 'Home folder',
 		this_mac: 'This Mac',
