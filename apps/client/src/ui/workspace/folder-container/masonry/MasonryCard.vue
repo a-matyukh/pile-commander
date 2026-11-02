@@ -13,9 +13,13 @@ import { useMenuNode } from '../widgets/useMenuNode'
 import { useWidgetInteraction } from '../widgets/useWidgetInteraction'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
 import { splitFileName } from '../widgets/fileNameParts'
-import { backgroundStyle, isWhiteBackground, resolveShellFill } from '../widgets/resolveBackground'
+import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from '../widgets/resolveBackground'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import MasonryImage from './MasonryImage.vue'
+import { masonryColumnWidth } from './masonryLayout'
+
+/** Gallery's tab: a rounded top-left corner and a slope, with the folder's top line left under it. */
+const TAB_H = 13
 
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
@@ -23,8 +27,29 @@ const props = defineProps<{
 
 const { container } = useFolderContainerScope()
 const isNote = computed(() => is_note_widget(props.widget))
+const isFolder = computed(() => props.widget.type !== 'file')
+const shellFill = computed(() => resolveShellFill(props.widget))
+const folderFill = computed(() =>
+	shellFill.value ? backgroundStyle(shellFill.value) : { backgroundColor: 'white' },
+)
+/** A color cover fills the tab too; a picture stays on the body. */
+const tabFill = computed(() => {
+	const fill = shellFill.value
+	if (!fill || isImageBackground(fill)) return 'white'
+	return fill
+})
+const tabW = computed(() => Math.round(masonryColumnWidth(container.value?.masonry_column_width) * 0.42))
+/** Same contour as Gallery. The bottom edge is not stroked: the folder's own top border is that line. */
+const tabOutline = computed(() => {
+	const w = tabW.value
+	const h = TAB_H
+	const slope = 16
+	return `M0.5 ${h} V6.5 Q0.5 0.5 6.5 0.5 H${w - slope} C${w - slope / 2} 0.5 ${w - slope / 2} ${h} ${w} ${h}`
+})
+const tabPath = computed(() => `${tabOutline.value} Z`)
 const cardStyle = computed(() => {
-	const fill = resolveShellFill(props.widget)
+	if (isFolder.value) return {}
+	const fill = shellFill.value
 	if (fill) return { ...backgroundStyle(fill), border: 'none' }
 	return {
 		backgroundColor: 'white',
@@ -79,6 +104,7 @@ function onDblClick(event: MouseEvent) {
 				'pc-selected': isSelected,
 				'pc-cut': isCut,
 				'masonry-note': isNote,
+				'masonry-folder-card': isFolder,
 				'is_edit': isNote && isEditing,
 			}"
 			data-masonry-card
@@ -112,7 +138,12 @@ function onDblClick(event: MouseEvent) {
 					<span v-if="fileParts.extension" class="masonry-ext">{{ fileParts.extension }}</span>
 				</span>
 			</div>
-			<div v-else class="masonry-folder">
+			<template v-else>
+				<svg class="masonry-tab" :width="tabW" :height="TAB_H" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
+					<path :d="tabPath" />
+					<path class="edge" :d="tabOutline" />
+				</svg>
+				<div class="masonry-folder" :style="folderFill">
 				<Icon
 					v-if="glyph"
 					:icon="glyph.icon"
@@ -120,7 +151,8 @@ function onDblClick(event: MouseEvent) {
 					:style="{ color: glyph.color }"
 				/>
 				<span class="masonry-folder-name">{{ widget.name }}</span>
-			</div>
+				</div>
+			</template>
 		</div>
 	</component>
 </template>
@@ -175,10 +207,55 @@ function onDblClick(event: MouseEvent) {
 	color: var(--text-primary);
 }
 
+.masonry-folder-card {
+	display: flex;
+	flex-direction: column;
+	overflow: visible;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+.masonry-folder-card.pc-selected {
+	background-color: transparent;
+	box-shadow: none;
+}
+.masonry-folder-card.pc-selected::after {
+	content: none;
+}
+.masonry-tab {
+	flex: none;
+	display: block;
+	/* Keep the stroke's edge off the folder's top border, or the two lines stack. */
+	overflow: hidden;
+}
+.masonry-tab path {
+	fill: var(--tab-fill, white);
+	stroke: none;
+}
+.masonry-tab .edge {
+	fill: none;
+	stroke: var(--border);
+	stroke-width: 1;
+}
+.masonry-folder-card.pc-selected .masonry-tab .edge {
+	stroke: var(--pc-selection-ring);
+}
 .masonry-folder {
+	position: relative;
 	align-items: center;
 	text-align: center;
 	justify-content: center;
+	min-height: 160px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	border-top-left-radius: 0;
+	background: white;
+	user-select: none;
+	-webkit-user-select: none;
+}
+.masonry-folder-card.pc-selected .masonry-folder {
+	border-color: var(--pc-selection-ring);
+	box-shadow: inset 0 0 0 2px var(--pc-selection-ring);
 }
 
 .masonry-stem,
