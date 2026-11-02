@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 
 defineProps<{
@@ -11,12 +12,23 @@ defineProps<{
 }>()
 
 const model = defineModel<string>({ required: true })
+const input_el = ref<HTMLInputElement | null>(null)
+
+function focus(select = false) {
+	const input = input_el.value
+	if (!input) return
+	input.focus()
+	if (select) input.select()
+}
+
+defineExpose({ focus })
 </script>
 
 <template>
 	<label class="tf" :class="{ bad: invalid }">
 		<Icon v-if="icon" :icon="icon" class="ic" />
 		<input
+			ref="input_el"
 			v-model="model"
 			:type="type ?? 'text'"
 			:placeholder="placeholder"

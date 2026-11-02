@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { useFolderContainerScope } from './useFolderContainerScope'
 import { useEmptyPaneHintDismissed } from './emptyPaneHintDismissed'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import Button from '@/ui/kit/Button.vue'
 import { t } from '@/i18n'
 
 const props = defineProps<{
@@ -50,13 +51,7 @@ function dismiss() {
 					<span class="empty-pane-hint__shortcut">{{ t('empty_pane.shift_double_click') }}</span>
 				</li>
 			</ul>
-			<UButton
-				color="neutral"
-				variant="soft"
-				size="sm"
-				:label="t('empty_pane.remembered')"
-				@click="dismiss"
-			/>
+			<Button @click="dismiss">{{ t('empty_pane.remembered') }}</Button>
 		</div>
 	</div>
 </template>
@@ -77,14 +72,14 @@ function dismiss() {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 1rem;
+	gap: 14px;
 	max-width: 20rem;
-	padding: 1rem 1.25rem;
-	border: 1px solid var(--pc-border, #e5e7eb);
-	border-radius: 0.5rem;
-	background: color-mix(in oklab, #fff 92%, transparent);
-	color: #111827;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+	padding: 16px 18px;
+	border: 0.5px solid var(--border-strong);
+	border-radius: 12px;
+	background: var(--surface-3);
+	color: var(--text-primary);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .08);
 	pointer-events: auto;
 	user-select: none;
 	-webkit-user-select: none;
@@ -98,7 +93,6 @@ function dismiss() {
 	margin: 0;
 	padding: 0;
 	list-style: none;
-	font-size: 0.875rem;
 	line-height: 1.35;
 }
 
@@ -110,11 +104,11 @@ function dismiss() {
 }
 
 .empty-pane-hint__label {
-	font-weight: 600;
+	font-weight: 500;
 }
 
 .empty-pane-hint__shortcut {
-	color: var(--pc-text-muted, #737373);
+	color: var(--text-muted);
 	white-space: nowrap;
 }
 </style>

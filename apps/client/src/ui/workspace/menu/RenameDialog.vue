@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
+import { Icon } from '@iconify/vue'
 import { ai_available, ai_base_check, ai_settings, vision_support } from '@/store/ai'
 import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
@@ -9,6 +10,9 @@ import { name_target_kind } from '@/services/ai/naming'
 import { ask_name, collect_name_target, NameSkipped } from '@/services/ai/suggestName'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import AiReachBadge from '@/ui/ai/AiReachBadge.vue'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
+import TextField from '@/ui/kit/TextField.vue'
 import { t } from '@/i18n'
 
 const { initial_name, entry_type } = defineProps<{
@@ -24,7 +28,7 @@ const emit = defineEmits<{
 const workspace = useWorkspace()
 
 const is_open = ref(false)
-const name_input = ref<{ inputRef: HTMLInputElement | null } | null>(null)
+const name_input = ref<InstanceType<typeof TextField> | null>(null)
 const draft_name = ref('')
 const opened_name = ref('')
 const target_id = ref('')
@@ -53,9 +57,12 @@ function reset_suggestion() {
 
 async function focus_input(select: boolean) {
 	await nextTick()
-	const input = name_input.value?.inputRef
-	input?.focus()
-	if (select) input?.select()
+	name_input.value?.focus(select)
+	// The dialog's field is portaled in on open, one tick after the flag
+	if (select && document.activeElement?.tagName !== 'INPUT') {
+		await nextTick()
+		name_input.value?.focus(select)
+	}
 }
 
 async function open(name = initial_name, id = '', confirm = 'board_menu.rename') {
@@ -126,77 +133,102 @@ function cancel() {
 	draft_name.value = opened_name.value
 }
 
-function on_open_change(open: boolean) {
-	if (!open) {
-		reset_suggestion()
-		draft_name.value = opened_name.value
-	}
-}
+watch(is_open, open => {
+	if (open) return
+	reset_suggestion()
+	draft_name.value = opened_name.value
+})
 
 defineExpose({ open })
 </script>
 
 <template>
-	<UModal
-		v-model:open="is_open"
-		:title="t('rename_dialog.title')"
-		:ui="{ footer: 'justify-end' }"
-		@update:open="on_open_change"
-	>
-		<template #body>
-			<form class="flex flex-col gap-2" @submit.prevent="commit">
-				<div class="flex items-center gap-2">
-					<UInput
-						ref="name_input"
-						v-model="draft_name"
-						autocomplete="off"
-						class="min-w-0 flex-1"
-					/>
-					<template v-if="can_suggest">
-						<UButton
-							v-if="suggesting"
-							:label="t('rename_dialog.stop')"
-							icon="i-lucide:square"
-							color="neutral"
-							variant="outline"
-							@click="stop_suggesting"
-						/>
-						<UButton
-							v-else
-							:label="t('rename_dialog.suggest')"
-							icon="i-lucide:sparkles"
-							color="neutral"
-							variant="outline"
-							@click="suggest"
-						/>
-					</template>
-				</div>
+	<Modal v-model:open="is_open" :title="t('rename_dialog.title')">
+		<form class="form" @submit.prevent="commit">
+			<div class="row">
+				<TextField ref="name_input" v-model="draft_name" autocomplete="off" class="field" />
+				<template v-if="can_suggest">
+					<Button v-if="suggesting" icon="tabler:player-stop" @click="stop_suggesting">
+						{{ t('rename_dialog.stop') }}
+					</Button>
+					<Button v-else icon="tabler:sparkles" @click="suggest">
+						{{ t('rename_dialog.suggest') }}
+					</Button>
+				</template>
+			</div>
 
-				<div v-if="suggesting" class="flex items-center gap-2 text-xs text-muted">
-					<UIcon name="i-lucide:loader-circle" class="size-3.5 animate-spin" />
-					<span>{{ t('rename_dialog.asking', { model: model_label(ai_settings.model) }) }}</span>
-					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
-				</div>
-				<div v-else-if="suggestion" class="flex items-center gap-2 text-xs">
-					<span class="text-muted">{{ t('rename_dialog.suggested') }}</span>
-					<UButton
-						:label="suggestion"
-						size="xs"
-						color="primary"
-						variant="soft"
-						class="min-w-0 truncate"
-						@click="use_suggestion"
-					/>
-				</div>
-				<p v-else-if="suggest_error" class="text-xs leading-relaxed text-error">
-					{{ suggest_error }}
-				</p>
-			</form>
-		</template>
-
+			<div v-if="suggesting" class="status">
+				<Icon icon="tabler:loader-2" class="spin" />
+				<span>{{ t('rename_dialog.asking', { model: model_label(ai_settings.model) }) }}</span>
+				<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
+			</div>
+			<div v-else-if="suggestion" class="status">
+				<span>{{ t('rename_dialog.suggested') }}</span>
+				<button type="button" class="chip" @click="use_suggestion">{{ suggestion }}</button>
+			</div>
+			<p v-else-if="suggest_error" class="err">{{ suggest_error }}</p>
+		</form>
 		<template #footer>
-			<UButton :label="t('dialog.cancel')" color="neutral" variant="outline" @click="cancel" />
-			<UButton :label="t(confirm_key)" @click="commit" />
+			<Button @click="cancel">{{ t('dialog.cancel') }}</Button>
+			<Button variant="primary" @click="commit">{{ t(confirm_key) }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>
+
+<style scoped>
+.form {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.field {
+	flex: 1;
+	min-width: 0;
+}
+.status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.chip {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	border: none;
+	border-radius: 7px;
+	padding: 2px 8px;
+	background: var(--bg-accent);
+	color: var(--text-accent);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+.err {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-danger);
+}
+.spin {
+	animation: spin 1s linear infinite;
+}
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.explorer.lg .status,
+.explorer.lg .chip,
+.explorer.lg .err {
+	font-size: 13px;
+}
+</style>
