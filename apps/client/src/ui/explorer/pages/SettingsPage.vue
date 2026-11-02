@@ -266,7 +266,7 @@ function submit_hidden_path() {
 			</TabsContent>
 		<TabsContent v-if="is_desktop" value="updates" class="pane">
 			<div class="card pad">
-				<DesktopUpdateControls class="upd" />
+				<DesktopUpdateControls />
 			</div>
 		</TabsContent>
 	</TabsRoot>
@@ -354,10 +354,6 @@ function submit_hidden_path() {
 }
 .card.pad {
 	padding: 14px 16px;
-}
-/* The check control is a ghost button; keep it in the same gray as the other tab labels. */
-.settings :deep(.upd) button {
-	color: var(--text-secondary);
 }
 .note {
 	font-size: 12px;

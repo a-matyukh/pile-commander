@@ -9,6 +9,7 @@ defineProps<{
 	autocomplete?: string
 	autofocus?: boolean
 	invalid?: boolean
+	disabled?: boolean
 }>()
 
 const model = defineModel<string>({ required: true })
@@ -25,7 +26,7 @@ defineExpose({ focus })
 </script>
 
 <template>
-	<label class="tf" :class="{ bad: invalid }">
+	<label class="tf" :class="{ bad: invalid, off: disabled }">
 		<Icon v-if="icon" :icon="icon" class="ic" />
 		<input
 			ref="input_el"
@@ -34,6 +35,7 @@ defineExpose({ focus })
 			:placeholder="placeholder"
 			:autocomplete="autocomplete"
 			:autofocus="autofocus"
+			:disabled="disabled"
 		/>
 	</label>
 </template>
@@ -57,6 +59,10 @@ defineExpose({ focus })
 }
 .tf.bad {
 	border-color: var(--fill-danger);
+}
+.tf.off {
+	opacity: .45;
+	cursor: default;
 }
 .ic {
 	font-size: 16px;

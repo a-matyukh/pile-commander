@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { t } from '@/i18n'
 import updater, { check_for_updates, load_current_version } from '@/store/updater'
+import Button from '@/ui/kit/Button.vue'
 
 const toast = useToast()
 
@@ -38,20 +39,24 @@ async function on_check() {
 </script>
 
 <template>
-	<div class="flex items-center gap-2">
-		<span v-if="updater.current_version" class="min-w-0 truncate text-xs text-muted">
-			v{{ updater.current_version }}
-		</span>
-		<UButton
-			:label="t('updates.check')"
-			icon="i-lucide:refresh-cw"
-			color="neutral"
-			variant="ghost"
-			size="xs"
-			:loading="checking"
-			:disabled="busy"
-			class="shrink-0"
-			@click="on_check"
-		/>
+	<div class="row">
+		<span v-if="updater.current_version" class="ver">v{{ updater.current_version }}</span>
+		<Button icon="tabler:refresh" :loading="checking" :disabled="busy" @click="on_check">
+			{{ t('updates.check') }}
+		</Button>
 	</div>
 </template>
+
+<style scoped>
+.row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.ver {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--text-secondary);
+}
+</style>
