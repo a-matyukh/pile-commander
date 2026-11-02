@@ -10,7 +10,6 @@ export type PublicRoute =
 
 export type ApplyPublicRouteDeps = {
 	is_cloud_configured: boolean
-	open_demo_workspace: () => void
 	fetch_hub: () => void
 	open_profile: (username: string) => void
 	open_public: (username: string, slug: string) => void
@@ -28,7 +27,7 @@ type PrerenderDocument = {
 
 /**
  * Maps the URL path to the bootstrap action:
- *   /demo              → the demo workspace
+ *   /demo              → the Explorer opens it from the address
  *   /hub               → the public gallery
  *   /invite/<token>    → a pending workspace invite
  *   /<username>        → a profile page with its publications
@@ -85,10 +84,8 @@ export function apply_public_route(route: PublicRoute, deps: ApplyPublicRouteDep
 		if (deps.is_cloud_configured) deps.open_invite(route.token)
 		return
 	}
-	if (route.kind === 'demo') {
-		deps.open_demo_workspace()
-		return
-	}
+	// /demo is opened by the Explorer from the address (take_explorer_start).
+	if (route.kind === 'demo') return
 	if (!deps.is_cloud_configured) return
 	if (route.kind === 'hub') {
 		deps.fetch_hub()

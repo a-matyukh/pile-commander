@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useEventListener, useMediaQuery } from '@vueuse/core'
 import { t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
-import { start_explorer_list_migration } from '@/store/explorer/bookmarks'
 import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import store, { adopt_workspace } from '@/store'
@@ -239,9 +238,6 @@ async function open_cloud_copy(item: WorkspacesListItem) {
 onMounted(async () => {
 	explorer_mounted.value = true
 	set_open_cloud_copy(open_cloud_copy)
-	// First time the flag is on. Doing this at app start would freeze the
-	// lists while the old window is still the one being edited.
-	start_explorer_list_migration()
 	// Back from a publication or an invitation, or /hub: there, not the last folder
 	const start = take_explorer_start()
 	try {
@@ -268,8 +264,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<!-- Replaces WorkspaceWindow while the flag is on. Menus and dialogs portal
-	     into this element to inherit its tokens. -->
+	<!-- Menus and dialogs portal into this element to inherit its tokens. -->
 	<div ref="root_el" class="explorer flex h-full min-h-0 flex-col" :class="explorer_window_classes">
 		<TopBar />
 		<div class="body">

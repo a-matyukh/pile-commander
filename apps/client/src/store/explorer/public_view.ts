@@ -4,18 +4,17 @@ import { resolve_public_route } from '@/services/publicRoute'
 import store from '@/store'
 import { report_error } from '@/store/helpers/reportError'
 import cloud, { set_open_workspace, type PublicationView } from '@/store/cloud'
-import { explorer_enabled } from './enabled'
 import { explorer_navigation, type ExplorerPage } from './navigation'
 import { DEMO_ROOT, public_roots, type PublicRoot } from './public_roots'
 
 /**
- * Public addresses and cloud flows in the new interface. A publication opens
+ * Public addresses and cloud flows. A publication opens
  * as a read-only folder of the "public" drive; a fork, "Edit" of one's own
  * publication and an accepted invitation open their cloud folder; /demo opens
  * the demo. An invitation and a missing publication are drawn by PublicScreen
  * instead of the shell (from there "Back to Hub" comes back to its Hub page).
  */
-export const explorer_public_open = computed(() => explorer_enabled.value && !!(
+export const explorer_public_open = computed(() => !!(
 	cloud.public_not_found
 	|| cloud.invite_view
 ))
@@ -106,10 +105,6 @@ export function publication_view_of(root: PublicRoot): PublicationView {
 }
 
 set_open_workspace(async (item, opts) => {
-	if (!explorer_enabled.value) {
-		await store.load_workspace(item, opts)
-		return !!store.workspace
-	}
 	const view = cloud.publication_view
 	if (opts?.public_readonly && view?.workspace_id === item.id) {
 		public_roots.set(item.id, {

@@ -2,7 +2,6 @@ import { reactive } from 'vue'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspaceTree, WorkspaceTreeNode } from '@/domain/WorkspaceTree'
-import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
 import { normalize_workspace_id, parent_folder_id_from_node_id, path_separator } from '@/services/workspace/paths'
 import store from '@/store'
@@ -18,11 +17,7 @@ import { copy_entries_into } from '@/store/helpers/copyEntriesInto'
 import { apply_entry_removed } from '@/services/workspace/mutations'
 import { invalidate_entry_content_caches } from '@/ui/workspace/folder-container/textContentCache'
 import { report_error } from '@/store/helpers/reportError'
-import {
-	bookmarks as legacy_bookmarks,
-	last_opened as legacy_last_opened,
-} from '@/store/workspaces_list'
-import { BROWSER_ROOT, explorer_drives, is_within } from './drives'
+import { explorer_drives, is_within } from './drives'
 import { explain_folder_error } from './fsErrorMessage'
 import { explorer_navigation, type ExplorerLocation } from './navigation'
 
@@ -38,7 +33,6 @@ export type ExplorerTreeDeps = {
 	open_folder(ref: FolderRef): Promise<void>
 	/** The roots expanded in the tree of `drive_id`: their stores stay open */
 	set_expanded(root_ids: Iterable<string>, drive_id: string | null): void
-	browser_workspaces(): readonly WorkspacesListItem[]
 	on_error(error: unknown): void
 	/**
 	 * A move across cloud workspaces is a copy and a delete. These let the
@@ -139,21 +133,6 @@ export function skips_probe(item: ExplorerTreeRoot, home_root_id: string | null,
 
 /** Look-ahead reads in flight at once: in the cloud every read is a request */
 export const TREE_PROBE_CONCURRENCY = 4
-
-export function is_legacy_browser_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode): boolean {
-	return item.drive.kind === 'browser'
-		&& parent_folder_id_from_node_id(node.id, BROWSER_ROOT) === BROWSER_ROOT
-}
-
-export function legacy_browser_folder_name(
-	id: string,
-	fallback: string,
-	items: readonly WorkspacesListItem[],
-): string {
-	const normalized = normalize_workspace_id(id)
-	return items.find(item => item.type === 'browser' && normalize_workspace_id(item.id) === normalized)?.name
-		?? fallback
-}
 
 function same_ref(a: FolderRef, b: FolderRef): boolean {
 	return a.drive_id === b.drive_id && a.root_id === b.root_id && a.folder_id === b.folder_id
@@ -408,7 +387,7 @@ export function create_explorer_tree(
 					refresh: node.children_loaded,
 				})
 			} catch (error) {
-				deps.on_error(explain_folder_error(error, node.id, node_name(item, node)))
+				deps.on_error(explain_folder_error(error, node.id, node.name))
 				return
 			}
 			await workspace.expand_folder_in_sidebar(node.id)
@@ -427,11 +406,6 @@ export function create_explorer_tree(
 		} catch (error) {
 			deps.on_error(error)
 		}
-	}
-
-	function node_name(item: ExplorerTreeRoot, node: WorkspaceTreeNode): string {
-		if (!is_legacy_browser_folder(item, node)) return node.name
-		return legacy_browser_folder_name(node.id, node.name, deps.browser_workspaces())
 	}
 
 	async function create_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode | null) {
@@ -467,7 +441,6 @@ export function create_explorer_tree(
 	}
 
 	async function rename_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode, name: string) {
-		if (is_legacy_browser_folder(item, node)) return
 		try {
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
@@ -545,7 +518,7 @@ export function create_explorer_tree(
 			if (kept) {
 				// Someone changed the folder while it was copied: nothing of theirs
 				// may be lost, so both stay and the user hears why
-				deps.on_error(new Error(t('errors.move_kept_both', { name: node_name(item, node) })))
+				deps.on_error(new Error(t('errors.move_kept_both', { name: node.name })))
 				return
 			}
 			if (moved) {
@@ -656,7 +629,7 @@ export function create_explorer_tree(
 		const moving = probe_key(item, node.id)
 		state.moving.add(moving)
 		try {
-			const name = node_name(item, node)
+			const name = node.name
 			const root_id = await deps.create_cloud_root(name)
 			if (!root_id) return
 			releases.push(deps.hold_root?.(root_id))
@@ -917,7 +890,6 @@ export function create_explorer_tree(
 		toggle_root,
 		toggle_folder,
 		open_folder,
-		node_name,
 		create_folder,
 		rename_folder,
 		move_folder,
@@ -942,7 +914,6 @@ export const explorer_tree = create_explorer_tree({
 	current_location: () => explorer_navigation.location,
 	open_folder: ref => explorer_navigation.open_folder(ref),
 	set_expanded: (root_ids, drive_id) => explorer_drives.set_expanded(root_ids, drive_id),
-	browser_workspaces: () => [...legacy_bookmarks.value, ...legacy_last_opened.value],
 	on_error: error => report_error(store, error),
 	cloud_stamp_at: (workspace_id, path) => entry_subtree_stamp_at(require_supabase(), workspace_id, path),
 	delete_moved_cloud_entry: (entry_id, stamp, path) => delete_moved_entry(require_supabase(), entry_id, stamp, path),

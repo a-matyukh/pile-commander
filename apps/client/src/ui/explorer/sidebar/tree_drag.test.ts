@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { CLOUD_ROOT_DROP_KEY, can_drop, press_tree_row, tree_drag, tree_root_key, type TreeDragSource } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, can_drop, press_tree_row, row_can_drag, tree_drag, tree_root_key, type TreeDragSource } from './tree_drag'
 
 const HOME = tree_root_key('local', '/Users/me')
 const source: TreeDragSource = {
@@ -44,6 +44,20 @@ describe('tree drag', () => {
 		expect(can_drop(root, { root_key: tree_root_key('cloud', '34'), folder_id: '/' })).toBe(true)
 		expect(can_drop(root, { root_key: CLOUD_ROOT_DROP_KEY, folder_id: '/' })).toBe(false)
 		expect(can_drop(root, { root_key: root.root_key, folder_id: '/' })).toBe(false)
+	})
+
+	test('a top-level browser folder can be dragged into another folder of its disk', () => {
+		expect(row_can_drag({ can_write: true, system: false, folder: true, drive_kind: 'browser' })).toBe(true)
+		expect(row_can_drag({ can_write: true, system: false, folder: false, drive_kind: 'browser' })).toBe(false)
+		expect(row_can_drag({ can_write: false, system: false, folder: true, drive_kind: 'browser' })).toBe(false)
+		const root = tree_root_key('browser', '/browser-desktops')
+		const source: TreeDragSource = {
+			root_key: root,
+			folder_id: '/browser-desktops/old-id',
+			name: 'old-id',
+			parent_id: '/browser-desktops',
+		}
+		expect(can_drop(source, { root_key: root, folder_id: '/browser-desktops/Notes' })).toBe(true)
 	})
 })
 

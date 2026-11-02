@@ -3,13 +3,10 @@ import { createFakeFileManager } from '@pile-commander/file-manager'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
-import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import {
 	create_explorer_tree,
 	folder_has_chevron,
 	folder_probe_from_children,
-	is_legacy_browser_folder,
-	legacy_browser_folder_name,
 	tree_root_folder_id,
 	visible_folder_children,
 	type ExplorerTreeDeps,
@@ -48,7 +45,6 @@ function fixture(over: {
 	roots?: DriveRoot[]
 	workspace?: WorkspaceStore
 	location?: ExplorerLocation | null
-	legacy?: WorkspacesListItem[]
 } = {}) {
 	const workspace = over.workspace ?? fake_store()
 	const drive: Drive = {
@@ -68,7 +64,6 @@ function fixture(over: {
 		current_location: () => location,
 		open_folder,
 		set_expanded,
-		browser_workspaces: () => over.legacy ?? [],
 		on_error,
 	}
 	const tree = create_explorer_tree(deps)
@@ -119,7 +114,6 @@ describe('explorer tree', () => {
 			current_location: () => null,
 			open_folder: async () => {},
 			set_expanded: () => calls.push('expanded'),
-			browser_workspaces: () => [],
 			on_error: () => {},
 		})
 		await tree.show_drive(drive, null)
@@ -222,7 +216,6 @@ describe('explorer tree', () => {
 			current_location: () => null,
 			open_folder: async () => {},
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error: () => {},
 			retarget_bookmarks,
 		})
@@ -241,6 +234,40 @@ describe('explorer tree', () => {
 		workspace.dispose()
 	})
 
+	test('renaming a top-level browser folder takes its bookmark along', async () => {
+		const root = '/browser-desktops'
+		const fake = createFakeFileManager()
+		fake.seed_folder(root)
+		fake.seed_folder(`${root}/old-id`)
+		const workspace = await createWorkspaceStore(
+			{ id: root, type: 'browser', name: 'Browser' },
+			fake.fm,
+			{ root_folder_id: root },
+		)
+		if (!workspace) throw new Error('no store')
+		const retarget_bookmarks = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			on_error: () => {},
+			retarget_bookmarks,
+		})
+		const drive: Drive = {
+			id: 'browser', kind: 'browser', name: 'Browser storage', icon: '', trash: null,
+			roots: async () => [{ id: root, name: 'Browser storage', can_write: true }],
+			store_for: async () => workspace,
+		}
+		await tree.show_drive(drive, null)
+		const old = workspace.tree.find(node => node.id === `${root}/old-id`)!
+		await tree.rename_folder(tree.roots[0]!, old, 'Notes')
+		expect(retarget_bookmarks).toHaveBeenCalledWith(
+			{ drive_id: 'browser', root_id: root, folder_id: `${root}/old-id` },
+			{ drive_id: 'browser', root_id: root, folder_id: `${root}/Notes` },
+		)
+		workspace.dispose()
+	})
+
 	test('a trashed folder takes its bookmarks away; a failed trash keeps them', async () => {
 		const fake = createFakeFileManager()
 		fake.seed_folder('/home')
@@ -253,7 +280,6 @@ describe('explorer tree', () => {
 			current_location: () => null,
 			open_folder: async () => {},
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error: () => {},
 			forget_bookmarks,
 		})
@@ -288,7 +314,6 @@ describe('explorer tree', () => {
 			current_location: () => null,
 			open_folder: async () => {},
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error,
 		})
 		const drive: Drive = {
@@ -334,22 +359,6 @@ describe('explorer tree', () => {
 		]
 		expect(visible_folder_children(folders, false).map(item => item.id)).toEqual(['/visible'])
 		expect(visible_folder_children(folders, true).map(item => item.id)).toEqual(['/visible', '/.hidden'])
-	})
-
-	test('legacy browser folders use old workspace names and cannot be renamed', async () => {
-		const child = node(`${ROOT.id}/old-id`, 'old-id')
-		const legacy: WorkspacesListItem[] = [{ id: child.id, type: 'browser', name: 'Research' }]
-		const { tree, drive, workspace } = fixture({ legacy })
-		await tree.show_drive(drive, null)
-		const item = tree.roots[0]!
-
-		expect(is_legacy_browser_folder(item, child)).toBe(true)
-		expect(is_legacy_browser_folder(item, node(`${child.id}/nested`))).toBe(false)
-		expect(legacy_browser_folder_name(child.id, child.name, legacy)).toBe('Research')
-		expect(tree.node_name(item, child)).toBe('Research')
-
-		await tree.rename_folder(item, child, 'New name')
-		expect(workspace.rename).not.toHaveBeenCalled()
 	})
 
 	test('creating in an unloaded folder expands and loads it first', async () => {
@@ -525,7 +534,6 @@ describe('explorer tree', () => {
 			current_location: () => null,
 			open_folder: async () => {},
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error: () => {},
 		}, { probe_concurrency: 2 })
 		await tree.show_drive(drive, null)
@@ -591,7 +599,6 @@ describe('explorer tree', () => {
 				current_location: () => null,
 				open_folder: async () => {},
 				set_expanded: () => {},
-				browser_workspaces: () => [],
 				on_error: () => {},
 			})
 			await tree.show_drive(drive, null)
@@ -797,7 +804,6 @@ describe('moving a folder to another root of the same drive', () => {
 			current_location: () => location,
 			open_folder,
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error,
 			cloud_stamp_at,
 			delete_moved_cloud_entry,
@@ -970,7 +976,6 @@ describe('moving a nested cloud folder to the top level', () => {
 			current_location: () => null,
 			open_folder,
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error,
 			create_cloud_root,
 			cloud_stamp_at,
@@ -1075,7 +1080,6 @@ describe('moving a cloud root into another root', () => {
 			current_location: () => location,
 			open_folder,
 			set_expanded: () => {},
-			browser_workspaces: () => [],
 			on_error,
 			delete_cloud_root,
 			hold_root: () => () => {},

@@ -12,19 +12,10 @@ import {
 	import_workspace_from_pile,
 	pile_root_name,
 } from '../services/workspace/pack'
-import {
-	add_to_bookmarks,
-	add_to_last_opened,
-	bookmarks,
-	last_opened,
-	remove_from_bookmarks,
-} from './workspaces_list'
 import { createWorkspaceStore } from './createWorkspaceStore'
 import { report_error } from './helpers/reportError'
 import { normalize_workspace_id } from '../services/workspace/paths'
 import { open_workspace_store } from './helpers/openWorkspaceStore'
-import { is_workspace_available } from './isWorkspaceAvailable'
-import cloud from './cloud'
 
 export { createWorkspaceStore }
 
@@ -39,18 +30,6 @@ const store: Store = {
 	clear_error() {
 		this.last_error = null
 	},
-
-	get bookmarks() {
-		const ctx = { is_desktop, cloud_ids: new Set(cloud.workspaces.map(ws => ws.id)) }
-		return bookmarks.value.filter(ws => is_workspace_available(ws, ctx))
-	},
-	get last_opened() {
-		const bookmark_ids = new Set(bookmarks.value.map(ws => ws.id))
-		const ctx = { is_desktop, cloud_ids: new Set(cloud.workspaces.map(ws => ws.id)) }
-		return last_opened.value.filter(ws => !bookmark_ids.has(ws.id) && is_workspace_available(ws, ctx))
-	},
-	add_to_bookmarks,
-	remove_from_bookmarks,
 
 	async open_local_workspace(path?: string, opts?: LoadWorkspaceOptions) {
 		if (path) {
@@ -148,7 +127,6 @@ const store: Store = {
 			const workspace = await open_workspace_store(item, opts)
 			fullscreen_workspace.value = workspace
 			await workspace.prefetch_preview_folders(workspace.opened_folder.children)
-			add_to_last_opened(item)
 		} catch (error) {
 			report_error(this, error)
 			fullscreen_workspace.value = null

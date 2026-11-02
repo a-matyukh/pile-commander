@@ -1,4 +1,4 @@
-import type { WorkspacesListItem, WorkspacesList, WorkspaceType } from '@/domain/WorkspacesList'
+import type { WorkspacesListItem, WorkspaceType } from '@/domain/WorkspacesList'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import type { ShapeTemplate } from '@/domain/shapes'
 import type { LinePlug, LineAxis } from '@/services/board/shapes'
@@ -49,11 +49,6 @@ type Store = {
 	/** Closes the open workspace (e.g. after its cloud workspace was removed). */
 	close_workspace(): void
 	workspace: WorkspaceStore | null
-
-	bookmarks: WorkspacesList
-	last_opened: WorkspacesList
-	add_to_bookmarks(ws: WorkspacesListItem): void
-	remove_from_bookmarks(ws: WorkspacesListItem): void
 }
 
 export

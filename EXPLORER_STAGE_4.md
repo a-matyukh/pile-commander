@@ -84,6 +84,8 @@ Grep for `explorer_enabled` and `EXPLORER_ENABLED_KEY` until nothing is left. **
 
 Agreed consequences: a browser folder shows its on-disk name (a uuid) in the tree and on its bookmark until it is renamed; a profile whose migration never ran loses its old bookmarks.
 
+**So a top-level browser folder must be renamable.** `is_legacy_browser_folder` blocked renaming and dragging it only because the old interface found it by its path. Delete it and its checks (`store/explorer/folder_menu.ts`, `store/explorer/tree.ts`, `ui/explorer/sidebar/TreeRow.vue`): such a folder then behaves like any other, and gets Rename, Ungroup, Icon, Cover and Move to trash in its menus. A bookmark on it follows a rename, as on a nested folder.
+
 **One thing must not show a uuid:** a cloud bookmark's name. `bookmark_name` falls back from `cloud.workspaces` to the old list, then to `root_id`, and `cloud.workspaces` is empty until it loads. Replace those fallbacks with a generic string, `t('bookmarks.cloud_folder')` ("Облачная папка" / "Cloud folder").
 
 **Clean up on startup.** Remove the keys nothing reads any more: `workspaces_list_bookmarks`, `workspaces_list_last_opened`, `pile_commander_explorer`, `pile_commander_explorer_lists_migrated`, and every `workspace-sidebar-*` key. For the last one, delete `services/window/workspaceSidebarStorage.ts` and its call in `main.ts`, which deliberately keeps `workspace-sidebar-main` for the old window. Also grep `useStorage(` and `localStorage` in the deleted files. A few lines in one place, with a small test using a stubbed storage. **Do not touch** the other `pile_commander_explorer_*` keys, `pile_commander_show_hidden_files`, AI settings or experiments.

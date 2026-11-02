@@ -11,6 +11,7 @@ export const ru = {
 		add_current: 'Добавить текущую папку',
 		added: '«{name}» в закладках',
 		empty: 'Пока пусто',
+		cloud_folder: 'Облачная папка',
 	},
 	source: {
 		local: 'Домашняя папка',
@@ -564,8 +565,6 @@ export const ru = {
 		language: 'Язык',
 		language_d: '«Как в системе» берёт язык вашей системы',
 		language_system: 'Как в системе',
-		new_interface: 'Новый интерфейс',
-		new_interface_d: 'Выключите, чтобы вернуться к прежнему окну',
 		size: 'Размер интерфейса',
 		size_d: 'Крупный удобнее на тач-экранах',
 		size_phone_default: ' · на телефоне по умолчанию крупный',

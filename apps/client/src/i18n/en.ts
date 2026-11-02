@@ -14,6 +14,7 @@ export const en: typeof ru = {
 		add_current: 'Bookmark this folder',
 		added: '“{name}” bookmarked',
 		empty: 'Nothing here yet',
+		cloud_folder: 'Cloud folder',
 	},
 	source: {
 		local: 'Home folder',
@@ -566,8 +567,6 @@ export const en: typeof ru = {
 		interface: 'Interface',
 		language: 'Language',
 		language_d: 'Same as system follows your system language',
-		new_interface: 'New interface',
-		new_interface_d: 'Turn off to go back to the previous window',
 		language_system: 'Same as system',
 		size: 'Interface size',
 		size_d: 'Large is easier on touch screens',

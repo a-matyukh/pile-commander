@@ -100,11 +100,14 @@ describe('folder header menu: items', () => {
 		expect(items.move_to_trash).toBe(false)
 	})
 
-	test('a legacy browser folder keeps its name but can be trashed', () => {
-		const legacy: FolderRef = { drive_id: 'browser', root_id: BROWSER_ROOT, folder_id: `${BROWSER_ROOT}/old-id` }
-		expect(folder_menu_items(legacy, writable(browser, false))).toMatchObject({ rename: false, ungroup: false, move_to_trash: true })
-		const nested: FolderRef = { ...legacy, folder_id: `${BROWSER_ROOT}/old-id/A` }
-		expect(folder_menu_items(nested, writable(browser, false))).toMatchObject({ rename: true, ungroup: true, move_to_trash: true })
+	test('a top-level browser folder gets Rename, Ungroup and Move to trash', () => {
+		// Icon and Cover are the look items FolderMenu shows whenever rename is on
+		const folder: FolderRef = { drive_id: 'browser', root_id: BROWSER_ROOT, folder_id: `${BROWSER_ROOT}/old-id` }
+		expect(folder_menu_items(folder, writable(browser, false))).toMatchObject({
+			rename: true,
+			ungroup: true,
+			move_to_trash: true,
+		})
 	})
 
 	test('"Show in Finder" only for the local drive on the desktop', () => {

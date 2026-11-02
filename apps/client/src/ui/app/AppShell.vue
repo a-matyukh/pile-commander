@@ -4,7 +4,6 @@ import { locale } from '@/i18n'
 import store from '@/store'
 import { is_desktop } from '@/isDesktop'
 import { report_error } from '@/store/helpers/reportError'
-import { explorer_enabled } from '@/store/explorer/enabled'
 import { explorer_public_open } from '@/store/explorer/public_view'
 import { add_bookmark } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
@@ -17,7 +16,6 @@ import {
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
-import WorkspaceWindow from '@/ui/workspace/WorkspaceWindow.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
 import UpdateBanner from '@/ui/app/UpdateBanner.vue'
@@ -27,20 +25,17 @@ import AiConsentDialog from '@/ui/ai/AiConsentDialog.vue'
 import BulkRenameDialog from '@/ui/ai/BulkRenameDialog.vue'
 import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 
-// OS-level drop/open events live here (the shell never unmounts); the
-// workspace window handles browser drops through its own DOM.
+// OS-level drop and open events live here: the shell never unmounts.
 const dragOver = ref(false)
 
-// One place for the document language. A screen must not set it on mount and
-// restore it on unmount: the old screen's unmount runs after the new one's
-// setup and puts the start language back.
-const document_lang_at_start = document.documentElement.lang
+// The document language follows the Explorer. AppShell stays mounted, so a
+// screen swap cannot put the start language back.
 watchEffect(() => {
-	document.documentElement.lang = explorer_enabled.value ? locale.value : document_lang_at_start
+	document.documentElement.lang = locale.value
 })
 
 function on_folder_drop(payload: DroppedFolderPayload) {
-	if (explorer_enabled.value && point_in_rect(payload.client, top_bar_rect())) {
+	if (point_in_rect(payload.client, top_bar_rect())) {
 		void bookmark_dropped_folder(payload.path).catch(error => report_error(store, error))
 		return
 	}
@@ -58,18 +53,11 @@ async function bookmark_dropped_folder(path: string) {
 }
 
 function open_dropped_folder(path: string): Promise<void> {
-	const opening = explorer_enabled.value
-		? explorer_navigation.open_local_path(path)
-		: store.open_local_workspace(path)
-	return Promise.resolve(opening).catch(error => report_error(store, error))
+	return Promise.resolve(explorer_navigation.open_local_path(path)).catch(error => report_error(store, error))
 }
 
-/** A .pile unpacks into a folder the person picks; the new interface opens it as a folder of its own */
+/** A .pile unpacks into a folder the person picks, then opens as a folder of its own */
 async function open_pile(path: string) {
-	if (!explorer_enabled.value) {
-		await store.import_workspace_pack(path)
-		return
-	}
 	const unpacked = await store.unpack_workspace_pack(path)
 	if (unpacked) await open_dropped_folder(unpacked.root)
 }
@@ -120,10 +108,9 @@ onUnmounted(() => {
 			</div>
 		</Teleport>
 		<SyncKeptHiddenToast />
-		<!-- Flag on: the Explorer, or the invitation and missing-publication screen in its place. Flag off: the old window. -->
-		<ExplorerShell v-if="explorer_enabled && !explorer_public_open" />
-		<PublicScreen v-else-if="explorer_public_open" />
-		<WorkspaceWindow v-else />
+		<!-- The Explorer, or the invitation and missing-publication screen in its place. -->
+		<ExplorerShell v-if="!explorer_public_open" />
+		<PublicScreen v-else />
 		<QuotaWallDialog />
 		<BridgeDialog />
 		<PasswordDialog />

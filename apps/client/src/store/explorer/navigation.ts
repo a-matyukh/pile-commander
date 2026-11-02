@@ -423,8 +423,8 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		state.index = 0
 		state.location = null
 		// Only the first launch in this process can find a mark left by a hung
-		// one: a later call (the shell mounted again after the flag went off
-		// and on) would read the mark its own process set seconds ago
+		// one: a later call (the shell mounted again after an invitation or a
+		// missing publication) would read the mark its own process set seconds ago
 		const interrupted = !launched_in_process && launch_pending.value
 		launched_in_process = true
 		const last = deps.last_location.value ? { ...deps.last_location.value } : null

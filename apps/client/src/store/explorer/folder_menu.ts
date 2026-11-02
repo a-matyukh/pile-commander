@@ -4,7 +4,7 @@ import { normalize_workspace_id } from '@/services/workspace/paths'
 import { add_bookmark, is_bookmarked, remove_bookmark } from './bookmarks'
 import { system_folder } from './folder_cover'
 import { folder_basename, root_folder_id } from './folder_header'
-import { explorer_tree, is_legacy_browser_folder, type ExplorerTreeRoot } from './tree'
+import { explorer_tree, type ExplorerTreeRoot } from './tree'
 
 /** Which items the folder header's "⋯" menu shows for the open folder */
 export type FolderMenuItems = {
@@ -41,8 +41,7 @@ export function folder_menu_node(ref: FolderRef): WorkspaceTreeNode {
 /**
  * A drive root (~, browser storage, a cloud top-level folder, a folder
  * outside ~) is neither renamed nor trashed here, as in the tree; nor is a
- * read-only folder. A legacy browser folder keeps its name: the old
- * interface finds it by its path. "Ungroup folder" goes with "Rename".
+ * read-only folder. "Ungroup folder" goes with "Rename".
  * "Show in Finder" is the desktop's local drive only
  */
 export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): FolderMenuItems {
@@ -50,7 +49,7 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 	// macOS's own folders (Downloads…) are neither renamed, moved nor trashed, as in Finder
 	const system = system_folder(ref, context.home ?? null) !== null
 	const editable = context.can_write && !is_root && context.item !== null && !system
-	const rename = editable && !is_legacy_browser_folder(context.item!, folder_menu_node(ref))
+	const rename = editable
 	return {
 		rename,
 		ungroup: rename,
