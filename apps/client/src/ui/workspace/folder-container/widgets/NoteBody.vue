@@ -395,8 +395,24 @@ onUnmounted(() => {
 	height: auto;
 }
 
-.note-preview :deep(:where(p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, strong, em, code, pre)) {
+.note-preview :deep(:where(p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, aside, strong, em, code, pre)) {
 	color: inherit;
+}
+
+/* Notion callouts arrive as <aside>. Translucent so a colored note still shows through. */
+.note-preview :deep(aside) {
+	background: rgb(0 0 0 / 0.06);
+	border-radius: 0.5rem;
+	padding: 0.7rem 0.85rem;
+	margin: 0.75rem 0;
+}
+
+.note-preview :deep(aside > :first-child) {
+	margin-top: 0;
+}
+
+.note-preview :deep(aside > :last-child) {
+	margin-bottom: 0;
 }
 
 .note-preview::selection {

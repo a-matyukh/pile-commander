@@ -38,4 +38,31 @@ describe('parseNoteMarkdown', () => {
 		expect(parseNoteMarkdown('<a href="javascript:alert(1)">x</a>')).not.toContain('javascript:')
 		expect(parseNoteMarkdown('<img src="data:text/html,<script>">')).not.toContain('data:text/html')
 	})
+
+	// Notion exports a callout as an <aside>. The closing tag used to land
+	// inside the last list item, and markdown on the first line was left raw.
+	test('renders a Notion callout as one aside', () => {
+		const html = parseNoteMarkdown(
+			'<aside>\n\nimage title and description\n\nчтобы картинки по умолчанию были с прозрачным фоном либо\nэто можно в настройках указать\n\n- картинке добавить подпись независимо от размера (description)\n</aside>',
+		)
+		expect(html).toContain('<aside>')
+		expect(html).toContain('<li>картинке добавить подпись независимо от размера (description)</li>')
+		expect(html).not.toMatch(/<\/aside><\/li>/)
+		expect(html.indexOf('<aside>')).toBeLessThan(html.indexOf('<li>'))
+		expect(html.indexOf('</aside>')).toBeGreaterThan(html.indexOf('</ul>'))
+	})
+
+	test('parses markdown on the first line of a callout', () => {
+		const html = parseNoteMarkdown('<aside>\n💡 **Note**\n\nbody\n</aside>')
+		expect(html).toContain('<strong>Note</strong>')
+		expect(html).toContain('<p>body</p>')
+		expect(html.startsWith('<aside>')).toBe(true)
+		expect(html.trimEnd().endsWith('</aside>')).toBe(true)
+	})
+
+	test('drops a script inside a callout', () => {
+		const html = parseNoteMarkdown('<aside>\n\n<script>alert(1)</script>\n</aside>')
+		expect(html).not.toContain('<script')
+		expect(html).not.toContain('alert(1)')
+	})
 })

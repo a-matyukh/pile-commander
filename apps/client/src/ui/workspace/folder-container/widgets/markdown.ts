@@ -26,8 +26,33 @@ function fallbackSanitize(html: string): string {
 		)
 }
 
+// Notion writes a callout as <aside>…</aside>. marked keeps that as an HTML
+// block and, when a list sits inside, parks the closing tag in the last <li>,
+// so the preview never becomes one box. A line of markdown straight after
+// <aside> is left raw until the next blank line. Parse the inside on its own
+// and splice the finished element back once the rest of the note is parsed.
+// One level only: a callout does not contain another callout.
+const ASIDE_BLOCK = /<aside\b[^>]*>((?:(?!<\/?aside\b)[\s\S])*)<\/aside>/gi
+
+function liftAsides(text: string): { source: string; blocks: string[] } {
+	const blocks: string[] = []
+	const source = text.replace(ASIDE_BLOCK, (_match, inner: string) => {
+		const html = (marked.parse(inner.trim(), { async: false }) as string).trim()
+		const token = `\uE000${blocks.length}\uE001`
+		blocks.push(`<aside>${html}</aside>`)
+		return `\n\n${token}\n\n`
+	})
+	return { source, blocks }
+}
+
 export function parseNoteMarkdown(text: string): string {
 	if (!text) return ''
-	const html = marked.parse(text, { async: false }) as string
+	const { source, blocks } = liftAsides(text)
+	let html = marked.parse(source, { async: false }) as string
+	if (blocks.length) {
+		html = html.replace(/<p>\uE000(\d+)\uE001<\/p>/g, (_match, index: string) => {
+			return blocks[Number(index)] ?? ''
+		})
+	}
 	return canSanitize ? DOMPurify.sanitize(html) : fallbackSanitize(html)
 }
