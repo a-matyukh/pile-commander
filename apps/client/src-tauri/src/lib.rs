@@ -105,6 +105,26 @@ fn handle_opened_paths(app: &AppHandle, paths: Vec<String>) {
     }
 }
 
+/// wry disables WKWebView bounce on iOS only. On macOS the web view's
+/// NSScrollView (a WKScrollView subclass) still rubber-bands, and the system
+/// background shows above and below the interface. `isKindOfClass` matches
+/// that subclass.
+#[cfg(target_os = "macos")]
+fn pin_scroll_views(view: &objc2_app_kit::NSView) {
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::{NSScrollElasticity, NSScrollView};
+
+    let object: &AnyObject = view;
+    if let Some(scroll) = object.downcast_ref::<NSScrollView>() {
+        scroll.setHorizontalScrollElasticity(NSScrollElasticity::None);
+        scroll.setVerticalScrollElasticity(NSScrollElasticity::None);
+    }
+    let subviews = view.subviews();
+    for index in 0..subviews.count() {
+        pin_scroll_views(&subviews.objectAtIndex(index));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -158,6 +178,16 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 if let Err(error) = mcp_access::clear_stale_socket(&dir) {
                     log::warn!("mcp stale socket: {error}");
+                }
+            }
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(error) = window.with_webview(|webview| {
+                    // SAFETY: `inner` is the live WKWebView, an NSView, for this call.
+                    let view = unsafe { &*webview.inner().cast::<objc2_app_kit::NSView>() };
+                    pin_scroll_views(view);
+                }) {
+                    log::warn!("webview overscroll: {error}");
                 }
             }
             Ok(())

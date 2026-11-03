@@ -37,6 +37,10 @@ html,
 body,
 #app {
   height: 100%;
+  /* The shell scrolls inside its panes. The document must not, or a trackpad
+     pull past the edge shows the window background above and below the UI. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
