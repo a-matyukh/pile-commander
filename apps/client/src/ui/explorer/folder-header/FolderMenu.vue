@@ -38,6 +38,8 @@ const props = defineProps<{
 	can_write: boolean
 	/** The tree row offers "New folder"; the header leaves it to "Add" */
 	new_folder?: boolean
+	/** Set where F2 renames this folder: a row in the list or gallery */
+	rename_shortcut?: string
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -137,7 +139,7 @@ function reveal() {
 		</template>
 		<template v-if="items.rename || items.move_to_trash">
 			<MenuSeparator />
-			<MenuItem v-if="items.rename" icon="tabler:pencil" :label="t('menu.rename')" @select="rename_open = true" />
+			<MenuItem v-if="items.rename" icon="tabler:pencil" :label="t('menu.rename')" :shortcut="rename_shortcut" @select="rename_open = true" />
 			<MenuItem
 				v-if="items.ungroup"
 				icon="tabler:stack-pop"

@@ -1,10 +1,15 @@
+import { useEventListener } from '@vueuse/core'
 import { computed, reactive, ref } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
+import { is_desktop } from '@/isDesktop'
 import { explorer_drives } from '@/store/explorer/drives'
 import { standard_folder_icon, system_folder_name } from '@/store/explorer/folder_cover'
-import { remove_confirm_text } from '@/store/explorer/folder_menu'
+import { entry_can_rename, folder_menu_node, remove_confirm_text } from '@/store/explorer/folder_menu'
+import { explorer_tree } from '@/store/explorer/tree'
+import { tree_item_for } from '@/store/explorer/tree_item'
+import { keys_elsewhere, rename_hotkey_target } from '@/ui/explorer/folder_keys'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { file_glyph, folder_glyph, type ItemGlyph } from './item_glyph'
 
@@ -26,7 +31,11 @@ function after_release(run: () => void) {
  * their icon and name, selecting, the "⋯" menu (also on a right click), and
  * the rename and trash dialogs it opens. List and Gallery share it
  */
-export function use_items(source: () => { workspace: WorkspaceStore; location: FolderRef }) {
+export function use_items(source: () => {
+	workspace: WorkspaceStore
+	location: FolderRef
+	container: { children: readonly FolderContainerWidgetChild[] }
+}) {
 	const home = use_home()
 	const is_folder = (child: FolderContainerWidgetChild) => child.type !== 'file'
 	const child_ref = (child: FolderContainerWidgetChild): FolderRef => ({ ...source().location, folder_id: child.id })
@@ -97,10 +106,44 @@ export function use_items(source: () => { workspace: WorkspaceStore; location: F
 		renaming.value = child
 		rename_open.value = true
 	}
+
+	/** A folder goes through the tree, so a path that changes on disk keeps bookmarks and the open place */
 	function rename(name: string) {
 		const child = renaming.value
-		if (child && name !== child.name) void source().workspace.rename(child.id, name)
+		if (!child || name === child.name) return
+		if (!is_folder(child)) {
+			void source().workspace.rename(child.id, name)
+			return
+		}
+		const ref = child_ref(child)
+		const item = tree_item_for(ref)
+		if (item) void explorer_tree.rename_folder(item, folder_menu_node(ref), name)
+		else void source().workspace.rename(child.id, name)
 	}
+
+	function can_rename(child: FolderContainerWidgetChild): boolean {
+		const { workspace } = source()
+		const ref = child_ref(child)
+		return entry_can_rename(
+			{ type: is_folder(child) ? 'folder' : 'file' },
+			ref,
+			{
+				item: tree_item_for(ref),
+				can_write: workspace.can_write,
+				desktop: is_desktop,
+				home: home.value,
+			},
+		)
+	}
+
+	useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+		if (keys_elsewhere(event) || rename_open.value) return
+		const { workspace, container } = source()
+		const child = rename_hotkey_target(event, workspace.selection, container.children)
+		if (!child || !can_rename(child)) return
+		event.preventDefault()
+		start_rename(child)
+	})
 
 	const trashing = ref<FolderContainerWidgetChild | null>(null)
 	const trash_open = computed({

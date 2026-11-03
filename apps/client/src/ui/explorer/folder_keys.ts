@@ -39,11 +39,55 @@ export function neighbor(items: { el: Element; rect: DOMRect }[], from: DOMRect,
 	return best
 }
 
-/** Typing, a menu or a dialog keeps its keys */
-function keys_elsewhere(event: KeyboardEvent): boolean {
+/**
+ * A menu or dialog that is actually open. The canvas zoom and tool menus stay
+ * mounted while closed (`v-show`, `display: none`); a closed layer must not
+ * keep F2 from renaming the selected item.
+ */
+export function menu_layer_open(el: {
+	getAttribute(name: string): string | null
+	hidden?: boolean
+	style?: { display?: string; visibility?: string }
+}): boolean {
+	if (el.getAttribute('data-state') === 'closed') return false
+	if (el.hidden) return false
+	if (el.style?.display === 'none' || el.style?.visibility === 'hidden') return false
+	return true
+}
+
+/** Typing, or a menu or dialog that is open, keeps its keys */
+export function keys_elsewhere(event: KeyboardEvent): boolean {
 	const target = event.target
-	if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="menu"], [role="dialog"]'))) return true
-	return !!document.querySelector('[role="menu"], [role="dialog"]')
+	if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select'))) return true
+	if (target instanceof Element) {
+		const layer = target.closest('[role="menu"], [role="dialog"]')
+		if (layer && menu_layer_open(layer)) return true
+	}
+	return [...document.querySelectorAll('[role="menu"], [role="dialog"]')].some(menu_layer_open)
+}
+
+type KeyState = {
+	key: string
+	repeat: boolean
+	metaKey: boolean
+	ctrlKey: boolean
+	altKey: boolean
+	shiftKey: boolean
+}
+
+/**
+ * F2 renames the one selected item that is on screen. A repeat, a modifier,
+ * no selection or several selected items leave the key alone. A selected id
+ * the view does not show (a hidden file) does not count.
+ */
+export function rename_hotkey_target<T extends { id: string }>(
+	event: KeyState,
+	selection: readonly string[],
+	children: readonly T[],
+): T | null {
+	if (event.key !== 'F2' || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null
+	const visible = children.filter(child => selection.includes(child.id))
+	return visible.length === 1 ? visible[0]! : null
 }
 
 /**

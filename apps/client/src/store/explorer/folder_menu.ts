@@ -64,6 +64,20 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 }
 
 /**
+ * F2 and the item menus: a file renames wherever the folder is writable.
+ * A folder follows the menu (a drive root, a system folder and a read-only
+ * folder do not).
+ */
+export function entry_can_rename(
+	entry: { type: 'file' | 'folder' },
+	ref: FolderRef,
+	context: FolderMenuContext,
+): boolean {
+	if (entry.type === 'file') return context.can_write
+	return folder_menu_items(ref, context).rename
+}
+
+/**
  * A new folder inside the open one, as the tree row's "New folder": the
  * tree expands the folder so the new one shows up in it
  */

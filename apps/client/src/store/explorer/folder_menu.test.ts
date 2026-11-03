@@ -3,7 +3,7 @@ import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import { BROWSER_ROOT } from './drives'
 import { explorer_bookmarks, explorer_last_opened, is_bookmarked } from './bookmarks'
 import { count_items, t } from '@/i18n'
-import { bulk_remove_confirm_text, create_child_folder, folder_menu_items, folder_menu_node, remove_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
+import { bulk_remove_confirm_text, create_child_folder, entry_can_rename, folder_menu_items, folder_menu_node, remove_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
 import { explorer_language } from './language'
 import { explorer_tree, type ExplorerTreeRoot } from './tree'
 
@@ -114,6 +114,14 @@ describe('folder header menu: items', () => {
 		expect(folder_menu_items(local(`${HOME}/A`), writable(home, false)).show_in_finder).toBe(false)
 		const cloud: FolderRef = { drive_id: 'cloud', root_id: 'ws-1', folder_id: '/34' }
 		expect(folder_menu_items(cloud, writable(cloud_root)).show_in_finder).toBe(false)
+	})
+
+	test('a file renames in a writable folder; a system folder does not', () => {
+		const folder = local(`${HOME}/Downloads`)
+		const context = { ...writable(home), home: HOME }
+		expect(entry_can_rename({ type: 'file' }, folder, context)).toBe(true)
+		expect(entry_can_rename({ type: 'folder' }, folder, context)).toBe(false)
+		expect(entry_can_rename({ type: 'file' }, folder, { ...context, can_write: false })).toBe(false)
 	})
 
 	test('no tree root listed for the folder: no rename and no trash', () => {

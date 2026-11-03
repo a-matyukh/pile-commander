@@ -23,6 +23,7 @@ export function useRenameRemove(
 			{
 				label: 'Rename',
 				disabled,
+				kbds: ['F2'],
 				onSelect: open_rename,
 			},
 			{

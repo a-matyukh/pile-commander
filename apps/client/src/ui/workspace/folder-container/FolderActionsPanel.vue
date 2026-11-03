@@ -6,10 +6,12 @@ import { entry_clipboard } from '@/store/entryClipboard'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import BulkRemoveDialog from '@/ui/workspace/menu/BulkRemoveDialog.vue'
 import RemoveDialog from '@/ui/workspace/menu/RemoveDialog.vue'
+import RenameDialog from '@/ui/workspace/menu/RenameDialog.vue'
 import FolderChromeActionButton from './FolderChromeActionButton.vue'
 import ClipboardBanner from './ClipboardBanner.vue'
 import { useFolderContainerScope } from './useFolderContainerScope'
 import { useDeleteSelectedWidgets } from './useDeleteSelectedWidgets'
+import { useRenameSelected } from './useRenameSelected'
 import { useCombineSelectedWidgets } from './useCombineSelectedWidgets'
 import { canvasToolbarInset } from './canvas/canvasToolbarInset'
 import { t } from '@/i18n'
@@ -47,6 +49,8 @@ const { dialogRef, removeDialogRef, onConfirm, onConfirmOne, openConfirm, showBu
 		children,
 		editingNoteId,
 	})
+
+const { renameDialogRef, entry_type, onConfirm: onRenameConfirm } = useRenameSelected(children)
 
 const { showCombineButton, combineSelected } = useCombineSelectedWidgets({
 	children,
@@ -118,6 +122,12 @@ const panelStyle = computed(() => {
 		<div class="folder-actions-dialog">
 			<RemoveDialog ref="removeDialogRef" name="" type="file" @confirm="onConfirmOne" />
 			<BulkRemoveDialog ref="dialogRef" @confirm="onConfirm" />
+			<RenameDialog
+				ref="renameDialogRef"
+				initial_name=""
+				:entry_type="entry_type"
+				@confirm="onRenameConfirm"
+			/>
 		</div>
 	</div>
 </template>

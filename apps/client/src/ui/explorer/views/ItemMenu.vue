@@ -31,6 +31,7 @@ const preview_label = computed(() => {
 		:name="items.display_name(child)"
 		align="end"
 		:can_write="workspace.can_write"
+		rename_shortcut="F2"
 	>
 		<template #trigger>
 			<span class="idt" :class="{ on: items.menus[child.id] }" :data-tip="t('item.actions')" @click.stop="items.select(child)" @dblclick.stop>

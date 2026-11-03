@@ -27,7 +27,7 @@ const emit = defineEmits<{
 		:label="preview_label"
 		@select="emit('toggle_preview')"
 	/>
-	<MenuItem v-if="can_write" icon="tabler:pencil" :label="t('menu.rename')" @select="emit('rename')" />
+	<MenuItem v-if="can_write" icon="tabler:pencil" :label="t('menu.rename')" shortcut="F2" @select="emit('rename')" />
 	<MenuSeparator />
 	<MenuItem v-if="can_write" icon="tabler:cut" :label="t('menu.cut')" @select="emit('cut')" />
 	<MenuItem icon="tabler:copy" :label="t('menu.copy')" @select="emit('copy')" />
