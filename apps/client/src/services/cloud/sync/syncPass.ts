@@ -16,7 +16,7 @@ import {
 	stroke_hash,
 } from './layoutSync'
 import { read_local_layout, scan_local, type LocalFolderLayout, type LocalLayout, type LocalStat } from './localScan'
-import { base_name, cloud_relative, is_hidden_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
+import { base_name, cloud_relative, is_hidden_relative, is_pile_carry_relative, is_within, join_cloud, join_local, parent_relative, relative_of } from './paths'
 import { partition_local, reconcile, type ReconcileOptions } from './reconcile'
 import { SYNC_STATE_VERSION, type BaseEntry, type BaseFolderLayout, type CloudEntry, type ConnectionBase, type LocalEntry, type SkipReason, type StrokeBase, type SyncAction, type SyncState } from './types'
 
@@ -417,6 +417,12 @@ class PassRun {
 				await this.checkpoint(true)
 				return
 			case 'delete': {
+				if (is_pile_carry_relative(action.relative)) {
+					delete this.state.entries[action.relative]
+					delete this.state.layout[action.relative]
+					this.paths.delete(action.relative)
+					return
+				}
 				const path = this.paths.get(action.relative)
 				if (path) await this.deps.cloud_fm.remove(path)
 				for (const relative of Object.keys(this.state.entries)) {
@@ -444,6 +450,12 @@ class PassRun {
 				await this.checkpoint(true)
 				return
 			case 'local_trash':
+				if (is_pile_carry_relative(action.relative)) {
+					delete this.state.entries[action.relative]
+					delete this.state.layout[action.relative]
+					this.paths.delete(action.relative)
+					return
+				}
 				await this.local_trash(action.relative)
 				await this.checkpoint(true)
 				return

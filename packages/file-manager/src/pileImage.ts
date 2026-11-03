@@ -7,6 +7,8 @@ export type PileImageRole = "cover" | "background"
  * even when the extension stays. Cloud storage will read this same token later.
  */
 const PILE_IMAGE_TOKEN = /^pile:(cover|background)-([0-9a-f]{8})\.webp$/
+/** The file inside `.pile`. Same shape as the token without the `pile:` prefix. */
+const PILE_IMAGE_FILE = /^(cover|background)-([0-9a-f]{8})\.webp$/
 
 export function pile_image_token(role: PileImageRole, hash8: string): string {
 	return `pile:${role}-${hash8}.webp`
@@ -24,6 +26,16 @@ export function is_pile_image_token(value: string): boolean {
 	return PILE_IMAGE_TOKEN.test(value.trim())
 }
 
+/** `cover-<hash8>.webp` / `background-<hash8>.webp`, lowercase hex. Strokes and sync files are not these. */
+export function is_pile_image_file(name: string): boolean {
+	return PILE_IMAGE_FILE.test(name)
+}
+
+export function pile_image_file_role(name: string): PileImageRole | null {
+	const match = PILE_IMAGE_FILE.exec(name)
+	return match ? (match[1] as PileImageRole) : null
+}
+
 /** First 8 hex characters of sha-256. */
 export async function pile_image_hash8(bytes: Uint8Array): Promise<string> {
 	const copy = new Uint8Array(bytes.byteLength)
@@ -33,7 +45,7 @@ export async function pile_image_hash8(bytes: Uint8Array): Promise<string> {
 	return hex.slice(0, 8)
 }
 
-/** Cloud, browser and demo stores have no `.pile` directory. */
+/** Browser and demo stores keep no folder pictures. The cloud store does, in a hidden `.pile` folder. */
 export const pile_images_off = {
 	pile_images: false,
 	async write_pile_image(): Promise<string> {

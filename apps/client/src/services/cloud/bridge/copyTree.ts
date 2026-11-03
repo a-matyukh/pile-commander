@@ -1,5 +1,5 @@
 import type { FileManager, PlanLimitInfo } from '@pile-commander/file-manager'
-import { PlanLimitError } from '@pile-commander/file-manager'
+import { PILE_DIR_NAME, PlanLimitError } from '@pile-commander/file-manager'
 import { read_entry_blob } from '@/services/workspace/entryBytes'
 import type { BridgePreflight } from './preflight'
 import { run_pool } from './pool'
@@ -131,9 +131,16 @@ export async function copy_tree(
 				const names = await names_in(parent_id)
 				const name = relative.slice(relative.lastIndexOf('/') + 1)
 				if (!names.has(name)) {
-					await dst_fm.create_folder(parent_id, name)
-					names.add(name)
-					listings.set(join_relative(dst_root, relative), Promise.resolve(new Set()))
+					try {
+						await dst_fm.create_folder(parent_id, name)
+						names.add(name)
+						listings.set(join_relative(dst_root, relative), Promise.resolve(new Set()))
+					} catch (error) {
+						// `.pile` is omitted from listings, so a resume does not see it
+						// and creates it again. The existing folder is the copy.
+						const message = error instanceof Error ? error.message : String(error)
+						if (name !== PILE_DIR_NAME || !/duplicate key|already exists/i.test(message)) throw error
+					}
 				}
 				folders_done += 1
 				report()

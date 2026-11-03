@@ -225,19 +225,21 @@ interface FileManager {
 	entry_size(id: string): Promise<number>
 
 	/**
-	 * True only for a local folder: cover and background pictures live in
-	 * `.pile`. Cloud, browser and demo stores leave this false.
+	 * True when this store keeps cover and background pictures: a local
+	 * folder's `.pile`, or the cloud folder's hidden `.pile` child. Browser
+	 * and demo stores leave this false.
 	 */
 	readonly pile_images: boolean
 	/**
 	 * Writes webp bytes into `<folder>/.pile/<role>-<hash8>.webp` and returns
 	 * the `pile:` token. The caller then stores that token as the `cover` or
-	 * `background` xattr. Replacing the xattr deletes the previous file.
+	 * `background` xattr. A later xattr write drops every other file of that
+	 * role in this folder's `.pile`.
 	 */
 	write_pile_image(folder_id: string, role: PileImageRole, bytes: Uint8Array): Promise<string>
 	/**
-	 * Reads the file named by a `pile:` token. A folder keeps the file in its
-	 * own `.pile`; a file keeps it in the parent folder's `.pile`.
+	 * Reads the file named by a `pile:` token from the folder's own `.pile`.
+	 * A file has none. A missing file is no picture.
 	 */
 	read_pile_image(entry_id: string, token: string): Promise<Uint8Array | null>
 

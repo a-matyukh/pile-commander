@@ -31,6 +31,8 @@ export type FolderMenuContext = {
 	can_paste?: boolean
 	/** ~ on the desktop: macOS's own folders in it keep their name and place */
 	home?: string | null
+	/** Owner of this cloud workspace. Only an owner may rename it. */
+	owner?: boolean
 }
 
 /** The open folder as a tree node, for the tree's rename and remove */
@@ -39,9 +41,12 @@ export function folder_menu_node(ref: FolderRef): WorkspaceTreeNode {
 }
 
 /**
- * A drive root (~, browser storage, a cloud top-level folder, a folder
- * outside ~) is neither renamed nor trashed here, as in the tree; nor is a
- * read-only folder. "Ungroup folder" goes with "Rename".
+ * A drive root (~, browser storage, a folder outside ~) is neither renamed
+ * nor trashed here, as in the tree; nor is a read-only folder. A cloud
+ * workspace root is the exception its owner may rename: the name is the
+ * workspace's, and icon and cover are the root entry's. It is not cut,
+ * copied, duplicated or trashed (deleting a workspace is not the trash).
+ * "Ungroup folder" goes with a folder that can be renamed in place.
  * "Show in Finder" is the desktop's local drive only
  */
 export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): FolderMenuItems {
@@ -49,16 +54,16 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 	// macOS's own folders (Downloads…) are neither renamed, moved nor trashed, as in Finder
 	const system = system_folder(ref, context.home ?? null) !== null
 	const editable = context.can_write && !is_root && context.item !== null && !system
-	const rename = editable
+	const owns_cloud_root = ref.drive_id === 'cloud' && is_root && context.owner === true && context.can_write && context.item !== null
 	return {
-		rename,
-		ungroup: rename,
+		rename: editable || owns_cloud_root,
+		ungroup: editable,
 		bookmarked: is_bookmarked(ref),
 		show_in_finder: context.desktop && ref.drive_id === 'local',
 		move_to_trash: editable,
 		copy: !is_root && context.item !== null,
-		cut: rename,
-		duplicate: rename,
+		cut: editable,
+		duplicate: editable,
 		paste: context.can_write && context.item !== null && !!context.can_paste,
 	}
 }
@@ -66,7 +71,7 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 /**
  * F2 and the item menus: a file renames wherever the folder is writable.
  * A folder follows the menu (a drive root, a system folder and a read-only
- * folder do not).
+ * folder do not, except a cloud workspace its owner renames).
  */
 export function entry_can_rename(
 	entry: { type: 'file' | 'folder' },

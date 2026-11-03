@@ -33,8 +33,10 @@ export {
 	type DemoContentEntry,
 } from './demo'
 export {
+	is_pile_image_file,
 	is_pile_image_token,
 	parse_pile_image_token,
+	pile_image_file_role,
 	pile_image_hash8,
 	pile_image_token,
 	type PileImageRole,

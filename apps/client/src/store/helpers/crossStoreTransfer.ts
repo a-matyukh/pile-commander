@@ -1,4 +1,4 @@
-import { is_pile_image_token, type EntryWithXattrs, type FileManager, type FolderChild } from '@pile-commander/file-manager'
+import { is_pile_image_token, parse_pile_image_token, PILE_DIR_NAME, type EntryWithXattrs, type FileManager, type FolderChild } from '@pile-commander/file-manager'
 import type { ImportProgress, WorkspaceStore } from '@/domain/Store'
 import {
 	apply_entry_created,
@@ -290,15 +290,21 @@ async function copy_recursive(
 	}
 
 	const xattrs = await source_fm.list_xattrs(source_id)
-	// A local picture lives in `.pile` and does not travel to a store that
-	// cannot keep the file. The token is dropped so the cloud copy has no cover.
+	// A picture file has to land before its token. A store that cannot keep
+	// the file gets no token, so the copy is not left pointing at nothing.
+	const carry_pile_images = source_fm.pile_images && target_fm.pile_images
 	const drop_pile_images = source_fm.pile_images && !target_fm.pile_images
 	for (const attr of xattrs) {
-		if (
-			drop_pile_images
-			&& (attr.name === 'cover' || attr.name === 'background')
-			&& is_pile_image_token(attr.value)
-		) continue
+		const pile_attr = (attr.name === 'cover' || attr.name === 'background') && is_pile_image_token(attr.value)
+		if (pile_attr && carry_pile_images) {
+			const bytes = await source_fm.read_pile_image(source_id, attr.value)
+			if (bytes && parse_pile_image_token(attr.value)?.role === attr.name) {
+				const token = await target_fm.write_pile_image(child.id, attr.name, bytes)
+				await target_fm.set_xattr(child.id, attr.name, token)
+			}
+			continue
+		}
+		if (pile_attr && drop_pile_images) continue
 		await target_fm.set_xattr(child.id, attr.name, attr.value)
 	}
 
@@ -315,6 +321,8 @@ async function copy_recursive(
 		}
 		const children = await source_fm.FolderChildren(source_id)
 		for (const sub of children) {
+			// Pictures travel with the cover token, ahead of it. The rest of `.pile` stays.
+			if (sub.name === PILE_DIR_NAME) continue
 			// fresh folder: source children names are already unique inside it
 			await copy_recursive(source_fm, target_fm, sub.id, child.id, sub.name, sub.type, on_bytes, id_map)
 		}

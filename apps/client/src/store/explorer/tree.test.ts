@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createFakeFileManager } from '@pile-commander/file-manager'
+import cloud from '@/store/cloud'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
@@ -237,6 +238,30 @@ describe('explorer tree', () => {
 			{ drive_id: 'local', root_id: '/home', folder_id: '/home/New' },
 		)
 		workspace.dispose()
+	})
+
+	test('renaming a cloud workspace root calls cloud.rename and updates the tree', async () => {
+		const rename = vi.spyOn(cloud, 'rename').mockImplementation(async () => {})
+		cloud.last_error = null
+		const on_error = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			on_error,
+		})
+		const drive: Drive = {
+			id: 'cloud', kind: 'cloud', name: 'Cloud', icon: '', trash: 'page',
+			roots: async () => [{ id: 'ws-1', name: 'Old', can_write: true }],
+			store_for: async () => { throw new Error('the root entry is not renamed') },
+		}
+		await tree.show_drive(drive, null)
+		const root = tree.roots[0]!
+		await tree.rename_folder(root, { id: '/', name: 'Old', type: 'folder' }, 'New')
+		expect(rename).toHaveBeenCalledWith('ws-1', 'New')
+		expect(root.root.name).toBe('New')
+		expect(on_error).not.toHaveBeenCalled()
+		rename.mockRestore()
 	})
 
 	test('renaming a top-level browser folder takes its bookmark along', async () => {

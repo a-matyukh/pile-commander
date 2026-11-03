@@ -20,7 +20,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { basename, dirname, join } from "@tauri-apps/api/path"
 import * as xattrs from "@pile-commander/tauri-plugin-xattrs"
 import { PILE_DIR_NAME } from "./pile-attrs"
-import { parse_pile_image_token, pile_image_hash8, pile_image_token, type PileImageRole } from "./pileImage"
+import { is_pile_image_file, parse_pile_image_token, pile_image_file_role, pile_image_hash8, pile_image_token, type PileImageRole } from "./pileImage"
 import { reprefix_path, resolve_folder_connections } from "./connectionPaths"
 import type { CreateFolderOptions, CreateTextFileOptions, FileManager, FolderChild, FolderConnection, FolderStroke, Unwatch, UploadProgressCallback, WatchEvent, WatchEventKind } from "./types"
 
@@ -131,15 +131,6 @@ export type LocalFileManagerOptions = {
 
 const PILE_IMAGE_ATTRS = new Set(["cover", "background"])
 
-async function previous_pile_value(id: string, name: string): Promise<string | null> {
-	if (!PILE_IMAGE_ATTRS.has(name)) return null
-	try {
-		return await xattrs.get_xattr(id, name)
-	} catch {
-		return null
-	}
-}
-
 /** A folder's picture lives in its own `.pile`. A file has none: the parent's `.pile` is shared, so one file's picture would erase another's. */
 async function pile_image_folder(entry_id: string): Promise<string | null> {
 	try {
@@ -151,20 +142,41 @@ async function pile_image_folder(entry_id: string): Promise<string | null> {
 }
 
 /**
- * After the new xattr value is stored, drop the file the previous token
- * named, and only in this folder's `.pile`. The same hash in another
- * folder is that folder's picture.
+ * After cover or background is stored, drop every file of that role in this
+ * folder's `.pile` except the one the xattr names now. Re-reads the xattr,
+ * so a write that lost the race does not delete the winner's file. Another
+ * folder's copy of the same hash is its own file and is not touched.
  */
-async function forget_previous_pile_image(id: string, name: string, previous: string | null, next: string) {
-	if (!previous || previous === next || !PILE_IMAGE_ATTRS.has(name)) return
-	const parsed = parse_pile_image_token(previous)
-	if (!parsed || parsed.role !== name) return
+async function sweep_pile_images(id: string, names: Iterable<string>) {
+	const roles = [...names].filter((name) => PILE_IMAGE_ATTRS.has(name))
+	if (roles.length === 0) return
 	const folder = await pile_image_folder(id)
 	if (!folder) return
+	const pile_dir = await join(folder, PILE_DIR_NAME)
+	let entries: DirEntry[]
 	try {
-		await remove(await join(folder, PILE_DIR_NAME, parsed.file))
+		entries = await readDir(pile_dir)
 	} catch {
-		// already gone
+		return
+	}
+	for (const role of roles) {
+		let current: string | null = null
+		try {
+			current = await xattrs.get_xattr(id, role)
+		} catch {
+			current = null
+		}
+		const parsed = current ? parse_pile_image_token(current) : null
+		const keep = parsed?.role === role ? parsed.file : null
+		for (const entry of entries) {
+			if (entry.isDirectory || !is_pile_image_file(entry.name) || pile_image_file_role(entry.name) !== role) continue
+			if (entry.name === keep) continue
+			try {
+				await remove(await join(pile_dir, entry.name))
+			} catch {
+				// already gone
+			}
+		}
 	}
 }
 
@@ -299,27 +311,21 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 			}
 		},
 		async set_xattr(id, name, value) {
-			const previous = await previous_pile_value(id, name)
 			await xattrs.set_xattr(id, name, value)
-			await forget_previous_pile_image(id, name, previous, value)
+			await sweep_pile_images(id, [name])
 		},
 		async set_xattrs(items) {
 			const missing: string[] = []
 			for (const item of items) {
 				try {
-					const previous = new Map<string, string | null>()
-					for (const name of Object.keys(item.xattrs)) {
-						if (PILE_IMAGE_ATTRS.has(name)) previous.set(name, await previous_pile_value(item.id, name))
-					}
 					for (const [name, value] of Object.entries(item.xattrs)) {
 						await xattrs.set_xattr(item.id, name, value)
 					}
-					for (const [name, value] of Object.entries(item.xattrs)) {
-						await forget_previous_pile_image(item.id, name, previous.get(name) ?? null, value)
-					}
 				} catch {
 					missing.push(item.id)
+					continue
 				}
+				await sweep_pile_images(item.id, Object.keys(item.xattrs))
 			}
 			return { missing }
 		},
@@ -332,6 +338,7 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 		},
 		async remove_xattr(id, name) {
 			await xattrs.remove_xattr(id, name)
+			await sweep_pile_images(id, [name])
 		},
 		async list_xattrs(id) {
 			return xattrs.list_xattrs(id)

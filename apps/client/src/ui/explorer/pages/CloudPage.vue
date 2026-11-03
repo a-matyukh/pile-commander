@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { t } from '@/i18n'
 import cloud from '@/store/cloud'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_tree } from '@/store/explorer/tree'
+import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
 import { folder_glyph } from '@/ui/explorer/views/item_glyph'
 import ItemTile from '@/ui/explorer/views/ItemTile.vue'
+import { after_pointer_release } from '@/ui/explorer/views/use_items'
 import Button from '@/ui/kit/Button.vue'
+import { cloud_tile_context_menu, type CloudTileMenu } from './cloudTileMenu'
 
 /**
  * The cloud as a folder, as ~ is the home folder: its top-level folders,
@@ -34,6 +37,16 @@ function cover_of(item: (typeof roots.value)[number]) {
 
 function open(item: (typeof roots.value)[number]) {
 	void explorer_navigation.open_folder({ drive_id: 'cloud', root_id: item.root.id, folder_id: '/' })
+}
+
+/** The tree row's menu, opened at the pointer once the button is up */
+const tile_menu = ref<CloudTileMenu | null>(null)
+const tile_menu_open = ref(false)
+
+function on_tile_menu(item: (typeof roots.value)[number], event: MouseEvent) {
+	tile_menu.value = cloud_tile_context_menu(event, item.root, cloud.role_of(item.root.id))
+	tile_menu_open.value = false
+	after_pointer_release(() => { void nextTick(() => { tile_menu_open.value = true }) })
 }
 
 const creating = ref(false)
@@ -85,7 +98,21 @@ async function create() {
 					:data-tip="t('cloud_page.open_hint')"
 					@dblclick="open(item)"
 					@keydown.enter.prevent="open(item)"
+					@contextmenu.prevent="on_tile_menu(item, $event)"
 				/>
+				<FolderMenu
+					v-if="tile_menu"
+					v-model:open="tile_menu_open"
+					:folder="tile_menu.folder"
+					:name="tile_menu.name"
+					align="start"
+					:can_write="tile_menu.can_write"
+					:new_folder="tile_menu.new_folder"
+				>
+					<template #trigger>
+						<span class="at" :style="{ left: tile_menu.x + 'px', top: tile_menu.y + 'px' }" />
+					</template>
+				</FolderMenu>
 			</div>
 		</template>
 	</div>
@@ -130,6 +157,11 @@ async function create() {
 	flex-wrap: wrap;
 	align-items: flex-end;
 	gap: 14px;
+}
+.at {
+	position: fixed;
+	width: 0;
+	height: 0;
 }
 .spin {
 	animation: spin 1s linear infinite;

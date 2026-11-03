@@ -116,10 +116,17 @@ writes' own echoes wake finds nothing to do.
 - **Ownership.** A file whose `root_path`, `device_id`, `user_id` or
   `workspace_id` do not match the link is ignored. A folder copied elsewhere
   or to another device carries the file but is not linked.
-- **`.pile` is never synced.** The watcher filter, listings, the bridge and
-  the `.pile` export (`workspace_pack.rs`) all skip it.
+- **`.pile` sidecars stay put, except new cover and background files.**
+  `strokes.json`, `connections.json` and `sync.json` are never synced.
+  A new `cover-<hash8>.webp` or `background-<hash8>.webp` is uploaded and
+  downloaded like any other file, and the export includes it. Removing one
+  is not synced: it is dropped from the base and is not put in the cloud
+  trash or the system trash. After the folder's cover attribute is merged,
+  the file manager deletes the spare file of that role itself. The watcher
+  still ignores the rest of `.pile`.
 - **Names starting with a dot are never synced** (`.git`, `.env`, `.vscode`,
-  and everything inside them). Show hidden files does not change this.
+  and everything inside them). The `.pile` folder and its cover files, above,
+  are the exception. Show hidden files does not change this.
   `.DS_Store`, `.localized`, AppleDouble `._*` files and `Thumbs.db` are OS
   litter: they are skipped too, and they do not protect a folder from deletion.
   - A folder that still holds a real hidden name (not OS litter) is not moved

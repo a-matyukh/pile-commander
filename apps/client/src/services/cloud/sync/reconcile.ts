@@ -1,4 +1,4 @@
-import { base_name, cloud_relative, depth, is_hidden_relative, is_local_name, is_within, parent_relative } from './paths'
+import { base_name, cloud_relative, depth, is_hidden_relative, is_local_name, is_pile_carry_relative, is_within, parent_relative } from './paths'
 import type { BaseEntry, CloudEntry, LocalEntry, SkipReason, SyncAction, SyncPlan } from './types'
 
 export type ReconcileOptions = {
@@ -279,11 +279,11 @@ export function reconcile(
 		if (is_blocked(relative)) continue
 		let known = base.get(relative)
 		if (trashed_in_cloud.some(folder => is_within(relative, folder))) {
-			if (known?.kind === 'file') deletes += 1
+			if (known?.kind === 'file' && !is_pile_carry_relative(relative)) deletes += 1
 			continue
 		}
 		if (trashed_here.some(folder => is_within(relative, folder))) {
-			if (known?.kind === 'file') local_deletes += 1
+			if (known?.kind === 'file' && !is_pile_carry_relative(relative)) local_deletes += 1
 			continue
 		}
 		const parent = parent_relative(relative)
@@ -328,12 +328,18 @@ export function reconcile(
 					} else if (there && !linked.has(there.id)) {
 						// another file took the name in the cloud
 						content.push({ kind: 'download', relative, cloud_id: there.id })
+					} else if (is_pile_carry_relative(relative)) {
+						// A cover file leaving one side is not a delete. Self-cleanup
+						// drops the spare file after the xattr merge.
+						removals.push({ kind: 'forget', relative })
 					} else {
 						removals.push({ kind: 'local_trash', relative })
 						local_deletes += 1
 					}
 				} else if (there?.kind === 'folder' && !linked.has(there.id)) {
 					structure.push({ kind: 'adopt', relative, cloud_id: there.id })
+				} else if (is_pile_carry_relative(relative)) {
+					removals.push({ kind: 'forget', relative })
 				} else if (removable_here(relative)) {
 					removals.push({ kind: 'local_trash', relative })
 					trashed_here.push(relative)
@@ -352,10 +358,14 @@ export function reconcile(
 				if (known.kind === 'file') {
 					if (is_content_change(row, known)) {
 						content.push({ kind: 'download', relative, cloud_id: row.id })
+					} else if (is_pile_carry_relative(relative)) {
+						removals.push({ kind: 'forget', relative })
 					} else {
 						removals.push({ kind: 'delete', relative, cloud_id: row.id })
 						deletes += 1
 					}
+				} else if (is_pile_carry_relative(relative)) {
+					removals.push({ kind: 'forget', relative })
 				} else if (deletable_in_cloud(row)) {
 					removals.push({ kind: 'delete', relative, cloud_id: row.id })
 					trashed_in_cloud.push(relative)

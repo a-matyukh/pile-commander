@@ -110,6 +110,30 @@ describe('bridge preflight', () => {
 		expect(dst.has('/.big.bin')).toBe(false)
 	})
 
+	test('copies a cover file and leaves the rest of .pile behind', async () => {
+		const src = await make_source()
+		src.seed_folder('/ws/board/.pile')
+		src.seed_file('/ws/board/.pile/cover-abcdef01.webp', 'webp')
+		src.seed_file('/ws/board/.pile/strokes.json', '{}')
+		src.set_xattr('/ws/board', 'cover', 'pile:cover-abcdef01.webp')
+
+		const preflight = await preflight_tree(src.fm, '/ws', LIMITS)
+		expect(preflight.folders).toContain('board/.pile')
+		expect(preflight.files.map(file => file.relative)).toContain('board/.pile/cover-abcdef01.webp')
+		expect(preflight.files.map(file => file.name)).not.toContain('strokes.json')
+
+		const dst = make_dest()
+		const result = await run_bridge(make_deps(dst).deps, await make_run(src, { preflight }))
+		expect(result.kind).toBe('done')
+		expect(dst.has('/board/.pile/cover-abcdef01.webp')).toBe(true)
+		expect(dst.has('/board/.pile/strokes.json')).toBe(false)
+		const calls = dst.calls.map(call => call.method)
+		const uploaded = calls.indexOf('upload_file')
+		const attrs = calls.lastIndexOf('set_xattrs')
+		expect(uploaded).toBeGreaterThanOrEqual(0)
+		expect(attrs).toBeGreaterThan(uploaded)
+	})
+
 	test('measures the tree, skipping sidecars and OS litter', async () => {
 		const src = await make_source()
 

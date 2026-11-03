@@ -447,6 +447,15 @@ export function create_explorer_tree(
 
 	async function rename_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode, name: string) {
 		try {
+			// A cloud root is the workspace. Its name lives on workspaces, and
+			// only the owner may change it. The tree, the header and bookmarks
+			// read that name; the root entry stays '/'.
+			if (item.drive.kind === 'cloud' && node.id === tree_root_folder_id(item)) {
+				await cloud.rename(item.root.id, name)
+				if (cloud.last_error) throw new Error(cloud.last_error)
+				item.root.name = name
+				return
+			}
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
 			await workspace.rename(node.id, name)

@@ -80,7 +80,8 @@ function pick_start() {
 		<p class="hn">{{ picture ? t('style.cover_hint') : t('style.color_hint') }}</p>
 	</form>
 	<MenuItem v-if="choose" icon="tabler:photo-plus" :label="t('style.choose_picture')" @select="emit('choose')" />
-	<MenuItem v-if="current()" icon="tabler:arrow-back-up" :label="reset_label" @select="set('')" />
+	<MenuItem v-if="choose && current()" icon="tabler:photo-off" :label="t('style.remove_cover')" @select="set('')" />
+	<MenuItem v-if="!choose && current()" icon="tabler:arrow-back-up" :label="reset_label" @select="set('')" />
 </template>
 
 <style scoped>

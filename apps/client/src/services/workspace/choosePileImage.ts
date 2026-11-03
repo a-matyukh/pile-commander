@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { readFile, stat } from '@tauri-apps/plugin-fs'
 import type { PileImageRole } from '@pile-commander/file-manager'
 import type { WorkspaceStore } from '@/domain/Store'
+import { is_desktop } from '@/isDesktop'
 import { t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
 
@@ -49,8 +50,44 @@ export async function encode_pile_image(bytes: Uint8Array, mime: string): Promis
 	}
 }
 
+type PickedImage = { bytes: Uint8Array; mime: string; size: number }
+
+async function pick_desktop_image(): Promise<PickedImage | null> {
+	const picked = await open({ multiple: false, filters: [IMAGE_FILTER] })
+	const path = Array.isArray(picked) ? picked[0] : picked
+	if (!path) return null
+	const info = await stat(path)
+	return { bytes: await readFile(path), mime: mime_of(path), size: info.size }
+}
+
+/** The browser's own file input. The desktop app keeps the system dialog. */
+function pick_web_image(): Promise<PickedImage | null> {
+	return new Promise(resolve => {
+		const input = document.createElement('input')
+		input.type = 'file'
+		input.accept = 'image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif'
+		let settled = false
+		const finish = (file: File | null) => {
+			if (settled) return
+			settled = true
+			if (!file) { resolve(null); return }
+			void file.arrayBuffer().then(buffer => {
+				resolve({ bytes: new Uint8Array(buffer), mime: file.type || mime_of(file.name), size: file.size })
+			}, () => resolve(null))
+		}
+		input.addEventListener('change', () => finish(input.files?.[0] ?? null))
+		input.addEventListener('cancel', () => finish(null))
+		// A cancel does not always emit `cancel`. Focus returns either way,
+		// and a chosen file has already fired `change` by then.
+		window.addEventListener('focus', () => {
+			setTimeout(() => finish(input.files?.[0] ?? null), 500)
+		}, { once: true })
+		input.click()
+	})
+}
+
 /**
- * System file dialog, then a resized webp in the folder's `.pile`.
+ * A file dialog, then a resized webp in the folder's `.pile`.
  * Returns the token to store, or null when the person cancels or the file is unusable.
  */
 export async function choose_pile_image(
@@ -59,16 +96,13 @@ export async function choose_pile_image(
 	role: PileImageRole,
 ): Promise<string | null> {
 	try {
-		const picked = await open({ multiple: false, filters: [IMAGE_FILTER] })
-		const path = Array.isArray(picked) ? picked[0] : picked
-		if (!path) return null
-		const info = await stat(path)
-		if (info.size > PILE_IMAGE_INPUT_LIMIT) {
+		const picked = is_desktop ? await pick_desktop_image() : await pick_web_image()
+		if (!picked) return null
+		if (picked.size > PILE_IMAGE_INPUT_LIMIT) {
 			report_error(store, new Error(t('style.picture_too_large')))
 			return null
 		}
-		const raw = await readFile(path)
-		const webp = await encode_pile_image(raw, mime_of(path))
+		const webp = await encode_pile_image(picked.bytes, picked.mime)
 		return await store.file_manager.write_pile_image(folder_id, role, webp)
 	} catch (error) {
 		report_error(store, error)

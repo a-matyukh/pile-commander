@@ -5,12 +5,14 @@ import { makeZip } from 'client-zip'
 import {
 	PILE_ATTRS_FILE,
 	PILE_DIR_NAME,
+	is_pile_image_file,
 	applyPileAttrs,
 	collectPileAttrs,
 	createFileManager,
 	parsePileAttrsManifest,
 	serializePileAttrsManifest,
 	type FileManager,
+	type FolderChild,
 } from '@pile-commander/file-manager'
 import type { ImportProgress } from '@/domain/Store'
 import { run_pool } from '@/services/cloud/bridge/pool'
@@ -78,18 +80,50 @@ export type PileTree = {
 	files: PileTreeFile[]
 }
 
+function pile_folder_id(folder_id: string): string {
+	if (folder_id === '/') return `/${PILE_DIR_NAME}`
+	const sep = folder_id.includes('\\') ? '\\' : '/'
+	const base = folder_id.endsWith(sep) ? folder_id.slice(0, -sep.length) : folder_id
+	return `${base}${sep}${PILE_DIR_NAME}`
+}
+
+/** Cover and background files inside `.pile`. Strokes and other sidecars stay out. */
+async function pile_image_files(fm: FileManager, pile_id: string): Promise<FolderChild[]> {
+	try {
+		const children = await fm.FolderChildren(pile_id)
+		return children.filter(child => child.type === 'file' && is_pile_image_file(child.name))
+	} catch {
+		return []
+	}
+}
+
+function push_pile_images(tree: PileTree, segments: string[], images: readonly FolderChild[]): void {
+	if (images.length === 0) return
+	tree.folders.push(segments)
+	for (const image of images) {
+		tree.files.push({ id: image.id, name: image.name, segments: [...segments, image.name] })
+	}
+}
+
 /**
- * Walks a cloud workspace from its root. `.pile` entries are left out at any
- * depth: the archive carries its own `.pile/attrs.json`, and the desktop zip
- * skips such folders anyway.
+ * Walks a cloud workspace from its root. `.pile` keeps only cover and
+ * background files, so a desktop or web export can unpack them next to the
+ * archive's own `attrs.json`. Listings hide `.pile`, so it is also looked up
+ * by path. Strokes and other sidecars stay out.
  */
 export async function list_pile_tree(fm: FileManager): Promise<PileTree> {
 	const tree: PileTree = { folders: [], files: [] }
 	const queue: { id: string; segments: string[] }[] = [{ id: '/', segments: [] }]
 	for (let index = 0; index < queue.length; index++) {
 		const folder = queue[index]!
+		let saw_pile = false
 		for (const child of await fm.FolderChildren(folder.id)) {
-			if (child.name === PILE_DIR_NAME) continue
+			if (child.name === PILE_DIR_NAME) {
+				if (child.type !== 'folder') continue
+				saw_pile = true
+				push_pile_images(tree, [...folder.segments, child.name], await pile_image_files(fm, child.id))
+				continue
+			}
 			const segments = [...folder.segments, child.name]
 			if (child.type === 'folder') {
 				tree.folders.push(segments)
@@ -97,6 +131,10 @@ export async function list_pile_tree(fm: FileManager): Promise<PileTree> {
 			} else {
 				tree.files.push({ id: child.id, name: child.name, segments })
 			}
+		}
+		if (!saw_pile && fm.pile_images) {
+			const pile_id = pile_folder_id(folder.id)
+			push_pile_images(tree, [...folder.segments, PILE_DIR_NAME], await pile_image_files(fm, pile_id))
 		}
 	}
 	return tree

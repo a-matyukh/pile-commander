@@ -1,5 +1,5 @@
-import type { FileManager } from '@pile-commander/file-manager'
-import { MAX_TEXT_CONTENT_BYTES, PILE_DIR_NAME, is_text_mime } from '@pile-commander/file-manager'
+import type { FileManager, FolderChild } from '@pile-commander/file-manager'
+import { is_pile_image_file, MAX_TEXT_CONTENT_BYTES, PILE_DIR_NAME, is_text_mime } from '@pile-commander/file-manager'
 import { get_file_extension, get_media_kind } from '@/services/board/media'
 import { is_hidden_entry_name, is_os_junk_name } from '@/services/workspace/hiddenName'
 import { upload_mime } from '@/services/workspace/entryBytes'
@@ -98,10 +98,27 @@ export function selected_bytes(files: readonly BridgeFile[], exclude: ReadonlySe
 	return bytes
 }
 
+function pile_folder_id(folder_id: string): string {
+	if (folder_id === '/') return `/${PILE_DIR_NAME}`
+	const sep = folder_id.includes('\\') ? '\\' : '/'
+	const base = folder_id.endsWith(sep) ? folder_id.slice(0, -sep.length) : folder_id
+	return `${base}${sep}${PILE_DIR_NAME}`
+}
+
+/** Cover and background files inside `.pile`. Strokes and the sync state stay out. */
+async function pile_image_files(fm: FileManager, pile_id: string): Promise<FolderChild[]> {
+	try {
+		const children = await fm.FolderChildren(pile_id)
+		return children.filter(child => child.type === 'file' && is_pile_image_file(child.name))
+	} catch {
+		return []
+	}
+}
+
 /**
  * Walks a local workspace and measures what a cloud copy takes: sizes, kinds,
  * the files the plan or the cloud refuses, and a default set to leave out.
- * `.pile` sidecars and OS litter are skipped.
+ * OS litter is skipped. `.pile` contributes its cover and background files only.
  */
 export async function preflight_tree(
 	fm: FileManager,
@@ -118,8 +135,25 @@ export async function preflight_tree(
 	]
 	for (let index = 0; index < queue.length; index++) {
 		const folder = queue[index]!
+		let saw_pile = false
 		for (const child of await fm.FolderChildren(folder.id)) {
-			if (child.name === PILE_DIR_NAME || is_os_junk_name(child.name) || is_hidden_entry_name(child.name)) continue
+			if (is_os_junk_name(child.name) || (is_hidden_entry_name(child.name) && child.name !== PILE_DIR_NAME)) continue
+			if (child.name === PILE_DIR_NAME) {
+				if (child.type !== 'folder') continue
+				saw_pile = true
+				const relative = folder.relative ? `${folder.relative}/${child.name}` : child.name
+				const bad_name = folder.bad_name || !is_cloud_name(child.name)
+				if (!bad_name) folders.push(relative)
+				for (const image of await pile_image_files(fm, child.id)) {
+					found.push({
+						id: image.id,
+						relative: `${relative}/${image.name}`,
+						name: image.name,
+						bad_name,
+					})
+				}
+				continue
+			}
 			const relative = folder.relative ? `${folder.relative}/${child.name}` : child.name
 			const bad_name = folder.bad_name || !is_cloud_name(child.name)
 			if (child.type === 'folder') {
@@ -127,6 +161,23 @@ export async function preflight_tree(
 				queue.push({ id: child.id, relative, bad_name })
 			} else {
 				found.push({ id: child.id, relative, name: child.name, bad_name })
+			}
+		}
+		// Listings hide `.pile` itself. Look it up by path when this store keeps folder pictures.
+		if (!saw_pile && fm.pile_images) {
+			const pile_id = pile_folder_id(folder.id)
+			const images = await pile_image_files(fm, pile_id)
+			if (images.length > 0) {
+				const relative = folder.relative ? `${folder.relative}/${PILE_DIR_NAME}` : PILE_DIR_NAME
+				if (!folder.bad_name) folders.push(relative)
+				for (const image of images) {
+					found.push({
+						id: image.id,
+						relative: `${relative}/${image.name}`,
+						name: image.name,
+						bad_name: folder.bad_name,
+					})
+				}
 			}
 		}
 	}

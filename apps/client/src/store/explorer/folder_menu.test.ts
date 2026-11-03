@@ -82,6 +82,24 @@ describe('folder header menu: items', () => {
 		})
 	})
 
+	test('the owner of a cloud workspace may rename it, and not cut, copy or trash it', () => {
+		const cloud_top: FolderRef = { drive_id: 'cloud', root_id: 'ws-1', folder_id: '/' }
+		// Rename is what shows the icon and cover. The rest of a root stays off.
+		expect(folder_menu_items(cloud_top, { ...writable(cloud_root), owner: true })).toEqual({
+			rename: true,
+			ungroup: false,
+			bookmarked: false,
+			show_in_finder: false,
+			move_to_trash: false,
+			copy: false,
+			cut: false,
+			duplicate: false,
+			paste: false,
+		})
+		expect(folder_menu_items(cloud_top, { ...writable(cloud_root), owner: false }).rename).toBe(false)
+		expect(folder_menu_items(cloud_top, writable(cloud_root)).rename).toBe(false)
+	})
+
 	test('the browser drive root and a cloud top-level folder are roots too', () => {
 		const browser_root: FolderRef = { drive_id: 'browser', root_id: BROWSER_ROOT, folder_id: BROWSER_ROOT }
 		const cloud_top: FolderRef = { drive_id: 'cloud', root_id: 'ws-1', folder_id: '/' }

@@ -316,3 +316,278 @@ describe("workspace listings", () => {
 		expect(edges.calls[0]).toMatchObject({ table: "folder_connections", filters: ["workspace_id=ws-1"], order: "record_id" })
 	})
 })
+
+describe("cloud pile images", () => {
+	type Row = {
+		id: string
+		workspace_id: string
+		parent_id: string | null
+		name: string
+		kind: "folder" | "file"
+		mime: string | null
+		path: string
+		xattrs: Record<string, string>
+		storage_key: string | null
+		size_bytes: number | null
+		deleted_at: string | null
+		updated_by: null
+		updated_by_client: null
+		updated_at: string
+		content_modified_at: null
+	}
+
+	function blank(partial: Partial<Row> & Pick<Row, "id" | "parent_id" | "name" | "kind" | "path">): Row {
+		return {
+			workspace_id: "ws",
+			mime: null,
+			xattrs: {},
+			storage_key: null,
+			size_bytes: null,
+			deleted_at: null,
+			updated_by: null,
+			updated_by_client: null,
+			updated_at: "",
+			content_modified_at: null,
+			...partial,
+		}
+	}
+
+	function world(options?: { purge_error?: string }) {
+		const rows = new Map<string, Row>()
+		rows.set("root", blank({ id: "root", parent_id: null, name: "", kind: "folder", path: "/" }))
+		const puts: string[] = []
+		const live = (path: string) => [...rows.values()].find(row => row.path === path && row.deleted_at === null) ?? null
+
+		const client = {
+			from() {
+				const filters: Record<string, string> = {}
+				const builder = {
+					select: () => builder,
+					eq: (column: string, value: string) => { filters[column] = value; return builder },
+					is: () => builder,
+					insert(patch: Row) {
+						return {
+							select: () => ({
+								single: async () => {
+									const parent = [...rows.values()].find(row => row.id === patch.parent_id)
+									const taken = [...rows.values()].some(row =>
+										row.parent_id === patch.parent_id && row.name === patch.name && row.deleted_at === null)
+									if (taken) return { data: null, error: { code: "23505", message: 'duplicate key value violates unique constraint "entries_sibling_name_unique"' } }
+									const row = blank({
+										...patch,
+										path: parent && parent.path !== "/" ? `${parent.path}/${patch.name}` : `/${patch.name}`,
+									})
+									rows.set(row.id, row)
+									return { data: row, error: null }
+								},
+							}),
+						}
+					},
+					update(patch: Partial<Row>) {
+						return {
+							eq: async (_column: string, value: string) => {
+								const row = [...rows.values()].find(item => item.id === value)
+								if (row) Object.assign(row, patch)
+								return { error: null }
+							},
+						}
+					},
+					maybeSingle: async () => ({ data: live(filters.path ?? ""), error: null }),
+				}
+				return builder
+			},
+			rpc: async (name: string, args: Record<string, unknown>) => {
+				if (name === "folder_read") {
+					const folder = live(String(args.p_path))
+					if (!folder) return { data: null, error: { message: `entry not found: ${args.p_path}` } }
+					const children = [...rows.values()].filter(row => row.parent_id === folder.id && row.deleted_at === null)
+					return { data: { folder, children }, error: null }
+				}
+				if (name === "merge_entry_xattrs") {
+					const refused: { path: string; status: string }[] = []
+					for (const item of args.p_items as { path: string; xattrs: Record<string, string> }[]) {
+						const row = live(item.path)
+						if (!row) { refused.push({ path: item.path, status: "missing" }); continue }
+						if (item.xattrs.cover === "TOO") { refused.push({ path: item.path, status: "too_large" }); continue }
+						row.xattrs = { ...row.xattrs, ...item.xattrs }
+					}
+					return { data: refused, error: null }
+				}
+				if (name === "delete_entry") {
+					const row = rows.get(String(args.p_entry))
+					if (!row || row.deleted_at) return { error: { message: "delete_entry: entry not found" } }
+					row.deleted_at = "now"
+					return { error: null }
+				}
+				if (name === "purge_entry") {
+					if (options?.purge_error) return { error: { message: options.purge_error } }
+					const row = rows.get(String(args.p_entry))
+					if (!row?.deleted_at) return { error: { message: "purge_entry: entry not found in trash" } }
+					rows.delete(row.id)
+					return { error: null }
+				}
+				return { data: null, error: { message: `unexpected rpc ${name}` } }
+			},
+			auth: { getSession: async () => ({ data: { session: { access_token: "token" } } }) },
+		} as unknown as SupabaseClient
+
+		const fm = createCloudFileManager({
+			client,
+			workspace_id: "ws",
+			backend_url: "https://backend.example",
+			put_blob: async (url) => { puts.push(url) },
+		})
+		return { fm, rows, puts, live }
+	}
+
+	function install_fetch(rows: Map<string, { id: string; parent_id: string | null; name: string; kind: string; path: string; deleted_at: string | null }>, bytes: Uint8Array) {
+		const original = globalThis.fetch
+		globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+			const path = String(input)
+			if (path.endsWith("/presign/upload")) {
+				return new Response(JSON.stringify({ storage_key: "uploads/blob/ws/ticket.webp", url: "https://b2.example/put" }))
+			}
+			if (path.endsWith("/finalize")) {
+				const body = JSON.parse(String(init?.body ?? "{}")) as { parent_id: string; name: string; id: string; mime: string }
+				const parent = [...rows.values()].find(row => row.id === body.parent_id)
+				const taken = [...rows.values()].some(row => row.parent_id === body.parent_id && row.name === body.name && row.deleted_at === null)
+				if (taken) return new Response(JSON.stringify({ error: "an entry with this name already exists" }), { status: 409 })
+				const row = {
+					id: body.id,
+					workspace_id: "ws",
+					parent_id: body.parent_id,
+					name: body.name,
+					kind: "file" as const,
+					mime: body.mime,
+					path: parent && parent.path !== "/" ? `${parent.path}/${body.name}` : `/${body.name}`,
+					xattrs: {},
+					storage_key: "ws/blob",
+					size_bytes: bytes.byteLength,
+					deleted_at: null,
+					updated_by: null,
+					updated_by_client: null,
+					updated_at: "",
+					content_modified_at: null,
+				}
+				rows.set(row.id, row)
+				return new Response(JSON.stringify({ entry: row, size_bytes: bytes.byteLength }))
+			}
+			if (path.includes("/presign?")) {
+				return new Response(JSON.stringify({ url: "https://b2.example/get", expires_in: 60 }))
+			}
+			if (path === "https://b2.example/get") {
+				const copy = new Uint8Array(bytes.byteLength)
+				copy.set(bytes)
+				return new Response(copy)
+			}
+			throw new Error(`unexpected fetch ${path}`)
+		}) as typeof fetch
+		return () => { globalThis.fetch = original }
+	}
+
+	function files_named(rows: Map<string, { name: string; kind: string; deleted_at: string | null }>, role: string) {
+		return [...rows.values()].filter(row => row.kind === "file" && row.deleted_at === null && row.name.startsWith(`${role}-`))
+	}
+
+	test("writes a cover into .pile, reads it back, and purges the previous file on replace", async () => {
+		const { fm, rows } = world()
+		const first_bytes = new Uint8Array([1, 2, 3])
+		const second_bytes = new Uint8Array([1, 2, 4])
+		const restore = install_fetch(rows, first_bytes)
+		try {
+			const first = await fm.write_pile_image("/", "cover", first_bytes)
+			expect(first).toMatch(/^pile:cover-[0-9a-f]{8}\.webp$/)
+			expect(files_named(rows, "cover")).toHaveLength(1)
+			await expect(fm.read_pile_image("/", first)).resolves.toEqual(first_bytes)
+			await expect(fm.read_pile_image("/missing", first)).resolves.toBeNull()
+
+			const second = await fm.write_pile_image("/", "cover", second_bytes)
+			await fm.set_xattr("/", "cover", second)
+			const left = files_named(rows, "cover")
+			expect(left.map(row => row.name)).toEqual([second.slice("pile:".length)])
+			expect([...rows.values()].filter(row => row.deleted_at)).toEqual([])
+		} finally {
+			restore()
+		}
+	})
+
+	test("two parallel writes of one picture share .pile and one file", async () => {
+		const { fm, rows, puts } = world()
+		const bytes = new Uint8Array([7, 7, 7])
+		const restore = install_fetch(rows, bytes)
+		try {
+			const [a, b] = await Promise.all([
+				fm.write_pile_image("/", "cover", bytes),
+				fm.write_pile_image("/", "cover", bytes),
+			])
+			expect(a).toBe(b)
+			expect([...rows.values()].filter(row => row.name === ".pile" && row.deleted_at === null)).toHaveLength(1)
+			expect(files_named(rows, "cover")).toHaveLength(1)
+			expect(puts.length).toBeGreaterThan(0)
+		} finally {
+			restore()
+		}
+	})
+
+	test("setting the cover to none purges the file and leaves nothing in the trash", async () => {
+		const { fm, rows } = world()
+		const restore = install_fetch(rows, new Uint8Array([4]))
+		try {
+			const token = await fm.write_pile_image("/", "cover", new Uint8Array([4]))
+			await fm.set_xattr("/", "cover", token)
+			await fm.set_xattr("/", "cover", "none")
+			expect(files_named(rows, "cover")).toEqual([])
+			expect([...rows.values()].filter(row => row.deleted_at)).toEqual([])
+		} finally {
+			restore()
+		}
+	})
+
+	test("listings hide .pile, and the picture is still listed at that path", async () => {
+		const { fm, rows } = world()
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			expect((await fm.FolderChildren("/")).map(child => child.name)).not.toContain(".pile")
+			const pile = await fm.FolderChildren("/.pile")
+			expect(pile.map(child => child.name)).toEqual([expect.stringMatching(/^cover-[0-9a-f]{8}\.webp$/)])
+			const listed = await fm.folder_with_children_xattrs("/")
+			expect(listed.children.map(child => child.name)).not.toContain(".pile")
+		} finally {
+			restore()
+		}
+	})
+
+	test("a picture cleanup failure leaves the xattr written", async () => {
+		const { fm, rows, live } = world({ purge_error: "storage down" })
+		const restore = install_fetch(rows, new Uint8Array([4]))
+		const logged: unknown[][] = []
+		const original = console.error
+		console.error = (...args: unknown[]) => { logged.push(args) }
+		try {
+			const token = await fm.write_pile_image("/", "cover", new Uint8Array([4]))
+			await fm.set_xattr("/", "cover", token)
+			await expect(fm.set_xattr("/", "cover", "none")).resolves.toBeUndefined()
+			expect(live("/")?.xattrs.cover).toBe("none")
+			expect(logged.some(args => args[0] === "pile image cleanup failed")).toBe(true)
+		} finally {
+			console.error = original
+			restore()
+		}
+	})
+
+	test("a refused xattr path does not purge its picture", async () => {
+		const { fm, rows } = world()
+		const bytes = new Uint8Array([4])
+		const restore = install_fetch(rows, bytes)
+		try {
+			const token = await fm.write_pile_image("/", "cover", bytes)
+			await fm.set_xattr("/", "cover", token)
+			const { missing } = await fm.set_xattrs([{ id: "/", xattrs: { cover: "TOO" } }])
+			expect(missing).toEqual(["/"])
+			expect(files_named(rows, "cover")).toHaveLength(1)
+		} finally {
+			restore()
+		}
+	})
+})

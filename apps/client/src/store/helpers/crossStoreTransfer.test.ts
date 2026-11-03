@@ -61,6 +61,43 @@ describe('crossStoreTransfer: generic path (cloud, different workspaces)', () =>
 		expect(target_fake.get_xattr('/photo.png', 'background')).toBe('#fff')
 	})
 
+	test('a folder picture is written before its token when both stores keep pile images', async () => {
+		const { source_fake, target_fake, source, target } = await makeCloudPair()
+		const bytes = new Uint8Array([9, 8, 7])
+		source_fake.seed_folder('/desktop-1/board')
+		source_fake.seed_folder('/desktop-1/board/.pile')
+		source_fake.seed_file('/desktop-1/board/.pile/strokes.json', '{}')
+		source_fake.set_xattr('/desktop-1/board', 'cover', 'pile:cover-abcdef01.webp')
+		;(source_fake.fm as { pile_images: boolean }).pile_images = true
+		source_fake.fm.read_pile_image = async () => bytes
+		;(target_fake.fm as { pile_images: boolean }).pile_images = true
+		const order: string[] = []
+		target_fake.fm.write_pile_image = async (_folder, role, data) => {
+			order.push('write')
+			expect(data).toEqual(bytes)
+			return `pile:${role}-abcdef01.webp`
+		}
+		const set_xattr = target_fake.fm.set_xattr.bind(target_fake.fm)
+		target_fake.fm.set_xattr = async (id, name, value) => {
+			if (name === 'cover') order.push('xattr')
+			await set_xattr(id, name, value)
+		}
+		await source.reload_folder_cache('/desktop-1')
+
+		const created = await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/desktop-1/board'],
+			target_folder_id: '/',
+			mode: 'copy',
+		})
+
+		expect(created).toEqual(['/board'])
+		expect(order).toEqual(['write', 'xattr'])
+		expect(target_fake.get_xattr('/board', 'cover')).toBe('pile:cover-abcdef01.webp')
+		expect(target_fake.has('/board/.pile/strokes.json')).toBe(false)
+	})
+
 	test('copies a file with content and xattrs', async () => {
 		const { source_fake, target_fake, source, target } = await makeCloudPair()
 		source_fake.seed_file('/desktop-1/note.txt', 'hello transfer')

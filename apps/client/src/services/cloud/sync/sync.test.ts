@@ -1649,3 +1649,68 @@ describe('choose_sync_folder', () => {
 		await expect(choose_sync_folder(folder_deps('/Volumes/USB').deps, 'Harbor')).rejects.toThrow('inside your home folder')
 	})
 })
+
+describe('pile image files', () => {
+	test('a cover file is uploaded and downloaded, and replacing it is not a delete', async () => {
+		const { local, stat } = make_local()
+		const cloud = make_cloud()
+		cloud.fake.seed_folder('/')
+		const { deps, trashed } = make_deps(local, stat, cloud)
+		const remove = vi.spyOn(cloud.fm, 'remove')
+
+		local.seed_folder('/ws/board')
+		local.seed_folder('/ws/board/.pile')
+		local.seed_file('/ws/board/.pile/cover-abcdef01.webp', 'webp-a')
+		local.seed_file('/ws/board/.pile/strokes.json', '{}')
+		local.set_xattr('/ws/board', 'cover', 'pile:cover-abcdef01.webp')
+
+		const first = await cloud_pass(deps, new_state())
+		expect(first.report.deleted).toBe(0)
+		expect(first.report.trashed).toBe(0)
+		expect(cloud.fake.has('/board/.pile/cover-abcdef01.webp')).toBe(true)
+		expect(cloud.fake.has('/board/.pile/strokes.json')).toBe(false)
+		expect(cloud.fake.get_xattr('/board', 'cover')).toBe('pile:cover-abcdef01.webp')
+		expect(remove).not.toHaveBeenCalled()
+
+		cloud.fake.seed_file('/board/.pile/background-abcdef02.webp', 'webp-b')
+		const second = await cloud_pass(deps, first.state)
+		expect(local.has('/ws/board/.pile/background-abcdef02.webp')).toBe(true)
+		expect(second.report.deleted).toBe(0)
+		expect(trashed).toEqual([])
+
+		await local.fm.remove('/ws/board/.pile/cover-abcdef01.webp')
+		local.seed_file('/ws/board/.pile/cover-abcdef03.webp', 'webp-c-longer')
+		local.set_xattr('/ws/board', 'cover', 'pile:cover-abcdef03.webp')
+		const third = await cloud_pass(deps, second.state)
+		expect(third.report.deleted).toBe(0)
+		expect(third.report.trashed).toBe(0)
+		expect(trashed).toEqual([])
+		expect(remove).not.toHaveBeenCalled()
+		// Sync forgets the old name. It does not trash the cloud file; the
+		// cover attribute's own cleanup does that, and the fake has none.
+		expect(cloud.fake.has('/board/.pile/cover-abcdef01.webp')).toBe(true)
+		expect(cloud.fake.has('/board/.pile/cover-abcdef03.webp')).toBe(true)
+		expect(third.state.entries['board/.pile/cover-abcdef01.webp']).toBeUndefined()
+		expect(third.state.entries['board/.pile/cover-abcdef03.webp']?.kind).toBe('file')
+	})
+
+	test('twenty vanished covers are forgotten, not a mass delete', () => {
+		const local = [local_folder('board'), local_folder('board/.pile')]
+		const cloud = [ROOT, cloud_entry('/board', 'cb', { kind: 'folder', name: 'board' }), cloud_entry('/board/.pile', 'cp', { kind: 'folder', name: '.pile' })]
+		const base: Record<string, BaseEntry> = {
+			board: base_folder('cb'),
+			'board/.pile': base_folder('cp'),
+		}
+		for (let index = 0; index < 20; index++) {
+			const name = `cover-abcde${index.toString(16).padStart(3, '0')}.webp`
+			const relative = `board/.pile/${name}`
+			base[relative] = base_file(`c${index}`)
+			cloud.push(cloud_entry(`/${relative}`, `c${index}`))
+		}
+		const plan = reconcile(base, local, cloud, OPTIONS)
+		expect(plan.deletes).toBe(0)
+		expect(plan.local_deletes).toBe(0)
+		expect(plan.actions.filter(action => action.kind === 'delete' || action.kind === 'local_trash')).toEqual([])
+		expect(plan.actions.filter(action => action.kind === 'forget')).toHaveLength(20)
+	})
+})

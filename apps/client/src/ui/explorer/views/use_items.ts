@@ -21,7 +21,8 @@ if (typeof window !== 'undefined') {
 	window.addEventListener('pointercancel', () => { pressed = false }, { capture: true })
 }
 
-function after_release(run: () => void) {
+/** Run once the mouse button is up, so a menu opened under the pointer is not the release's pick */
+export function after_pointer_release(run: () => void) {
 	if (!pressed) return run()
 	window.addEventListener('pointerup', () => { setTimeout(run) }, { once: true, capture: true })
 }
@@ -96,7 +97,7 @@ export function use_items(source: () => {
 	 */
 	function open_menu(child: FolderContainerWidgetChild) {
 		select(child)
-		after_release(() => { menus[child.id] = true })
+		after_pointer_release(() => { menus[child.id] = true })
 	}
 
 	/** The dialog closes itself before it hands the name over: the item stays until then */

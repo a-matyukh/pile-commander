@@ -2,8 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { t } from '@/i18n'
+import { is_listed_trash_row } from '@/services/workspace/hiddenName'
 import cloud from '@/store/cloud'
 import { explorer_cloud_trash as trash, type CloudTrashItem } from '@/store/explorer/cloud_trash'
+import { show_hidden_files } from '@/store/showHiddenFiles'
 import { format_bytes } from '@/utils/format_bytes'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
@@ -41,6 +43,10 @@ function details(item: CloudTrashItem): string {
 }
 
 const date = (value: string) => new Date(value).toLocaleDateString()
+
+const visible_items = computed(() =>
+	trash.state.items.filter(item => is_listed_trash_row(item.name, item.path, show_hidden_files.value)),
+)
 </script>
 
 <template>
@@ -50,7 +56,7 @@ const date = (value: string) => new Date(value).toLocaleDateString()
 			<div class="bar">
 				<p v-if="cloud.last_error" class="muted bad">{{ cloud.last_error }}</p>
 				<Button
-					v-if="trash.state.items.length"
+					v-if="visible_items.length"
 					variant="danger-link"
 					class="empty"
 					@click="empty_open = true"
@@ -59,9 +65,9 @@ const date = (value: string) => new Date(value).toLocaleDateString()
 				</Button>
 			</div>
 			<p v-if="trash.state.loading && !trash.state.loaded" class="muted">{{ t('trash.loading') }}</p>
-			<p v-else-if="!trash.state.items.length" class="muted">{{ t('trash.nothing') }}</p>
+			<p v-else-if="!visible_items.length" class="muted">{{ t('trash.nothing') }}</p>
 			<div v-else class="card list">
-				<div v-for="item in trash.state.items" :key="trash.key(item)" class="row">
+				<div v-for="item in visible_items" :key="trash.key(item)" class="row">
 					<Icon :icon="item.kind === 'folder' ? 'tabler:folder' : 'tabler:file'" class="ic" />
 					<div class="min">
 						<div class="nm">{{ item.name }}</div>

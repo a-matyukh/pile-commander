@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { t } from '@/i18n'
@@ -24,6 +24,7 @@ import { shown_icon } from '@/store/explorer/icon_catalog'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
+import { explorer_settings } from '@/store/explorer/settings'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
@@ -35,6 +36,28 @@ const props = defineProps<{
 }>()
 
 const menu_open = ref(false)
+/**
+ * The dots are `display: none` until the row is hovered, current, or holding
+ * this menu. Closing clears `menu_open` at once, and with smooth menus the
+ * panel still fades for 0.1s. If the dots vanish then, their anchor's box is
+ * empty and the fading menu jumps to the corner. Hold the anchor until that
+ * fade is over.
+ */
+const menu_anchor = ref(false)
+let menu_anchor_timer = 0
+watch(menu_open, (open) => {
+	window.clearTimeout(menu_anchor_timer)
+	if (open) {
+		menu_anchor.value = true
+		return
+	}
+	if (!explorer_settings.menu_animation) {
+		menu_anchor.value = false
+		return
+	}
+	menu_anchor_timer = window.setTimeout(() => { menu_anchor.value = false }, 120)
+})
+onBeforeUnmount(() => window.clearTimeout(menu_anchor_timer))
 const folder_id = computed(() => props.node?.id ?? tree_root_folder_id(props.item))
 const workspace = computed(() => props.item.workspace)
 const children = computed(() => arranged_children(
@@ -213,7 +236,7 @@ watchEffect(on_cleanup => {
 <template>
 	<div
 		class="r"
-		:class="{ sel: current, mo: menu_open, hid: hidden, drop: drop_target, drg: dragged || moving || cut }"
+		:class="{ sel: current, mo: menu_anchor, hid: hidden, drop: drop_target, drg: dragged || moving || cut }"
 		:data-folder-id="folder_id"
 		:data-drive-id="item.drive.id"
 		:data-root-id="item.root.id"

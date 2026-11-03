@@ -1,5 +1,5 @@
-import type { FileManager, FolderConnection, FolderStroke } from '@pile-commander/file-manager'
-import { PILE_DIR_NAME } from '@pile-commander/file-manager'
+import type { FileManager, FolderChild, FolderConnection, FolderStroke } from '@pile-commander/file-manager'
+import { is_pile_image_file, PILE_DIR_NAME } from '@pile-commander/file-manager'
 import { is_hidden_entry_name, is_os_junk_name } from '@/services/workspace/hiddenName'
 import { is_cloud_name } from '@/services/cloud/bridge/preflight'
 import { run_pool } from '@/services/cloud/bridge/pool'
@@ -29,10 +29,44 @@ export type LocalScan = {
 	folders_with_hidden: ReadonlySet<string>
 }
 
+function pile_child_id(folder_id: string): string {
+	return join_local(folder_id, PILE_DIR_NAME)
+}
+
+/** Cover and background files inside `.pile`. Strokes and sync state stay out. */
+async function pile_image_children(fm: FileManager, pile_id: string): Promise<FolderChild[]> {
+	try {
+		const children = await fm.FolderChildren(pile_id)
+		return children.filter(child => child.type === 'file' && is_pile_image_file(child.name))
+	} catch {
+		return []
+	}
+}
+
+function push_pile_images(
+	entries: LocalEntry[],
+	images: readonly FolderChild[],
+	pile_relative: string,
+	bad_name: boolean,
+): void {
+	for (const image of images) {
+		entries.push({
+			relative: join_relative(pile_relative, image.name),
+			id: image.id,
+			name: image.name,
+			kind: 'file',
+			size: 0,
+			mtime_ms: 0,
+			bad_name,
+		})
+	}
+}
+
 /**
- * Walks the synced folder breadth-first (parents before children), skipping
- * `.pile` sidecars, hidden names and OS litter. A file that vanishes mid-walk
- * is left out. A hidden folder is not entered.
+ * Walks the synced folder breadth-first (parents before children). Hidden
+ * names and OS litter are skipped. `.pile` contributes its cover and
+ * background files only, and does not mark the parent as keeping hidden
+ * files. A file that vanishes mid-walk is left out.
  */
 export async function scan_local(fm: FileManager, root: string, stat: LocalStat): Promise<LocalScan> {
 	const entries: LocalEntry[] = []
@@ -40,9 +74,18 @@ export async function scan_local(fm: FileManager, root: string, stat: LocalStat)
 	const queue: { id: string; relative: string; bad_name: boolean }[] = [{ id: root, relative: '', bad_name: false }]
 	for (let index = 0; index < queue.length; index++) {
 		const folder = queue[index]!
+		let saw_pile = false
 		for (const child of await fm.FolderChildren(folder.id)) {
 			// Junk first: .DS_Store is skipped and does not protect the folder.
-			if (child.name === PILE_DIR_NAME || is_os_junk_name(child.name)) continue
+			if (is_os_junk_name(child.name)) continue
+			if (child.name === PILE_DIR_NAME && child.type === 'folder') {
+				saw_pile = true
+				const relative = join_relative(folder.relative, child.name)
+				const bad_name = folder.bad_name || !is_cloud_name(child.name)
+				entries.push({ relative, id: child.id, name: child.name, kind: 'folder', size: 0, mtime_ms: 0, bad_name })
+				push_pile_images(entries, await pile_image_children(fm, child.id), relative, bad_name)
+				continue
+			}
 			if (is_hidden_entry_name(child.name)) {
 				note_hidden_inside(folders_with_hidden, folder.relative)
 				continue
@@ -51,6 +94,16 @@ export async function scan_local(fm: FileManager, root: string, stat: LocalStat)
 			const bad_name = folder.bad_name || !is_cloud_name(child.name)
 			entries.push({ relative, id: child.id, name: child.name, kind: child.type, size: 0, mtime_ms: 0, bad_name })
 			if (child.type === 'folder') queue.push({ id: child.id, relative, bad_name })
+		}
+		// Listings hide `.pile` itself. Look it up by path when this store keeps folder pictures.
+		if (!saw_pile && fm.pile_images) {
+			const pile_id = pile_child_id(folder.id)
+			const images = await pile_image_children(fm, pile_id)
+			if (images.length > 0) {
+				const relative = join_relative(folder.relative, PILE_DIR_NAME)
+				entries.push({ relative, id: pile_id, name: PILE_DIR_NAME, kind: 'folder', size: 0, mtime_ms: 0, bad_name: folder.bad_name })
+				push_pile_images(entries, images, relative, folder.bad_name)
+			}
 		}
 	}
 	const vanished = new Set<string>()

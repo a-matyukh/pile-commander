@@ -4,6 +4,7 @@ import type { FolderRef } from '@/domain/Drive'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import store from '@/store'
+import cloud from '@/store/cloud'
 import {
 	create_child_folder,
 	folder_menu_items,
@@ -54,6 +55,7 @@ const items = computed(() => folder_menu_items(props.folder, {
 	desktop: is_desktop,
 	can_paste: item.value ? clipboard.can_paste(item.value, props.folder.folder_id) : false,
 	home: home.value,
+	owner: props.folder.drive_id === 'cloud' && cloud.role_of(props.folder.root_id) === 'owner',
 }))
 const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
 

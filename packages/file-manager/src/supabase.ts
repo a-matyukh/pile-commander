@@ -1,5 +1,6 @@
 import type { RealtimePostgresChangesPayload, SupabaseClient } from "@supabase/supabase-js"
-import { pile_images_off } from "./pileImage"
+import { is_pile_image_file, parse_pile_image_token, pile_image_file_role, pile_image_hash8, pile_image_token, type PileImageRole } from "./pileImage"
+import { PILE_DIR_NAME } from "./pile-attrs"
 import { is_valid_slug } from "./reserved-slugs"
 import { parse_plan_limit_error, PlanLimitError } from "./planLimit"
 import { MediaUnavailableError, parse_media_unavailable } from "./mediaUnavailable"
@@ -1049,11 +1050,173 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		}
 	}
 
+	function sibling_name_taken(error: unknown): boolean {
+		const message = error instanceof Error ? error.message : String(error)
+		return /duplicate key|already exists/i.test(message)
+	}
+
+	const PILE_IMAGE_ATTRS = new Set(["cover", "background"])
+
+	/** `.pile` is a sidecar. Listings for the UI omit it; picture code addresses it by path. */
+	function without_pile_dir<T extends { name: string }>(children: T[]): T[] {
+		return children.filter((child) => child.name !== PILE_DIR_NAME)
+	}
+
+	function pile_dir_path(folder_path: string): string {
+		return folder_path === "/" ? `/${PILE_DIR_NAME}` : `${folder_path}/${PILE_DIR_NAME}`
+	}
+
+	async function child_named(parent: EntryRow, name: string): Promise<EntryRow | null> {
+		const { children } = await folder_read(parent.path)
+		return children.find((child) => child.name === name) ?? null
+	}
+
+	async function insert_folder(parent: EntryRow, name: string, xattrs: Record<string, string> = {}): Promise<EntryRow> {
+		const id = crypto.randomUUID()
+		mark_write(id)
+		const { data, error } = await client
+			.from("entries")
+			.insert({
+				id,
+				workspace_id,
+				parent_id: parent.id,
+				name,
+				kind: "folder",
+				xattrs,
+				updated_by_client: client_instance_id(),
+			})
+			.select(ENTRY_COLUMNS)
+			.single()
+		if (error) throw new Error(`create_folder failed: ${error.message}`)
+		return data as EntryRow
+	}
+
+	/** Find the folder's `.pile`, or create it. A concurrent create loses the race and uses the winner. */
+	async function ensure_pile_dir(folder: EntryRow): Promise<EntryRow> {
+		const existing = await child_named(folder, PILE_DIR_NAME)
+		if (existing?.kind === "folder") return existing
+		if (existing) throw new Error(`create_folder failed: ${PILE_DIR_NAME} is not a folder`)
+		try {
+			return await insert_folder(folder, PILE_DIR_NAME)
+		} catch (error) {
+			if (!sibling_name_taken(error)) throw error
+			const raced = await child_named(folder, PILE_DIR_NAME)
+			if (raced?.kind !== "folder") throw error
+			return raced
+		}
+	}
+
+	async function write_pile_image(folder_id: string, role: PileImageRole, bytes: Uint8Array): Promise<string> {
+		const folder = await resolve(folder_id)
+		if (folder.kind !== "folder") throw new Error("pile images belong to a folder")
+		const hash8 = await pile_image_hash8(bytes)
+		const file = `${role}-${hash8}.webp`
+		const pile = await ensure_pile_dir(folder)
+		if (await child_named(pile, file)) return pile_image_token(role, hash8)
+		try {
+			const copy = new Uint8Array(bytes.byteLength)
+			copy.set(bytes)
+			await upload_file_impl(pile.path, file, new Blob([copy], { type: "image/webp" }), "image/webp")
+		} catch (error) {
+			if (!sibling_name_taken(error)) throw error
+			if (!(await child_named(pile, file))) throw error
+		}
+		return pile_image_token(role, hash8)
+	}
+
+	async function read_pile_image(entry_id: string, token: string): Promise<Uint8Array | null> {
+		const parsed = parse_pile_image_token(token)
+		if (!parsed) return null
+		let folder: EntryRow
+		try {
+			folder = await resolve(entry_id)
+		} catch {
+			return null
+		}
+		if (folder.kind !== "folder") return null
+		let file: EntryRow
+		try {
+			file = await resolve(`${pile_dir_path(folder.path)}/${parsed.file}`)
+		} catch {
+			return null
+		}
+		if (file.kind !== "file") return null
+		try {
+			const media = await presign(file.id)
+			const response = await fetch(media.url)
+			if (!response.ok) return null
+			return new Uint8Array(await response.arrayBuffer())
+		} catch {
+			return null
+		}
+	}
+
+	/**
+	 * Drop every file of these roles in the folder's `.pile` except the one the
+	 * xattr names now. Best-effort: the attribute is already stored, so a
+	 * failed delete is logged and does not fail the xattr write.
+	 */
+	async function sweep_pile_images(folder_id: string, names: Iterable<string>) {
+		const roles = [...names].filter((name) => PILE_IMAGE_ATTRS.has(name))
+		if (roles.length === 0) return
+		let folder: EntryRow
+		try {
+			folder = await resolve(folder_id)
+		} catch {
+			return
+		}
+		if (folder.kind !== "folder") return
+		let pile: EntryRow
+		try {
+			pile = await resolve(pile_dir_path(folder.path))
+		} catch (error) {
+			if (error instanceof Error && /not found/i.test(error.message)) return
+			console.error("pile image cleanup failed", folder_id, error)
+			return
+		}
+		if (pile.kind !== "folder") return
+		let children: EntryRow[]
+		try {
+			children = (await folder_read(pile.path)).children
+		} catch (error) {
+			console.error("pile image cleanup failed", pile.path, error)
+			return
+		}
+		for (const role of roles) {
+			const parsed = parse_pile_image_token(folder.xattrs[role] ?? "")
+			const keep = parsed?.role === role ? parsed.file : null
+			for (const child of children) {
+				if (child.kind !== "file" || !is_pile_image_file(child.name) || pile_image_file_role(child.name) !== role) continue
+				if (child.name === keep) continue
+				try {
+					await drop_pile_file(child)
+				} catch (error) {
+					console.error("pile image cleanup failed", child.path, error)
+				}
+			}
+		}
+	}
+
+	async function drop_pile_file(row: EntryRow) {
+		mark_write(row.id)
+		const { error } = await client.rpc("delete_entry", {
+			p_entry: row.id,
+			p_client_id: client_instance_id(),
+		})
+		if (error) {
+			if (/not found/i.test(error.message)) return
+			throw new Error(`remove failed: ${error.message}`)
+		}
+		await purge_entry_id(client, row.id)
+	}
+
 	return {
-		...pile_images_off,
+		pile_images: true,
+		write_pile_image,
+		read_pile_image,
 		async FolderChildren(folder_id: string): Promise<FolderChild[]> {
 			const { children } = await folder_read(folder_id)
-			return children.map(to_child)
+			return without_pile_dir(children).map(to_child)
 		},
 
 		async open_file(id: string) {
@@ -1063,23 +1226,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 
 		async create_folder(folder_id: string, folder_name: string, options?: CreateFolderOptions) {
 			const folder = await resolve(folder_id)
-			const id = crypto.randomUUID()
-			mark_write(id)
-			const { data, error } = await client
-				.from("entries")
-				.insert({
-					id,
-					workspace_id,
-					parent_id: folder.id,
-					name: folder_name,
-					kind: "folder",
-					xattrs: options?.xattrs ?? {},
-					updated_by_client: client_instance_id(),
-				})
-				.select(ENTRY_COLUMNS)
-				.single()
-			if (error) throw new Error(`create_folder failed: ${error.message}`)
-			return to_child(data as EntryRow)
+			return to_child(await insert_folder(folder, folder_name, options?.xattrs ?? {}))
 		},
 
 		async create_text_file(folder_id: string, filename: string, options?: CreateTextFileOptions) {
@@ -1199,20 +1346,26 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 						: `set_xattr failed: entry not found: ${id}`,
 				)
 			}
+			await sweep_pile_images(row.path, [name])
 		},
 
 		// Bulk layout writes (the cloud bridge, a pack import) land in a
 		// workspace this instance does not watch, so they skip echo marking:
-		// a watching store would only refetch
+		// a watching store would only refetch. A path the server refused did
+		// not change, so its pictures stay.
 		async set_xattrs(items) {
 			const missing: string[] = []
 			for (let start = 0; start < items.length; start += XATTRS_BATCH_SIZE) {
+				const batch = items.slice(start, start + XATTRS_BATCH_SIZE)
 				const refused = await merge_xattrs(
-					items
-						.slice(start, start + XATTRS_BATCH_SIZE)
-						.map((item) => ({ path: item.id, xattrs: item.xattrs })),
+					batch.map((item) => ({ path: item.id, xattrs: item.xattrs })),
 				)
-				missing.push(...refused.map((row) => row.path))
+				const refused_paths = new Set(refused.map((row) => row.path))
+				missing.push(...refused_paths)
+				for (const item of batch) {
+					if (refused_paths.has(item.id)) continue
+					await sweep_pile_images(item.id, Object.keys(item.xattrs))
+				}
 			}
 			return { missing }
 		},
@@ -1237,6 +1390,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 				.update({ xattrs, updated_by_client: client_instance_id() })
 				.eq("id", row.id)
 			if (error) throw new Error(`remove_xattr failed: ${error.message}`)
+			await sweep_pile_images(row.path, [name])
 		},
 
 		async list_xattrs(id: string) {
@@ -1251,7 +1405,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 				name: folder.name,
 				type: "folder",
 				xattrs: record_to_xattrs(folder.xattrs),
-				children: children.map((row) => ({
+				children: without_pile_dir(children).map((row) => ({
 					id: row.path,
 					name: row.name,
 					type: row.kind,

@@ -1166,8 +1166,10 @@ describe("local pile images", () => {
 		stat.mockReset()
 		writeFile.mockReset()
 		readFile.mockReset()
+		readDir.mockReset()
 		set_xattr.mockReset()
 		get_xattr.mockReset()
+		remove_xattr.mockReset()
 		join.mockImplementation((...parts: string[]) =>
 			Promise.resolve(parts.join("/").replace(/\/+/g, "/")),
 		)
@@ -1178,12 +1180,20 @@ describe("local pile images", () => {
 		})
 	})
 
+	function file(name: string): DirEntry {
+		return { name, isDirectory: false, isFile: true } as DirEntry
+	}
+
 	test("replacing a cover keeps the webp extension, changes the token, and deletes the old file after the xattr write", async () => {
 		stat.mockResolvedValue({ isDirectory: true, isFile: false })
-		get_xattr.mockResolvedValue(null)
 		const fm = createLocalFileManager()
 		const order: string[] = []
-		set_xattr.mockImplementation(async () => { order.push("set") })
+		let stored: string | null = null
+		set_xattr.mockImplementation(async (_id: string, _name: string, value: string) => {
+			stored = value
+			order.push("set")
+		})
+		get_xattr.mockImplementation(async () => stored)
 		remove.mockImplementation(async () => { order.push("remove") })
 
 		const first = await fm.write_pile_image("/board", "cover", new Uint8Array([1, 2, 3]))
@@ -1193,22 +1203,52 @@ describe("local pile images", () => {
 		expect(second).not.toBe(first)
 		expect(mkdir).toHaveBeenCalledWith("/board/.pile", { recursive: true })
 
-		get_xattr.mockResolvedValue(first)
+		stored = first
+		readDir.mockResolvedValue([file(first.slice("pile:".length)), file(second.slice("pile:".length))])
 		order.length = 0
 		await fm.set_xattr("/board", "cover", second)
 		expect(set_xattr).toHaveBeenCalledWith("/board", "cover", second)
-		const old_file = first.slice("pile:".length)
-		expect(remove).toHaveBeenCalledWith(`/board/.pile/${old_file}`)
+		expect(remove).toHaveBeenCalledWith(`/board/.pile/${first.slice("pile:".length)}`)
+		expect(remove).not.toHaveBeenCalledWith(`/board/.pile/${second.slice("pile:".length)}`)
 		expect(order).toEqual(["set", "remove"])
 	})
 
-	test("a color written over a pile cover deletes that file and leaves other cover files", async () => {
+	test("a color written over a pile cover deletes every cover file and leaves the background", async () => {
 		stat.mockResolvedValue({ isDirectory: true, isFile: false })
 		const fm = createLocalFileManager()
-		get_xattr.mockResolvedValue("pile:cover-abcdef01.webp")
+		get_xattr.mockResolvedValue("#fff")
+		readDir.mockResolvedValue([
+			file("cover-abcdef01.webp"),
+			file("cover-11111111.webp"),
+			file("background-22222222.webp"),
+			file("strokes.json"),
+		])
 		await fm.set_xattr("/board", "cover", "#fff")
+		expect(remove).toHaveBeenCalledTimes(2)
+		expect(remove).toHaveBeenCalledWith("/board/.pile/cover-abcdef01.webp")
+		expect(remove).toHaveBeenCalledWith("/board/.pile/cover-11111111.webp")
+		expect(remove).not.toHaveBeenCalledWith("/board/.pile/background-22222222.webp")
+		expect(remove).not.toHaveBeenCalledWith("/board/.pile/strokes.json")
+	})
+
+	test("removing the cover attribute deletes the cover file", async () => {
+		stat.mockResolvedValue({ isDirectory: true, isFile: false })
+		const fm = createLocalFileManager()
+		get_xattr.mockResolvedValue(null)
+		readDir.mockResolvedValue([file("cover-abcdef01.webp"), file("strokes.json")])
+		await fm.remove_xattr("/board", "cover")
+		expect(remove_xattr).toHaveBeenCalledWith("/board", "cover")
 		expect(remove).toHaveBeenCalledTimes(1)
 		expect(remove).toHaveBeenCalledWith("/board/.pile/cover-abcdef01.webp")
+	})
+
+	test("a failed batch does not delete pictures for a path that was not written", async () => {
+		stat.mockResolvedValue({ isDirectory: true, isFile: false })
+		const fm = createLocalFileManager()
+		set_xattr.mockRejectedValue(new Error("disk full"))
+		const { missing } = await fm.set_xattrs([{ id: "/board", xattrs: { cover: "none" } }])
+		expect(missing).toEqual(["/board"])
+		expect(remove).not.toHaveBeenCalled()
 	})
 
 	test("reads a folder cover from its .pile; a file has no picture", async () => {
@@ -1239,9 +1279,15 @@ describe("local pile images", () => {
 		const second = await fm.write_pile_image("/other", "cover", bytes)
 		expect(first).toBe(second)
 
-		get_xattr.mockResolvedValue(first)
+		let stored = first
+		set_xattr.mockImplementation(async (_id: string, _name: string, value: string) => { stored = value })
+		get_xattr.mockImplementation(async () => stored)
 		remove.mockClear()
 		const next = await fm.write_pile_image("/board", "cover", new Uint8Array([9]))
+		readDir.mockImplementation(async (path: string) => {
+			if (path === "/board/.pile") return [file(first.slice("pile:".length)), file(next.slice("pile:".length))]
+			return []
+		})
 		await fm.set_xattr("/board", "cover", next)
 		const shared = first.slice("pile:".length)
 		expect(remove).toHaveBeenCalledTimes(1)

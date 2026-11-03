@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { is_pile_image_token, parse_pile_image_token, pile_image_hash8, pile_image_token } from "./pileImage"
+import { is_pile_image_file, is_pile_image_token, parse_pile_image_token, pile_image_file_role, pile_image_hash8, pile_image_token } from "./pileImage"
 
 describe("pile image token", () => {
 	test("a different payload keeps the webp extension and changes the hash", async () => {
@@ -23,5 +23,10 @@ describe("pile image token", () => {
 		expect(is_pile_image_token("pile:cover-ABCDEF01.webp")).toBe(false)
 		expect(is_pile_image_token("pile:cover-abcd.png")).toBe(false)
 		expect(parse_pile_image_token("pile:cover-zzzzzzzz.webp")).toBeNull()
+		expect(is_pile_image_file("cover-abcdef01.webp")).toBe(true)
+		expect(is_pile_image_file("strokes.json")).toBe(false)
+		expect(is_pile_image_file("cover-ABCDEF01.webp")).toBe(false)
+		expect(pile_image_file_role("background-abcdef01.webp")).toBe("background")
+		expect(pile_image_file_role("strokes.json")).toBeNull()
 	})
 })

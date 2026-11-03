@@ -91,6 +91,39 @@ describe('build_cloud_workspace_pile', () => {
 		expect(seen.sort()).toEqual([1, 2])
 	})
 
+	test('a cover file is in the archive and other .pile files are not', async () => {
+		const ws = await make_workspace()
+		ws.seed_folder('/Доска/.pile')
+		ws.seed_file('/Доска/.pile/cover-abcdef01.webp', 'webp-bytes')
+		ws.seed_file('/Доска/.pile/strokes.json', '{}')
+		const blob = await build_cloud_workspace_pile(ws.fm, 'Board')
+		const text = new TextDecoder().decode(new Uint8Array(await blob.arrayBuffer()))
+		expect(occurrences(text, 'Board/Доска/.pile/cover-abcdef01.webp')).toBe(2)
+		expect(text).toContain('webp-bytes')
+		expect(text).not.toContain('strokes.json')
+		expect(occurrences(text, 'Board/.pile/attrs.json')).toBe(2)
+	})
+
+	test('finds a cover by the .pile path when the listing hides that folder', async () => {
+		const ws = await make_workspace()
+		ws.seed_folder('/Доска/.pile')
+		ws.seed_file('/Доска/.pile/cover-abcdef01.webp', 'webp-bytes')
+		ws.seed_file('/Доска/.pile/strokes.json', '{}')
+		const fm = {
+			...ws.fm,
+			pile_images: true,
+			async FolderChildren(id: string) {
+				const children = await ws.fm.FolderChildren(id)
+				return children.filter(child => child.name !== '.pile')
+			},
+		}
+		const tree = await list_pile_tree(fm)
+		expect(tree.files.map(file => file.segments.join('/'))).toContain('Доска/.pile/cover-abcdef01.webp')
+		expect(tree.folders.map(segments => segments.join('/'))).toContain('Доска/.pile')
+		expect(tree.files.map(file => file.name)).not.toContain('strokes.json')
+		expect(tree.folders.map(segments => segments.join('/'))).not.toContain('.pile')
+	})
+
 	test('a file that cannot be read stops the whole archive', async () => {
 		const ws = await make_workspace()
 		ws.fail_once('get_media_src')
