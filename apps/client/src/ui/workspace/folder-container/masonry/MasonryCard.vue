@@ -15,6 +15,7 @@ import { splitFileName } from '../widgets/fileNameParts'
 import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from '../widgets/resolveBackground'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import MasonryImage from './MasonryImage.vue'
+import ImageFigure from '../widgets/ImageFigure.vue'
 import { masonryColumnWidth } from './masonryLayout'
 
 /** Gallery's tab: a rounded top-left corner and a slope, with the folder's top line left under it. */
@@ -112,11 +113,17 @@ function onDblClick(event: MouseEvent) {
 			@pointerup="isNote ? onPointerUp($event) : undefined"
 			@pointercancel="isNote ? onPointerCancel() : undefined"
 		>
-			<MasonryImage
-				v-if="isImage"
-				:file-id="widget.id"
-				:filename="widget.name"
-			/>
+			<ImageFigure
+				v-if="isImage && widget.type === 'file'"
+				mode="grow"
+				:title="widget.title"
+				:description="widget.description"
+			>
+				<MasonryImage
+					:file-id="widget.id"
+					:filename="widget.name"
+				/>
+			</ImageFigure>
 			<div v-else-if="isNote" class="masonry-note-body">
 				<NoteBody
 					v-model="text"

@@ -10,6 +10,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import PreviewContent from '../widgets/PreviewContent.vue'
+import ImageFigure from '../widgets/ImageFigure.vue'
 import { image_shows_preview } from '@/services/board/layout'
 import { resolve_slide_index, viewer_slide_scope } from './slidesUtils'
 import SlideSwitcher from './SlideSwitcher.vue'
@@ -201,7 +202,21 @@ function onPreviewDblClick() {
 			@click="onSelectClick"
 			@dblclick="onPreviewDblClick"
 		>
+			<ImageFigure
+				v-if="previewKind === 'image' && widget.type === 'file'"
+				mode="stack"
+				:class="previewContentClass"
+				:title="widget.title"
+				:description="widget.description"
+			>
+				<PreviewContent
+					kind="image"
+					:file-id="widget.id"
+					:filename="widget.name"
+				/>
+			</ImageFigure>
 			<PreviewContent
+				v-else
 				:kind="previewKind"
 				:file-id="widget.id"
 				:filename="widget.name"

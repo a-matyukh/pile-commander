@@ -1,6 +1,7 @@
 import type { EntryWithXattrs, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import { dashboard_cell_from_stored, folder_view_from_stored, type FolderContainerWidget, type FolderContainerWidgetChild } from '@/domain/Widget'
 import { entry_is_dimmed, entry_is_listed } from '@/store/hiddenPaths'
+import { image_text_from_stored } from './imageText'
 import { find_entry_owner_folder, xattrs_map } from './xattrs'
 
 /**
@@ -66,6 +67,15 @@ function dashboard_from(attrs: Record<string, unknown>) {
 	return dashboard ? { dashboard } : {}
 }
 
+function image_text_fields(attrs: Record<string, unknown>) {
+	const title = image_text_from_stored(attrs.title)
+	const description = image_text_from_stored(attrs.description)
+	return {
+		...(title !== undefined ? { title } : {}),
+		...(description !== undefined ? { description } : {}),
+	}
+}
+
 function child_from_entry(
 	entry: EntryWithXattrs,
 	attrs: Record<string, unknown>,
@@ -83,6 +93,7 @@ function child_from_entry(
 			...base,
 			type: 'file',
 			...pick(attrs, ['padding', 'cover', 'model_camera']),
+			...image_text_fields(attrs),
 		}
 	}
 

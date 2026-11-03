@@ -26,6 +26,19 @@ function upsert_xattr(xattrs: Xattr[], name: string, value: string) {
 	else xattrs.push({ name, value })
 }
 
+function drop_xattr(xattrs: Xattr[], name: string) {
+	const index = xattrs.findIndex(x => x.name === name)
+	if (index !== -1) xattrs.splice(index, 1)
+}
+
+/** Pending value that means "this name was removed" until the watch refresh settles. */
+const PENDING_XATTR_REMOVED = '\0'
+
+function apply_pending_value(xattrs: Xattr[], name: string, value: string) {
+	if (value === PENDING_XATTR_REMOVED) drop_xattr(xattrs, name)
+	else upsert_xattr(xattrs, name, value)
+}
+
 export function upsert_folder_xattr(
 	folder: FolderWithChildrenXattrs,
 	id: string,
@@ -41,6 +54,20 @@ export function upsert_folder_xattr(
 	if (child) {
 		upsert_xattr(child.xattrs, name, value)
 	}
+}
+
+function drop_folder_xattr(
+	folder: FolderWithChildrenXattrs,
+	id: string,
+	name: string,
+) {
+	if (folder.id === id) {
+		drop_xattr(folder.xattrs, name)
+		return
+	}
+
+	const child = folder.children?.find(c => c.id === id)
+	if (child) drop_xattr(child.xattrs, name)
 }
 
 /** Shallow-touch children list after reorder. */
@@ -150,7 +177,7 @@ export function apply_pending_entry_xattrs(folder: FolderWithChildrenXattrs) {
 	const root_pending = pending_entry_xattrs.get(folder.id)
 	if (root_pending) {
 		for (const [name, value] of root_pending) {
-			upsert_xattr(folder.xattrs, name, value)
+			apply_pending_value(folder.xattrs, name, value)
 		}
 	}
 
@@ -158,7 +185,7 @@ export function apply_pending_entry_xattrs(folder: FolderWithChildrenXattrs) {
 		const pending = pending_entry_xattrs.get(child.id)
 		if (!pending) continue
 		for (const [name, value] of pending) {
-			upsert_xattr(child.xattrs, name, value)
+			apply_pending_value(child.xattrs, name, value)
 		}
 	}
 }
@@ -185,6 +212,37 @@ function apply_persisted_xattr(
 	notify_entry_xattr_changed(folder, id)
 	if (preview_folders) {
 		sync_xattr_to_preview_folders(preview_folders, folder, id, name, value)
+	}
+}
+
+function sync_xattr_drop_to_preview_folders(
+	preview_folders: Record<string, FolderWithChildrenXattrs>,
+	source_folder: FolderWithChildrenXattrs,
+	id: string,
+	name: string,
+) {
+	for (const folder of Object.values(preview_folders)) {
+		const had_child = folder.children?.some(c => c.id === id) ?? false
+		drop_folder_xattr(folder, id, name)
+		if (had_child) notify_entry_xattr_changed(folder, id)
+	}
+
+	if (source_folder.id === id && preview_folders[id]) {
+		drop_folder_xattr(preview_folders[id], id, name)
+		notify_entry_xattr_changed(preview_folders[id], id)
+	}
+}
+
+function apply_cleared_xattr(
+	folder: FolderWithChildrenXattrs,
+	id: string,
+	name: string,
+	preview_folders?: Record<string, FolderWithChildrenXattrs>,
+) {
+	drop_folder_xattr(folder, id, name)
+	notify_entry_xattr_changed(folder, id)
+	if (preview_folders) {
+		sync_xattr_drop_to_preview_folders(preview_folders, folder, id, name)
 	}
 }
 
@@ -240,6 +298,48 @@ export async function persist_xattr(
 	const pending_value = value
 	setTimeout(() => {
 		clear_pending_entry_xattr(id, name, pending_value)
+	}, 2000)
+
+	return true
+}
+
+/** Remove one xattr. A tombstone in the pending map keeps a stale refresh from putting it back. */
+export async function clear_xattr(
+	fm: Pick<FileManager, 'remove_xattr'>,
+	folder: FolderWithChildrenXattrs,
+	id: string,
+	name: string,
+	preview_folders?: Record<string, FolderWithChildrenXattrs>,
+	on_error?: (error: unknown) => void,
+	resolve_folder_or_hooks?: (() => FolderWithChildrenXattrs | null | undefined) | PersistXattrHooks,
+): Promise<boolean> {
+	const hooks: PersistXattrHooks = typeof resolve_folder_or_hooks === 'function'
+		? { resolve_folder: resolve_folder_or_hooks }
+		: (resolve_folder_or_hooks ?? {})
+
+	const owner_id = folder.id
+	bump_folder_cache_generation(owner_id)
+	set_pending_entry_xattr(id, name, PENDING_XATTR_REMOVED)
+
+	try {
+		await fm.remove_xattr(id, name)
+	} catch (error) {
+		bump_folder_cache_generation(owner_id)
+		clear_pending_entry_xattr(id, name, PENDING_XATTR_REMOVED)
+		on_error?.(error)
+		return false
+	}
+
+	bump_folder_cache_generation(owner_id)
+
+	const target = hooks.resolve_folder?.() ?? folder
+	if (target) {
+		apply_cleared_xattr(target, id, name, preview_folders)
+		hooks.replace_folder?.(clone_folder_for_cache(target))
+	}
+
+	setTimeout(() => {
+		clear_pending_entry_xattr(id, name, PENDING_XATTR_REMOVED)
 	}, 2000)
 
 	return true

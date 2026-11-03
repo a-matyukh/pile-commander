@@ -889,6 +889,11 @@ function onSectionPointerDown(event: PointerEvent) {
 	overflow: visible;
 }
 
+/* Image heading and caption sit outside the node box. */
+.canvas-flow :deep(.vue-flow__node:has(.image-caption)) {
+	overflow: visible;
+}
+
 /* Default VF selection uses a dotted border that leaves trails while dragging.
  * Inset shadow stays inside the rect bounds under CSS transforms. */
 .canvas-flow :deep(.vue-flow__nodesselection-rect),

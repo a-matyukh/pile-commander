@@ -7,13 +7,16 @@ import { useNodeMenu } from './useNodeMenu'
 import { useColorSubmenu } from './useColorSubmenu'
 import { image_shows_preview } from '@/services/board/layout'
 import { get_preview_toggle_label, is_previewable_file } from '@/services/board/media'
+import { image_caption_in_view, type ImageTextField } from '@/services/workspace/imageText'
 import {
 	is_line_shape,
 	parse_line_meta,
 	read_shape_color,
 	type LinePlug,
 } from '@/services/board/shapes'
+import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import ImageTextDialog from './ImageTextDialog.vue'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { t } from '@/i18n'
@@ -57,6 +60,35 @@ const isShapePreview = computed(
 const requireWorkspace = useRequireWorkspace()
 const workspace = useWorkspace()
 const readonly = computed(() => workspace.value?.can_write === false)
+const { container } = useFolderContainerScope()
+const textDialog = ref<InstanceType<typeof ImageTextDialog> | null>(null)
+
+const showImageText = computed(() => {
+	if (readonly.value) return false
+	if (!image_caption_in_view(container.value?.view)) return false
+	const child = openedChild.value
+	return child ? image_shows_preview(child) : false
+})
+
+function image_text_value(field: ImageTextField): string {
+	const child = openedChild.value
+	if (!child || child.type !== 'file') return ''
+	return child[field] ?? ''
+}
+
+function image_text_label(field: ImageTextField): string {
+	const has = image_text_value(field) !== ''
+	if (field === 'title') return t(has ? 'board_menu.edit_title' : 'board_menu.add_title')
+	return t(has ? 'board_menu.edit_description' : 'board_menu.add_description')
+}
+
+function open_image_text(field: ImageTextField) {
+	textDialog.value?.open(field, image_text_value(field), props.node.id)
+}
+
+function commit_image_text(payload: { id: string; field: ImageTextField; value: string }) {
+	void requireWorkspace().set_image_text(payload.id, payload.field, payload.value)
+}
 
 const shapeFillColor = ref<string | undefined>()
 const isLineShape = ref(false)
@@ -188,6 +220,24 @@ const items = computed<DropdownMenuItem[][]>(() => {
 				},
 			}]
 			: []),
+		...(showImageText.value
+			? [
+				{
+					label: image_text_label('title'),
+					icon: 'tabler:heading',
+					onSelect() {
+						open_image_text('title')
+					},
+				},
+				{
+					label: image_text_label('description'),
+					icon: 'tabler:text-caption',
+					onSelect() {
+						open_image_text('description')
+					},
+				},
+			]
+			: []),
 		...(props.showPreviewToggle && colorItem
 			? [{ label: colorItem.label, disabled: colorItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }]
 			: []),
@@ -234,4 +284,5 @@ const items = computed<DropdownMenuItem[][]>(() => {
 		</template>
 	</NodeMenuShell>
 	<BulkRemoveDialog ref="dialogRef" @confirm="onConfirm" />
+	<ImageTextDialog ref="textDialog" @confirm="commit_image_text" />
 </template>

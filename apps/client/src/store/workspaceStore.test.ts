@@ -2243,3 +2243,34 @@ describe('createWorkspaceStore: drive-root watch', () => {
 		expect(store.is_folder_expanded('/home/projects/sub')).toBe(true)
 	})
 })
+
+describe('createWorkspaceStore: image title and description', () => {
+	test('set_image_text writes a trimmed title and removes it when cleared', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/ws')
+		fake.seed_file('/ws/pic.png')
+		const store = await createWorkspaceStore(
+			{ id: '/ws', type: 'local', name: 'ws' },
+			fake.fm,
+		)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		await store.set_image_text('/ws/pic.png', 'title', '  Sunset  ')
+		await store.set_image_text('/ws/pic.png', 'description', 'After the rain')
+
+		expect(fake.get_xattr('/ws/pic.png', 'title')).toBe('Sunset')
+		expect(fake.get_xattr('/ws/pic.png', 'description')).toBe('After the rain')
+		expect(store.folder_container.children.find(child => child.id === '/ws/pic.png')).toMatchObject({
+			title: 'Sunset',
+			description: 'After the rain',
+		})
+
+		await store.set_image_text('/ws/pic.png', 'title', '   ')
+
+		expect(fake.get_xattr('/ws/pic.png', 'title')).toBeNull()
+		expect(fake.get_xattr('/ws/pic.png', 'description')).toBe('After the rain')
+		const pic = store.folder_container.children.find(child => child.id === '/ws/pic.png')
+		expect(pic).toMatchObject({ description: 'After the rain' })
+		expect(pic).not.toHaveProperty('title')
+	})
+})

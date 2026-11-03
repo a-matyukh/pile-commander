@@ -46,7 +46,8 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
 	invalidate_entry_content_caches,
@@ -113,6 +114,15 @@ type PersistXattrStore = {
 	last_error: string | null
 }
 
+function xattr_hooks(store: PersistXattrStore, owner_id: string) {
+	return {
+		resolve_folder: () => store.folders[owner_id],
+		replace_folder: (next: FolderWithChildrenXattrs) => {
+			store.folders[owner_id] = next
+		},
+	}
+}
+
 function persist_workspace_xattr(
 	store: PersistXattrStore,
 	fm: Pick<FileManager, 'set_xattr'>,
@@ -130,12 +140,26 @@ function persist_workspace_xattr(
 		value,
 		store.preview_folders,
 		(error) => report_error(store, error),
-		{
-			resolve_folder: () => store.folders[owner_id],
-			replace_folder: (next) => {
-				store.folders[owner_id] = next
-			},
-		},
+		xattr_hooks(store, owner_id),
+	)
+}
+
+function clear_workspace_xattr(
+	store: PersistXattrStore,
+	fm: Pick<FileManager, 'remove_xattr'>,
+	folder_data: FolderWithChildrenXattrs,
+	id: string,
+	name: string,
+) {
+	const owner_id = folder_data.id
+	return clear_xattr(
+		fm,
+		folder_data,
+		id,
+		name,
+		store.preview_folders,
+		(error) => report_error(store, error),
+		xattr_hooks(store, owner_id),
 	)
 }
 
@@ -1311,6 +1335,24 @@ export async function createWorkspaceStore(
 					return
 				}
 				await persist_workspace_xattr(this, fm, folder_data, id, 'background', new_background)
+			},
+
+			async set_image_text(id: string, field: ImageTextField, value: string) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const container = to_folder_container(this.opened_folder, this.preview_folders)
+				const entity = find_widget(container, id)
+				const current = entity?.type === 'file' ? entity[field] : undefined
+				const next = image_text_from_stored(value)
+				if (current === next) return
+
+				if (next === undefined) {
+					await clear_workspace_xattr(this, fm, folder_data, id, field)
+					return
+				}
+				await persist_workspace_xattr(this, fm, folder_data, id, field, next)
 			},
 
 			async change_shape_fill(id: string, color: Color) {

@@ -253,6 +253,8 @@ type WorkspaceStore = {
 	/** Rekeys the connections cache for a renamed/moved folder subtree. */
 	rekey_connections(old_id: string, new_id: string): void
 	change_background(id: string, new_background: ImageBase64 | Color): Promise<void>
+	/** Image heading (`title`) or caption (`description`). An empty value removes the xattr. */
+	set_image_text(id: string, field: 'title' | 'description', value: string): Promise<void>
 	change_shape_fill(id: string, color: Color): Promise<void>
 	change_line_geometry(
 		id: string,

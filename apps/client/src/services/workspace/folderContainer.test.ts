@@ -80,6 +80,33 @@ describe('to_folder_container', () => {
 		})
 	})
 
+	test('maps an image title and description onto the file widget', () => {
+		const container = to_folder_container(folder(
+			'/ws',
+			'ws',
+			[
+				entry('/ws/pic.png', 'pic.png', 'file', [
+					{ name: 'title', value: '2024' },
+					{ name: 'description', value: 'true' },
+				]),
+				entry('/ws/note.txt', 'note.txt', 'file', [
+					{ name: 'title', value: '{"a":1}' },
+					{ name: 'description', value: '[1]' },
+				]),
+			],
+		))
+
+		expect(container.children.find(child => child.name === 'pic.png')).toMatchObject({
+			type: 'file',
+			title: '2024',
+			description: 'true',
+		})
+		const note = container.children.find(child => child.name === 'note.txt')
+		expect(note).toBeDefined()
+		expect(note).not.toHaveProperty('title')
+		expect(note).not.toHaveProperty('description')
+	})
+
 	test('reads a dashboard cell without treating it as board position', () => {
 		const container = to_folder_container(folder(
 			'/ws',

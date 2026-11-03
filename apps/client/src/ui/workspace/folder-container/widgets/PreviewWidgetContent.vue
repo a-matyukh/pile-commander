@@ -4,6 +4,7 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import WidgetShell from './WidgetShell.vue'
 import PreviewContent from './PreviewContent.vue'
+import ImageFigure from './ImageFigure.vue'
 import { PREVIEW_KIND_CONFIG, type PreviewKind } from './previewKinds'
 import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
@@ -48,6 +49,9 @@ const extraStyle = computed(() => {
 })
 
 const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => props.widget, 'open_file')
+
+const imageTitle = computed(() => props.widget.type === 'file' ? props.widget.title : undefined)
+const imageDescription = computed(() => props.widget.type === 'file' ? props.widget.description : undefined)
 </script>
 
 <template>
@@ -65,12 +69,19 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 		@dragstart="onDragStart"
 		@dblclick="onDblClick"
 	>
-		<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
+		<ImageFigure
+			v-if="kind === 'image'"
+			:mode="layout === 'board' ? 'outside' : 'stack'"
+			:title="imageTitle"
+			:description="imageDescription"
+		>
+			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
+		</ImageFigure>
+		<PreviewContent v-else :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 	</WidgetShell>
 </template>
 
 <style scoped>
-:deep(.image-widget),
 :deep(.video-widget),
 :deep(.audio-widget),
 :deep(.model-widget),
@@ -82,6 +93,17 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 :deep(.dashboard-shape-widget) {
 	padding: 0;
 	overflow: hidden;
+}
+
+/* The picture clips to the card. The heading and caption hang outside it. */
+:deep(.image-widget) {
+	padding: 0;
+	overflow: visible;
+}
+
+:deep(.image-widget .board-widget-content) {
+	overflow: visible;
+	border-radius: inherit;
 }
 
 :deep(.image-widget),

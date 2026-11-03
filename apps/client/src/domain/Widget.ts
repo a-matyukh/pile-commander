@@ -57,6 +57,10 @@ type FileXattrs = CommonXattrs & Partial<{
 	padding: number
 	cover: ImageBase64 | Color
 	model_camera: ModelCameraState
+	/** Heading drawn above an image preview. */
+	title: string
+	/** Caption drawn below an image preview. */
+	description: string
 }>
 
 type FolderCoverXattrs = CommonXattrs & Partial<{
