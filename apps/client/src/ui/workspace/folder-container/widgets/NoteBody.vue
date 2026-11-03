@@ -399,6 +399,22 @@ onUnmounted(() => {
 	color: inherit;
 }
 
+/* Typography draws literal backticks around inline code and leaves it bare,
+   so `name` looks like raw markdown. A chip instead, same fill as a code block. */
+.note-preview :deep(:not(pre) > code) {
+	background: rgb(0 0 0 / 0.08);
+	border-radius: 0.375rem;
+	padding: 0.15em 0.4em;
+	font-family: var(--font-mono);
+	font-size: 0.85em;
+	font-weight: 500;
+}
+
+.note-preview :deep(:not(pre) > code)::before,
+.note-preview :deep(:not(pre) > code)::after {
+	content: none;
+}
+
 /* Notion callouts arrive as <aside>. Translucent so a colored note still shows through. */
 .note-preview :deep(aside) {
 	background: rgb(0 0 0 / 0.06);
