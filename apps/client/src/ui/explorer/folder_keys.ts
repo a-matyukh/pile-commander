@@ -3,6 +3,7 @@ import type { ComputedRef } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { FolderContainerWidget, FolderView } from '@/domain/Widget'
+import { layer_order, layer_step_from_key } from '@/services/board/layerOrder'
 import { normalize_workspace_id, parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { root_folder_id } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
@@ -142,15 +143,29 @@ export function use_folder_keys(
 		return true
 	}
 
+	function restack(ws: WorkspaceStore, step: ReturnType<typeof layer_step_from_key>): boolean {
+		const folder = container.value
+		if (!step || !folder || (folder.view !== 'board' && folder.view !== 'canvas') || !ws.can_write) return false
+		const ids = folder.children.map(child => child.id)
+		const moving = ws.selection.filter(id => ids.includes(id))
+		if (!moving.length) return false
+		const next = layer_order(ids, moving, step)
+		if (!next) return true
+		void ws.reorder_children(folder.id, next)
+		return true
+	}
+
 	useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 		const ws = workspace.value
 		if (!ws || event.altKey || event.shiftKey || keys_elsewhere(event)) return
 		const command = event.metaKey || event.ctrlKey
 		const dir = DIRS[event.key]
+		const step = layer_step_from_key(event)
 		let handled = false
 		if (command && dir === 'up') handled = open_parent()
 		else if ((command && dir === 'down') || (!command && event.key === 'Enter')) handled = open_selected(ws)
 		else if (!command && dir && ARROW_VIEWS.includes(container.value?.view ?? 'list')) handled = move(ws, dir)
+		else if (step) handled = restack(ws, step)
 		if (handled) event.preventDefault()
 	})
 }

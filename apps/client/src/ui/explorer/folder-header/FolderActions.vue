@@ -38,7 +38,7 @@ const spatial = computed(() => {
 	<ViewMenu v-if="folder.drive_id !== 'public'" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
 	<template v-if="spatial && workspace.can_write">
-		<LayersMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+		<LayersMenu :workspace="workspace" :folder="folder" :align="align" />
 		<BackgroundMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	</template>
 	<template v-if="own">

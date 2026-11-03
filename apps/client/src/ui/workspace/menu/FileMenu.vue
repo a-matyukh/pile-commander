@@ -40,6 +40,7 @@ const {
 const {
 	isMultiSelection,
 	clipboardItems,
+	layerItems,
 	selectionMenuItems,
 	sharedBackground,
 	dialogRef,
@@ -246,6 +247,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
 
 	return [
 		...(primary.length > 0 ? [primary] : []),
+		...(layerItems.value.length ? [layerItems.value] : []),
 		clipboardItems.value,
 		rename_remove_items.value,
 	]

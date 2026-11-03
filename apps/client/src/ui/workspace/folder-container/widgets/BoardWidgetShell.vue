@@ -10,6 +10,7 @@ import { useLineShapeMeta } from '../shape/useLineShapeMeta'
 import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveBackground'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWidgetSelection } from './useWidgetSelection'
+import { layer_peek_id } from '../layerPeek'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 
 defineOptions({ inheritAttrs: false })
@@ -134,6 +135,7 @@ const shellClass = computed(() => [
 		'line-shape-widget': isShapeWidget.value && isLine.value,
 		// Line/arrow uses endpoint handles instead of a selection ring bbox.
 		'pc-selected': isSelected.value && !(isShapeWidget.value && isLine.value),
+		'pc-layer-peek': layer_peek_id.value === props.widget.id,
 		'pc-cut': isCut.value,
 		// The Explorer rounds files less than folders, and a folder card has a tab
 		'file-card': props.widget.type === 'file',
@@ -314,6 +316,15 @@ const { setRootRef, style } = useBoardWidget({
  * layer wins and the widget can pass over later (higher) siblings / folders. */
 .board-widget.is-dragging {
 	z-index: 9999 !important;
+}
+/* The layers panel's hovered row. Outline stays visible above later siblings;
+ * canvas lifts the Vue Flow node instead (the shell's z-index cannot). */
+.board-widget.pc-layer-peek {
+	outline: 2px solid var(--fill-accent);
+	outline-offset: 1px;
+}
+.board-widget.pc-layer-peek:not(.layout-canvas) {
+	z-index: 5000 !important;
 }
 .board-widget.shape-widget {
 	padding: 0;

@@ -12,6 +12,7 @@ import { useColorSubmenu } from './useColorSubmenu'
 import { ai_available } from '@/store/ai'
 import { open_bulk_rename } from '@/store/aiBulkRename'
 import { name_target_kind } from '@/services/ai/naming'
+import { layer_order, type LayerStep } from '@/services/board/layerOrder'
 import { open_summary } from '@/store/aiSummary'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
 
@@ -168,6 +169,56 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		})
 	}
 
+	const spatial = computed(() => {
+		const view = scope.container.value?.view
+		return view === 'board' || view === 'canvas'
+	})
+
+	function apply_layer(step: LayerStep) {
+		const folder_id = scope.folderId.value
+		const order = paneChildren.value.map(child => child.id)
+		const next = layer_order(order, selectedIds.value, step)
+		if (!next || !folder_id) return
+		void requireWorkspace().reorder_children(folder_id, next)
+	}
+
+	const layerItems = computed<DropdownMenuItem[]>(() => {
+		if (!spatial.value) return []
+		const order = paneChildren.value.map(child => child.id)
+		const moving = selectedIds.value
+		const stuck = (step: LayerStep) => layer_order(order, moving, step) === null
+		return [{
+			label: 'Layer',
+			disabled: readonly.value,
+			children: [
+				{
+					label: 'Bring to front',
+					kbds: [']'],
+					disabled: readonly.value || stuck('front'),
+					onSelect() { apply_layer('front') },
+				},
+				{
+					label: 'Bring forward',
+					kbds: ['meta', ']'],
+					disabled: readonly.value || stuck('forward'),
+					onSelect() { apply_layer('forward') },
+				},
+				{
+					label: 'Send backward',
+					kbds: ['meta', '['],
+					disabled: readonly.value || stuck('backward'),
+					onSelect() { apply_layer('backward') },
+				},
+				{
+					label: 'Send to back',
+					kbds: ['['],
+					disabled: readonly.value || stuck('back'),
+					onSelect() { apply_layer('back') },
+				},
+			],
+		}]
+	})
+
 	const aiItems = computed<DropdownMenuItem[]>(() => {
 		if (!ai_available(workspace.value)) return []
 		return [
@@ -177,6 +228,7 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 	})
 
 	const selectionMenuItems = computed<DropdownMenuItem[][]>(() => [
+		...(layerItems.value.length ? [layerItems.value] : []),
 		...(canColor.value ? [[{
 			label: 'Background',
 			disabled: readonly.value,
@@ -194,6 +246,7 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 	return {
 		isMultiSelection,
 		clipboardItems,
+		layerItems,
 		selectionMenuItems,
 		sharedBackground,
 		dialogRef,

@@ -1,52 +1,75 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
+import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
-import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { t } from '@/i18n'
-import { is_note_name } from '@/services/ai/naming'
-import { get_media_kind } from '@/services/board/media'
 import { to_folder_container } from '@/services/workspace/folderContainer'
+import { layer_peek_id } from '@/ui/workspace/folder-container/layerPeek'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
 import { use_pointer_reorder } from '@/ui/kit/use_pointer_reorder'
+import LayerGlyph from './LayerGlyph.vue'
 
 /**
  * "Layers" of a board or a canvas, as in the prototype: its items in the
  * order they are drawn, first at the bottom. Dragging one changes that order
- * (the folder's order of children); a click selects it on the board
+ * (the folder's order of children); a click selects it on the board.
+ * Hovering a row outlines that item on the board. Once a drag starts, the
+ * outline stays on the row being dragged.
  */
-const props = defineProps<{ workspace: WorkspaceStore; folder_id: string; align: 'start' | 'end' }>()
+const props = defineProps<{ workspace: WorkspaceStore; folder: FolderRef; align: 'start' | 'end' }>()
 
 const open = ref(false)
 const list = ref<HTMLElement | null>(null)
+const dragging = ref(false)
 
 const children = computed(() => {
-	const folder = props.workspace.folders[props.folder_id]
+	const folder = props.workspace.folders[props.folder.folder_id]
 	return folder ? to_folder_container(folder, props.workspace.preview_folders).children : []
 })
-
-function icon_of(child: FolderContainerWidgetChild): string {
-	if (child.type !== 'file') return 'tabler:folder'
-	if (is_note_name(child.name)) return 'tabler:note'
-	const kind = get_media_kind(child.name)
-	if (kind === 'image') return 'tabler:photo'
-	if (kind === 'video') return 'tabler:movie'
-	if (kind === 'audio') return 'tabler:music'
-	return 'tabler:file'
-}
 
 function move(key: string, target: string, after: boolean) {
 	const ids = children.value.map(child => child.id).filter(id => id !== key)
 	const index = ids.indexOf(target)
 	if (index === -1) return
 	ids.splice(after ? index + 1 : index, 0, key)
-	void props.workspace.reorder_children(props.folder_id, ids)
+	void props.workspace.reorder_children(props.folder.folder_id, ids)
 }
 
-use_pointer_reorder({ container: list, item: '.ly', axis: 'y', on_move: move })
+function row_key(from: Element | null | undefined): string | null {
+	const row = from?.closest?.('.ly')
+	if (!(row instanceof HTMLElement) || !list.value?.contains(row)) return null
+	return row.dataset.key ?? null
+}
+
+function peek(event: PointerEvent) {
+	if (dragging.value) return
+	layer_peek_id.value = row_key(event.target as Element | null)
+}
+
+function clear_peek() {
+	if (dragging.value) return
+	layer_peek_id.value = null
+}
+
+function on_dragging(key: string | null, event?: PointerEvent) {
+	dragging.value = key !== null
+	if (key) {
+		layer_peek_id.value = key
+		return
+	}
+	layer_peek_id.value = event ? row_key(document.elementFromPoint(event.clientX, event.clientY)) : null
+}
+
+watch(open, (is_open) => {
+	if (!is_open) clear_peek()
+})
+onBeforeUnmount(clear_peek)
+
+use_pointer_reorder({ container: list, item: '.ly', axis: 'y', on_move: move, on_dragging })
 </script>
 
 <template>
@@ -62,7 +85,7 @@ use_pointer_reorder({ container: list, item: '.ly', axis: 'y', on_move: move })
 			/>
 		</template>
 		<MenuLabel :label="t('layers.title')" />
-		<div v-if="children.length" ref="list">
+		<div v-if="children.length" ref="list" @pointerover="peek" @pointerleave="clear_peek">
 			<MenuItem
 				v-for="child in children"
 				:key="child.id"
@@ -74,7 +97,7 @@ use_pointer_reorder({ container: list, item: '.ly', axis: 'y', on_move: move })
 			>
 				<template #leading>
 					<Icon icon="tabler:grip-vertical" class="gp" />
-					<Icon :icon="icon_of(child)" />
+					<LayerGlyph :workspace="workspace" :folder="folder" :child="child" />
 				</template>
 				{{ child.name }}
 			</MenuItem>

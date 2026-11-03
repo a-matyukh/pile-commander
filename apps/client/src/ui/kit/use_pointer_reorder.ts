@@ -9,6 +9,8 @@ type Options = {
 	handle?: string
 	axis: 'x' | 'y'
 	on_move: (key: string, target_key: string, after: boolean) => void
+	/** The dragged key once the gesture passes the threshold; null when it ends */
+	on_dragging?: (key: string | null, event?: PointerEvent) => void
 }
 
 /**
@@ -49,6 +51,7 @@ export function use_pointer_reorder(o: Options) {
 				drag.on = true
 				drag.el.classList.add('dragging')
 				document.documentElement.classList.add('reordering')
+				if (drag.el.dataset.key) o.on_dragging?.(drag.el.dataset.key, e)
 				window.getSelection()?.removeAllRanges()
 				// armed now, not on pointerup: an item can turn pointerup into a click
 				window.addEventListener('click', swallow_click, true)
@@ -66,7 +69,7 @@ export function use_pointer_reorder(o: Options) {
 		{ passive: false },
 	)
 
-	const finish = (apply: boolean) => {
+	const finish = (apply: boolean, event?: PointerEvent) => {
 		if (!drag) return
 		const d = drag
 		drag = null
@@ -74,10 +77,11 @@ export function use_pointer_reorder(o: Options) {
 		d.el.classList.remove('dragging')
 		document.documentElement.classList.remove('reordering')
 		clear_marks()
+		o.on_dragging?.(null, event)
 		if (apply && d.target && d.el.dataset.key) o.on_move(d.el.dataset.key, d.target.key, d.target.after)
 		setTimeout(() => window.removeEventListener('click', swallow_click, true), 0)
 	}
 
-	useEventListener(window, 'pointerup', () => finish(true))
-	useEventListener(window, 'pointercancel', () => finish(false))
+	useEventListener(window, 'pointerup', (event: PointerEvent) => finish(true, event))
+	useEventListener(window, 'pointercancel', (event: PointerEvent) => finish(false, event))
 }

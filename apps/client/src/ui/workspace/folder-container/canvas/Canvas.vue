@@ -882,6 +882,11 @@ function onSectionPointerDown(event: PointerEvent) {
 	z-index: 10000 !important;
 }
 
+/* The layers panel outlines the widget; the node has to rise or a later one covers it. */
+.canvas-flow :deep(.vue-flow__node:has(.pc-layer-peek)) {
+	z-index: 1000 !important;
+}
+
 /* Edit shadow lives on the inner note widget; raise the VF node so it isn't
  * clipped under later nodes. */
 .canvas-flow :deep(.vue-flow__node:has(.is_edit)) {
