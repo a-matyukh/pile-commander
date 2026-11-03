@@ -17,6 +17,33 @@ function blob_url(bytes: Uint8Array): string {
  * One blob URL per entry and token. A new hash is a new key, so the previous
  * URL can be revoked when the last holder lets it go.
  */
+/**
+ * Remember bytes already in hand (the webp just encoded and uploaded).
+ * The next `load_pile_url` for this key shows them and does not download.
+ * The returned function revokes the URL when nobody has taken it; a holder
+ * keeps it until their own release.
+ */
+export function seed_pile_url(key: string, bytes: Uint8Array): () => void {
+	const existing = urls.get(key)
+	if (existing) {
+		if (existing.refs > 0) return () => {}
+		URL.revokeObjectURL(existing.url)
+		urls.delete(key)
+	}
+	if (inflight.has(key)) return () => {}
+	const url = blob_url(bytes)
+	urls.set(key, { url, refs: 0 })
+	let open = true
+	return () => {
+		if (!open) return
+		open = false
+		const row = urls.get(key)
+		if (!row || row.url !== url || row.refs > 0) return
+		URL.revokeObjectURL(row.url)
+		urls.delete(key)
+	}
+}
+
 export function load_pile_url(key: string, load: () => Promise<Uint8Array | null>): Promise<string | null> {
 	const ready = urls.get(key)
 	if (ready) {

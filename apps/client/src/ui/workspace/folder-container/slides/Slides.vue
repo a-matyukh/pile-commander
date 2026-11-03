@@ -4,6 +4,7 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import CoverCaption from '../widgets/CoverCaption.vue'
 import { backgroundStyle, defaultViewBackground, isImageBackground } from '../widgets/resolveBackground'
+import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { resolvePreviewKind, resolveWidgetRole, type WidgetRole } from '../widgets/widgetRegistry'
 import { splitFileName } from '../widgets/fileNameParts'
@@ -167,6 +168,7 @@ function onPreviewDblClick() {
 		:data-path="folderId"
 		@click="onSectionClick"
 	>
+		<PileImagePending :folder_id="folderId" role="background" />
 		<header v-if="widget" class="slides-header">
 			<SlideSwitcher />
 			<div
@@ -294,6 +296,7 @@ function onPreviewDblClick() {
 
 <style scoped>
 .slides {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	height: 100%;

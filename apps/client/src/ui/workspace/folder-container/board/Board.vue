@@ -11,6 +11,7 @@ import FolderContainerCtxMenu from '@/ui/workspace/menu/FolderContainerCtxMenu.v
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { board_content_extent } from '@/services/board/layout'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useBoardMarqueeSelection } from './useBoardMarqueeSelection'
 import { isEmptyBoardPointerTarget } from './isEmptyBoardPointerTarget'
@@ -212,6 +213,7 @@ const boardExtentStyle = computed(() => {
 			@dblclick.self="onBoardDblClick"
 			@contextmenu.self="onBoardContextMenu"
 		>
+			<PileImagePending :folder_id="folderId" role="background" />
 			<div
 				class="board-extent"
 				:style="boardExtentStyle"

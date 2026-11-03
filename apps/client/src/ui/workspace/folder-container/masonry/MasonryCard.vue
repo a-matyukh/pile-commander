@@ -15,6 +15,7 @@ import { splitFileName } from '../widgets/fileNameParts'
 import { is_pile_image_token } from '@pile-commander/file-manager'
 import CoverCaption from '../widgets/CoverCaption.vue'
 import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from '../widgets/resolveBackground'
+import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import MasonryImage from './MasonryImage.vue'
@@ -121,6 +122,7 @@ function onDblClick(event: MouseEvent) {
 			@pointerup="isNote ? onPointerUp($event) : undefined"
 			@pointercancel="isNote ? onPointerCancel() : undefined"
 		>
+			<PileImagePending v-if="widget.type === 'folder_cover'" :folder_id="widget.id" role="cover" />
 			<ImageFigure
 				v-if="isImage && widget.type === 'file'"
 				mode="grow"

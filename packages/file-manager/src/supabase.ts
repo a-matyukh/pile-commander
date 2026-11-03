@@ -608,14 +608,29 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// presign upload → PUT bytes straight to B2 → finalize. The backend
 	// copies staging into an immutable key and atomically records the entry
 	// with an idempotency receipt. Repeating finalize never deletes the blob.
+	async function traced<T>(
+		trace: ((step: string, ms: number) => void) | undefined,
+		step: string,
+		run: () => Promise<T>,
+	): Promise<T> {
+		if (!trace) return run()
+		const started = performance.now()
+		try {
+			return await run()
+		} finally {
+			trace(step, Math.round(performance.now() - started))
+		}
+	}
+
 	async function upload_file_impl(
 		folder_id: string,
 		filename: string,
 		data: Blob,
 		mime?: string,
 		onProgress?: UploadProgressCallback,
+		trace?: (step: string, ms: number) => void,
 	): Promise<FolderChild> {
-		const folder = await resolve(folder_id)
+		const folder = await traced(trace, "upload_resolve", () => resolve(folder_id))
 		let type = mime || data.type || mime_from_name(filename)
 
 		if (is_text_mime(type)) {
@@ -638,25 +653,30 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		}
 
 		try {
-			const { storage_key, url } = await backend_post<{ storage_key: string; url: string }>(
-				"/presign/upload",
-				{ workspace_id, name: filename, size_bytes: data.size, mime: type },
+			const { storage_key, url } = await traced(trace, "presign", () =>
+				backend_post<{ storage_key: string; url: string }>(
+					"/presign/upload",
+					{ workspace_id, name: filename, size_bytes: data.size, mime: type },
+				),
 			)
-			if (options.put_blob) await options.put_blob(url, type, data, onProgress)
-			else await put_with_progress(url, type, data, onProgress)
+			await traced(trace, "put", () =>
+				options.put_blob ? options.put_blob(url, type, data, onProgress) : put_with_progress(url, type, data, onProgress),
+			)
 
 			// the id is minted here so the realtime echo of the backend's insert
 			// is recognized as our own write
 			const id = crypto.randomUUID()
 			mark_write(id)
-			const { entry } = await backend_post<{ entry: EntryRow; size_bytes: number }>("/finalize", {
-				storage_key,
-				id,
-				parent_id: folder.id,
-				name: filename,
-				mime: type,
-				client_id: client_instance_id(),
-			})
+			const { entry } = await traced(trace, "finalize", () =>
+				backend_post<{ entry: EntryRow; size_bytes: number }>("/finalize", {
+					storage_key,
+					id,
+					parent_id: folder.id,
+					name: filename,
+					mime: type,
+					client_id: client_instance_id(),
+				}),
+			)
 			return to_child(entry)
 		} catch (error) {
 			if (error instanceof PlanLimitError && !error.file_mime) {
@@ -1107,47 +1127,82 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	}
 
 	async function write_pile_image(folder_id: string, role: PileImageRole, bytes: Uint8Array): Promise<string> {
-		const folder = await resolve(folder_id)
-		if (folder.kind !== "folder") throw new Error("pile images belong to a folder")
-		const hash8 = await pile_image_hash8(bytes)
-		const file = `${role}-${hash8}.webp`
-		const pile = await ensure_pile_dir(folder)
-		if (await child_named(pile, file)) return pile_image_token(role, hash8)
-		try {
-			const copy = new Uint8Array(bytes.byteLength)
-			copy.set(bytes)
-			await upload_file_impl(pile.path, file, new Blob([copy], { type: "image/webp" }), "image/webp")
-		} catch (error) {
-			if (!sibling_name_taken(error)) throw error
-			if (!(await child_named(pile, file))) throw error
+		const steps: Record<string, number> = {}
+		const time = async <T>(step: string, run: () => Promise<T>): Promise<T> => {
+			const started = performance.now()
+			try {
+				return await run()
+			} finally {
+				steps[step] = Math.round(performance.now() - started)
+			}
 		}
-		return pile_image_token(role, hash8)
+		try {
+			const folder = await time("resolve", () => resolve(folder_id))
+			if (folder.kind !== "folder") throw new Error("pile images belong to a folder")
+			const hash8 = await time("hash", () => pile_image_hash8(bytes))
+			const file = `${role}-${hash8}.webp`
+			const pile = await time("ensure_pile_dir", () => ensure_pile_dir(folder))
+			if (await time("child_named", () => child_named(pile, file))) return pile_image_token(role, hash8)
+			try {
+				const copy = new Uint8Array(bytes.byteLength)
+				copy.set(bytes)
+				await upload_file_impl(
+					pile.path,
+					file,
+					new Blob([copy], { type: "image/webp" }),
+					"image/webp",
+					undefined,
+					(step, ms) => { steps[step] = ms },
+				)
+			} catch (error) {
+				if (!sibling_name_taken(error)) throw error
+				if (!(await child_named(pile, file))) throw error
+			}
+			return pile_image_token(role, hash8)
+		} finally {
+			console.info(`[pile-image] write ${role} ${bytes.byteLength}B`, steps)
+		}
 	}
 
 	async function read_pile_image(entry_id: string, token: string): Promise<Uint8Array | null> {
 		const parsed = parse_pile_image_token(token)
 		if (!parsed) return null
-		let folder: EntryRow
-		try {
-			folder = await resolve(entry_id)
-		} catch {
-			return null
+		const steps: Record<string, number> = {}
+		const time = async <T>(step: string, run: () => Promise<T>): Promise<T> => {
+			const started = performance.now()
+			try {
+				return await run()
+			} finally {
+				steps[step] = (steps[step] ?? 0) + Math.round(performance.now() - started)
+			}
 		}
-		if (folder.kind !== "folder") return null
-		let file: EntryRow
+		let bytes: Uint8Array | null = null
 		try {
-			file = await resolve(`${pile_dir_path(folder.path)}/${parsed.file}`)
-		} catch {
-			return null
-		}
-		if (file.kind !== "file") return null
-		try {
-			const media = await presign(file.id)
-			const response = await fetch(media.url)
-			if (!response.ok) return null
-			return new Uint8Array(await response.arrayBuffer())
-		} catch {
-			return null
+			let folder: EntryRow
+			try {
+				folder = await time("resolve", () => resolve(entry_id))
+			} catch {
+				return null
+			}
+			if (folder.kind !== "folder") return null
+			let file: EntryRow
+			try {
+				file = await time("resolve", () => resolve(`${pile_dir_path(folder.path)}/${parsed.file}`))
+			} catch {
+				return null
+			}
+			if (file.kind !== "file") return null
+			try {
+				const media = await time("presign", () => presign(file.id))
+				const response = await time("fetch", () => fetch(media.url))
+				if (!response.ok) return null
+				bytes = new Uint8Array(await response.arrayBuffer())
+				return bytes
+			} catch {
+				return null
+			}
+		} finally {
+			console.info(`[pile-image] read ${token}`, { ...steps, bytes: bytes?.byteLength ?? 0 })
 		}
 	}
 
@@ -1336,17 +1391,27 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		// a server-side jsonb merge (rpc.sql merge_entry_xattrs): two clients
 		// writing different keys of one entry no longer clobber each other
 		async set_xattr(id: string, name: string, value: string) {
-			const row = await resolve(id)
-			mark_write(row.id)
-			const [refused] = await merge_xattrs([{ path: row.path, xattrs: { [name]: value } }])
-			if (refused) {
-				throw new Error(
-					refused.status === "too_large"
-						? `set_xattr failed: attributes of ${id} exceed the 64 KB limit`
-						: `set_xattr failed: entry not found: ${id}`,
-				)
+			const trace = PILE_IMAGE_ATTRS.has(name)
+			const steps: Record<string, number> = {}
+			const started = performance.now()
+			try {
+				const row = await resolve(id)
+				mark_write(row.id)
+				const [refused] = await merge_xattrs([{ path: row.path, xattrs: { [name]: value } }])
+				if (refused) {
+					throw new Error(
+						refused.status === "too_large"
+							? `set_xattr failed: attributes of ${id} exceed the 64 KB limit`
+							: `set_xattr failed: entry not found: ${id}`,
+					)
+				}
+				if (trace) steps.set_xattr = Math.round(performance.now() - started)
+				const sweep_started = performance.now()
+				await sweep_pile_images(row.path, [name])
+				if (trace) steps.sweep = Math.round(performance.now() - sweep_started)
+			} finally {
+				if (trace) console.info(`[pile-image] set_xattr ${name}`, steps)
 			}
-			await sweep_pile_images(row.path, [name])
 		},
 
 		// Bulk layout writes (the cloud bridge, a pack import) land in a

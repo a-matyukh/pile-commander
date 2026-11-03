@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { load_pile_url, release_pile_url, reset_pile_image_cache } from './pileImageCache'
+import { load_pile_url, release_pile_url, reset_pile_image_cache, seed_pile_url } from './pileImageCache'
 
 const revoked: string[] = []
 
@@ -43,5 +43,26 @@ describe('pile image cache', () => {
 		expect(revoked).toEqual([])
 		release_pile_url(key)
 		expect(revoked).toEqual(['blob:shared'])
+	})
+
+	it('shows seeded bytes without downloading, and revokes a seed nobody took', async () => {
+		let n = 0
+		vi.stubGlobal('URL', {
+			createObjectURL: () => `blob:${n++}`,
+			revokeObjectURL: (url: string) => { revoked.push(url) },
+		})
+		const key = 'board\0pile:cover-aaaaaaaa.webp'
+		const load = vi.fn(async () => new Uint8Array([9]))
+		const release = seed_pile_url(key, new Uint8Array([1, 2, 3]))
+		await expect(load_pile_url(key, load)).resolves.toBe('blob:0')
+		expect(load).not.toHaveBeenCalled()
+		release()
+		expect(revoked).toEqual([])
+		release_pile_url(key)
+		expect(revoked).toEqual(['blob:0'])
+
+		const unused = seed_pile_url('other\0pile:cover-bbbbbbbb.webp', new Uint8Array([4]))
+		unused()
+		expect(revoked).toEqual(['blob:0', 'blob:1'])
 	})
 })

@@ -52,6 +52,7 @@ import EmptyPaneHint from '../EmptyPaneHint.vue'
 import { useLineDrawMode } from '../useLineDrawMode'
 import CanvasAxes from './CanvasAxes.vue'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { setExternalDropPositionResolver } from '../externalDropPosition'
@@ -635,6 +636,7 @@ function onSectionPointerDown(event: PointerEvent) {
 			@contextmenu="onSectionContextMenu"
 			@pointerdown.capture="onSectionPointerDown"
 		>
+			<PileImagePending :folder_id="folderId" role="background" />
 			<CanvasDrawingToolbar
 				ref="toolbarHost"
 				v-show="!toolbarPrefs.hidden && can_write"

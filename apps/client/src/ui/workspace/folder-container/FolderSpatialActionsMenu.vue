@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { choose_pile_image } from '@/services/workspace/choosePileImage'
+import { end_pile_image, settle_pile_image_seed } from '@/services/workspace/pileImageUpload'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerMenuItems } from '@/ui/workspace/menu/useFolderContainerMenuItems'
 import { useFolderContainerScope } from './useFolderContainerScope'
@@ -14,9 +15,16 @@ const workspace = useWorkspace()
 
 async function choose_background() {
 	const ws = workspace.value
+	const folder_id = folderId.value
 	if (!ws) return
-	const token = await choose_pile_image(ws, folderId.value, 'background')
-	if (token) await ws.change_background(folderId.value, token)
+	const token = await choose_pile_image(ws, folder_id, 'background')
+	if (!token) return
+	try {
+		await ws.change_background(folder_id, token)
+	} finally {
+		settle_pile_image_seed(folder_id, 'background')
+		end_pile_image(folder_id, 'background')
+	}
 }
 
 const {

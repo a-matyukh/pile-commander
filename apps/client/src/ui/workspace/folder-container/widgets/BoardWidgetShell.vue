@@ -8,6 +8,7 @@ import ResizeHandleIcon from './ResizeHandleIcon.vue'
 import LineEndpointHandles from '../shape/LineEndpointHandles.vue'
 import { useLineShapeMeta } from '../shape/useLineShapeMeta'
 import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from './resolveBackground'
+import PileImagePending from './PileImagePending.vue'
 import { useResolvedFill } from './useResolvedFill'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWidgetSelection } from './useWidgetSelection'
@@ -269,6 +270,7 @@ const { setRootRef, style } = useBoardWidget({
 			<div class="board-widget-content">
 				<slot />
 			</div>
+			<PileImagePending v-if="widget.type === 'folder_cover'" :folder_id="widget.id" role="cover" />
 			<LineEndpointHandles
 				v-if="showLineEndpoints"
 				:widget="widget"

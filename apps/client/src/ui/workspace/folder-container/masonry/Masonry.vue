@@ -6,6 +6,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import MasonryCard from './MasonryCard.vue'
 import {
@@ -161,6 +162,7 @@ function onSectionClick(event: MouseEvent) {
 		:data-path="folderId"
 		@click="onSectionClick"
 	>
+		<PileImagePending :folder_id="folderId" role="background" />
 		<div v-if="children.length === 0" class="masonry-empty">
 			<p class="text-muted">No items</p>
 		</div>
@@ -184,6 +186,7 @@ function onSectionClick(event: MouseEvent) {
 
 <style scoped>
 .masonry {
+	position: relative;
 	min-height: 100%;
 	display: flex;
 	justify-content: center;

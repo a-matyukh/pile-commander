@@ -6,6 +6,7 @@ import { useMediaSrc } from '@/ui/workspace/folder-container/media/useMediaSrc'
 import { splitFileName } from '@/ui/workspace/folder-container/widgets/fileNameParts'
 import CoverCaption from '@/ui/workspace/folder-container/widgets/CoverCaption.vue'
 import { backgroundStyle, isImageBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
+import PileImagePending from '@/ui/workspace/folder-container/widgets/PileImagePending.vue'
 import { useResolvedFill } from '@/ui/workspace/folder-container/widgets/useResolvedFill'
 import type { ItemGlyph } from './item_glyph'
 
@@ -72,6 +73,7 @@ const tab_path = computed(() => {
 		</svg>
 		<div v-if="folder" class="body" :style="cover_style.picture" :title="picture ? name : undefined" :aria-label="picture ? name : undefined">
 			<div class="dots"><slot name="menu" /></div>
+			<PileImagePending :folder_id="entry_id ?? ''" role="cover" />
 			<template v-if="!picture">
 				<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 				<span class="nm" :title="name">{{ name }}</span>

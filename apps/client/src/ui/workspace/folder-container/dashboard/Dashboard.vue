@@ -9,6 +9,7 @@ import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNot
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import WidgetTypeSwitch from '../widgets/WidgetTypeSwitch.vue'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import {
 	DASHBOARD_COLS,
@@ -155,6 +156,7 @@ function onSectionClick(event: MouseEvent) {
 		:data-path="folderId"
 		@click="onSectionClick"
 	>
+		<PileImagePending :folder_id="folderId" role="background" />
 		<div v-if="children.length === 0" class="dashboard-empty">
 			<p class="text-muted">No items</p>
 		</div>
@@ -203,6 +205,7 @@ function onSectionClick(event: MouseEvent) {
 
 <style scoped>
 .dashboard {
+	position: relative;
 	min-height: 100%;
 }
 

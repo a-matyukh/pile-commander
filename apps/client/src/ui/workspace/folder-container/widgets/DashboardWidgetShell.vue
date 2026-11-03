@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import DragHandle from './DragHandle.vue'
 import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from './resolveBackground'
+import PileImagePending from './PileImagePending.vue'
 import { useResolvedFill } from './useResolvedFill'
 import { useWidgetSelection } from './useWidgetSelection'
 import type { WidgetShellVariantProps } from './widgetShellProps'
@@ -152,6 +153,7 @@ const style = computed(() => {
 				<slot />
 			</div>
 		</component>
+		<PileImagePending v-if="widget.type === 'folder_cover'" :folder_id="widget.id" role="cover" />
 	</div>
 </template>
 

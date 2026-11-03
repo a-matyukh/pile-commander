@@ -5,6 +5,8 @@ import type { WorkspaceStore } from '@/domain/Store'
 import { is_desktop } from '@/isDesktop'
 import { t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
+import { seed_pile_url } from './pileImageCache'
+import { begin_pile_image, end_pile_image, hold_pile_image_seed } from './pileImageUpload'
 
 /** The file the person picks may be this large. What we store is a resized webp. */
 export const PILE_IMAGE_INPUT_LIMIT = 8 * 1024 * 1024
@@ -95,6 +97,7 @@ export async function choose_pile_image(
 	folder_id: string,
 	role: PileImageRole,
 ): Promise<string | null> {
+	let busy = false
 	try {
 		const picked = is_desktop ? await pick_desktop_image() : await pick_web_image()
 		if (!picked) return null
@@ -102,9 +105,21 @@ export async function choose_pile_image(
 			report_error(store, new Error(t('style.picture_too_large')))
 			return null
 		}
+		begin_pile_image(folder_id, role)
+		busy = true
+		const encode_started = performance.now()
 		const webp = await encode_pile_image(picked.bytes, picked.mime)
-		return await store.file_manager.write_pile_image(folder_id, role, webp)
+		console.info(`[pile-image] encode ${Math.round(performance.now() - encode_started)}ms`, {
+			in: picked.size,
+			out: webp.byteLength,
+		})
+		const token = await store.file_manager.write_pile_image(folder_id, role, webp)
+		hold_pile_image_seed(folder_id, role, seed_pile_url(`${folder_id}\0${token}`, webp))
+		// Stays on through the caller's xattr write. That finally is what clears it.
+		busy = false
+		return token
 	} catch (error) {
+		if (busy) end_pile_image(folder_id, role)
 		report_error(store, error)
 		return null
 	}
