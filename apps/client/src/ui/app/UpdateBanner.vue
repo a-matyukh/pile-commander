@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Icon } from '@iconify/vue'
+import { t } from '@/i18n'
 import updater, {
 	check_for_updates,
 	install_update,
 	dismiss_update,
 } from '@/store/updater'
+import { explorer_window_classes } from '@/ui/explorer/window_classes'
+import Button from '@/ui/kit/Button.vue'
 
 const visible = computed(() => {
 	if (updater.dismissed && updater.status !== 'downloading') return false
@@ -14,17 +18,23 @@ const visible = computed(() => {
 })
 
 const progress_label = computed(() => {
-	if (updater.content_length <= 0) return 'Downloading update…'
+	if (updater.content_length <= 0) return t('updates.downloading')
 	const pct = Math.min(100, Math.round((updater.downloaded / updater.content_length) * 100))
-	return `Downloading update… ${pct}%`
+	return t('updates.downloading_pct', { pct })
 })
 
 const title = computed(() => {
 	if (updater.status === 'downloading') return progress_label.value
-	if (updater.status === 'error') return updater.error || 'Could not install the update'
+	if (updater.status === 'error') return updater.error || t('updates.install_failed')
 	return updater.version
-		? `Pile Commander ${updater.version} is available`
-		: 'A new version is available'
+		? t('updates.available', { version: updater.version })
+		: t('updates.available_plain')
+})
+
+const icon = computed(() => {
+	if (updater.status === 'error') return 'tabler:alert-circle'
+	if (updater.status === 'downloading') return 'tabler:loader-2'
+	return 'tabler:download'
 })
 
 function on_later() {
@@ -47,98 +57,75 @@ async function on_retry() {
 <template>
 	<div
 		v-if="visible"
-		class="update-banner"
+		class="explorer banner"
+		:class="explorer_window_classes"
 		role="status"
 	>
-		<UIcon
-			:name="updater.status === 'error' ? 'i-lucide:alert-circle' : 'i-lucide:download'"
-			class="size-4 shrink-0"
+		<Icon
+			:icon="icon"
+			class="ic"
+			:class="{ spin: updater.status === 'downloading', bad: updater.status === 'error' }"
 		/>
-		<span class="update-banner__label">{{ title }}</span>
-		<button
-			v-if="updater.status === 'available'"
-			type="button"
-			class="update-banner__action"
-			@click="on_install"
-		>
-			Install
-		</button>
-		<button
-			v-else-if="updater.status === 'error'"
-			type="button"
-			class="update-banner__action"
-			@click="on_retry"
-		>
-			Retry
-		</button>
-		<button
-			v-if="updater.status !== 'downloading'"
-			type="button"
-			class="update-banner__later"
-			@click="on_later"
-		>
-			Later
-		</button>
+		<span class="label">{{ title }}</span>
+		<Button v-if="updater.status === 'available'" @click="on_install">
+			{{ t('updates.install') }}
+		</Button>
+		<Button v-else-if="updater.status === 'error'" @click="on_retry">
+			{{ t('updates.retry') }}
+		</Button>
+		<Button v-if="updater.status !== 'downloading'" variant="link" @click="on_later">
+			{{ t('updates.later') }}
+		</Button>
 	</div>
 </template>
 
 <style scoped>
-.update-banner {
+.banner {
 	position: fixed;
-	bottom: 0.75rem;
+	bottom: 12px;
 	left: 50%;
 	z-index: 200;
 	display: inline-flex;
 	align-items: center;
-	gap: 0.5rem;
-	max-width: calc(100% - 1.5rem);
-	min-height: 36px;
-	padding: 0.375rem 0.5rem 0.375rem 0.75rem;
-	border: 1px solid var(--pc-gray-border, rgba(0, 0, 0, 0.1));
-	border-radius: 0.5rem;
-	background: var(--pc-gray-header, #fefefe);
-	color: var(--pc-gray-text, #111827);
-	font-size: 13px;
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+	gap: 8px;
+	max-width: calc(100% - 24px);
+	padding: 6px 10px 6px 12px;
+	border: 0.5px solid var(--border-strong);
+	border-radius: 10px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
 	transform: translateX(-50%);
 	user-select: none;
 	-webkit-user-select: none;
+	box-sizing: border-box;
 }
 
-.update-banner__label {
+.ic {
+	font-size: 16px;
+	color: var(--text-secondary);
+}
+
+.bad {
+	color: var(--text-danger);
+}
+
+.label {
 	min-width: 0;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-.update-banner__action,
-.update-banner__later {
-	flex-shrink: 0;
-	padding: 0.125rem 0.5rem;
-	border-radius: 0.25rem;
-	font: inherit;
-	cursor: pointer;
+.spin {
+	animation: spin 1s linear infinite;
 }
 
-.update-banner__action {
-	border: 1px solid rgba(0, 0, 0, 0.12);
-	background: var(--pc-gray-muted, #eee);
-	color: inherit;
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
-.update-banner__action:hover {
-	background: var(--pc-gray-border, #ddd);
-}
-
-.update-banner__later {
-	border: 0;
-	background: transparent;
-	color: inherit;
-	opacity: 0.7;
-}
-
-.update-banner__later:hover {
-	opacity: 1;
+.explorer.lg .ic {
+	font-size: 20px;
 }
 </style>
