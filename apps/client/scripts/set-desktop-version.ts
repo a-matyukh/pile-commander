@@ -49,9 +49,9 @@ writeFileSync(
 	cargoLockPath,
 	mustReplace(
 		cargoLock,
-		/(\[\[package\]\]\nname = "app"\n)version = "[^"]+"/,
+		/(\[\[package\]\]\nname = "pile-commander"\n)version = "[^"]+"/,
 		`$1version = "${version}"`,
-		`${cargoLockPath} (package app)`,
+		`${cargoLockPath} (package pile-commander)`,
 	),
 )
 
