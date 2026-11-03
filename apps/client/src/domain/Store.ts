@@ -25,14 +25,17 @@ type Store = {
 	clear_error(): void
 	/**
 	 * Exports the open local or cloud workspace (or `ws`, e.g. the Explorer's
-	 * cloud folder) to a `.pile` archive. Desktop only.
+	 * cloud folder) to a `.pile` archive. A local folder is desktop only. A
+	 * cloud workspace is handed to `download_public_workspace`.
 	 */
 	export_current_workspace(ws?: WorkspaceStore): Promise<void>
 	/**
-	 * Saves a public cloud workspace whose author allows forks and downloads as a
-	 * `.pile` on this device: a save dialog in the desktop app, a browser
-	 * download on the web. Takes a signed-in visitor: the originals are charged
-	 * to them.
+	 * Writes a cloud workspace out as a `.pile`: a save dialog in the desktop
+	 * app, a browser download on the web. The dialog suggests the workspace
+	 * name plus `.pile`, unchanged; the web download replaces characters a
+	 * file system refuses. A public board uses this when its author allows
+	 * forks and downloads — a signed-in visitor, and the originals are charged
+	 * to them. A member exporting a cloud folder they can open uses it too.
 	 */
 	download_public_workspace(ws: WorkspaceStore): Promise<void>
 	/** Unpacks a `.pile` into a chosen folder. The new folder, or null when cancelled or failed.

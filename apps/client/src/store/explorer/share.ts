@@ -36,7 +36,7 @@ export function share_items(ref: FolderRef): ShareItems {
 	if (ref.drive_id === 'cloud') {
 		// sharing and publishing are the owner's; anyone may take a copy
 		const owner = cloud.role_of(ref.root_id) === 'owner'
-		return { export: is_desktop, share_with: owner, publish: owner }
+		return { export: true, share_with: owner, publish: owner }
 	}
 	const local = !is_drive_root(ref) && cloud.is_configured
 	return { export: is_desktop && ref.drive_id === 'local' && !is_drive_root(ref), share_with: local, publish: local }
@@ -50,7 +50,10 @@ export function copy_to_cloud(ref: FolderRef, name: string, door: BridgeDoor): v
 	open_bridge(bridge_source(ref, name), door)
 }
 
-/** Saves the folder as a .pile: a cloud folder's whole top-level folder */
+/**
+ * Saves the folder as a .pile. A cloud folder exports its whole top-level
+ * folder: a save dialog on desktop, a browser download on the web.
+ */
 export async function export_folder(ref: FolderRef, name: string): Promise<void> {
 	try {
 		if (ref.drive_id === 'cloud') {

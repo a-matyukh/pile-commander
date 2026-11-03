@@ -31,25 +31,22 @@ const store: Store = {
 	},
 
 	async export_current_workspace(ws = this.workspace ?? undefined) {
-		if (!ws || (ws.type !== 'local' && ws.type !== 'cloud') || !is_desktop) {
-			report_error(this, new Error('Open a local or cloud workspace in the desktop app to export'))
+		if (!ws || (ws.type !== 'local' && ws.type !== 'cloud')) {
+			report_error(this, new Error('Open a local or cloud workspace to export'))
+			return
+		}
+		if (ws.type === 'cloud') {
+			await this.download_public_workspace(ws)
+			return
+		}
+		if (!is_desktop) {
+			report_error(this, new Error('Open a local workspace in the desktop app to export'))
 			return
 		}
 		this.last_error = null
 		try {
 			const zip_path = await wm.save_pile_file(`${ws.name}.pile`)
 			if (!zip_path) return
-			if (ws.type === 'cloud') {
-				// the whole workspace downloads first: the window's import overlay shows it
-				try {
-					await export_cloud_workspace_to_pile(ws.file_manager, ws.name, zip_path, (progress) => {
-						ws.import_progress = progress
-					})
-				} finally {
-					ws.import_progress = null
-				}
-				return
-			}
 			const fm = createFileManager('local')
 			await export_workspace_to_pile(fm, ws.id, zip_path)
 		} catch (error) {
