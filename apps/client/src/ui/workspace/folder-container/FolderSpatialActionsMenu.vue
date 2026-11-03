@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { choose_pile_image } from '@/services/workspace/choosePileImage'
+import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerMenuItems } from '@/ui/workspace/menu/useFolderContainerMenuItems'
 import { useFolderContainerScope } from './useFolderContainerScope'
 import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
@@ -8,6 +10,14 @@ import { t } from '@/i18n'
 import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const { folderId } = useFolderContainerScope()
+const workspace = useWorkspace()
+
+async function choose_background() {
+	const ws = workspace.value
+	if (!ws) return
+	const token = await choose_pile_image(ws, folderId.value, 'background')
+	if (token) await ws.change_background(folderId.value, token)
+}
 
 const {
 	items,
@@ -27,8 +37,10 @@ const {
 				:value="background"
 				:label="t('style.background_color')"
 				picture
+				:choose="workspace?.pile_images === true"
 				:reset_label="t('style.remove_background')"
 				@set="value => void applyColor(value)"
+				@choose="choose_background"
 			/>
 		</template>
 		<template #view-trailing="{ item }">{{ view_label((item as { currentViewLabel?: string }).currentViewLabel) }}</template>

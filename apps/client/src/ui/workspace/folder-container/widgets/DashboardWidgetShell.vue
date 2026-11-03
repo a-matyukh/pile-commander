@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import DragHandle from './DragHandle.vue'
-import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveBackground'
+import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from './resolveBackground'
+import { useResolvedFill } from './useResolvedFill'
 import { useWidgetSelection } from './useWidgetSelection'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
@@ -66,6 +67,7 @@ const isNoteWidget = computed(() => {
 })
 
 const shellFill = computed(() => resolveShellFill(props.widget))
+const resolvedFill = useResolvedFill(() => props.widget.id, shellFill)
 
 const { isSelected, isCut, onSelectClick } = useWidgetSelection(() => props.widget.id)
 
@@ -77,6 +79,7 @@ const shellClass = computed(() => [
 		'pc-selected': isSelected.value,
 		'pc-cut': isCut.value,
 		'file-card': props.widget.type === 'file',
+		'cover-picture': props.widget.type === 'folder_cover' && isImageBackground(resolvedFill.value),
 	},
 ])
 
@@ -92,7 +95,7 @@ const style = computed(() => {
 	}
 
 	if (isMediaChromeWidget.value) {
-		const fill = shellFill.value
+		const fill = resolvedFill.value
 		const fillStyle = isModelWidget.value && !fill
 			? { backgroundColor: 'transparent' }
 			: fill
@@ -107,7 +110,7 @@ const style = computed(() => {
 		}
 	}
 
-	const fill = shellFill.value
+	const fill = resolvedFill.value
 	const appearance = fill
 		? {
 			...backgroundStyle(fill),
@@ -172,6 +175,9 @@ const style = computed(() => {
 }
 .explorer .dashboard-widget.file-card {
 	border-radius: 6px;
+}
+.dashboard-widget.cover-picture {
+	padding: 0;
 }
 .dashboard-widget.dashboard-shape-widget {
 	border-radius: 0;

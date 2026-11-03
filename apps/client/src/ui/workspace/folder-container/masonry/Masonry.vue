@@ -6,6 +6,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 import MasonryCard from './MasonryCard.vue'
 import {
 	MASONRY_GAP,
@@ -40,7 +41,8 @@ const maxColumns = computed(() => {
 })
 const columnCount = computed(() => masonryColumnCount(paneWidth.value, columnWidth.value, maxColumns.value))
 
-const sectionStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
+const paneFill = useResolvedFill(folderId, () => container.value?.background)
+const sectionStyle = computed(() => backgroundStyle(paneFill.value, defaultViewBackground))
 
 const stripStyle = computed(() => {
 	const count = Math.max(1, columnsOf.value.length || columnCount.value)

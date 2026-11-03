@@ -9,6 +9,7 @@ import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNot
 import { registerPaneEditingNoteSetter } from '../panePosition'
 import WidgetTypeSwitch from '../widgets/WidgetTypeSwitch.vue'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 import {
 	DASHBOARD_COLS,
 	DASHBOARD_GAP,
@@ -41,7 +42,8 @@ const widgetById = computed(() => {
 	return map
 })
 
-const sectionStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
+const paneFill = useResolvedFill(folderId, () => container.value?.background)
+const sectionStyle = computed(() => backgroundStyle(paneFill.value, defaultViewBackground))
 const margin = [DASHBOARD_GAP, DASHBOARD_GAP] as [number, number]
 
 function childrenSyncKey(list: FolderContainerWidgetChild[]): string {

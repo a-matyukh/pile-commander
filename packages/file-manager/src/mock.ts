@@ -1,3 +1,4 @@
+import { pile_images_off } from "./pileImage"
 import type { FileManager, FolderChild } from "./types"
 
 export type MockFileManagerOptions = {
@@ -23,6 +24,7 @@ function createMockFileManager(options?: MockFileManagerOptions): FileManager {
 	const failure_rate = options?.failure_rate ?? 0
 
 	return {
+		...pile_images_off,
 		async FolderChildren(folder_id: string) {
 			console.log("fm:folder_children", folder_id)
 			await sleep(1000)

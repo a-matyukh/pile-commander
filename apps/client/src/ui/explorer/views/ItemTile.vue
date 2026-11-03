@@ -4,7 +4,9 @@ import { Icon } from '@iconify/vue'
 import { explorer_settings } from '@/store/explorer/settings'
 import { useMediaSrc } from '@/ui/workspace/folder-container/media/useMediaSrc'
 import { splitFileName } from '@/ui/workspace/folder-container/widgets/fileNameParts'
+import CoverCaption from '@/ui/workspace/folder-container/widgets/CoverCaption.vue'
 import { backgroundStyle, isImageBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
+import { useResolvedFill } from '@/ui/workspace/folder-container/widgets/useResolvedFill'
 import type { ItemGlyph } from './item_glyph'
 
 /**
@@ -21,6 +23,8 @@ const props = defineProps<{
 	folder?: boolean
 	/** A folder's cover: its color fills the tile, a picture covers the body */
 	cover?: string
+	/** The folder the cover belongs to, so a pile: picture can be read */
+	entry_id?: string
 	selected?: boolean
 	dim?: boolean
 	/** Set for a picture that should fill the tile. The cloud page leaves this empty. */
@@ -35,11 +39,14 @@ const height = computed(() => Math.round(explorer_settings.gallery_icon * 1.5 + 
 const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.85)))
 const parts = computed(() => splitFileName(props.name))
 
+const resolvedCover = useResolvedFill(() => props.entry_id ?? '', () => props.cover)
 const cover_style = computed<{ fill?: string; picture?: Record<string, string> }>(() => {
-	const cover = props.folder && props.cover && props.cover !== 'none' ? props.cover : ''
+	const cover = props.folder && resolvedCover.value && resolvedCover.value !== 'none' ? resolvedCover.value : ''
 	if (!cover) return {}
 	return isImageBackground(cover) ? { picture: backgroundStyle(cover) } : { fill: cover }
 })
+/** A picture is the tile. The name sits on a strip at the bottom; the icon and the tab stay off it. */
+const picture = computed(() => Boolean(cover_style.value.picture))
 
 /** Finder's tab: a rounded top left corner, a smooth slope down on the right; the folder's top line stays under it */
 const TAB_H = 13
@@ -55,16 +62,21 @@ const tab_path = computed(() => {
 <template>
 	<div
 		class="tile"
-		:class="{ folder, s: selected, dim }"
+		:class="{ folder, picture, s: selected, dim }"
 		:style="{ '--ic': explorer_settings.gallery_icon + 'px', width: width + 'px', height: height + 'px', '--fill': cover_style.fill }"
+		:title="picture ? name : undefined"
+		:aria-label="picture ? name : undefined"
 	>
-		<svg v-if="folder" class="tab" :width="tab_w" :height="TAB_H" aria-hidden="true">
+		<svg v-if="folder && !picture" class="tab" :width="tab_w" :height="TAB_H" aria-hidden="true">
 			<path :d="tab_path" />
 		</svg>
-		<div v-if="folder" class="body" :style="cover_style.picture">
+		<div v-if="folder" class="body" :style="cover_style.picture" :title="picture ? name : undefined" :aria-label="picture ? name : undefined">
 			<div class="dots"><slot name="menu" /></div>
-			<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
-			<span class="nm" :title="name">{{ name }}</span>
+			<template v-if="!picture">
+				<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
+				<span class="nm" :title="name">{{ name }}</span>
+			</template>
+			<CoverCaption v-else :name="name" />
 		</div>
 		<div v-else class="body file" :class="{ shot: shows_shot }" :title="name">
 			<img v-if="shows_shot" class="pic" :src="src" :alt="name" draggable="false">
@@ -161,9 +173,15 @@ const tab_path = computed(() => {
 	font-size: 12px;
 	color: var(--text-muted);
 }
-/* As Finder's: the tab's left side runs straight into the folder's */
+/* As Finder's: the tab's left side runs straight into the folder's.
+   A picture cover has no tab, so the corner rounds like the other three. */
 .folder .body {
 	border-top-left-radius: 0;
+}
+.folder.picture .body {
+	border-top-left-radius: 10px;
+	padding: 0;
+	overflow: hidden;
 }
 .ic {
 	font-size: var(--ic);
@@ -205,6 +223,7 @@ const tab_path = computed(() => {
 }
 .tile.dim .ic,
 .tile.dim .nm,
+.tile.dim :deep(.cap),
 .tile.dim .stem,
 .tile.dim .foot {
 	opacity: .5;

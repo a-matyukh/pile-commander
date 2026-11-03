@@ -591,6 +591,7 @@ export async function createWorkspaceStore(
 			type: ws.type,
 			name: ws.name,
 			can_write,
+			pile_images: fm.pile_images,
 			live,
 			file_manager: fm,
 

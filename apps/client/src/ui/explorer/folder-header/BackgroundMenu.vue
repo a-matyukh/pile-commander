@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
 import { DEFAULT_GRID_SIZE } from '@/services/board/layout'
+import { choose_pile_image } from '@/services/workspace/choosePileImage'
+import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import { to_folder_container } from '@/services/workspace/folderContainer'
 import { PRESET_COLORS } from '@/ui/workspace/menu/useColorSubmenu'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -33,14 +35,13 @@ const ws = () => props.workspace
 
 /**
  * Any CSS color or a picture's link, as the current app's field; empty
- * resets. A picture is not stored in the folder yet: a file in .pile comes
- * later (BACKLOG.md)
+ * resets. A chosen file is stored in the folder's .pile.
  */
 const custom = ref('')
 watch(open, (is_open) => {
 	if (!is_open) return
 	const current = container.value?.background
-	custom.value = current && current !== 'none' && !current.startsWith('data:') ? current : ''
+	custom.value = current && current !== 'none' && !isBlockedFillText(current) ? current : ''
 })
 
 /**
@@ -51,7 +52,15 @@ const vFocus = { mounted: (el: HTMLElement) => { requestAnimationFrame(() => el.
 
 function apply_custom() {
 	const value = custom.value.trim()
+	if (isBlockedFillText(value)) return
 	void ws().change_background(props.folder_id, value === '' ? 'none' : value)
+	open.value = false
+}
+
+async function choose_picture() {
+	const token = await choose_pile_image(props.workspace, props.folder_id, 'background')
+	if (!token) return
+	void ws().change_background(props.folder_id, token)
 	open.value = false
 }
 </script>
@@ -118,6 +127,7 @@ function apply_custom() {
 				/>
 			</div>
 		</MenuSub>
+		<MenuItem v-if="workspace.pile_images" icon="tabler:photo-plus" :label="t('style.choose_picture')" @select="choose_picture" />
 		<MenuSub icon="tabler:link" :label="t('background.image')" :width="260">
 			<form class="cu" @submit.prevent="apply_custom">
 				<input

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backgroundStyle, isEmbeddedDataUrl, isImageBackground } from './resolveBackground'
+import { backgroundStyle, isBlockedFillText, isEmbeddedDataUrl, isImageBackground } from './resolveBackground'
 
 describe('isImageBackground', () => {
 	it('detects data, http, https and file URLs', () => {
@@ -7,6 +7,7 @@ describe('isImageBackground', () => {
 		expect(isImageBackground('https://example.com/bg.png')).toBe(true)
 		expect(isImageBackground('http://example.com/bg.png')).toBe(true)
 		expect(isImageBackground('file:///tmp/bg.png')).toBe(true)
+		expect(isImageBackground('blob:http://localhost/cover')).toBe(true)
 	})
 
 	it('rejects colors and empty values', () => {
@@ -14,6 +15,7 @@ describe('isImageBackground', () => {
 		expect(isImageBackground('red')).toBe(false)
 		expect(isImageBackground('none')).toBe(false)
 		expect(isImageBackground(undefined)).toBe(false)
+		expect(isImageBackground('pile:cover-abcdef01.webp')).toBe(false)
 	})
 })
 
@@ -58,5 +60,25 @@ describe('backgroundStyle', () => {
 			backgroundSize: 'cover',
 			backgroundPosition: 'center',
 		})
+		expect(backgroundStyle('blob:http://localhost/cover')).toEqual({
+			backgroundImage: 'url("blob:http://localhost/cover")',
+			backgroundSize: 'cover',
+			backgroundPosition: 'center',
+		})
+	})
+
+	it('does not paint a pile token as a color', () => {
+		expect(backgroundStyle('pile:cover-abcdef01.webp')).toEqual({})
+		expect(backgroundStyle('pile:cover-abcdef01.webp', 'white')).toEqual({ backgroundColor: 'white' })
+	})
+})
+
+describe('isBlockedFillText', () => {
+	it('rejects a typed pile token and a data url', () => {
+		expect(isBlockedFillText('pile:cover-abcdef01.webp')).toBe(true)
+		expect(isBlockedFillText('  data:image/png;base64,abc')).toBe(true)
+		expect(isBlockedFillText('#fff')).toBe(false)
+		expect(isBlockedFillText('https://example.com/a.png')).toBe(false)
+		expect(isBlockedFillText('')).toBe(false)
 	})
 })

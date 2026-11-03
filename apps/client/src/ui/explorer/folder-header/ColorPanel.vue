@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { t } from '@/i18n'
 import { PRESET_COLORS } from '@/ui/workspace/menu/useColorSubmenu'
+import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
 
@@ -16,15 +17,17 @@ const props = defineProps<{
 	label: string
 	/** Offer a picture link beside colors */
 	picture?: boolean
+	/** Offer a file picker. The parent stores the chosen file. */
+	choose?: boolean
 	reset_label: string
 }>()
 
-const emit = defineEmits<{ set: [value: string] }>()
+const emit = defineEmits<{ set: [value: string]; choose: [] }>()
 
 const current = () => (props.value && props.value !== 'none' ? props.value : '')
 
 const custom = ref('')
-watch(() => props.value, () => { custom.value = current().startsWith('data:') ? '' : current() }, { immediate: true })
+watch(() => props.value, () => { custom.value = isBlockedFillText(current()) ? '' : current() }, { immediate: true })
 
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 const picked = ref('#FFFFFF')
@@ -32,7 +35,9 @@ watch(() => props.value, () => { if (HEX.test(current())) picked.value = current
 watch(picked, (value) => { custom.value = value })
 
 function set(value: string) {
-	emit('set', value.trim())
+	const trimmed = value.trim()
+	if (isBlockedFillText(trimmed)) return
+	emit('set', trimmed)
 }
 
 /** The picker sets its color on the same release, so the write waits a tick */
@@ -74,6 +79,7 @@ function pick_start() {
 		>
 		<p class="hn">{{ picture ? t('style.cover_hint') : t('style.color_hint') }}</p>
 	</form>
+	<MenuItem v-if="choose" icon="tabler:photo-plus" :label="t('style.choose_picture')" @select="emit('choose')" />
 	<MenuItem v-if="current()" icon="tabler:arrow-back-up" :label="reset_label" @select="set('')" />
 </template>
 

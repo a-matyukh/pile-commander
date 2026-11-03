@@ -356,6 +356,8 @@ export const ru = {
 		cover_color: 'Цвет обложки',
 		cover_custom: 'Цвет или картинка по ссылке',
 		cover_hint: 'Цвет CSS или ссылка на картинку.',
+		choose_picture: 'Выбрать картинку…',
+		picture_too_large: 'Картинка больше 8 МБ.',
 		remove_cover: 'Убрать обложку',
 		transparent: 'Прозрачный',
 		color_custom: 'Любой цвет',

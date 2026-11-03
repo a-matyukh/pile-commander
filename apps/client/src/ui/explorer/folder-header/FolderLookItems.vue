@@ -6,7 +6,9 @@ import type { WorkspaceStore } from '@/domain/Store'
 import app_store from '@/store'
 import { report_error } from '@/store/helpers/reportError'
 import { t } from '@/i18n'
+import { choose_pile_image } from '@/services/workspace/choosePileImage'
 import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
+import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import { FOLDER_ICON_COLORS, folder_icon_of, write_folder_icon, type FolderIcon } from '@/store/explorer/folder_cover'
 import { RECOMMENDED_ICONS, load_all_icons, search_icons, shown_icon } from '@/store/explorer/icon_catalog'
 import { explorer_tree, tree_root_folder_id, type ExplorerTreeRoot } from '@/store/explorer/tree'
@@ -85,10 +87,22 @@ const searching = computed(() => query.value.trim() !== '' && names.value === nu
  */
 const vFocus = { mounted: (el: HTMLElement) => { requestAnimationFrame(() => el.focus()) } }
 
+const pile_images = computed(() => (props.store ?? props.item?.workspace)?.pile_images === true)
+
 function set_cover(value: string) {
+	if (isBlockedFillText(value)) return
 	const cover = value.trim() || 'none'
 	if (props.store) void in_store(store => store.change_folder_cover(props.folder.folder_id, cover))
 	else if (props.item) void explorer_tree.set_folder_cover(props.item, props.folder.folder_id, cover)
+}
+
+async function choose_cover() {
+	const store = props.store ?? props.item?.workspace
+	if (!store) return
+	const token = await choose_pile_image(store, props.folder.folder_id, 'cover')
+	if (!token) return
+	if (props.store) void in_store(current => current.change_folder_cover(props.folder.folder_id, token))
+	else if (props.item) void explorer_tree.set_folder_cover(props.item, props.folder.folder_id, token)
 }
 </script>
 
@@ -138,7 +152,7 @@ function set_cover(value: string) {
 		<MenuItem v-if="icon" icon="tabler:arrow-back-up" :label="t('style.default_icon')" @select="reset_icon" />
 	</MenuSub>
 	<MenuSub icon="tabler:photo" :label="t('style.cover')" :width="208">
-		<ColorPanel :value="cover" :label="t('style.cover_color')" picture :reset_label="t('style.remove_cover')" @set="set_cover" />
+		<ColorPanel :value="cover" :label="t('style.cover_color')" picture :choose="pile_images" :reset_label="t('style.remove_cover')" @set="set_cover" @choose="choose_cover" />
 	</MenuSub>
 </template>
 

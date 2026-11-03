@@ -1094,8 +1094,8 @@ describe("local connections store (.pile/connections.json)", () => {
 			id: `${folder}/Питч:right-${folder}/Note 4.md:left`,
 			from: `${folder}/Питч`,
 			to: `${folder}/Note 4.md`,
-			from_handle: "right",
-			to_handle: "left",
+			from_handle: "right" as const,
+			to_handle: "left" as const,
 			is_animated: true,
 		}
 		expect(listed).toEqual([healed])
@@ -1155,5 +1155,97 @@ describe("map_tauri_watch_event", () => {
 			paths: ["/a.png"],
 			attrs: {},
 		})).toEqual({ kind: "modify", ids: ["/a.png"], content_changed: false })
+	})
+})
+
+describe("local pile images", () => {
+	beforeEach(() => {
+		mkdir.mockReset()
+		remove.mockReset()
+		fs_rename.mockReset()
+		stat.mockReset()
+		writeFile.mockReset()
+		readFile.mockReset()
+		set_xattr.mockReset()
+		get_xattr.mockReset()
+		join.mockImplementation((...parts: string[]) =>
+			Promise.resolve(parts.join("/").replace(/\/+/g, "/")),
+		)
+		dirname.mockImplementation((path: string) => {
+			const parts = path.split("/")
+			parts.pop()
+			return Promise.resolve(parts.join("/") || "/")
+		})
+	})
+
+	test("replacing a cover keeps the webp extension, changes the token, and deletes the old file after the xattr write", async () => {
+		stat.mockResolvedValue({ isDirectory: true, isFile: false })
+		get_xattr.mockResolvedValue(null)
+		const fm = createLocalFileManager()
+		const order: string[] = []
+		set_xattr.mockImplementation(async () => { order.push("set") })
+		remove.mockImplementation(async () => { order.push("remove") })
+
+		const first = await fm.write_pile_image("/board", "cover", new Uint8Array([1, 2, 3]))
+		const second = await fm.write_pile_image("/board", "cover", new Uint8Array([1, 2, 4]))
+		expect(first).toMatch(/^pile:cover-[0-9a-f]{8}\.webp$/)
+		expect(second).toMatch(/^pile:cover-[0-9a-f]{8}\.webp$/)
+		expect(second).not.toBe(first)
+		expect(mkdir).toHaveBeenCalledWith("/board/.pile", { recursive: true })
+
+		get_xattr.mockResolvedValue(first)
+		order.length = 0
+		await fm.set_xattr("/board", "cover", second)
+		expect(set_xattr).toHaveBeenCalledWith("/board", "cover", second)
+		const old_file = first.slice("pile:".length)
+		expect(remove).toHaveBeenCalledWith(`/board/.pile/${old_file}`)
+		expect(order).toEqual(["set", "remove"])
+	})
+
+	test("a color written over a pile cover deletes that file and leaves other cover files", async () => {
+		stat.mockResolvedValue({ isDirectory: true, isFile: false })
+		const fm = createLocalFileManager()
+		get_xattr.mockResolvedValue("pile:cover-abcdef01.webp")
+		await fm.set_xattr("/board", "cover", "#fff")
+		expect(remove).toHaveBeenCalledTimes(1)
+		expect(remove).toHaveBeenCalledWith("/board/.pile/cover-abcdef01.webp")
+	})
+
+	test("reads a folder cover from its .pile; a file has no picture", async () => {
+		const fm = createLocalFileManager()
+		const bytes = new Uint8Array([9, 9])
+		readFile.mockResolvedValue(bytes)
+		stat.mockImplementation(async (path: string) => ({
+			isDirectory: !path.endsWith(".png"),
+			isFile: path.endsWith(".png"),
+		}))
+		await expect(fm.read_pile_image("/board", "pile:cover-abcdef01.webp")).resolves.toEqual(bytes)
+		expect(readFile).toHaveBeenCalledWith("/board/.pile/cover-abcdef01.webp")
+
+		await expect(fm.read_pile_image("/board/photo.png", "pile:background-abcdef01.webp")).resolves.toBeNull()
+		expect(readFile).toHaveBeenCalledTimes(1)
+		await expect(fm.read_pile_image("/board", "red")).resolves.toBeNull()
+
+		get_xattr.mockResolvedValue("pile:cover-abcdef01.webp")
+		await fm.set_xattr("/board/photo.png", "cover", "#fff")
+		expect(remove).not.toHaveBeenCalled()
+	})
+
+	test("two folders with the same picture: replacing one leaves the other's file", async () => {
+		stat.mockResolvedValue({ isDirectory: true, isFile: false })
+		const fm = createLocalFileManager()
+		const bytes = new Uint8Array([1, 2, 3])
+		const first = await fm.write_pile_image("/board", "cover", bytes)
+		const second = await fm.write_pile_image("/other", "cover", bytes)
+		expect(first).toBe(second)
+
+		get_xattr.mockResolvedValue(first)
+		remove.mockClear()
+		const next = await fm.write_pile_image("/board", "cover", new Uint8Array([9]))
+		await fm.set_xattr("/board", "cover", next)
+		const shared = first.slice("pile:".length)
+		expect(remove).toHaveBeenCalledTimes(1)
+		expect(remove).toHaveBeenCalledWith(`/board/.pile/${shared}`)
+		expect(remove).not.toHaveBeenCalledWith(`/other/.pile/${shared}`)
 	})
 })

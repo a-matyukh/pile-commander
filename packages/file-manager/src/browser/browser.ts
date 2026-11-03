@@ -1,4 +1,5 @@
 import { createFakeFileManager, type FakeEntrySnapshot } from "../fake"
+import { pile_images_off } from "../pileImage"
 import { download_blob } from "./download"
 import type { FileManager, MediaSrc } from "../types"
 import type {
@@ -100,6 +101,7 @@ export function createBrowserFileManager(storage: BrowserStorage): FileManager {
 	}
 
 	return {
+		...pile_images_off,
 		async FolderChildren(folder_id) {
 			await ready
 			return core.fm.FolderChildren(folder_id)

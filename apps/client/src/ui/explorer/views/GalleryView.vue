@@ -30,6 +30,7 @@ const children = computed(() => props.container.children)</script>
 				:key="child.id"
 				:folder="items.is_folder(child)"
 				:cover="items.cover(child)"
+				:entry_id="child.id"
 				:glyph="items.glyph(child)"
 				:name="items.display_name(child)"
 				:selected="workspace.is_selected(child.id)"

@@ -1,4 +1,4 @@
-import type { EntryWithXattrs, FileManager, FolderChild } from '@pile-commander/file-manager'
+import { is_pile_image_token, type EntryWithXattrs, type FileManager, type FolderChild } from '@pile-commander/file-manager'
 import type { ImportProgress, WorkspaceStore } from '@/domain/Store'
 import {
 	apply_entry_created,
@@ -290,7 +290,15 @@ async function copy_recursive(
 	}
 
 	const xattrs = await source_fm.list_xattrs(source_id)
+	// A local picture lives in `.pile` and does not travel to a store that
+	// cannot keep the file. The token is dropped so the cloud copy has no cover.
+	const drop_pile_images = source_fm.pile_images && !target_fm.pile_images
 	for (const attr of xattrs) {
+		if (
+			drop_pile_images
+			&& (attr.name === 'cover' || attr.name === 'background')
+			&& is_pile_image_token(attr.value)
+		) continue
 		await target_fm.set_xattr(child.id, attr.name, attr.value)
 	}
 

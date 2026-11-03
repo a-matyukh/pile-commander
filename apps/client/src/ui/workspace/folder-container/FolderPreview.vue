@@ -5,6 +5,7 @@ import { resolve_embedded_folder_container } from '@/services/workspace/folderCo
 import { provideFolderContainerScope } from './useFolderContainerScope'
 import { widgetLayoutModeKey, folderPreviewDepthKey } from './injectKeys'
 import { backgroundStyle } from './widgets/resolveBackground'
+import { useResolvedFill } from './widgets/useResolvedFill'
 import { useWidgetSelection } from './widgets/useWidgetSelection'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import FolderViewRouter from './FolderViewRouter.vue'
@@ -66,14 +67,15 @@ const isFileManagerView = computed(() => {
 	return view === 'list' || view === 'grid'
 })
 
+const paneFill = useResolvedFill(() => props.container.id, () => scopeContainer.value?.background)
 const chromeStyle = computed(() =>
-	backgroundStyle(scopeContainer.value?.background, 'white'),
+	backgroundStyle(paneFill.value, 'white'),
 )
 
 const bodyStyle = computed(() => (
 	isFileManagerView.value
 		? { backgroundColor: 'white' }
-		: backgroundStyle(scopeContainer.value?.background, 'white')
+		: backgroundStyle(paneFill.value, 'white')
 ))
 
 /** In the Explorer the title carries the folder's icon, as its List row and tree row */

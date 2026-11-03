@@ -359,6 +359,8 @@ export const en: typeof ru = {
 		cover_color: 'Cover color',
 		cover_custom: 'Color or picture link',
 		cover_hint: 'A CSS color or a picture link.',
+		choose_picture: 'Choose picture…',
+		picture_too_large: 'Picture is larger than 8 MB.',
 		remove_cover: 'Remove cover',
 		transparent: 'Transparent',
 		color_custom: 'Any color',

@@ -1,4 +1,5 @@
 import type { RealtimePostgresChangesPayload, SupabaseClient } from "@supabase/supabase-js"
+import { pile_images_off } from "./pileImage"
 import { is_valid_slug } from "./reserved-slugs"
 import { parse_plan_limit_error, PlanLimitError } from "./planLimit"
 import { MediaUnavailableError, parse_media_unavailable } from "./mediaUnavailable"
@@ -1049,6 +1050,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	}
 
 	return {
+		...pile_images_off,
 		async FolderChildren(folder_id: string): Promise<FolderChild[]> {
 			const { children } = await folder_read(folder_id)
 			return children.map(to_child)

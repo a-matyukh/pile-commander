@@ -7,7 +7,8 @@ import { useFolderContainerScope } from '../useFolderContainerScope'
 import ResizeHandleIcon from './ResizeHandleIcon.vue'
 import LineEndpointHandles from '../shape/LineEndpointHandles.vue'
 import { useLineShapeMeta } from '../shape/useLineShapeMeta'
-import { backgroundStyle, isWhiteBackground, resolveShellFill } from './resolveBackground'
+import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from './resolveBackground'
+import { useResolvedFill } from './useResolvedFill'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWidgetSelection } from './useWidgetSelection'
 import { layer_peek_id } from '../layerPeek'
@@ -78,6 +79,7 @@ const isNoteWidget = computed(() => {
 })
 
 const shellFill = computed(() => resolveShellFill(props.widget))
+const resolvedFill = useResolvedFill(() => props.widget.id, shellFill)
 
 const ws = requireWorkspace()
 const { isSelected, isCut, onSelectClick, toggleSelection } = useWidgetSelection(() => props.widget.id)
@@ -140,6 +142,7 @@ const shellClass = computed(() => [
 		// The Explorer rounds files less than folders, and a folder card has a tab
 		'file-card': props.widget.type === 'file',
 		'folder-card': props.widget.type === 'folder_cover',
+		'cover-picture': props.widget.type === 'folder_cover' && isImageBackground(resolvedFill.value),
 	},
 ])
 
@@ -209,7 +212,7 @@ const { setRootRef, style } = useBoardWidget({
 		}
 
 		if (isMediaChromeWidget.value) {
-			const fill = shellFill.value
+			const fill = resolvedFill.value
 			const fillStyle = isModelWidget.value && !fill
 				? { backgroundColor: 'transparent' }
 				: fill
@@ -223,7 +226,7 @@ const { setRootRef, style } = useBoardWidget({
 			} as Record<string, string>
 		}
 
-		const fill = shellFill.value
+		const fill = resolvedFill.value
 		const appearance: Record<string, string> = fill
 			? {
 				...backgroundStyle(fill),
@@ -299,9 +302,18 @@ const { setRootRef, style } = useBoardWidget({
 .explorer .board-widget.file-card {
 	border-radius: 6px;
 }
-/* The tab's left side runs straight into the folder's, as in Finder */
+/* The tab's left side runs straight into the folder's, as in Finder.
+   A picture cover has no tab, so the corner rounds like the other three. */
 .explorer .board-widget.folder-card {
 	border-top-left-radius: 0;
+}
+.explorer .board-widget.folder-card.cover-picture {
+	border-top-left-radius: 10px;
+}
+/* The picture fills the card, and the name strip reaches its edges. */
+.board-widget.cover-picture {
+	padding: 0;
+	overflow: hidden;
 }
 /* A preview folder's own white page keeps the card's corners */
 .explorer .board-widget.folder-preview-widget :deep(.folder-preview) {

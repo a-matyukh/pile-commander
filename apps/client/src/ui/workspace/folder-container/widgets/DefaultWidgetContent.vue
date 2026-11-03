@@ -4,7 +4,9 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import FolderMenu from '@/ui/workspace/menu/FolderMenu.vue'
 import WidgetShell from './WidgetShell.vue'
-import { resolveShellFill, resolveWidgetBackground } from './resolveBackground'
+import CoverCaption from './CoverCaption.vue'
+import { backgroundStyle, isImageBackground, resolveShellFill } from './resolveBackground'
+import { useResolvedFill } from './useResolvedFill'
 import { splitFileName } from './fileNameParts'
 import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
@@ -29,12 +31,18 @@ const menuProps = computed(() => ({
 	showPreviewToggle: true,
 }))
 
+const coverSource = computed(() => {
+	if (props.widget.type === 'folder_cover') return props.widget.cover
+	if (props.widget.type === 'file' && props.widget.cover) return props.widget.cover
+	return undefined
+})
+const resolvedCover = useResolvedFill(() => props.widget.id, coverSource)
+
 const extraStyle = computed((): Record<string, string> | undefined => {
-	if (props.widget.type === 'folder_cover') {
-		return { backgroundColor: resolveWidgetBackground(props.widget.cover) }
-	}
-	if (props.widget.type === 'file' && props.widget.cover) {
-		return { backgroundColor: props.widget.cover }
+	const fill = resolvedCover.value
+	if (!fill) return undefined
+	if (props.widget.type === 'folder_cover' || (props.widget.type === 'file' && props.widget.cover)) {
+		return backgroundStyle(fill)
 	}
 	return undefined
 })
@@ -57,6 +65,11 @@ const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => pr
 /** A cover fills the card and drops its frame, as the board shell does */
 const coverFilled = computed(() => resolveShellFill(props.widget) !== undefined)
 
+/** A picture is the card. The name sits on a strip; the icon and the tab stay off it. */
+const pictureCover = computed(() =>
+	props.widget.type === 'folder_cover' && isImageBackground(resolvedCover.value),
+)
+
 /** The tab is filled as the card: white, or its cover's color */
 const tabFill = computed(() => extraStyle.value?.backgroundColor ?? 'white')
 
@@ -73,6 +86,8 @@ const glyph = use_widget_glyph(() => props.widget)
 		:menu-props="menuProps"
 		:extra-style="extraStyle"
 		:is-folder-dropzone="isFolderDropzone"
+		:title="pictureCover ? widget.name : undefined"
+		:aria-label="pictureCover ? widget.name : undefined"
 		@selectstart="onSelectStart"
 		@dragstart="onDragStart"
 		@dblclick="onDblClick"
@@ -84,17 +99,20 @@ const glyph = use_widget_glyph(() => props.widget)
 				<span v-if="fileParts.extension" class="ex-ext">{{ fileParts.extension }}</span>
 			</span>
 		</div>
-		<div v-else class="ex-folder">
-			<!-- Gallery's tab, above the card's top left -->
-			<span v-if="layout === 'board'" class="ex-tab" :class="{ filled: coverFilled }" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
+		<div v-else class="ex-folder" :title="pictureCover ? widget.name : undefined" :aria-label="pictureCover ? widget.name : undefined">
+			<!-- Gallery's tab, above the card's top left. A picture cover is the whole card. -->
+			<span v-if="layout === 'board' && !pictureCover" class="ex-tab" :class="{ filled: coverFilled }" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
 				<span class="ex-tab-flat" />
 				<svg class="ex-tab-slope" width="16" height="13" viewBox="0 0 16 13">
 					<path d="M0 0.5 C8 0.5 8 13 16 13 L0 13 Z" class="fill" />
 					<path d="M0 0.5 C8 0.5 8 13 16 13" class="line" />
 				</svg>
 			</span>
-			<Icon v-if="glyph && !glyph.generic" :icon="glyph.icon" class="ex-ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
-			<span class="ex-name">{{ widget.name }}</span>
+			<template v-if="!pictureCover">
+				<Icon v-if="glyph && !glyph.generic" :icon="glyph.icon" class="ex-ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
+				<span class="ex-name">{{ widget.name }}</span>
+			</template>
+			<CoverCaption v-else :name="widget.name" />
 		</div>
 	</WidgetShell>
 </template>

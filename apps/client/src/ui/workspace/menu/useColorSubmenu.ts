@@ -1,7 +1,7 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Color } from '@/domain/Widget'
-import { isEmbeddedDataUrl } from '@/ui/workspace/folder-container/widgets/resolveBackground'
+import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 
 export const PRESET_COLORS: { label: string; color: Color }[] = [
@@ -42,7 +42,7 @@ export function useColorSubmenu(options: MaybeRefOrGetter<ColorSubmenuOptions | 
 		const opts = toValue(options)
 		if (!opts) return
 
-		if (isEmbeddedDataUrl(color)) return
+		if (isBlockedFillText(color)) return
 
 		if (opts.apply) {
 			await opts.apply(color)

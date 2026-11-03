@@ -1,3 +1,4 @@
+import { is_pile_image_token } from '@pile-commander/file-manager'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 
 /** Shell fill: folder_cover uses cover only; files prefer background then cover. */
@@ -26,7 +27,7 @@ export function resolveWidgetBackground(
 	return bg
 }
 
-const IMAGE_BACKGROUND_RE = /^(data:|https?:|file:)/
+const IMAGE_BACKGROUND_RE = /^(data:|https?:|file:|blob:)/
 
 export function isImageBackground(bg: string | undefined): boolean {
 	return Boolean(bg && IMAGE_BACKGROUND_RE.test(bg))
@@ -35,6 +36,15 @@ export function isImageBackground(bg: string | undefined): boolean {
 /** Embedded `data:` images (base64) are too large for xattrs — reject on write. */
 export function isEmbeddedDataUrl(value: string): boolean {
 	return /^data:/i.test(value.trim())
+}
+
+/**
+ * A typed `pile:` token is not a color and not a link. The file picker writes
+ * the token itself; the text field must not.
+ */
+export function isBlockedFillText(value: string): boolean {
+	const trimmed = value.trim()
+	return isEmbeddedDataUrl(trimmed) || is_pile_image_token(trimmed)
 }
 
 /**
@@ -49,7 +59,7 @@ export function backgroundStyle(
 	bg: string | undefined,
 	fallback?: string,
 ): Record<string, string> {
-	if (!bg || bg === 'none') {
+	if (!bg || bg === 'none' || is_pile_image_token(bg)) {
 		return fallback === undefined ? {} : { backgroundColor: fallback }
 	}
 	if (isImageBackground(bg)) {

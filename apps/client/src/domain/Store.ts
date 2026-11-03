@@ -86,6 +86,12 @@ type WorkspaceStore = {
 	can_write: boolean
 
 	/**
+	 * The file manager can store a cover or background picture in `.pile`.
+	 * Menus offer the file picker only when this is true.
+	 */
+	pile_images: boolean
+
+	/**
 	 * False for a public-link visitor without membership: the board was read
 	 * once and the store holds no realtime subscription, so it does not change
 	 * until a reload.
@@ -222,7 +228,7 @@ type WorkspaceStore = {
 
 	// opened folder
 	change_folder_view(folder_id: string, new_view: FolderView): Promise<void>
-	/** The folder's own cover: a color or a picture link. Written on the folder itself, as its view */
+	/** The folder's own cover: a color, a picture link, or a local `pile:` image. Written on the folder itself, as its view */
 	change_folder_cover(folder_id: string, cover: string): Promise<void>
 	/** The folder's own icon, "<name>;<color>" ("none" clears it). Written on the folder itself */
 	change_folder_icon(folder_id: string, icon: string): Promise<void>

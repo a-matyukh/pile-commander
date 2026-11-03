@@ -33,6 +33,13 @@ export {
 	type DemoContentEntry,
 } from './demo'
 export {
+	is_pile_image_token,
+	parse_pile_image_token,
+	pile_image_hash8,
+	pile_image_token,
+	type PileImageRole,
+} from './pileImage'
+export {
 	PILE_ATTRS_VERSION,
 	PILE_DIR_NAME,
 	PILE_ATTRS_FILE,

@@ -12,7 +12,10 @@ import { useMenuNode } from '../widgets/useMenuNode'
 import { useWidgetInteraction } from '../widgets/useWidgetInteraction'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
 import { splitFileName } from '../widgets/fileNameParts'
+import { is_pile_image_token } from '@pile-commander/file-manager'
+import CoverCaption from '../widgets/CoverCaption.vue'
 import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import MasonryImage from './MasonryImage.vue'
 import ImageFigure from '../widgets/ImageFigure.vue'
@@ -29,13 +32,18 @@ const { container } = useFolderContainerScope()
 const isNote = computed(() => is_note_widget(props.widget))
 const isFolder = computed(() => props.widget.type !== 'file')
 const shellFill = computed(() => resolveShellFill(props.widget))
+const resolvedFill = useResolvedFill(() => props.widget.id, shellFill)
 const folderFill = computed(() =>
-	shellFill.value ? backgroundStyle(shellFill.value) : { backgroundColor: 'white' },
+	resolvedFill.value ? backgroundStyle(resolvedFill.value) : { backgroundColor: 'white' },
+)
+/** A picture is the card: the name, the icon and the tab would sit on top of it */
+const pictureCover = computed(() =>
+	props.widget.type === 'folder_cover' && isImageBackground(resolvedFill.value),
 )
 /** A color cover fills the tab too; a picture stays on the body. */
 const tabFill = computed(() => {
 	const fill = shellFill.value
-	if (!fill || isImageBackground(fill)) return 'white'
+	if (!fill || isImageBackground(fill) || is_pile_image_token(fill)) return 'white'
 	return fill
 })
 const tabW = computed(() => Math.round(masonryColumnWidth(container.value?.masonry_column_width) * 0.42))
@@ -49,7 +57,7 @@ const tabOutline = computed(() => {
 const tabPath = computed(() => `${tabOutline.value} Z`)
 const cardStyle = computed(() => {
 	if (isFolder.value) return {}
-	const fill = shellFill.value
+	const fill = resolvedFill.value
 	if (fill) return { ...backgroundStyle(fill), border: 'none' }
 	return {
 		backgroundColor: 'white',
@@ -143,18 +151,21 @@ function onDblClick(event: MouseEvent) {
 				</span>
 			</div>
 			<template v-else>
-				<svg class="masonry-tab" :width="tabW" :height="TAB_H" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
+				<svg v-if="!pictureCover" class="masonry-tab" :width="tabW" :height="TAB_H" :style="{ '--tab-fill': tabFill }" aria-hidden="true">
 					<path :d="tabPath" />
 					<path class="edge" :d="tabOutline" />
 				</svg>
-				<div class="masonry-folder" :style="folderFill">
-				<Icon
-					v-if="glyph"
-					:icon="glyph.icon"
-					class="masonry-folder-icon"
-					:style="{ color: glyph.color }"
-				/>
-				<span class="masonry-folder-name">{{ widget.name }}</span>
+				<div class="masonry-folder" :class="{ picture: pictureCover }" :style="folderFill" :title="pictureCover ? widget.name : undefined" :aria-label="pictureCover ? widget.name : undefined">
+				<template v-if="!pictureCover">
+					<Icon
+						v-if="glyph"
+						:icon="glyph.icon"
+						class="masonry-folder-icon"
+						:style="{ color: glyph.color }"
+					/>
+					<span class="masonry-folder-name">{{ widget.name }}</span>
+				</template>
+				<CoverCaption v-else :name="widget.name" />
 				</div>
 			</template>
 		</div>
@@ -256,6 +267,11 @@ function onDblClick(event: MouseEvent) {
 	background: white;
 	user-select: none;
 	-webkit-user-select: none;
+}
+.masonry-folder.picture {
+	border-top-left-radius: 10px;
+	padding: 0;
+	overflow: hidden;
 }
 .masonry-folder-card.pc-selected .masonry-folder {
 	border-color: var(--pc-selection-ring);

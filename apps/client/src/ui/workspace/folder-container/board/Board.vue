@@ -11,6 +11,7 @@ import FolderContainerCtxMenu from '@/ui/workspace/menu/FolderContainerCtxMenu.v
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { board_content_extent } from '@/services/board/layout'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useBoardMarqueeSelection } from './useBoardMarqueeSelection'
 import { isEmptyBoardPointerTarget } from './isEmptyBoardPointerTarget'
 import { useMoveSelectedWidgets } from '../useMoveSelectedWidgets'
@@ -143,8 +144,9 @@ function onBoardPaneClick(event: MouseEvent) {
 	void onPaneClick(event)
 }
 
+const paneFill = useResolvedFill(folderId, () => container.value?.background)
 const boardChromeStyle = computed(() => ({
-	...backgroundStyle(container.value?.background, defaultViewBackground),
+	...backgroundStyle(paneFill.value, defaultViewBackground),
 	cursor: lineDraw.cursor.value
 		?? (boardPlacementTemplate.value ? 'crosshair' : undefined),
 }))

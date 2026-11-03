@@ -40,6 +40,27 @@ afterEach(() => {
 })
 
 describe('crossStoreTransfer: generic path (cloud, different workspaces)', () => {
+	test('a local picture token is dropped when the target cannot store pile images', async () => {
+		const { source_fake, target_fake, source, target } = await makeCloudPair()
+		;(source_fake.fm as { pile_images: boolean }).pile_images = true
+		source_fake.seed_file('/desktop-1/photo.png', 'png')
+		source_fake.set_xattr('/desktop-1/photo.png', 'cover', 'pile:cover-abcdef01.webp')
+		source_fake.set_xattr('/desktop-1/photo.png', 'background', '#fff')
+		await source.reload_folder_cache('/desktop-1')
+
+		const created = await transfer_entries({
+			source_store: source,
+			target_store: target,
+			entry_ids: ['/desktop-1/photo.png'],
+			target_folder_id: '/',
+			mode: 'copy',
+		})
+
+		expect(created).toEqual(['/photo.png'])
+		expect(target_fake.get_xattr('/photo.png', 'cover')).toBeNull()
+		expect(target_fake.get_xattr('/photo.png', 'background')).toBe('#fff')
+	})
+
 	test('copies a file with content and xattrs', async () => {
 		const { source_fake, target_fake, source, target } = await makeCloudPair()
 		source_fake.seed_file('/desktop-1/note.txt', 'hello transfer')

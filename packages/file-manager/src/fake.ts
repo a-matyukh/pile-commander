@@ -11,6 +11,7 @@ import type {
 	Xattr,
 } from "./types"
 import { reprefix_path, resolve_folder_connections } from "./connectionPaths"
+import { pile_images_off } from "./pileImage"
 
 type Entry = {
 	type: "file" | "folder"
@@ -212,6 +213,7 @@ export function createFakeFileManager(): FakeFileManager {
 	}
 
 	const fm: FileManager = {
+		...pile_images_off,
 		async FolderChildren(folder_id): Promise<FolderChild[]> {
 			track("FolderChildren", [folder_id])
 			return children_paths(folder_id).map(p => ({

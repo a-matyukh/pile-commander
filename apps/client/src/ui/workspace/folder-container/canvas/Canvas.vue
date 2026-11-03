@@ -52,6 +52,7 @@ import EmptyPaneHint from '../EmptyPaneHint.vue'
 import { useLineDrawMode } from '../useLineDrawMode'
 import CanvasAxes from './CanvasAxes.vue'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { setExternalDropPositionResolver } from '../externalDropPosition'
 import {
@@ -413,7 +414,8 @@ const viewportSnapshot = computed<BoardViewport>(() => ({
 	zoom: viewport.value.zoom,
 }))
 
-const canvasStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
+const paneFill = useResolvedFill(folderId, () => container.value?.background)
+const canvasStyle = computed(() => backgroundStyle(paneFill.value, defaultViewBackground))
 const flowWrapperStyle = computed(() => ({
 	...canvasStyle.value,
 	...(tool.value === 'pen' && !lineDraw.armed.value ? { cursor: PEN_CURSOR } : {}),

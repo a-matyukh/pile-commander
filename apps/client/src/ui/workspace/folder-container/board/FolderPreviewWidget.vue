@@ -7,6 +7,7 @@ import LazyFolderPreview from '../widgets/LazyFolderPreview.vue'
 import { useMenuNode } from '../widgets/useMenuNode'
 import { useWidgetInteraction } from '../widgets/useWidgetInteraction'
 import { backgroundStyle } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 
 const props = withDefaults(defineProps<{
 	widget: FolderContainerWidget
@@ -25,7 +26,8 @@ const menuProps = computed(() => ({
 	showPreviewToggle: true,
 }))
 
-const shellStyle = computed(() => backgroundStyle(props.widget.background))
+const paneFill = useResolvedFill(() => props.widget.id, () => props.widget.background)
+const shellStyle = computed(() => backgroundStyle(paneFill.value))
 
 const isBoard = computed(() => props.layout === 'board')
 

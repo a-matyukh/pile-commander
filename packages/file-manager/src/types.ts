@@ -1,3 +1,5 @@
+import type { PileImageRole } from "./pileImage"
+
 type Entry = {
 	id: string
 	name: string
@@ -221,6 +223,23 @@ interface FileManager {
 	remove(id: string): Promise<void>
 	/** Payload size in bytes (text or blob); 0 for folders. */
 	entry_size(id: string): Promise<number>
+
+	/**
+	 * True only for a local folder: cover and background pictures live in
+	 * `.pile`. Cloud, browser and demo stores leave this false.
+	 */
+	readonly pile_images: boolean
+	/**
+	 * Writes webp bytes into `<folder>/.pile/<role>-<hash8>.webp` and returns
+	 * the `pile:` token. The caller then stores that token as the `cover` or
+	 * `background` xattr. Replacing the xattr deletes the previous file.
+	 */
+	write_pile_image(folder_id: string, role: PileImageRole, bytes: Uint8Array): Promise<string>
+	/**
+	 * Reads the file named by a `pile:` token. A folder keeps the file in its
+	 * own `.pile`; a file keeps it in the parent folder's `.pile`.
+	 */
+	read_pile_image(entry_id: string, token: string): Promise<Uint8Array | null>
 
 	set_xattr(id: string, name: string, value: string): Promise<void>
 	/**

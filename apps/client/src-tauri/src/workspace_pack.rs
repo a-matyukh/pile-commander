@@ -56,6 +56,50 @@ pub fn export_workspace_zip(
     Ok(())
 }
 
+/// `cover-<hash8>.webp` and `background-<hash8>.webp` only. Strokes, connections and sync stay out.
+fn is_pile_image_file(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".webp") else {
+        return false;
+    };
+    let Some((role, hash)) = stem.rsplit_once('-') else {
+        return false;
+    };
+    (role == "cover" || role == "background")
+        && hash.len() == 8
+        && hash.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn add_pile_images(
+    zip: &mut ZipWriter<File>,
+    pile_dir: &Path,
+    zip_prefix: &str,
+    options: &SimpleFileOptions,
+) -> Result<(), String> {
+    let entries = match fs::read_dir(pile_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = file_name(&path)?;
+        if !is_pile_image_file(&name) {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if !file_type.is_file() {
+            continue;
+        }
+        let zip_path = format!("{zip_prefix}/{name}");
+        zip.start_file(&zip_path, *options)
+            .map_err(|e| e.to_string())?;
+        let mut source = File::open(&path).map_err(|e| e.to_string())?;
+        copy(&mut source, zip).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn add_directory_to_zip(
     zip: &mut ZipWriter<File>,
     dir: &Path,
@@ -67,11 +111,12 @@ fn add_directory_to_zip(
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let name = file_name(&path)?;
+        let zip_path = format!("{zip_prefix}/{name}");
         if name == PILE_DIR {
+            add_pile_images(zip, &path, &zip_path, options)?;
             continue;
         }
 
-        let zip_path = format!("{zip_prefix}/{name}");
         let file_type = entry.file_type().map_err(|e| e.to_string())?;
         if file_type.is_dir() {
             // Explicit directory entry helps empty folders round-trip.

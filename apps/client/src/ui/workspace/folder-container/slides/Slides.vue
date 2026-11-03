@@ -2,7 +2,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { useFolderContainerScope } from '../useFolderContainerScope'
-import { backgroundStyle, defaultViewBackground, resolveWidgetBackground } from '../widgets/resolveBackground'
+import CoverCaption from '../widgets/CoverCaption.vue'
+import { backgroundStyle, defaultViewBackground, isImageBackground } from '../widgets/resolveBackground'
+import { useResolvedFill } from '../widgets/useResolvedFill'
 import { resolvePreviewKind, resolveWidgetRole, type WidgetRole } from '../widgets/widgetRegistry'
 import { splitFileName } from '../widgets/fileNameParts'
 import { menuNodeFor } from '../widgets/useMenuNode'
@@ -62,20 +64,37 @@ const previewKind = computed(
 	() => widget.value !== undefined ? resolvePreviewKind(widget.value) : null,
 )
 
-const sectionStyle = computed(() => backgroundStyle(container.value?.background, defaultViewBackground))
+const paneFill = useResolvedFill(folderId, () => container.value?.background)
+const sectionStyle = computed(() => backgroundStyle(paneFill.value, defaultViewBackground))
 
+const cardFill = useResolvedFill(
+	() => widget.value?.id ?? '',
+	() => {
+		const current = widget.value
+		if (!current || (current.type !== 'file' && current.type !== 'folder_cover')) return undefined
+		return current.cover
+	},
+)
+/** A picture is the card. The header above still names the folder. */
+const pictureCover = computed(() =>
+	widget.value?.type === 'folder_cover' && isImageBackground(cardFill.value),
+)
 const cardStyle = computed(() => {
 	if (!widget.value) return {}
-	const w = widget.value
-	if (w.type === 'file' || w.type === 'folder_cover') {
-		return { backgroundColor: w.cover ?? 'white' }
+	const current = widget.value
+	if (current.type === 'file' || current.type === 'folder_cover') {
+		return backgroundStyle(cardFill.value, 'white')
 	}
 	return { backgroundColor: 'white' }
 })
 
+const previewFill = useResolvedFill(
+	() => widget.value?.id ?? '',
+	() => widget.value?.type === 'file' ? widget.value.background : undefined,
+)
 const previewSectionStyle = computed(() => {
 	if (!widget.value || widget.value.type !== 'file') return {}
-	return { backgroundColor: resolveWidgetBackground(widget.value.background, 'transparent') }
+	return backgroundStyle(previewFill.value, 'transparent')
 })
 
 const previewSectionClass = computed(() => {
@@ -240,10 +259,13 @@ function onPreviewDblClick() {
 				:class="{
 					'slides-card--file': defaultFileParts,
 					'slides-card--folder': !defaultFileParts,
+					picture: pictureCover,
 					'pc-selected': isWidgetSelected,
 					'pc-cut': isWidgetCut,
 				}"
 				:style="cardStyle"
+				:title="pictureCover ? widget.name : undefined"
+				:aria-label="pictureCover ? widget.name : undefined"
 				@click="onSelectClick"
 				@dblclick="onDblClick"
 			>
@@ -259,11 +281,12 @@ function onPreviewDblClick() {
 					</p>
 				</template>
 				<p
-					v-else
+					v-else-if="!pictureCover"
 					class="slides-folder-name font-medium text-highlighted"
 				>
 					{{ widget.name }}
 				</p>
+				<CoverCaption v-else :name="widget.name" />
 			</div>
 		</div>
 	</section>
@@ -371,6 +394,10 @@ function onPreviewDblClick() {
 	align-items: center;
 	justify-content: center;
 	text-align: center;
+}
+.slides-card.picture {
+	padding: 0;
+	overflow: hidden;
 }
 
 .slides-folder-name {
