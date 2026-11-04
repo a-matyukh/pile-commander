@@ -262,7 +262,9 @@ decided one by one.
 - **Downloads never show half-written.** The file is written under
   `<folder>/.pile`, renamed over the target, then its xattrs are set back
   (a new file gets the cloud's, a replaced one keeps its own), then it is
-  stat'ed for the base.
+  stat'ed for the base. A file that already lives in `.pile` (a cover or a
+  background) is written in that same `.pile`, so the download does not
+  leave an empty `.pile/.pile`.
 - **An interrupted pass does not misread its own writes.** The base is
   saved during the pass:
   - moves, deletes, folder downloads and conflicts at once;

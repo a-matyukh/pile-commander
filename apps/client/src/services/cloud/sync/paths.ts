@@ -52,6 +52,18 @@ export function join_cloud(folder_path: string, name: string): string {
 	return folder_path === '/' ? `/${name}` : `${folder_path}/${name}`
 }
 
+/**
+ * Where a download's temporary file is written. Listings hide `.pile`, so a
+ * normal file uses `<folder>/.pile`. A file that already lives in `.pile`
+ * (a cover, a background) is written there: `<.pile>/.pile` would be an
+ * empty folder left behind after the rename.
+ */
+export function download_scratch_dir(folder: string): string {
+	const name = folder.split(/[/\\]/).pop()
+	if (name === PILE_DIR_NAME) return folder
+	return join_local(folder, PILE_DIR_NAME)
+}
+
 /** A local path (either separator) under `root`, joined with a relative path. */
 export function join_local(root: string, relative: string): string {
 	if (!relative) return root

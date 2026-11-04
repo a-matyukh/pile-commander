@@ -28,8 +28,9 @@ import { SYNC_STATE_VERSION, type BaseEntry, type BaseFolderLayout, type CloudEn
 export type LocalWriter = {
 	/**
 	 * Writes `data` as `name` in `folder` without a half-written file ever
-	 * showing: a temporary file under `<folder>/.pile` renamed over the
-	 * target. Xattrs of a file it replaces are not kept
+	 * showing: a temporary file under `<folder>/.pile` (or in `.pile` itself,
+	 * when the file already lives there) renamed over the target. Xattrs of
+	 * a file it replaces are not kept
 	 */
 	write_file(folder: string, name: string, data: Blob): Promise<void>
 	/** Moves a file or folder to the system trash. */

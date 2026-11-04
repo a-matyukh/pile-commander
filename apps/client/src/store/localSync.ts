@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import {
-	PILE_DIR_NAME,
 	client_instance_id,
 	createFileManager,
 	list_workspace_connections,
@@ -15,7 +14,7 @@ import { is_desktop } from '@/isDesktop'
 import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
 import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStatus } from '@/services/cloud/sync/syncEngine'
-import { join_local, relative_of } from '@/services/cloud/sync/paths'
+import { download_scratch_dir, join_local, relative_of } from '@/services/cloud/sync/paths'
 import { choose_sync_folder } from '@/services/cloud/sync/syncToFolder'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { pile_root_name } from '@/services/workspace/pack'
@@ -117,8 +116,9 @@ function local_writer(root: string): LocalWriter {
 	return {
 		async write_file(folder, name, data) {
 			const { mkdir, remove, rename, writeFile } = await fs()
-			// beside the target, inside `.pile`: listings and the watcher filter skip it
-			const scratch = join_local(folder, PILE_DIR_NAME)
+			// Beside the target, inside `.pile`: listings and the watcher filter skip it.
+			// A cover already lives in `.pile`, so its temporary file stays there.
+			const scratch = download_scratch_dir(folder)
 			await mkdir(scratch, { recursive: true })
 			const temporary = join_local(scratch, `sync-${crypto.randomUUID()}.tmp`)
 			await writeFile(temporary, new Uint8Array(await data.arrayBuffer()))

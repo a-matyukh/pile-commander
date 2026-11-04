@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import {
 	createFakeFileManager,
+	PILE_DIR_NAME,
 	is_text_mime,
 	type ConnectionRow,
 	type FakeFileManager,
@@ -11,7 +12,7 @@ import { derived_uuid, hash_value } from './hash'
 import { merge_xattrs, SYNC_KEPT_HIDDEN, sync_kept_hidden_value } from './layoutSync'
 import { choose_sync_folder, type SyncFolderDeps } from './syncToFolder'
 import { read_local_layout, scan_local } from './localScan'
-import { is_local_name } from './paths'
+import { download_scratch_dir, is_local_name } from './paths'
 import { reconcile, type ReconcileOptions } from './reconcile'
 import { create_sync_engine, type SyncStatus } from './syncEngine'
 import { is_sync_state_path, new_sync_state, parse_sync_state } from './stateFile'
@@ -501,6 +502,12 @@ function make_writer(local: FakeFileManager) {
 	const trashed: string[] = []
 	const writer: LocalWriter = {
 		async write_file(folder, name, data) {
+			// The real writer parks the temporary file in `.pile`. When the
+			// target is already inside `.pile`, that must not grow `.pile/.pile`.
+			const scratch = download_scratch_dir(folder)
+			if (scratch !== folder && folder.split(/[/\\]/).pop() === PILE_DIR_NAME) {
+				await local.fm.create_folder(folder, PILE_DIR_NAME)
+			}
 			await local.fm.upload_file(folder, name, data)
 		},
 		async trash(path) {
@@ -1756,9 +1763,10 @@ describe('pile image files', () => {
 		expect(cloud.fake.get_xattr('/board', 'cover')).toBe('pile:cover-abcdef01.webp')
 		expect(remove).not.toHaveBeenCalled()
 
-		cloud.fake.seed_file('/board/.pile/background-abcdef02.webp', 'webp-b')
+		cloud.fake.seed_file('/board/.pile/cover-abcdef02.webp', 'webp-b')
 		const second = await cloud_pass(deps, first.state)
-		expect(local.has('/ws/board/.pile/background-abcdef02.webp')).toBe(true)
+		expect(local.has('/ws/board/.pile/cover-abcdef02.webp')).toBe(true)
+		expect(local.has('/ws/board/.pile/.pile')).toBe(false)
 		expect(second.report.deleted).toBe(0)
 		expect(trashed).toEqual([])
 
