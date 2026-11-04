@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { load_pile_url, release_pile_url, reset_pile_image_cache, seed_pile_url } from './pileImageCache'
+import { load_pile_url, pile_cache_key, release_pile_url, reset_pile_image_cache, seed_pile_url } from './pileImageCache'
 
 const revoked: string[] = []
 
@@ -64,5 +64,26 @@ describe('pile image cache', () => {
 		const unused = seed_pile_url('other\0pile:cover-bbbbbbbb.webp', new Uint8Array([4]))
 		unused()
 		expect(revoked).toEqual(['blob:0', 'blob:1'])
+	})
+
+	it('keeps two workspace roots with the same folder id apart', async () => {
+		let n = 0
+		vi.stubGlobal('URL', {
+			createObjectURL: () => `blob:${n++}`,
+			revokeObjectURL: (url: string) => { revoked.push(url) },
+		})
+		const token = 'pile:cover-abcdef01.webp'
+		const left = pile_cache_key('ws-a', '/', token)
+		const right = pile_cache_key('ws-b', '/', 'pile:cover-bbbbbbbb.webp')
+		expect(left).not.toBe(right)
+		expect(left).not.toBe(pile_cache_key(undefined, '/', token))
+		const load_left = vi.fn(async () => new Uint8Array([1]))
+		const load_right = vi.fn(async () => new Uint8Array([2]))
+		await expect(load_pile_url(left, load_left)).resolves.toBe('blob:0')
+		await expect(load_pile_url(right, load_right)).resolves.toBe('blob:1')
+		expect(load_left).toHaveBeenCalledOnce()
+		expect(load_right).toHaveBeenCalledOnce()
+		await expect(load_pile_url(left, load_left)).resolves.toBe('blob:0')
+		expect(load_left).toHaveBeenCalledOnce()
 	})
 })

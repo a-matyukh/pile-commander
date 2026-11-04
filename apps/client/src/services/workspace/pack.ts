@@ -46,10 +46,9 @@ export async function import_workspace_from_pile(
 	const attrs_raw = await fm.read_text_file(attrs_path)
 	const manifest = parsePileAttrsManifest(JSON.parse(attrs_raw))
 
-	// Drop the manifest sidecar before applying: the strokes import recreates
-	// `.pile/strokes.json`, and attrs.json must not survive into the workspace.
-	const pile_dir = await join(extracted_root, PILE_DIR_NAME)
-	await fm.remove(pile_dir)
+	// Drop only the manifest. Cover and background files live in the same
+	// `.pile` and must stay; the strokes import writes `.pile/strokes.json` itself.
+	await fm.remove(attrs_path)
 	await applyPileAttrs(fm, extracted_root, manifest)
 
 	const name = await basename(extracted_root)

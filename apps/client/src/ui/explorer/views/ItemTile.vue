@@ -30,6 +30,9 @@ const props = defineProps<{
 	dim?: boolean
 	/** Set for a picture that should fill the tile. The cloud page leaves this empty. */
 	file_id?: string
+	/** Set when the tile is a cloud root, so its pile file is not read from the open workspace. */
+	workspace_id?: string
+	read_pile_image?: (entry_id: string, token: string) => Promise<Uint8Array | null>
 }>()
 
 const { src, error } = useMediaSrc(() => props.file_id ?? '', () => props.name)
@@ -40,7 +43,10 @@ const height = computed(() => Math.round(explorer_settings.gallery_icon * 1.5 + 
 const width = computed(() => Math.round(height.value * (props.folder ? 1.3 : 0.85)))
 const parts = computed(() => splitFileName(props.name))
 
-const resolvedCover = useResolvedFill(() => props.entry_id ?? '', () => props.cover)
+const resolvedCover = useResolvedFill(() => props.entry_id ?? '', () => props.cover, {
+	workspace_id: () => props.workspace_id,
+	read: () => props.read_pile_image,
+})
 const cover_style = computed<{ fill?: string; picture?: Record<string, string> }>(() => {
 	const cover = props.folder && resolvedCover.value && resolvedCover.value !== 'none' ? resolvedCover.value : ''
 	if (!cover) return {}
@@ -48,6 +54,16 @@ const cover_style = computed<{ fill?: string; picture?: Record<string, string> }
 })
 /** A picture is the tile. The name sits on a strip at the bottom; the icon and the tab stay off it. */
 const picture = computed(() => Boolean(cover_style.value.picture))
+/** A missing pile file leaves no color. Omitting `--fill` keeps the tab's own fill. */
+const tile_style = computed(() => {
+	const style: Record<string, string> = {
+		'--ic': explorer_settings.gallery_icon + 'px',
+		width: width.value + 'px',
+		height: height.value + 'px',
+	}
+	if (cover_style.value.fill) style['--fill'] = cover_style.value.fill
+	return style
+})
 
 /** Finder's tab: a rounded top left corner, a smooth slope down on the right; the folder's top line stays under it */
 const TAB_H = 13
@@ -64,7 +80,7 @@ const tab_path = computed(() => {
 	<div
 		class="tile"
 		:class="{ folder, picture, s: selected, dim }"
-		:style="{ '--ic': explorer_settings.gallery_icon + 'px', width: width + 'px', height: height + 'px', '--fill': cover_style.fill }"
+		:style="tile_style"
 		:title="picture ? name : undefined"
 		:aria-label="picture ? name : undefined"
 	>

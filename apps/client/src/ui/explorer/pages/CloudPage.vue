@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { t } from '@/i18n'
 import cloud from '@/store/cloud'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_tree } from '@/store/explorer/tree'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
+import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
+import { cloud_page_xattrs } from '@/store/helpers/rootLook'
 import { folder_glyph } from '@/ui/explorer/views/item_glyph'
 import ItemTile from '@/ui/explorer/views/ItemTile.vue'
 import { after_pointer_release } from '@/ui/explorer/views/use_items'
@@ -20,19 +22,38 @@ import { cloud_tile_context_menu, type CloudTileMenu } from './cloudTileMenu'
 const roots = computed(() => explorer_tree.roots.filter(item => item.drive.kind === 'cloud'))
 const loading = computed(() => cloud.user !== null && explorer_tree.listed_drive_id !== 'cloud')
 
-/** The folder's icon as Gallery draws one: its own, its view, a folder */
-function glyph_of(item: (typeof roots.value)[number]) {
+onMounted(() => { void cloud.refresh_root_look() })
+
+/** The root's look from the workspace list. An open store, once it has read `/`, wins. */
+function xattrs_of(item: (typeof roots.value)[number]) {
 	const store = item.workspace
-	const xattrs = store && !store.is_disposed
-		? store.folders['/']?.xattrs
-		: item.root.view ? [{ name: 'view', value: item.root.view }] : undefined
-	return folder_glyph(xattrs, null)
+	return cloud_page_xattrs(
+		store?.folders['/']?.xattrs,
+		!store || store.is_disposed,
+		cloud.root_look[item.root.id],
+		item.root.view,
+	)
 }
 
-/** Its cover, once its store is read */
+/** The folder's icon as Gallery draws one: its own, its view, a folder */
+function glyph_of(item: (typeof roots.value)[number]) {
+	return folder_glyph(xattrs_of(item), null)
+}
+
+/** Its cover: a color, or a pile token read from this workspace */
 function cover_of(item: (typeof roots.value)[number]) {
-	const store = item.workspace
-	return store && !store.is_disposed ? store.folders['/']?.xattrs.find(xattr => xattr.name === 'cover')?.value : undefined
+	return xattrs_of(item)?.find(xattr => xattr.name === 'cover')?.value
+}
+
+const pile_readers = new Map<string, (entry_id: string, token: string) => Promise<Uint8Array | null>>()
+function read_pile_image(workspace_id: string) {
+	let reader = pile_readers.get(workspace_id)
+	if (!reader) {
+		const fm = create_app_cloud_file_manager(workspace_id)
+		reader = (entry_id, token) => fm.read_pile_image(entry_id, token)
+		pile_readers.set(workspace_id, reader)
+	}
+	return reader
 }
 
 function open(item: (typeof roots.value)[number]) {
@@ -93,6 +114,9 @@ async function create() {
 					folder
 					:glyph="glyph_of(item)"
 					:cover="cover_of(item)"
+					entry_id="/"
+					:workspace_id="item.root.id"
+					:read_pile_image="read_pile_image(item.root.id)"
 					:name="item.root.name"
 					tabindex="0"
 					:data-tip="t('cloud_page.open_hint')"

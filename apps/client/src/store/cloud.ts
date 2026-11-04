@@ -70,6 +70,7 @@ import {
 	register_cloud_workspaces_refetch,
 } from './workspaces_list'
 import { owned_has_members, owned_hub_hidden, owned_hub_listed, owned_public_slugs, owned_shared_out, publication_view_ids } from './helpers/publicationMapping'
+import { root_look_from_xattrs, type RootLook } from './helpers/rootLook'
 import {
 	invite_emails_match,
 	recalled_invite_workspace,
@@ -157,6 +158,8 @@ export type CloudStore = {
 	shared_out: Record<string, true>
 	/** Owned boards with at least one member, filled by fetch_workspaces */
 	has_members: Record<string, true>
+	/** Root cover, icon and view for each listed workspace, without opening it */
+	root_look: Record<string, RootLook>
 	is_loading: boolean
 	/** Message of the last failed cloud operation; UI may show and reset it */
 	last_error: string | null
@@ -220,6 +223,8 @@ export type CloudStore = {
 	/** Deletes the account and everything it owns (backend cascades + GC) */
 	delete_account(password: string): Promise<void>
 	fetch_workspaces(): Promise<void>
+	/** Re-reads root covers, icons and views without reloading the workspace list. */
+	refresh_root_look(): Promise<void>
 	role_of(workspace_id: string): WorkspaceAccess | null
 	/** Recomputes publication_view.can_edit_source (after sign-in/out) */
 	refresh_public_edit_access(): Promise<void>
@@ -304,6 +309,33 @@ function public_origin(): string {
 	return (import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, '')
 }
 
+/** One read of every listed root's cover, icon and view. A miss leaves the tiles plain. */
+async function fetch_root_look(workspace_ids: string[]): Promise<Record<string, RootLook>> {
+	const look: Record<string, RootLook> = {}
+	if (workspace_ids.length === 0) return look
+	const { data, error } = await with_jwt_clock_retry(() =>
+		require_supabase()
+			.from('entries')
+			.select('workspace_id, xattrs')
+			.eq('path', '/')
+			.is('deleted_at', null)
+			.in('workspace_id', workspace_ids),
+	)
+	if (error || !data) return look
+	for (const row of data as { workspace_id: string; xattrs: Record<string, string> | null }[]) {
+		look[row.workspace_id] = root_look_from_xattrs(row.xattrs)
+	}
+	return look
+}
+
+/** A cover, icon or view just written on a cloud root, before the next list read. */
+export function note_cloud_root_look(workspace_id: string, name: keyof RootLook, value: string) {
+	const next = { ...(cloud.root_look[workspace_id] ?? {}) }
+	if (!value || value === 'none') delete next[name]
+	else next[name] = value
+	cloud.root_look[workspace_id] = next
+}
+
 const cloud: CloudStore = {
 	is_configured: is_cloud_configured,
 	user: null,
@@ -314,6 +346,7 @@ const cloud: CloudStore = {
 	hub_hidden: {},
 	shared_out: {},
 	has_members: {},
+	root_look: {},
 	is_loading: false,
 	last_error: null,
 	notice: null,
@@ -380,6 +413,7 @@ const cloud: CloudStore = {
 			this.hub_listed = {}
 			this.hub_hidden = {}
 			this.shared_out = {}
+			this.root_look = {}
 			this.my_profile = null
 			this.billing = null
 			this.owner_usage = null
@@ -563,6 +597,7 @@ const cloud: CloudStore = {
 				this.hub_hidden = {}
 				this.shared_out = {}
 				this.has_members = {}
+				this.root_look = {}
 				return
 			}
 
@@ -640,12 +675,21 @@ const cloud: CloudStore = {
 			this.hub_hidden = owned_hub_hidden(owned ?? [])
 			this.shared_out = owned_shared_out(owned ?? [])
 			this.has_members = owned_has_members(owned ?? [])
+			this.root_look = await fetch_root_look(rows.map(ws => ws.id))
 			if (this.last_error === CLOUD_UNAVAILABLE) this.last_error = null
 		} catch (error) {
 			this.last_error = cloud_failure_message(error, CLOUD_UNAVAILABLE)
 		} finally {
 			this.is_loading = false
 		}
+	},
+
+	async refresh_root_look() {
+		const ids = this.workspaces.map(ws => ws.id)
+		if (ids.length === 0) return
+		const look = await fetch_root_look(ids)
+		if (this.workspaces.map(ws => ws.id).join('\0') !== ids.join('\0')) return
+		this.root_look = look
 	},
 
 	role_of(workspace_id: string): WorkspaceAccess | null {

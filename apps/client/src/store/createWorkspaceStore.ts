@@ -23,6 +23,7 @@ import {
 } from '../services/workspace/mutations'
 import { path_separator } from '../services/workspace/paths'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
+import { note_cloud_root_look } from '@/store/cloud'
 import type { ClipboardState, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
@@ -892,7 +893,10 @@ export async function createWorkspaceStore(
 					return
 				}
 				this.exit_selection_mode()
-				await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
+				const stored = stored_folder_view(new_view)
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored) && this.type === 'cloud' && folder_id === '/') {
+					note_cloud_root_look(this.uid, 'view', stored)
+				}
 			},
 
 			async change_folder_cover(folder_id: string, cover: string) {
@@ -900,7 +904,10 @@ export async function createWorkspaceStore(
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)) mirror_to_listings(this, folder_id, 'cover', cover)
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)) {
+					mirror_to_listings(this, folder_id, 'cover', cover)
+					if (this.type === 'cloud' && folder_id === '/') note_cloud_root_look(this.uid, 'cover', cover)
+				}
 			},
 
 			async change_folder_icon(folder_id: string, icon: string) {
@@ -908,7 +915,10 @@ export async function createWorkspaceStore(
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)) mirror_to_listings(this, folder_id, 'icon', icon)
+				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)) {
+					mirror_to_listings(this, folder_id, 'icon', icon)
+					if (this.type === 'cloud' && folder_id === '/') note_cloud_root_look(this.uid, 'icon', icon)
+				}
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {

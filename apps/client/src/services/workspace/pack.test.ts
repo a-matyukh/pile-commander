@@ -1,6 +1,23 @@
-import { describe, expect, test } from 'vitest'
-import { createFakeFileManager, type FakeFileManager } from '@pile-commander/file-manager'
-import { build_cloud_workspace_pile, list_pile_tree, pile_root_name, pile_zip_entries } from './pack'
+import { describe, expect, test, vi } from 'vitest'
+import { createFakeFileManager, type FakeFileManager, type FileManager } from '@pile-commander/file-manager'
+import { build_cloud_workspace_pile, extract_pile_to_cache, import_workspace_from_pile, list_pile_tree, pile_root_name, pile_zip_entries } from './pack'
+
+const imported = vi.hoisted(() => ({ fm: null as FileManager | null }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => '/import/Board') }))
+vi.mock('@tauri-apps/api/path', () => ({
+	join: async (...parts: string[]) => parts.join('/'),
+	basename: async (path: string) => path.split('/').pop() ?? path,
+	appCacheDir: async () => '/cache',
+}))
+vi.mock('@tauri-apps/plugin-fs', () => ({
+	mkdir: vi.fn(async () => {}),
+	remove: vi.fn(async () => {}),
+	writeFile: vi.fn(async () => {}),
+}))
+vi.mock('@pile-commander/file-manager', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@pile-commander/file-manager')>()
+	return { ...actual, createFileManager: () => imported.fm }
+})
 
 function bytes(size: number): Blob {
 	return new Blob([new Uint8Array(size)])
@@ -128,5 +145,40 @@ describe('build_cloud_workspace_pile', () => {
 		const ws = await make_workspace()
 		ws.fail_once('get_media_src')
 		await expect(build_cloud_workspace_pile(ws.fm, 'Board')).rejects.toThrow('get_media_src')
+	})
+})
+
+const ROOT_COVER = 'pile:cover-abcdef01.webp'
+
+function seed_imported_root(): FakeFileManager {
+	const ws = createFakeFileManager()
+	ws.seed_folder('/import/Board')
+	ws.seed_folder('/import/Board/.pile')
+	ws.seed_file('/import/Board/.pile/attrs.json', JSON.stringify({
+		version: 1,
+		attrs: { '': { cover: ROOT_COVER } },
+	}))
+	ws.seed_file('/import/Board/.pile/cover-abcdef01.webp', 'webp-bytes')
+	imported.fm = ws.fm
+	return ws
+}
+
+describe('importing a .pile keeps the root cover', () => {
+	test('removes attrs.json and leaves the cover file', async () => {
+		const ws = seed_imported_root()
+		const imported_root = await import_workspace_from_pile('/tmp/Board.pile', '/import')
+		expect(imported_root).toEqual({ root: '/import/Board', name: 'Board' })
+		expect(ws.has('/import/Board/.pile/cover-abcdef01.webp')).toBe(true)
+		expect(ws.has('/import/Board/.pile/attrs.json')).toBe(false)
+		expect(ws.get_xattr('/import/Board', 'cover')).toBe(ROOT_COVER)
+	})
+
+	test('extract_pile_to_cache keeps the cover file the same way', async () => {
+		const ws = seed_imported_root()
+		const extracted = await extract_pile_to_cache('/tmp/Board.pile')
+		expect(extracted.name).toBe('Board')
+		expect(ws.has('/import/Board/.pile/cover-abcdef01.webp')).toBe(true)
+		expect(ws.has('/import/Board/.pile/attrs.json')).toBe(false)
+		expect(ws.get_xattr('/import/Board', 'cover')).toBe(ROOT_COVER)
 	})
 })

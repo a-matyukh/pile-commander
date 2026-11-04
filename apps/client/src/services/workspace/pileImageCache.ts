@@ -1,3 +1,11 @@
+/**
+ * One blob per folder and token. A cloud root's folder id is `/` in every
+ * workspace, so those tiles pass the workspace id and must not share a key.
+ */
+export function pile_cache_key(workspace_id: string | undefined, entry_id: string, token: string): string {
+	return workspace_id ? `${workspace_id}\0${entry_id}\0${token}` : `${entry_id}\0${token}`
+}
+
 const urls = new Map<string, { url: string; refs: number }>()
 
 type Flight = {
