@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import type { FolderWithChildrenXattrs, FileManager, WatchEvent } from '@pile-commander/file-manager'
 import {
 	apply_entry_removed,
@@ -20,6 +21,34 @@ import {
 	rename_folder_canvas_connections,
 	type CanvasPersistStore,
 } from './persistCanvas'
+
+type ReadOrder = { next: number; applied: Map<string, number> }
+const read_orders = new WeakMap<object, ReadOrder>()
+
+/**
+ * The order of one folder's reads in one store. A ticket is taken when the
+ * read starts; its answer applies only if no read that started later has
+ * applied already, so a slow old answer cannot put an older folder back.
+ * Per store, not per path: two open roots both have `/`.
+ */
+export function folder_read_ticket(store: object, folder_id: string) {
+	const key = toRaw(store)
+	let order = read_orders.get(key)
+	if (!order) {
+		order = { next: 0, applied: new Map() }
+		read_orders.set(key, order)
+	}
+	const ticket = ++order.next
+	const own = order
+	return {
+		/** No later read of this folder has applied */
+		is_latest: () => (own.applied.get(folder_id) ?? 0) < ticket,
+		/** This answer is on screen now (a "not found" too) */
+		applied: () => {
+			if ((own.applied.get(folder_id) ?? 0) < ticket) own.applied.set(folder_id, ticket)
+		},
+	}
+}
 
 /** Cached folder ids that should be re-fetched for the given watch paths. */
 export function cached_folders_affected_by(
@@ -102,11 +131,14 @@ export async function refresh_cached_folder(
 		const generation_at_start = folder_cache_generation(folder_id)
 		const previous_children = store.folders[folder_id]!.children ?? []
 		const old_child_ids = new Set(previous_children.map(c => c.id))
+		const ticket = folder_read_ticket(store, folder_id)
 
 		let folder_data: FolderWithChildrenXattrs
 		try {
 			folder_data = await fm.folder_with_children_xattrs(folder_id)
 		} catch (error) {
+			// A later read already answered: this failure is old news
+			if (!ticket.is_latest()) return
 			// Nested preview folders often linger in `store.folders` until the
 			// watch refresh runs; once deleted they must be dropped quietly.
 			if (
@@ -114,22 +146,29 @@ export async function refresh_cached_folder(
 				&& folder_id !== store.id
 				&& store.opened_folder_id !== folder_id
 			) {
+				ticket.applied()
 				invalidate_entry_content_caches(store.content_caches, folder_id)
 				apply_entry_removed(store, folder_id)
 				return
 			}
 			// The open folder itself was just deleted: whoever deleted it moves
 			// the view on (the Explorer opens the parent). Nothing to report
-			if (is_missing_path_error(error) && store.opened_folder_id === folder_id) return
+			if (is_missing_path_error(error) && store.opened_folder_id === folder_id) {
+				ticket.applied()
+				return
+			}
 			report_error(store, error)
 			return
 		}
 
 		if (!store.folders[folder_id]) return
+		// A read that started later has applied: this older snapshot must not replace it
+		if (!ticket.is_latest()) return
 
 		if (folder_cache_generation(folder_id) !== generation_at_start) {
 			continue
 		}
+		ticket.applied()
 
 		apply_pending_entry_xattrs(folder_data)
 		restore_layout_lost_on_save(fm, previous_children, folder_data, event)

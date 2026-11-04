@@ -49,6 +49,7 @@ import {
 	type WorkspaceMember,
 	type WorkspaceRole,
 	type WorkspaceUsage,
+	cloud_trace,
 } from '@pile-commander/file-manager'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import type { LoadWorkspaceOptions } from '@/domain/Store'
@@ -606,26 +607,34 @@ const cloud: CloudStore = {
 			}
 
 			// Owned + member workspaces only — a bare is_public filter would
-			// also pull every public workspace in the project into this list
-			const { data: owned, error: owned_error } = await with_jwt_clock_retry(() =>
-				require_supabase()
-					.from('workspaces')
-					.select('id, name, owner_id, slug, is_public, hub_publications!source_workspace_id (source_workspace_id, hidden_at), workspace_members(user_id), workspace_invites(email, expires_at)')
-					.eq('owner_id', user_id)
-					.order('created_at'),
-			)
+			// also pull every public workspace in the project into this list.
+			// The two reads do not depend on each other: they go together
+			const trace = cloud_trace('cloud list')
+			const [
+				{ data: owned, error: owned_error },
+				{ data: memberships, error: members_error },
+			] = await trace.step('owned_members', () => Promise.all([
+				with_jwt_clock_retry(() =>
+					require_supabase()
+						.from('workspaces')
+						.select('id, name, owner_id, slug, is_public, hub_publications!source_workspace_id (source_workspace_id, hidden_at), workspace_members(user_id), workspace_invites(email, expires_at)')
+						.eq('owner_id', user_id)
+						.order('created_at'),
+				),
+				with_jwt_clock_retry(() =>
+					require_supabase()
+						.from('workspace_members')
+						.select('workspace_id, role')
+						.eq('user_id', user_id),
+				),
+			]))
 			if (owned_error) {
+				trace.end()
 				this.last_error = cloud_failure_message(owned_error, CLOUD_UNAVAILABLE)
 				return
 			}
-
-			const { data: memberships, error: members_error } = await with_jwt_clock_retry(() =>
-				require_supabase()
-					.from('workspace_members')
-					.select('workspace_id, role')
-					.eq('user_id', user_id),
-			)
 			if (members_error) {
+				trace.end()
 				this.last_error = cloud_failure_message(members_error, CLOUD_UNAVAILABLE)
 				return
 			}
@@ -637,13 +646,14 @@ const cloud: CloudStore = {
 
 			let shared: { id: string; name: string; owner_id: string }[] = []
 			if (member_ids.length > 0) {
-				const { data: shared_rows, error: shared_error } = await with_jwt_clock_retry(() =>
+				const { data: shared_rows, error: shared_error } = await trace.step('shared', () => with_jwt_clock_retry(() =>
 					require_supabase()
 						.from('workspaces')
 						.select('id, name, owner_id')
 						.in('id', member_ids),
-				)
+				))
 				if (shared_error) {
+					trace.end()
 					this.last_error = cloud_failure_message(shared_error, CLOUD_UNAVAILABLE)
 					return
 				}
@@ -679,7 +689,8 @@ const cloud: CloudStore = {
 			this.hub_hidden = owned_hub_hidden(owned ?? [])
 			this.shared_out = owned_shared_out(owned ?? [])
 			this.has_members = owned_has_members(owned ?? [])
-			this.root_look = await fetch_root_look(rows.map(ws => ws.id))
+			this.root_look = await trace.step('root_look', () => fetch_root_look(rows.map(ws => ws.id)))
+			trace.end()
 			if (this.last_error === CLOUD_UNAVAILABLE) this.last_error = null
 		} catch (error) {
 			this.last_error = cloud_failure_message(error, CLOUD_UNAVAILABLE)

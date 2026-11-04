@@ -97,6 +97,7 @@ import {
 } from './helpers/persistCanvas'
 import {
 	cached_folders_affected_by,
+	folder_read_ticket,
 	refresh_cached_folder,
 } from './helpers/refreshCachedFolder'
 import { is_missing_path_error } from './helpers/fsErrors'
@@ -198,14 +199,24 @@ export type WorkspaceStoreOptions = {
 	 * expanded branches). Off, one recursive watch follows the opened folder.
 	 */
 	shallow_root?: boolean
+	/** The root's read, already started (alongside the access check) */
+	initial_root?: Promise<FolderWithChildrenXattrs>
+	/** Folder reads started before the store existed; the first open of each takes its own once */
+	prefetched?: Map<string, Promise<FolderWithChildrenXattrs>>
 }
 
 export async function createWorkspaceStore(
 	ws: WorkspacesListItem,
 	fm: FileManager,
-	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false }: WorkspaceStoreOptions = {},
+	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
-	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => fm.folder_with_children_xattrs(root_folder_id))
+	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => initial_root ?? fm.folder_with_children_xattrs(root_folder_id))
+	/** A read started before the store existed, taken once by the first open of that folder */
+	const take_prefetched = (folder_id: string) => {
+		const read = prefetched?.get(folder_id)
+		prefetched?.clear()
+		return read
+	}
 
 	// Session content caches live per store instance (paths repeat across
 	// workspaces — forks share the tree — so module-level caches would leak
@@ -224,6 +235,14 @@ export async function createWorkspaceStore(
 	// folder only while it is the latest
 	let open_generation = 0
 	let disposed = false
+	/**
+	 * The store's first watch can take a second or two (the cloud channel's
+	 * join), and the folder shows without waiting for it. Until it is live a
+	 * change elsewhere goes unseen, so the folders read before then are read
+	 * once more when it is. Only the cloud: a local or browser watch is
+	 * instant, and those stores (and one without live updates) wait as before
+	 */
+	let watch_live = !live || shallow_root || ws.type !== 'cloud'
 
 	/** Stable identity for `preview_folders` while folder keys / opened id are unchanged. */
 	let preview_folders_cache: {
@@ -530,6 +549,16 @@ export async function createWorkspaceStore(
 		}
 	}
 
+	/** Re-reads the root and the open folder once: what changed before the first watch was live */
+	const became_live = (store: WorkspaceState & CanvasPersistStore & { content_caches: EntryContentCaches }) => {
+		if (watch_live) return
+		watch_live = true
+		if (disposed) return
+		for (const id of new Set([root_folder_id, store.opened_folder_id])) {
+			if (store.folders[id]) void refresh_cached_folder(store, fm, id, { kind: 'modify', ids: [id] })
+		}
+	}
+
 	const start_watching = async (
 		store: WorkspaceState & CanvasPersistStore & { content_caches: EntryContentCaches },
 		folder_id: string,
@@ -549,6 +578,7 @@ export async function createWorkspaceStore(
 				(event) => handle_watch_event(store as WorkspaceStore, folder_id, event),
 				{ recursive: true },
 			)
+			became_live(store)
 			if (disposed || generation !== watch_generation) {
 				next()
 				return
@@ -865,14 +895,22 @@ export async function createWorkspaceStore(
 			const generation = ++open_generation
 			const current = () => generation === open_generation && !disposed
 			const left = this.opened_folder_id
+			const started_live = watch_live
 
 			this.exit_selection_mode()
 
 		this.opening_folder_id = folder_id
+		const ticket = folder_read_ticket(this, folder_id)
 		let folder_data: FolderWithChildrenXattrs
 		try {
-			folder_data = await active_step('read', () => fm.folder_with_children_xattrs(folder_id))
+			folder_data = await active_step('read', () => take_prefetched(folder_id) ?? fm.folder_with_children_xattrs(folder_id))
 			if (!current()) return false
+			// a refresh that started later already put a newer one in place
+			if (ticket.is_latest()) {
+				ticket.applied()
+			} else if (this.folders[folder_id]) {
+				folder_data = this.folders[folder_id]!
+			}
 			if (!options?.fromBack && !options?.skipHistory) this.folder_back_stack.push(left)
 			this.folders[folder_id] = folder_data
 			this.opened_folder_id = folder_id
@@ -886,7 +924,13 @@ export async function createWorkspaceStore(
 			sync_tree_from_folders(this)
 		}
 
-	await active_step('watch', () => start_watching(this, folder_id))
+	// The first watch of a store is the slow one: the folder does not wait for it
+	if (watch_live) await active_step('watch', () => start_watching(this, folder_id))
+	else void start_watching(this, folder_id)
+	// It went live while this folder was read: read it once more
+	if (!started_live && watch_live && current()) {
+		void refresh_cached_folder(this, fm, folder_id, { kind: 'modify', ids: [folder_id] })
+	}
 	void this.ensure_strokes(folder_id)
 	void this.ensure_connections(folder_id)
 	await active_step('expand', () => this.expand_folder_in_sidebar(folder_id))
@@ -2597,7 +2641,10 @@ export async function createWorkspaceStore(
 			)
 		}
 
-		await active_step('root_watch', () => start_watching(workspace, root_folder_id))
+		// The first watch (the cloud channel's join) does not hold the store back;
+		// became_live re-reads what was shown before it
+		if (watch_live) await active_step('root_watch', () => start_watching(workspace, root_folder_id))
+		else void start_watching(workspace, root_folder_id)
 		return workspace
 	} catch (error) {
 		console.error(error)

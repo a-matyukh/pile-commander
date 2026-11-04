@@ -326,3 +326,21 @@ describe('explorer drives: prepare (a root opened for a transition, shown on com
 		expect(adopted).toEqual([])
 	})
 })
+
+describe('explorer drives: a cloud root opens by its name alone', () => {
+	test('the root list with its look-ahead reads is not needed to open one root', async () => {
+		const cloud_roots = vi.fn(async () => [{ id: 'a', name: 'From roots', can_write: true }])
+		const opened: WorkspacesListItem[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_roots,
+			cloud_root_name: async () => 'From the list',
+			async open_cloud(item) {
+				opened.push(item)
+				return { dispose: vi.fn(), is_disposed: false } as unknown as WorkspaceStore
+			},
+		}))
+		await drives.open('cloud', 'a')
+		expect(cloud_roots).not.toHaveBeenCalled()
+		expect(opened[0]?.name).toBe('From the list')
+	})
+})

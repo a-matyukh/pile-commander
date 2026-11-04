@@ -54,7 +54,8 @@ export type ExplorerNavigationDeps = {
 	 * only once the target folder has opened, so a failed or dropped
 	 * transition leaves everything as it was
 	 */
-	prepare_root?(drive_id: string, root_id: string): Promise<PreparedRoot>
+	// `folder_id`: the folder it goes to, read alongside a root that is not open yet
+	prepare_root?(drive_id: string, root_id: string, folder_id?: string): Promise<PreparedRoot>
 	/** Store currently on screen. Read when leaving a folder, not opened again. */
 	current_store(): WorkspaceStore | null
 	default_folder(): Promise<FolderRef>
@@ -294,7 +295,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 	/** The root's store for the target: prepared (not shown until commit) when the deps can */
 	async function open_target_root(target: FolderRef, seen: number): Promise<{ workspace: WorkspaceStore; prepared: PreparedRoot | null }> {
 		if (deps.prepare_root) {
-			const prepared = await deps.prepare_root(target.drive_id, target.root_id)
+			const prepared = await deps.prepare_root(target.drive_id, target.root_id, target.folder_id)
 			return { workspace: prepared.store, prepared }
 		}
 		const workspace = await deps.open_root(target.drive_id, target.root_id, () => seen === generation)
@@ -619,9 +620,9 @@ export const explorer_navigation = create_explorer_navigation({
 		if (drive_id === 'local') return explorer_drives.open_local_path(root_id, still_current)
 		return explorer_drives.open(drive_id, root_id, still_current)
 	},
-	prepare_root(drive_id, root_id) {
+	prepare_root(drive_id, root_id, folder_id) {
 		if (drive_id === 'local') return explorer_drives.prepare_local_path(root_id)
-		return explorer_drives.prepare(drive_id, root_id)
+		return explorer_drives.prepare(drive_id, root_id, folder_id)
 	},
 	current_store: () => store.workspace,
 	async default_folder() {

@@ -1,4 +1,11 @@
-import { active_step, createFileManager, createBrowserFileManager, get_workspace_access } from '@pile-commander/file-manager'
+import {
+	active_step,
+	createFileManager,
+	createBrowserFileManager,
+	get_workspace_access,
+	type FileManager,
+	type FolderWithChildrenXattrs,
+} from '@pile-commander/file-manager'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
 import { create_demo_file_manager } from '@/services/demoPack'
 import type { LoadWorkspaceOptions, WorkspaceStore } from '@/domain/Store'
@@ -10,6 +17,18 @@ import {
 } from '@/services/cloud/client'
 import { require_browser_storage } from '@/services/workspace/browserStorage'
 import { createWorkspaceStore } from '../createWorkspaceStore'
+
+/** Reads started before the store exists; a rejection is kept for whoever awaits it */
+function start_reads(fm: FileManager, also_read: string | undefined) {
+	const quiet = <T>(promise: Promise<T>) => {
+		promise.catch(() => {})
+		return promise
+	}
+	const initial_root = quiet(fm.folder_with_children_xattrs('/'))
+	const prefetched = new Map<string, Promise<FolderWithChildrenXattrs>>()
+	if (also_read && also_read !== '/') prefetched.set(also_read, quiet(fm.folder_with_children_xattrs(also_read)))
+	return { initial_root, prefetched }
+}
 
 /**
  * Builds a live workspace store for the given list item: file manager,
@@ -29,6 +48,12 @@ export async function open_workspace_store(
 			: item.type === 'demo'
 				? await create_demo_file_manager()
 				: createFileManager(item.type)
+
+	// A cloud root is read while its access is checked, not after it: the
+	// check still decides "offline" / "no access" (a quick failed read does
+	// not win), and the read's own failure surfaces only once access is fine.
+	// The folder the navigation goes to is read alongside too
+	const reads = item.type === 'cloud' ? start_reads(fm, opts?.also_read) : undefined
 
 	// viewer role gets a read-only store: UI gates mutations and every
 	// store mutation refuses with a clear error (RLS is the final boundary).
@@ -68,6 +93,7 @@ export async function open_workspace_store(
 			root_folder_id: item.type === 'cloud' ? '/' : item.id,
 			can_write,
 			live,
+			...reads,
 		}))
 	} catch (error) {
 		if (item.type !== 'cloud') throw error

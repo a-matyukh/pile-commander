@@ -15,6 +15,11 @@ type LoadWorkspaceOptions = {
 	 * outsiders read the board once, without realtime.
 	 */
 	public_readonly?: boolean
+	/**
+	 * The folder the opening navigation goes to: read alongside the root, so
+	 * a deep link does not wait for two reads in a row
+	 */
+	also_read?: string
 }
 
 export
