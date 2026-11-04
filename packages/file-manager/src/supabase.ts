@@ -318,7 +318,8 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// rows as `missing`, rows whose attributes would break the 64 KB cap as
 	// `too_large` (left untouched)
 	async function merge_xattrs(
-		items: { path: string; xattrs: Record<string, string> }[],
+		// null removes the key (rpc.sql, the same statement as the sets)
+		items: { path: string; xattrs: Record<string, string | null> }[],
 	): Promise<RefusedXattrs[]> {
 		if (items.length === 0) return []
 		const { data, error } = await client.rpc("merge_entry_xattrs", {
@@ -328,6 +329,32 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		})
 		if (error) throw new Error(`merge_entry_xattrs failed: ${error.message}`)
 		return (data ?? []) as RefusedXattrs[]
+	}
+
+	// A database without the null-removes merge refuses null as a non-string
+	// value. Remembered for the session; that database still gets the old
+	// whole-object rewrite. Drop this fallback once the diff is everywhere.
+	let merge_removes_keys = true
+
+	/** Removes one attribute without rewriting the others (a concurrent write of another key survives) */
+	async function remove_xattr_key(row: EntryRow, name: string) {
+		if (merge_removes_keys) {
+			try {
+				const [refused] = await merge_xattrs([{ path: row.path, xattrs: { [name]: null } }])
+				if (refused?.status === "missing") throw new Error(`remove_xattr failed: entry not found: ${row.path}`)
+				return
+			} catch (error) {
+				if (!(error instanceof Error && /string xattr values/.test(error.message))) throw error
+				merge_removes_keys = false
+			}
+		}
+		const xattrs = { ...row.xattrs }
+		delete xattrs[name]
+		const { error } = await client
+			.from("entries")
+			.update({ xattrs, updated_by_client: client_instance_id() })
+			.eq("id", row.id)
+		if (error) throw new Error(`remove_xattr failed: ${error.message}`)
 	}
 
 	async function resolve(path: string): Promise<EntryRow> {
@@ -1428,13 +1455,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			try {
 				const row = await trace.step("resolve", () => resolve(id))
 				mark_write(row.id)
-				const xattrs = { ...row.xattrs }
-				delete xattrs[name]
-				const { error } = await trace.step("update", async () => await client
-					.from("entries")
-					.update({ xattrs, updated_by_client: client_instance_id() })
-					.eq("id", row.id))
-				if (error) throw new Error(`remove_xattr failed: ${error.message}`)
+				await trace.step("merge", () => remove_xattr_key(row, name))
 				await trace.step("sweep", () => sweep_pile_images(row.path, [name]))
 			} finally {
 				trace.end()

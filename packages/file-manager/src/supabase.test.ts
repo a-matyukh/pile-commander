@@ -352,10 +352,17 @@ describe("cloud pile images", () => {
 		}
 	}
 
-	function world(options?: { purge_error?: string }) {
+	function world(options?: {
+		purge_error?: string
+		/** a database before the null-removes merge: refuses null values */
+		old_merge?: boolean
+		/** another client writes this key right before each merge lands */
+		concurrent_key?: string
+	}) {
 		const rows = new Map<string, Row>()
 		rows.set("root", blank({ id: "root", parent_id: null, name: "", kind: "folder", path: "/" }))
 		const puts: string[] = []
+		const calls = { merges: 0, updates: 0 }
 		const live = (path: string) => [...rows.values()].find(row => row.path === path && row.deleted_at === null) ?? null
 
 		const client = {
@@ -384,6 +391,7 @@ describe("cloud pile images", () => {
 						}
 					},
 					update(patch: Partial<Row>) {
+						calls.updates += 1
 						return {
 							eq: async (_column: string, value: string) => {
 								const row = [...rows.values()].find(item => item.id === value)
@@ -404,12 +412,23 @@ describe("cloud pile images", () => {
 					return { data: { folder, children }, error: null }
 				}
 				if (name === "merge_entry_xattrs") {
+					calls.merges += 1
+					const items = args.p_items as { path: string; xattrs: Record<string, string | null> }[]
+					if (options?.old_merge && items.some(item => Object.values(item.xattrs).some(value => value === null))) {
+						return { data: null, error: { message: "merge_entry_xattrs: every item needs a path and string xattr values" } }
+					}
 					const refused: { path: string; status: string }[] = []
-					for (const item of args.p_items as { path: string; xattrs: Record<string, string> }[]) {
+					for (const item of items) {
 						const row = live(item.path)
 						if (!row) { refused.push({ path: item.path, status: "missing" }); continue }
 						if (item.xattrs.cover === "TOO") { refused.push({ path: item.path, status: "too_large" }); continue }
-						row.xattrs = { ...row.xattrs, ...item.xattrs }
+						if (options?.concurrent_key) row.xattrs = { ...row.xattrs, [options.concurrent_key]: "theirs" }
+						const next: Record<string, string> = { ...row.xattrs }
+						for (const [key, value] of Object.entries(item.xattrs)) {
+							if (value === null) delete next[key]
+							else next[key] = value
+						}
+						row.xattrs = next
 					}
 					return { data: refused, error: null }
 				}
@@ -437,7 +456,7 @@ describe("cloud pile images", () => {
 			backend_url: "https://backend.example",
 			put_blob: async (url) => { puts.push(url) },
 		})
-		return { fm, rows, puts, live }
+		return { fm, rows, puts, live, calls }
 	}
 
 	function install_fetch(rows: Map<string, { id: string; parent_id: string | null; name: string; kind: string; path: string; deleted_at: string | null }>, bytes: Uint8Array) {
@@ -574,6 +593,30 @@ describe("cloud pile images", () => {
 			console.error = original
 			restore()
 		}
+	})
+
+	test("remove_xattr removes one key in the merge: a key another client wrote meanwhile survives", async () => {
+		const { fm, live, calls } = world({ concurrent_key: "view" })
+		await fm.set_xattr("/", "icon", "tabler:star")
+		await fm.remove_xattr("/", "icon")
+		expect(live("/")?.xattrs).toEqual({ view: "theirs" })
+		expect(calls.updates).toBe(0)
+	})
+
+	test("remove_xattr on a database without the null merge falls back to the rewrite, once", async () => {
+		const { fm, live, calls } = world({ old_merge: true })
+		await fm.set_xattr("/", "icon", "tabler:star")
+		await fm.set_xattr("/", "view", "grid")
+		const merges_before = calls.merges
+		await fm.remove_xattr("/", "icon")
+		expect(live("/")?.xattrs).toEqual({ view: "grid" })
+		expect(calls.merges - merges_before).toBe(1)
+		expect(calls.updates).toBe(1)
+		await fm.remove_xattr("/", "view")
+		expect(live("/")?.xattrs).toEqual({})
+		// remembered: no second refused merge
+		expect(calls.merges - merges_before).toBe(1)
+		expect(calls.updates).toBe(2)
 	})
 
 	test("a refused xattr path does not purge its picture", async () => {

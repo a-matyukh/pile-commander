@@ -90,9 +90,11 @@ $$;
 -- entry no longer clobber each other) and makes bulk layout writes — a pack
 -- import, the cloud bridge copy — one round-trip per batch.
 -- Items: [{"path": "/a", "xattrs": {"name": "value"}}]; values are strings
--- (the entries.xattrs convention), each path at most once. Refused rows come
--- back instead of aborting the batch: 'missing' (gone, trashed, or not in
--- this workspace) and 'too_large' (the merge would break the 64 KB xattrs
+-- (the entries.xattrs convention) or null, which removes that key in the same
+-- statement (remove_xattr used to rewrite the whole object and could drop a
+-- key another client wrote meanwhile). Each path at most once. Refused rows
+-- come back instead of aborting the batch: 'missing' (gone, trashed, or not
+-- in this workspace) and 'too_large' (the result would break the 64 KB xattrs
 -- CHECK; the row stays untouched)
 -- ----------------------------------------------------------------------------
 
@@ -122,7 +124,7 @@ begin
                    when jsonb_typeof(i->'path') = 'string' and jsonb_typeof(i->'xattrs') = 'object'
                    then exists (
                        select 1 from jsonb_each(i->'xattrs') a
-                        where jsonb_typeof(a.value) <> 'string'
+                        where jsonb_typeof(a.value) not in ('string', 'null')
                    )
                    else true
                end
@@ -135,14 +137,21 @@ begin
 
     return query
     with items as (
-        select i->>'path' as item_path, i->'xattrs' as patch
+        -- strings to set, and the keys a null removes
+        select i->>'path' as item_path,
+               jsonb_strip_nulls(i->'xattrs') as patch,
+               coalesce(
+                   (select array_agg(a.key) from jsonb_each(i->'xattrs') a
+                     where jsonb_typeof(a.value) = 'null'),
+                   '{}'::text[]
+               ) as removed
           from jsonb_array_elements(p_items) i
     ),
     targets as (
         select e.id as entry_id,
                it.item_path,
-               it.patch,
-               pg_column_size(e.xattrs || it.patch) <= 65536 as fits
+               (e.xattrs || it.patch) - it.removed as result,
+               pg_column_size((e.xattrs || it.patch) - it.removed) <= 65536 as fits
           from items it
           join public.entries e
             on e.workspace_id = p_workspace
@@ -151,7 +160,7 @@ begin
     ),
     merged as (
         update public.entries e
-           set xattrs = e.xattrs || t.patch,
+           set xattrs = t.result,
                updated_by_client = p_client_id
           from targets t
          where e.id = t.entry_id
