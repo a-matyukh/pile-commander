@@ -3,10 +3,12 @@ import { useStorage } from '@vueuse/core'
 import {
 	client_instance_id,
 	createFileManager,
+	forget_sync_device,
 	list_workspace_connections,
 	list_workspace_entries,
 	list_workspace_strokes,
 	purge_entry_id,
+	touch_sync_device,
 	workspace_state,
 	type EntryRow,
 } from '@pile-commander/file-manager'
@@ -48,6 +50,39 @@ const links = useStorage<Record<string, SyncLink>>('local_sync_links', {})
 export const sync_statuses: Record<string, SyncStatus> = reactive({})
 
 const engines = new Map<string, SyncEngine>()
+
+/**
+ * How often this copy re-stamps a workspace it syncs. The stamp is its
+ * record in the cloud, which the web reads to show the folder as synced;
+ * passes can run every few seconds, the stamp only has to say "lately"
+ */
+const STAMP_EVERY_MS = 10 * 60_000
+
+/** Last stamp per account and workspace */
+const stamped = new Map<string, number>()
+
+function stamp_key(link: SyncLink): string {
+	return `${link.user_id}\0${link.workspace_id}`
+}
+
+/** Best-effort: without the record the folder only misses its badge on other devices */
+function stamp_sync_device(link: SyncLink, options: { now?: boolean } = {}): void {
+	if (cloud.user?.id !== link.user_id) return
+	const key = stamp_key(link)
+	const at = Date.now()
+	if (!options.now && at - (stamped.get(key) ?? 0) < STAMP_EVERY_MS) return
+	stamped.set(key, at)
+	void (async () => touch_sync_device(require_supabase(), link.workspace_id, client_instance_id()))()
+		.catch((error: unknown) => console.warn('[sync] could not record this device', error))
+}
+
+/** The cloud forgets that a copy of the app syncs this workspace (this copy by default) */
+function forget_sync_record(link: SyncLink, device_id = client_instance_id()): void {
+	stamped.delete(stamp_key(link))
+	if (cloud.user?.id !== link.user_id) return
+	void (async () => forget_sync_device(require_supabase(), link.workspace_id, device_id))()
+		.catch((error: unknown) => console.warn('[sync] could not remove the device record', error))
+}
 
 export function sync_link_of(root: string): SyncLink | null {
 	return links.value[root] ?? null
@@ -201,6 +236,7 @@ function start_engine(link: SyncLink): void {
 			}
 			// The whole status, including folders kept for hidden files.
 			sync_statuses[link.root] = status
+			if (status.phase === 'idle' && status.last_synced_at) stamp_sync_device(link)
 		},
 	})
 	engines.set(link.root, engine)
@@ -248,6 +284,8 @@ export async function link_folder(input: {
 	await save_state(link, new_sync_state(owner_of(link), { exclude: input.exclude, adopt_before: input.adopt_before }))
 	links.value = { ...links.value, [input.root]: link }
 	start_engine(link)
+	// at once: the first pass of a large workspace can take a while
+	stamp_sync_device(link, { now: true })
 }
 
 /**
@@ -288,7 +326,9 @@ export async function sync_workspace_to_folder(workspace: { id: string; name: st
 
 /** Stops syncing a folder. Both the folder and its cloud workspace stay as they are. */
 export async function unlink_folder(root: string): Promise<void> {
+	const link = links.value[root]
 	stop_engine(root)
+	if (link) forget_sync_record(link)
 	const next = { ...links.value }
 	delete next[root]
 	links.value = next
@@ -345,6 +385,9 @@ export async function take_over_link(root: string, name: string): Promise<void> 
 	await save_state(link, state)
 	links.value = { ...links.value, [root]: link }
 	start_engine(link)
+	// the other copy pauses as unlinked: its record goes, this copy's takes over
+	forget_sync_record(link, found.device_id)
+	stamp_sync_device(link, { now: true })
 }
 
 export async function sync_now(root: string, options: SyncNowOptions = {}): Promise<void> {

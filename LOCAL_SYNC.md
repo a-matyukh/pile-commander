@@ -31,6 +31,15 @@ both ways, and on either side the folder is still a board or a canvas.
 Only a signed-in desktop app syncs; nothing runs while it is closed. The
 next launch catches up exactly, from the base.
 
+- **The synced badge on other devices.** Each copy of the app records in
+  `sync_devices` that it syncs a workspace: at link time, then after its
+  passes at most every 10 minutes (server time, `touch_sync_device`). It
+  deletes its row when it stops syncing, and "Continue syncing here" deletes
+  the other copy's row. The browser (and another computer) shows the cloud
+  folder as synced from these rows, with how many computers and the latest
+  pass in the tip; a row older than 30 days is ignored. The local path never
+  leaves the computer. Without the table (an older database) nothing shows.
+
 ## Code map
 
 | Piece | Where |
@@ -366,6 +375,10 @@ Each change is a forward diff on the live project, applied with
    It is worth it only if large workspaces make full listings slow.
 4. **Optional: `entries.content_sha256`.** For exact adopt and rename
    decisions, and to catch a same-size edit. Not started.
+5. **`sync_devices` and `touch_sync_device`.** Done (2026-11-04). One row
+   per account, workspace and copy of the app; RLS keeps rows to their
+   account and inserts to workspaces it can open. Column grants: the stamp
+   is written only by the server, a row cannot move to another account.
 
 ## Manual check (desktop app)
 

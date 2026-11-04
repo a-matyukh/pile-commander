@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import {
+	client_instance_id,
 	create_workspace,
 	get_my_profile,
 	get_published_workspace,
@@ -10,6 +11,7 @@ import {
 	list_hub_authors,
 	list_hub_publications,
 	list_hub_tags,
+	list_sync_devices,
 	list_trash,
 	list_user_publications,
 	claim_workspace_invites,
@@ -80,6 +82,7 @@ import {
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
+import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 
 /**
@@ -162,6 +165,11 @@ export type CloudStore = {
 	has_members: Record<string, true>
 	/** Root cover, icon and view for each listed workspace, without opening it */
 	root_look: Record<string, RootLook>
+	/**
+	 * Workspaces another computer syncs (a copy of the desktop app other than
+	 * this one, lately), filled with the list. The web shows them as synced
+	 */
+	synced_on: Record<string, SyncedOn>
 	is_loading: boolean
 	/** Message of the last failed cloud operation; UI may show and reset it */
 	last_error: string | null
@@ -339,6 +347,15 @@ async function fetch_root_look(workspace_ids: string[]): Promise<Record<string, 
 	return look
 }
 
+/** Which workspaces other computers sync. A miss (an older database without the table) shows none */
+async function fetch_synced_on(): Promise<Record<string, SyncedOn>> {
+	try {
+		return synced_on_from(await list_sync_devices(require_supabase()), client_instance_id())
+	} catch {
+		return {}
+	}
+}
+
 /** A cover, icon or view just written on a cloud root, before the next list read. */
 export function note_cloud_root_look(workspace_id: string, name: keyof RootLook, value: string) {
 	const next = { ...(cloud.root_look[workspace_id] ?? {}) }
@@ -362,6 +379,7 @@ const cloud: CloudStore = {
 	shared_out: {},
 	has_members: {},
 	root_look: {},
+	synced_on: {},
 	is_loading: false,
 	last_error: null,
 	notice: null,
@@ -434,6 +452,7 @@ const cloud: CloudStore = {
 			this.hub_hidden = {}
 			this.shared_out = {}
 			this.root_look = {}
+			this.synced_on = {}
 			this.my_profile = null
 			this.billing = null
 			this.owner_usage = null
@@ -632,6 +651,7 @@ const cloud: CloudStore = {
 				this.shared_out = {}
 				this.has_members = {}
 				this.root_look = {}
+				this.synced_on = {}
 				return
 			}
 
@@ -718,7 +738,12 @@ const cloud: CloudStore = {
 			this.hub_hidden = owned_hub_hidden(owned ?? [])
 			this.shared_out = owned_shared_out(owned ?? [])
 			this.has_members = owned_has_members(owned ?? [])
-			this.root_look = await trace.step('root_look', () => fetch_root_look(rows.map(ws => ws.id)))
+			const [look, synced_on] = await trace.step('root_look', () => Promise.all([
+				fetch_root_look(rows.map(ws => ws.id)),
+				fetch_synced_on(),
+			]))
+			this.root_look = look
+			this.synced_on = synced_on
 			trace.end()
 			if (this.last_error === CLOUD_UNAVAILABLE) this.last_error = null
 		} catch (error) {
@@ -731,9 +756,10 @@ const cloud: CloudStore = {
 	async refresh_root_look() {
 		const ids = this.workspaces.map(ws => ws.id)
 		if (ids.length === 0) return
-		const look = await fetch_root_look(ids)
+		const [look, synced_on] = await Promise.all([fetch_root_look(ids), fetch_synced_on()])
 		if (this.workspaces.map(ws => ws.id).join('\0') !== ids.join('\0')) return
 		this.root_look = look
+		this.synced_on = synced_on
 	},
 
 	role_of(workspace_id: string): WorkspaceAccess | null {

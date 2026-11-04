@@ -1,7 +1,9 @@
 import { computed } from 'vue'
 import { createFileManager } from '@pile-commander/file-manager'
 import type { FolderRef } from '@/domain/Drive'
+import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
+import type { SyncedOn } from '@/services/cloud/syncedOn'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import { export_workspace_to_pile } from '@/services/workspace/pack'
@@ -150,9 +152,42 @@ export function use_sync_link(ref: () => FolderRef) {
  * The tree's "synced" mark: the linked folder itself. A cloud folder shows it
  * on its top-level folder only; a folder on this Mac, on the linked folder
  */
+/**
+ * Other computers sync this cloud folder (a copy of the desktop app other
+ * than this one, lately), or null. Only a cloud folder's top level syncs
+ */
+export function synced_elsewhere(ref: FolderRef): SyncedOn | null {
+	if (ref.drive_id !== 'cloud' || ref.folder_id !== '/') return null
+	return cloud.synced_on[ref.root_id] ?? null
+}
+
 export function shows_synced(ref: FolderRef): boolean {
 	if (ref.drive_id === 'cloud' && ref.folder_id !== '/') return false
-	return sync_link_for(ref) !== null
+	return sync_link_for(ref) !== null || synced_elsewhere(ref) !== null
+}
+
+/** "just now", "5 min ago", then the date and time */
+export function sync_ago(epoch_ms: number): string {
+	const minutes = Math.round((Date.now() - epoch_ms) / 60_000)
+	if (minutes < 1) return t('sync.just_now')
+	if (minutes < 60) return t('sync.min_ago', { n: minutes })
+	return new Date(epoch_ms).toLocaleString()
+}
+
+/**
+ * The badge's tip: synced on this computer, or with which other computers
+ * and when the latest of them last synced. In the browser every computer is
+ * "a computer"; in the desktop app it is "another computer"
+ */
+export function synced_tip(ref: FolderRef): string {
+	const elsewhere = sync_link_for(ref) ? null : synced_elsewhere(ref)
+	if (!elsewhere) return t('badge.synced')
+	const when = sync_ago(elsewhere.last_pass_at)
+	const n = elsewhere.devices
+	if (is_desktop) {
+		return n > 1 ? t('badge.synced_other_computers', { n, when }) : t('badge.synced_other_computer', { when })
+	}
+	return n > 1 ? t('badge.synced_computers', { n, when }) : t('badge.synced_computer', { when })
 }
 
 function report(error: unknown) {

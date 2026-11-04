@@ -31,7 +31,8 @@ function filter_sources(item: ExplorerTreeRoot): TreeFilterSources {
 		cloud: is_cloud,
 		bookmarks: explorer_bookmarks.value,
 		sync_roots: is_cloud ? [] : sync_link_roots(),
-		cloud_synced: is_cloud && synced_folder_of(root_id) !== null,
+		// this computer's link, or another computer's recent sync record
+		cloud_synced: is_cloud && (synced_folder_of(root_id) !== null || cloud.synced_on[root_id] !== undefined),
 		cloud_shared: is_cloud && cloud.shared_out[root_id] === true,
 		cloud_public_link: is_cloud && root_id in cloud.published_slugs,
 		cloud_in_hub: is_cloud && cloud.hub_listed[root_id] === true,

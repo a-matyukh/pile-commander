@@ -18,7 +18,7 @@ import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
-import { shows_synced } from '@/store/explorer/share'
+import { shows_synced, synced_tip } from '@/store/explorer/share'
 import { folder_icon_of, standard_folder_icon, system_folder } from '@/store/explorer/folder_cover'
 import { shown_icon } from '@/store/explorer/icon_catalog'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
@@ -260,7 +260,7 @@ watchEffect(on_cleanup => {
 		<Icon :icon="glyph.icon" :class="glyph.plain ? 'plain' : 'vw'" :style="{ color: glyph.color }" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
-			<span v-if="shows_synced(row_ref)" class="bdg" :data-tip="t('badge.synced')"><Icon icon="tabler:cloud-check" /></span>
+			<span v-if="shows_synced(row_ref)" class="bdg" :data-tip="synced_tip(row_ref)"><Icon icon="tabler:cloud-check" /></span>
 			<span v-if="is_bookmarked(row_ref)" class="bdg" :data-tip="t('badge.bookmarked')"><Icon icon="tabler:bookmark" /></span>
 			<!-- A publication or the demo is not one of the user's places: no folder menu -->
 			<FolderMenu

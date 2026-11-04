@@ -2757,6 +2757,38 @@ export async function workspace_state(client: SupabaseClient, workspace_id: stri
 	return "gone"
 }
 
+/** A copy of the desktop app that syncs a cloud workspace with a folder on its computer */
+export type SyncDevice = {
+	workspace_id: string
+	/** That copy's `client_instance_id` */
+	device_id: string
+	/** Its last pass, server time (ISO) */
+	last_pass_at: string
+}
+
+/** "This copy of the app syncs this workspace", stamped in server time */
+export async function touch_sync_device(client: SupabaseClient, workspace_id: string, device_id: string): Promise<void> {
+	const { error } = await client.rpc("touch_sync_device", { p_workspace: workspace_id, p_device: device_id })
+	if (error) throw new Error(`touch_sync_device failed: ${error.message}`)
+}
+
+/** That copy no longer syncs the workspace */
+export async function forget_sync_device(client: SupabaseClient, workspace_id: string, device_id: string): Promise<void> {
+	const { error } = await client
+		.from("sync_devices")
+		.delete()
+		.eq("workspace_id", workspace_id)
+		.eq("device_id", device_id)
+	if (error) throw new Error(`forget_sync_device failed: ${error.message}`)
+}
+
+/** Every copy of the app that syncs one of this account's workspaces (RLS keeps it to the account) */
+export async function list_sync_devices(client: SupabaseClient): Promise<SyncDevice[]> {
+	const { data, error } = await client.from("sync_devices").select("workspace_id, device_id, last_pass_at")
+	if (error) throw new Error(`list_sync_devices failed: ${error.message}`)
+	return (data ?? []) as SyncDevice[]
+}
+
 /**
  * Forks a live public workspace into the caller's account as a regular
  * private workspace. Returns the new workspace id. Blobs are re-keyed

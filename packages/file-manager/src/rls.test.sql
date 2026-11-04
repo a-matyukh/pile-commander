@@ -324,6 +324,46 @@ begin
         execute 'set local role authenticated';
     end;
 
+    -- sync_devices: own rows, stamped in server time, one per copy of the app
+    perform public.touch_sync_device(v_ws, 'rls-device-a');
+    perform public.touch_sync_device(v_ws, 'rls-device-a');
+    perform public.touch_sync_device(v_ws, 'rls-device-b');
+    insert into __results values ('sync_devices: owner stamps own devices, one row each',
+        (select count(*) from public.sync_devices where workspace_id = v_ws and owner_id = c_owner) = 2, null);
+    begin
+        insert into public.sync_devices (owner_id, workspace_id, device_id)
+        values (c_other, v_ws, 'rls-device-x');
+        insert into __results values ('sync_devices: cannot stamp for another account', false, 'accepted');
+    exception when others then
+        insert into __results values ('sync_devices: cannot stamp for another account', sqlstate = '42501', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
+        insert into public.sync_devices (owner_id, workspace_id, device_id, last_pass_at)
+        values (c_owner, v_ws, 'rls-device-c', now() + interval '1 year');
+        insert into __results values ('sync_devices: the stamp is the server''s', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('sync_devices: the stamp is the server''s', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
+        update public.sync_devices set owner_id = c_other where owner_id = c_owner;
+        insert into __results values ('sync_devices: rows cannot change hands', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('sync_devices: rows cannot change hands', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
+        perform public.touch_sync_device(v_ws, '');
+        insert into __results values ('sync_devices: empty device id refused', false, 'accepted');
+    exception when check_violation then
+        insert into __results values ('sync_devices: empty device id refused', true, null);
+        execute 'set local role authenticated';
+    end;
+    delete from public.sync_devices where workspace_id = v_ws and device_id = 'rls-device-b';
+    insert into __results values ('sync_devices: owner removes own device',
+        (select count(*) from public.sync_devices where workspace_id = v_ws and owner_id = c_owner) = 1, null);
+
     begin
         v_json := public.create_text_file(v_folder, 'big.txt', 'text/plain', repeat('x', 8388609), null, null);
         insert into __results values ('text: 8 MB gate', false, 'accepted');
@@ -869,6 +909,10 @@ begin
     -- ------------------------------------------------------------------
     perform set_config('request.jwt.claims', json_build_object('sub', c_viewer, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
+    perform public.touch_sync_device(v_ws, 'rls-viewer-device');
+    insert into __results values ('viewer: stamps a shared workspace it syncs, sees only its own rows',
+        (select count(*) from public.sync_devices where workspace_id = v_ws) = 1
+        and (select count(*) from public.sync_devices where owner_id = c_viewer) = 1, null);
     begin
         perform public.merge_entry_xattrs(v_ws, jsonb_build_array(
             jsonb_build_object('path', '/docs/note.md', 'xattrs', jsonb_build_object('v', '1'))), null);
@@ -927,6 +971,18 @@ begin
         (select count(*) from public.workspace_invites) = 0, null);
     insert into __results values ('stranger: cannot see bridge_events of others',
         (select count(*) from public.bridge_events where owner_id = c_owner) = 0, null);
+    insert into __results values ('stranger: cannot see sync_devices of others',
+        (select count(*) from public.sync_devices) = 0, null);
+    delete from public.sync_devices where workspace_id = v_ws;
+    get diagnostics v_n = row_count;
+    insert into __results values ('stranger: cannot delete sync_devices of others', v_n = 0, format('deleted %s', v_n));
+    begin
+        perform public.touch_sync_device(v_ws, 'rls-stranger-device');
+        insert into __results values ('stranger: cannot stamp a workspace it cannot open', false, 'accepted');
+    exception when others then
+        insert into __results values ('stranger: cannot stamp a workspace it cannot open', sqlstate = '42501', sqlerrm);
+        execute 'set local role authenticated';
+    end;
     begin
         v_json := public.folder_read(v_ws, '/');
         insert into __results values ('stranger: folder_read refused', false, 'accepted');
@@ -969,6 +1025,13 @@ begin
         insert into __results values ('anon: cannot insert bridge_events', false, 'accepted');
     exception when insufficient_privilege then
         insert into __results values ('anon: cannot insert bridge_events', true, null);
+        execute 'set local role anon';
+    end;
+    begin
+        perform count(*) from public.sync_devices;
+        insert into __results values ('anon: cannot read sync_devices', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('anon: cannot read sync_devices', true, null);
         execute 'set local role anon';
     end;
     begin
@@ -1914,6 +1977,7 @@ begin
             ('public.merge_entry_xattrs(uuid, jsonb, text)', false, true),
             ('public.report_hub_listing(uuid, text)', false, true),
             ('public.owner_usage()', false, true),
+            ('public.touch_sync_device(uuid, text)', false, true),
             ('public.trash_workspace(uuid)', false, true),
             ('private.trash_workspace(uuid)', false, true),
             ('public.restore_workspace(uuid)', false, true),

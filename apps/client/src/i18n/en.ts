@@ -83,6 +83,10 @@ export const en: typeof ru = {
 	},
 	badge: {
 		synced: 'Synced',
+		synced_computer: 'Synced with a computer · {when}',
+		synced_computers: 'Synced with {n} computers · {when}',
+		synced_other_computer: 'Synced with another computer · {when}',
+		synced_other_computers: 'Synced with {n} other computers · {when}',
 		shared: 'Shared folder',
 		public_link: 'Public link',
 		in_hub: 'Published in the Hub',

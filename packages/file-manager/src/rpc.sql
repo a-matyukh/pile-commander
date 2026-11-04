@@ -3334,6 +3334,24 @@ grant execute on function public.list_hub_tags(text, int, int) to anon, authenti
 revoke execute on function public.owner_usage() from public, anon;
 grant execute on function public.owner_usage() to authenticated;
 
+-- "This copy of the desktop app syncs this workspace", stamped in server
+-- time. Invoker: the sync_devices policies decide (own row, a workspace
+-- the caller can open)
+create or replace function public.touch_sync_device(p_workspace uuid, p_device text)
+returns void
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    insert into public.sync_devices (owner_id, workspace_id, device_id)
+    values ((select auth.uid()), p_workspace, p_device)
+    on conflict (owner_id, workspace_id, device_id)
+    do update set last_pass_at = now();
+$$;
+
+revoke execute on function public.touch_sync_device(uuid, text) from public, anon;
+grant execute on function public.touch_sync_device(uuid, text) to authenticated;
+
 -- plan_limits: the storage numbers of a plan (private.plan_defaults), to show
 -- what another plan would give — the bridge preflight's "Pro: 50 GB, 1 GB per
 -- file". The caller's own limits stay in billing_accounts

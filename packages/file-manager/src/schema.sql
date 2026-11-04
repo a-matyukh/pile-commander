@@ -409,6 +409,27 @@ create index bridge_events_owner_created_idx
 create index bridge_events_workspace_idx on public.bridge_events (workspace_id);
 
 -- ----------------------------------------------------------------------------
+-- sync_devices: the cloud workspaces an account syncs with a folder on a
+-- computer, one row per copy of the desktop app (device_id is that copy's
+-- own random id, the one its `.pile/sync.json` carries). The web reads it to
+-- mark those folders as synced; the local path never leaves the computer.
+-- The desktop app stamps its row through touch_sync_device after its passes
+-- (throttled) and deletes it when it stops syncing. A copy that is gone
+-- leaves an old stamp, which the app stops showing after a while
+-- ----------------------------------------------------------------------------
+create table public.sync_devices (
+    owner_id uuid not null references auth.users (id) on delete cascade,
+    workspace_id uuid not null references public.workspaces (id) on delete cascade,
+    device_id text not null check (char_length(device_id) between 1 and 128),
+    last_pass_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    primary key (owner_id, workspace_id, device_id)
+);
+
+-- owner_id leads the primary key; the workspace FK needs an index of its own
+create index sync_devices_workspace_idx on public.sync_devices (workspace_id);
+
+-- ----------------------------------------------------------------------------
 -- billing_events: MoR webhook idempotency (event id from the provider).
 -- No client access; the backend writes under service_role.
 -- ----------------------------------------------------------------------------
@@ -1848,6 +1869,7 @@ alter table public.profiles enable row level security;
 alter table public.billing_accounts enable row level security;
 alter table public.quota_wall_events enable row level security;
 alter table public.bridge_events enable row level security;
+alter table public.sync_devices enable row level security;
 alter table public.billing_events enable row level security;
 alter table public.plan_launch_subscribers enable row level security;
 alter table public.feedback enable row level security;
@@ -1947,6 +1969,24 @@ create policy bridge_events_select on public.bridge_events
 
 create policy bridge_events_insert on public.bridge_events
     for insert with check (owner_id = (select auth.uid()));
+
+-- sync devices: an account sees and changes only its own rows, and stamps
+-- only workspaces it can open
+create policy sync_devices_select on public.sync_devices
+    for select using (owner_id = (select auth.uid()));
+
+create policy sync_devices_insert on public.sync_devices
+    for insert with check (
+        owner_id = (select auth.uid())
+        and workspace_id in (select private.readable_workspace_ids())
+    );
+
+create policy sync_devices_update on public.sync_devices
+    for update using (owner_id = (select auth.uid()))
+    with check (owner_id = (select auth.uid()));
+
+create policy sync_devices_delete on public.sync_devices
+    for delete using (owner_id = (select auth.uid()));
 
 -- billing_events / plan_launch_subscribers / feedback / egress_daily /
 -- download_daily / egress_notices / moderation_mail / moderation_digest_state:
@@ -2398,6 +2438,14 @@ grant select, insert, update on public.quota_wall_events to authenticated;
 -- (RLS scopes both to the owner)
 revoke all on public.bridge_events from public, anon, authenticated;
 grant select, insert on public.bridge_events to authenticated;
+-- sync devices: stamped through touch_sync_device (server time, so every
+-- device compares one clock). The column grants keep a client from writing
+-- the stamp itself or moving a row to another account or workspace; reads
+-- and deletes of own rows are direct
+revoke all on public.sync_devices from public, anon, authenticated;
+grant select, delete on public.sync_devices to authenticated;
+grant insert (owner_id, workspace_id, device_id) on public.sync_devices to authenticated;
+grant update (last_pass_at) on public.sync_devices to authenticated;
 grant select, insert on public.billing_events to service_role;
 
 -- landing waitlist / feedback: no client grants; RLS with no policies is the

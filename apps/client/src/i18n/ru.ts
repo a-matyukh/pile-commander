@@ -80,6 +80,10 @@ export const ru = {
 	},
 	badge: {
 		synced: 'Синхронизирована',
+		synced_computer: 'Синхронизируется с компьютером · {when}',
+		synced_computers: 'Синхронизируется с компьютерами ({n}) · {when}',
+		synced_other_computer: 'Синхронизируется с другим компьютером · {when}',
+		synced_other_computers: 'Синхронизируется с другими компьютерами ({n}) · {when}',
 		shared: 'Общая папка',
 		public_link: 'Публичная ссылка',
 		in_hub: 'Опубликована в Хабе',

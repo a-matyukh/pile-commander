@@ -5,7 +5,7 @@ import { t } from '@/i18n'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import bridge, { dismiss_bridge } from '@/store/bridge'
 import { BRIDGE_PANEL_WIDTH, bridge_hidden_tip, bridge_in_sync_menu, bridge_title } from '@/store/bridgePanel'
-import { continue_sync_here, copy_to_cloud, open_other_side, start_sync, stop_sync, sync_link_now, use_sync_link } from '@/store/explorer/share'
+import { continue_sync_here, copy_to_cloud, open_other_side, start_sync, stop_sync, sync_ago, sync_link_now, use_sync_link } from '@/store/explorer/share'
 import { other_copy_link_of, sync_statuses, type OtherCopyLink } from '@/store/localSync'
 import BridgeBody from './BridgeBody.vue'
 import PanelFrame from './PanelFrame.vue'
@@ -88,13 +88,6 @@ const title = computed(() => {
 	}
 })
 
-function ago(epoch_ms: number): string {
-	const minutes = Math.round((Date.now() - epoch_ms) / 60_000)
-	if (minutes < 1) return t('sync.just_now')
-	if (minutes < 60) return t('sync.min_ago', { n: minutes })
-	return new Date(epoch_ms).toLocaleString()
-}
-
 const subtitle = computed(() => {
 	const progress = status.value?.progress
 	if (progress && progress.total > 0) {
@@ -102,7 +95,7 @@ const subtitle = computed(() => {
 		return progress.current ? `${of} · ${progress.current}` : of
 	}
 	const at = status.value?.last_synced_at
-	return at ? t('sync.last_synced', { when: ago(at) }) : t('sync.not_synced_yet')
+	return at ? t('sync.last_synced', { when: sync_ago(at) }) : t('sync.not_synced_yet')
 })
 
 const tip = computed(() => hidden_tip.value ?? (link.value ? title.value : other.value ? t('sync.other_copy_title') : t('actions.sync')))
