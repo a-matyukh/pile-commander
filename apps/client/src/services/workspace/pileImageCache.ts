@@ -6,7 +6,21 @@ export function pile_cache_key(workspace_id: string | undefined, entry_id: strin
 	return workspace_id ? `${workspace_id}\0${entry_id}\0${token}` : `${entry_id}\0${token}`
 }
 
-const urls = new Map<string, { url: string; refs: number }>()
+/**
+ * A picture nobody shows stays in memory, so leaving a folder and coming back
+ * shows its covers at once instead of downloading them again (a token names
+ * fixed bytes, so a kept blob never goes stale). Past these limits the least
+ * recently shown idle ones are revoked; a picture on screen is never evicted.
+ */
+export const IDLE_PICTURES = 100
+export const IDLE_BYTES = 50 * 1024 * 1024
+
+type Row = { url: string; refs: number; bytes: number }
+
+/** Insertion order is recency: a row moves to the end when it goes idle */
+const urls = new Map<string, Row>()
+let idle_bytes = 0
+let idle_count = 0
 
 type Flight = {
 	promise: Promise<string | null>
@@ -14,6 +28,8 @@ type Flight = {
 	refs: number
 }
 const inflight = new Map<string, Flight>()
+/** Bumped by a reset: a download started before it keeps nothing after it */
+let epoch = 0
 
 function blob_url(bytes: Uint8Array): string {
 	const copy = new Uint8Array(bytes.byteLength)
@@ -21,55 +37,81 @@ function blob_url(bytes: Uint8Array): string {
 	return URL.createObjectURL(new Blob([copy], { type: 'image/webp' }))
 }
 
-/**
- * One blob URL per entry and token. A new hash is a new key, so the previous
- * URL can be revoked when the last holder lets it go.
- */
+function drop(key: string, row: Row) {
+	if (row.refs <= 0) {
+		idle_bytes -= row.bytes
+		idle_count -= 1
+	}
+	URL.revokeObjectURL(row.url)
+	urls.delete(key)
+}
+
+/** Revoke the oldest idle pictures until both limits hold */
+function evict() {
+	if (idle_count <= IDLE_PICTURES && idle_bytes <= IDLE_BYTES) return
+	for (const [key, row] of urls) {
+		if (idle_count <= IDLE_PICTURES && idle_bytes <= IDLE_BYTES) return
+		if (row.refs > 0) continue
+		drop(key, row)
+	}
+}
+
+/** Keep a row nobody shows, as the most recent idle one */
+function park(key: string, row: Row) {
+	urls.delete(key)
+	urls.set(key, row)
+	idle_bytes += row.bytes
+	idle_count += 1
+	evict()
+}
+
+/** Take an idle row back on screen */
+function take(row: Row) {
+	if (row.refs <= 0) {
+		idle_bytes -= row.bytes
+		idle_count -= 1
+	}
+	row.refs++
+}
+
 /**
  * Remember bytes already in hand (the webp just encoded and uploaded).
  * The next `load_pile_url` for this key shows them and does not download.
- * The returned function revokes the URL when nobody has taken it; a holder
- * keeps it until their own release.
+ * The seed is an ordinary idle picture: kept like any other, evicted only
+ * past the limits. The returned function is kept for callers that hold the
+ * seed until their write settles; it no longer needs to revoke anything.
  */
 export function seed_pile_url(key: string, bytes: Uint8Array): () => void {
-	const existing = urls.get(key)
-	if (existing) {
-		if (existing.refs > 0) return () => {}
-		URL.revokeObjectURL(existing.url)
-		urls.delete(key)
-	}
-	if (inflight.has(key)) return () => {}
-	const url = blob_url(bytes)
-	urls.set(key, { url, refs: 0 })
-	let open = true
-	return () => {
-		if (!open) return
-		open = false
-		const row = urls.get(key)
-		if (!row || row.url !== url || row.refs > 0) return
-		URL.revokeObjectURL(row.url)
-		urls.delete(key)
-	}
+	if (urls.has(key) || inflight.has(key)) return () => {}
+	park(key, { url: blob_url(bytes), refs: 0, bytes: bytes.byteLength })
+	return () => {}
 }
 
 export function load_pile_url(key: string, load: () => Promise<Uint8Array | null>): Promise<string | null> {
 	const ready = urls.get(key)
 	if (ready) {
-		ready.refs++
+		take(ready)
 		return Promise.resolve(ready.url)
 	}
 	let flight = inflight.get(key)
 	if (!flight) {
 		const created: Flight = { promise: Promise.resolve(null), refs: 0 }
+		const started_in = epoch
 		created.promise = load().then((bytes) => {
 			const refs = created.refs
-			inflight.delete(key)
-			if (!bytes || refs <= 0) return null
-			const url = blob_url(bytes)
-			urls.set(key, { url, refs })
-			return url
+			if (inflight.get(key) === created) inflight.delete(key)
+			if (!bytes || started_in !== epoch) return null
+			const row: Row = { url: blob_url(bytes), refs: 0, bytes: bytes.byteLength }
+			// Everyone backed out while it downloaded: keep it for the way back
+			if (refs <= 0) {
+				park(key, row)
+				return null
+			}
+			row.refs = refs
+			urls.set(key, row)
+			return row.url
 		}, () => {
-			inflight.delete(key)
+			if (inflight.get(key) === created) inflight.delete(key)
 			return null
 		})
 		flight = created
@@ -86,16 +128,17 @@ export function release_pile_url(key: string) {
 		return
 	}
 	const row = urls.get(key)
-	if (!row) return
+	if (!row || row.refs <= 0) return
 	row.refs--
-	if (row.refs <= 0) {
-		URL.revokeObjectURL(row.url)
-		urls.delete(key)
-	}
+	if (row.refs <= 0) park(key, row)
 }
 
+/** Forget every picture (sign-out: the next account must not see them) */
 export function reset_pile_image_cache() {
+	epoch += 1
 	for (const row of urls.values()) URL.revokeObjectURL(row.url)
 	urls.clear()
 	inflight.clear()
+	idle_bytes = 0
+	idle_count = 0
 }

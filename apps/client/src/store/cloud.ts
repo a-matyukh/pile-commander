@@ -79,6 +79,7 @@ import {
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
+import { reset_pile_image_cache } from '@/services/workspace/pileImageCache'
 
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
@@ -408,6 +409,8 @@ const cloud: CloudStore = {
 			// cached user and local workspaces; cloud data retries on
 			// TOKEN_REFRESHED / SIGNED_IN and on the browser `online` event.
 			if (is_transient_empty_session(event, cached_session_user())) return
+			// Covers stay in memory between visits; the next account must not get them
+			reset_pile_image_cache()
 			this.workspaces = []
 			this.roles = {}
 			this.published_slugs = {}
