@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ImportProgress, WorkspaceStore } from '@/domain/Store'
+import { dismiss_pile_export, pile_export, pile_export_copy } from './explorer/exportPile'
 
 const desktop = vi.hoisted(() => ({ on: false }))
 const save_pile_file = vi.hoisted(() => vi.fn(async (_name: string) => '/tmp/Board.pile'))
@@ -74,14 +75,19 @@ describe('export_current_workspace', () => {
 
 	afterEach(() => {
 		console_error.mockRestore()
+		dismiss_pile_export()
 	})
 
 	test('on the web a cloud workspace downloads, and the save dialog stays closed', async () => {
 		const ws = workspace('cloud')
 		const blob = new Blob(['pile'])
-		build_cloud_workspace_pile.mockImplementation(async (_fm: unknown, _name: unknown, on_progress?: (progress: ImportProgress) => void) => {
+		build_cloud_workspace_pile.mockImplementation(async (_fm: unknown, _name: unknown, on_progress?: (progress: ImportProgress) => void, on_packing?: () => void) => {
+			expect(pile_export.current?.phase).toBe('preparing')
 			on_progress?.(progress)
-			expect(ws.import_progress).toEqual(progress)
+			expect(pile_export.current?.phase).toBe('downloading')
+			expect(pile_export_copy(pile_export.current!)).not.toContain(progress.file_name)
+			on_packing?.()
+			expect(pile_export.current?.phase).toBe('packing')
 			return blob
 		})
 
@@ -93,6 +99,9 @@ describe('export_current_workspace', () => {
 		expect(save_pile_file).not.toHaveBeenCalled()
 		expect(export_cloud_workspace_to_pile).not.toHaveBeenCalled()
 		expect(ws.import_progress).toBeNull()
+		expect(pile_export.current?.phase).toBe('done')
+		expect(pile_export.current?.file_name).toBe('My_ board.pile')
+		expect(pile_export.current?.path).toBeNull()
 		expect(store.last_error).toBeNull()
 	})
 
@@ -108,13 +117,16 @@ describe('export_current_workspace', () => {
 		expect(save_pile_file).not.toHaveBeenCalled()
 		expect(download_blob).not.toHaveBeenCalled()
 		expect(ws.import_progress).toBeNull()
-		expect(store.last_error).toBe('read failed')
+		expect(pile_export.current?.phase).toBe('error')
+		expect(pile_export.current?.message).toBe('read failed')
+		expect(store.last_error).toBeNull()
 	})
 
 	test('on the web a local workspace is still refused', async () => {
 		await store.export_current_workspace(workspace('local'))
 
 		expect(store.last_error).toBe('Open a local workspace in the desktop app to export')
+		expect(pile_export.current).toBeNull()
 		expect(store.last_error).not.toMatch(/cloud/i)
 		expect(save_pile_file).not.toHaveBeenCalled()
 		expect(build_cloud_workspace_pile).not.toHaveBeenCalled()
@@ -125,9 +137,16 @@ describe('export_current_workspace', () => {
 	test('on the desktop a cloud workspace still opens the save dialog once', async () => {
 		desktop.on = true
 		const ws = workspace('cloud')
+		save_pile_file.mockImplementation(async () => {
+			expect(pile_export.current).toBeNull()
+			return '/tmp/Board.pile'
+		})
 		export_cloud_workspace_to_pile.mockImplementation(async (_fm: unknown, _name: unknown, _path: unknown, on_progress?: (progress: ImportProgress) => void) => {
+			expect(pile_export.current?.phase).toBe('preparing')
 			on_progress?.(progress)
-			expect(ws.import_progress).toEqual(progress)
+			expect(pile_export.current?.phase).toBe('downloading')
+			expect(ws.import_progress).toBeNull()
+			expect(pile_export_copy(pile_export.current!)).not.toContain(progress.file_name)
 		})
 
 		await store.export_current_workspace(ws)
@@ -140,6 +159,20 @@ describe('export_current_workspace', () => {
 		expect(build_cloud_workspace_pile).not.toHaveBeenCalled()
 		expect(download_blob).not.toHaveBeenCalled()
 		expect(ws.import_progress).toBeNull()
+		expect(pile_export.current?.phase).toBe('done')
+		expect(pile_export.current?.path).toBe('/tmp/Board.pile')
+		expect(pile_export.current?.file_name).toBe('Board.pile')
+		expect(store.last_error).toBeNull()
+	})
+
+	test('cancelling the desktop save dialog leaves the panel closed', async () => {
+		desktop.on = true
+		save_pile_file.mockResolvedValue(null)
+
+		await store.export_current_workspace(workspace('cloud'))
+
+		expect(export_cloud_workspace_to_pile).not.toHaveBeenCalled()
+		expect(pile_export.current).toBeNull()
 		expect(store.last_error).toBeNull()
 	})
 })

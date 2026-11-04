@@ -167,6 +167,7 @@ export async function export_cloud_workspace_to_pile(
 	name: string,
 	zip_path: string,
 	on_progress?: (progress: ImportProgress) => void,
+	on_packing?: () => void,
 ): Promise<void> {
 	const scratch = await join(await appCacheDir(), 'pile-export', crypto.randomUUID())
 	const root = await join(scratch, pile_root_name(name))
@@ -186,6 +187,7 @@ export async function export_cloud_workspace_to_pile(
 			on_progress?.(file_progress(file, done, tree.files.length))
 		})
 
+		on_packing?.()
 		const manifest = await collectPileAttrs(fm, '/')
 		await invoke('export_workspace_zip', {
 			rootPath: root,
@@ -231,6 +233,7 @@ export async function build_cloud_workspace_pile(
 	fm: FileManager,
 	name: string,
 	on_progress?: (progress: ImportProgress) => void,
+	on_packing?: () => void,
 ): Promise<Blob> {
 	const tree = await list_pile_tree(fm)
 	const blobs = new Map<string, Blob>()
@@ -240,6 +243,7 @@ export async function build_cloud_workspace_pile(
 		done += 1
 		on_progress?.(file_progress(file, done, tree.files.length))
 	})
+	on_packing?.()
 	const attrs_json = serializePileAttrsManifest(await collectPileAttrs(fm, '/'))
 	return new Response(makeZip(pile_zip_entries(pile_root_name(name), tree, blobs, attrs_json))).blob()
 }

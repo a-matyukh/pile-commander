@@ -225,6 +225,16 @@ export const ru = {
 			tags: 'Подобрать теги',
 		},
 	},
+	export: {
+		title: 'Экспорт',
+		preparing: 'Готовлю список файлов…',
+		downloading: 'Скачиваю файлы: {done} из {total}',
+		packing: 'Упаковываю…',
+		done: 'Готово',
+		saved_downloads: 'Файл «{name}» сохранён в загрузки браузера',
+		saved_desktop: 'Сохранено: {name}',
+		show_in_finder: 'Показать в Finder',
+	},
 	share: {
 		export: 'Экспорт…',
 		share_with: 'Поделиться с…',

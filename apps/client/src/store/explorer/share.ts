@@ -5,6 +5,7 @@ import { is_desktop } from '@/isDesktop'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import { export_workspace_to_pile } from '@/services/workspace/pack'
+import { pile_archive_name, run_pile_export } from './exportPile'
 import store from '@/store'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
@@ -63,7 +64,11 @@ export async function export_folder(ref: FolderRef, name: string): Promise<void>
 		}
 		const zip_path = await create_window_manager().save_pile_file(`${name}.pile`)
 		if (!zip_path) return
-		await export_workspace_to_pile(createFileManager('local'), ref.folder_id, zip_path)
+		await run_pile_export(name, async (notify) => {
+			notify.packing()
+			await export_workspace_to_pile(createFileManager('local'), ref.folder_id, zip_path)
+			return { file_name: pile_archive_name(zip_path, `${name}.pile`), path: zip_path }
+		})
 	} catch (error) {
 		report(error)
 	}

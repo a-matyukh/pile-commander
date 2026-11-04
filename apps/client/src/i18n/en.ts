@@ -228,6 +228,16 @@ export const en: typeof ru = {
 			tags: 'Suggest tags',
 		},
 	},
+	export: {
+		title: 'Export',
+		preparing: 'Preparing the file list…',
+		downloading: 'Downloading files: {done} of {total}',
+		packing: 'Packing…',
+		done: 'Done',
+		saved_downloads: '“{name}” was saved to your browser downloads',
+		saved_desktop: 'Saved: {name}',
+		show_in_finder: 'Show in Finder',
+	},
 	share: {
 		export: 'Export…',
 		share_with: 'Share with…',

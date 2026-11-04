@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
-import type { ImportProgress, LoadWorkspaceOptions, Store, WorkspaceStore } from '../domain/Store'
+import type { LoadWorkspaceOptions, Store, WorkspaceStore } from '../domain/Store'
 import { is_desktop } from '@/isDesktop'
 import { createFileManager, download_blob } from '@pile-commander/file-manager'
 import { create_window_manager } from '../services/window/WindowManager'
@@ -12,6 +12,7 @@ import {
 	pile_root_name,
 } from '../services/workspace/pack'
 import { createWorkspaceStore } from './createWorkspaceStore'
+import { pile_archive_name, run_pile_export } from './explorer/exportPile'
 import { report_error } from './helpers/reportError'
 import { normalize_workspace_id } from '../services/workspace/paths'
 import { open_workspace_store } from './helpers/openWorkspaceStore'
@@ -47,8 +48,12 @@ const store: Store = {
 		try {
 			const zip_path = await wm.save_pile_file(`${ws.name}.pile`)
 			if (!zip_path) return
-			const fm = createFileManager('local')
-			await export_workspace_to_pile(fm, ws.id, zip_path)
+			await run_pile_export(ws.name, async (notify) => {
+				notify.packing()
+				const fm = createFileManager('local')
+				await export_workspace_to_pile(fm, ws.id, zip_path)
+				return { file_name: pile_archive_name(zip_path, `${ws.name}.pile`), path: zip_path }
+			})
 		} catch (error) {
 			report_error(this, error)
 		}
@@ -56,23 +61,35 @@ const store: Store = {
 	async download_public_workspace(ws) {
 		if (ws.type !== 'cloud') return
 		this.last_error = null
-		// the whole workspace downloads first: the window's import overlay shows it
-		const on_progress = (progress: ImportProgress) => {
-			ws.import_progress = progress
-		}
 		try {
 			if (is_desktop) {
 				const zip_path = await wm.save_pile_file(`${ws.name}.pile`)
 				if (!zip_path) return
-				await export_cloud_workspace_to_pile(ws.file_manager, ws.name, zip_path, on_progress)
+				await run_pile_export(ws.name, async (notify) => {
+					await export_cloud_workspace_to_pile(
+						ws.file_manager,
+						ws.name,
+						zip_path,
+						(progress) => notify.downloading(progress.file_index, progress.total_files),
+						notify.packing,
+					)
+					return { file_name: pile_archive_name(zip_path, `${ws.name}.pile`), path: zip_path }
+				})
 				return
 			}
-			const blob = await build_cloud_workspace_pile(ws.file_manager, ws.name, on_progress)
-			download_blob(blob, `${pile_root_name(ws.name)}.pile`)
+			await run_pile_export(ws.name, async (notify) => {
+				const blob = await build_cloud_workspace_pile(
+					ws.file_manager,
+					ws.name,
+					(progress) => notify.downloading(progress.file_index, progress.total_files),
+					notify.packing,
+				)
+				const file_name = `${pile_root_name(ws.name)}.pile`
+				download_blob(blob, file_name)
+				return { file_name, path: null }
+			})
 		} catch (error) {
 			report_error(this, error)
-		} finally {
-			ws.import_progress = null
 		}
 	},
 	async unpack_workspace_pack(pile_path?: string) {

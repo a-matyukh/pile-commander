@@ -7,6 +7,7 @@ import { explorer_drives } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import store, { adopt_workspace } from '@/store'
 import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
+import ExportPanel from '@/ui/explorer/folder-header/ExportPanel.vue'
 import { explorer_window_classes } from '@/ui/explorer/window_classes'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
@@ -297,6 +298,7 @@ onUnmounted(() => {
 		<!-- The old interface's dialogs, opened from the Share menu -->
 		<ShareDialog :ref="dialog => share_dialog = dialog as never" @closed="unlock_pointers" />
 		<PublishDialog :ref="dialog => publish_dialog = dialog as never" @closed="unlock_pointers" />
+		<ExportPanel />
 	</div>
 </template>
 
