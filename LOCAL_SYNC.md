@@ -116,6 +116,16 @@ writes' own echoes wake finds nothing to do.
 - **Ownership.** A file whose `root_path`, `device_id`, `user_id` or
   `workspace_id` do not match the link is ignored. A folder copied elsewhere
   or to another device carries the file but is not linked.
+- **Another copy of the app.** A file for this account and this very
+  folder (`root_path` matches) whose `device_id` is not this copy's was
+  written by another copy of the app on this Mac (another build, or this app
+  before its data was reset). This copy does not sync it on its own: the
+  folder's Sync menu says so and offers **Continue syncing here**
+  (`take_over_link`), only when the cloud folder is in this account's list
+  and this copy syncs it with no other folder. Continuing rewrites
+  `device_id` and keeps the base snapshot, so deletes and conflicts stay
+  right; the other copy then no longer matches the file and pauses as
+  `unlinked`.
 - **`.pile` sidecars stay put, except new cover and background files.**
   `strokes.json`, `connections.json` and `sync.json` are never synced.
   A new `cover-<hash8>.webp` or `background-<hash8>.webp` is uploaded and
@@ -256,6 +266,14 @@ decided one by one.
   as `workspace_missing` (the cloud folder was deleted — unlink). The link
   stays. The interval lists again, and a restored folder syncs on the next
   pass.
+- **A stale link is dropped.** When the folder has no `.pile/sync.json`
+  (nothing can sync: the pass would pause as `unlinked`) and
+  `workspace_state` answers `gone`, the engine reports `link_stale` and
+  `store/localSync.ts` removes the device's record of the link, so the
+  folder stops showing as synced. The folder is not touched. A failed
+  check, or a cloud folder that is `live` or `trashed`, keeps the link
+  (`unlinked`). A missing folder never drops its link (a disk may be
+  unplugged).
 - **The system trash is only reached inside the root.** `local_trash` never
   touches the root itself or a `.pile` path, and `store/localSync.ts` checks
   the path again before calling `trash_path`.

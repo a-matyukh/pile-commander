@@ -16,7 +16,7 @@ export type SyncStatus = {
 	 * folder_missing: the linked folder is not on this computer (moved,
 	 * deleted, or the disk is unplugged). The link stays.
 	 */
-	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked' | 'folder_missing' | 'workspace_trashed' | 'workspace_missing'
+	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked' | 'folder_missing' | 'workspace_trashed' | 'workspace_missing' | 'link_stale'
 	message?: string
 	last_synced_at?: number
 	/** Files a paused pass would trash (on the side `reason` names). */
@@ -227,6 +227,14 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 	async function pass(confirm: SyncNowOptions): Promise<void> {
 		state ??= await deps.load_state()
 		if (!state) {
+			// No link file and no cloud folder: nothing is left to sync, and the
+			// app's own record of the link is all that remains (the caller drops
+			// it). A failed check keeps the link as it is
+			const which = await deps.workspace_state?.().catch(() => null)
+			if (which === 'gone') {
+				publish({ phase: 'paused', reason: 'link_stale', message: 'The cloud folder this folder was linked to no longer exists.' })
+				return
+			}
 			publish({ phase: 'paused', reason: 'unlinked', message: 'This folder is not linked to a cloud workspace on this device.' })
 			return
 		}

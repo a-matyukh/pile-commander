@@ -54,6 +54,45 @@ export function parse_sync_state(text: string, owner: SyncLinkOwner): SyncState 
 	}
 }
 
+/**
+ * The folder's link file was written by another copy of the app (another
+ * device id: another build, or this app before its data was reset) for this
+ * account and this very folder. Null for a file of another account or of a
+ * folder copied from elsewhere: that one must never be taken over.
+ */
+export function other_copy_link(
+	text: string,
+	here: { root_path: string; user_id: string; device_id: string },
+): { workspace_id: string; device_id: string } | null {
+	let raw: unknown
+	try {
+		raw = JSON.parse(text)
+	} catch {
+		return null
+	}
+	if (!raw || typeof raw !== 'object') return null
+	const file = raw as Partial<SyncState>
+	if (typeof file.workspace_id !== 'string' || typeof file.device_id !== 'string') return null
+	if (file.device_id === here.device_id) return null
+	const state = parse_sync_state(text, {
+		root_path: here.root_path,
+		user_id: here.user_id,
+		device_id: file.device_id,
+		workspace_id: file.workspace_id,
+	})
+	return state ? { workspace_id: state.workspace_id, device_id: state.device_id } : null
+}
+
+/**
+ * "Continue syncing here": the same state (its base snapshot keeps deletes
+ * and conflicts right), now owned by this copy of the app. The other copy
+ * no longer matches the file and pauses as unlinked
+ */
+export function take_over_state(text: string, owner: SyncLinkOwner, from_device: string): SyncState | null {
+	const state = parse_sync_state(text, { ...owner, device_id: from_device })
+	return state ? { ...state, device_id: owner.device_id } : null
+}
+
 export function new_sync_state(owner: SyncLinkOwner, options: { exclude?: string[]; adopt_before?: number } = {}): SyncState {
 	return {
 		version: SYNC_STATE_VERSION,

@@ -89,7 +89,7 @@ const tab_path = computed(() => {
 		</svg>
 		<div v-if="folder" class="body" :style="cover_style.picture" :title="picture ? name : undefined" :aria-label="picture ? name : undefined">
 			<div class="dots"><slot name="menu" /></div>
-			<PileImagePending :folder_id="entry_id ?? ''" role="cover" />
+			<PileImagePending :folder_id="entry_id ?? ''" :workspace_id="workspace_id" role="cover" />
 			<template v-if="!picture">
 				<Icon v-if="!glyph.generic" :icon="glyph.icon" class="ic" :class="{ plain: glyph.plain }" :style="{ color: glyph.color }" />
 				<span class="nm" :title="name">{{ name }}</span>

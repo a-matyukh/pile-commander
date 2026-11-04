@@ -3,10 +3,16 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { PileImageRole } from '@pile-commander/file-manager'
 import { pile_image_busy } from '@/services/workspace/pileImageUpload'
+import { useWorkspace } from '@/ui/workspace/useWorkspace'
 
-const props = defineProps<{ folder_id: string; role: PileImageRole }>()
+/** `workspace_id`: a tile of another workspace (a cloud root on the Cloud page); else the store on screen */
+const props = defineProps<{ folder_id: string; role: PileImageRole; workspace_id?: string }>()
+const workspace = useWorkspace()
 
-const on = computed(() => props.folder_id !== '' && pile_image_busy(props.folder_id, props.role))
+const on = computed(() => {
+	const workspace_id = props.workspace_id ?? workspace.value?.uid
+	return props.folder_id !== '' && workspace_id !== undefined && pile_image_busy(workspace_id, props.folder_id, props.role)
+})
 </script>
 
 <template>

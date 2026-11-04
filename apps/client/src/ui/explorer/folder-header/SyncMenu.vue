@@ -5,8 +5,8 @@ import { t } from '@/i18n'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import bridge, { dismiss_bridge } from '@/store/bridge'
 import { BRIDGE_PANEL_WIDTH, bridge_hidden_tip, bridge_in_sync_menu, bridge_title } from '@/store/bridgePanel'
-import { copy_to_cloud, open_other_side, start_sync, stop_sync, sync_link_now, use_sync_link } from '@/store/explorer/share'
-import { sync_statuses } from '@/store/localSync'
+import { continue_sync_here, copy_to_cloud, open_other_side, start_sync, stop_sync, sync_link_now, use_sync_link } from '@/store/explorer/share'
+import { other_copy_link_of, sync_statuses, type OtherCopyLink } from '@/store/localSync'
 import BridgeBody from './BridgeBody.vue'
 import PanelFrame from './PanelFrame.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -26,6 +26,17 @@ const props = defineProps<{ folder: FolderRef; name: string; align: 'start' | 'e
 const open = ref(false)
 const in_cloud = computed(() => props.folder.drive_id === 'cloud')
 const link = use_sync_link(() => props.folder)
+/**
+ * A folder on this Mac that another copy of the app syncs (its link file is
+ * not this copy's): the menu offers to continue here instead of a new copy
+ */
+const other = ref<OtherCopyLink | null>(null)
+let other_check = 0
+watch([() => props.folder.folder_id, () => props.folder.drive_id, () => link.value?.root, open], async () => {
+	const check = ++other_check
+	const found = in_cloud.value || link.value ? null : await other_copy_link_of(normalize_workspace_id(props.folder.folder_id))
+	if (check === other_check) other.value = found
+}, { immediate: true })
 const status = computed(() => (link.value ? sync_statuses[link.value.root] ?? null : null))
 const has_failures = computed(() => status.value?.phase === 'idle' && status.value.errors.length > 0)
 const source_id = computed(() => normalize_workspace_id(props.folder.folder_id))
@@ -54,6 +65,7 @@ watch(open, (is_open, was_open) => {
 })
 
 const icon = computed(() => {
+	if (!link.value && other.value) return 'tabler:cloud-question'
 	if (!link.value) return in_cloud.value ? 'tabler:cloud-down' : 'tabler:cloud-up'
 	if (!status.value) return 'tabler:cloud'
 	if (has_failures.value) return 'tabler:cloud-exclamation'
@@ -93,7 +105,7 @@ const subtitle = computed(() => {
 	return at ? t('sync.last_synced', { when: ago(at) }) : t('sync.not_synced_yet')
 })
 
-const tip = computed(() => hidden_tip.value ?? (link.value ? title.value : t('actions.sync')))
+const tip = computed(() => hidden_tip.value ?? (link.value ? title.value : other.value ? t('sync.other_copy_title') : t('actions.sync')))
 const cloud_pause = computed(() => {
 	if (status.value?.reason === 'workspace_trashed') return t('sync.workspace_trashed')
 	if (status.value?.reason === 'workspace_missing') return t('sync.workspace_missing')
@@ -117,6 +129,15 @@ const cloud_pause = computed(() => {
 		<PanelFrame v-if="session" plain :title="bridge_title(bridge.door)" @close="open = false">
 			<BridgeBody />
 		</PanelFrame>
+		<template v-else-if="!link && other">
+			<div class="st" role="status">
+				<p class="tt">{{ t('sync.other_copy_title') }}</p>
+				<p>{{ t('sync.other_copy', { name: other.name }) }}</p>
+				<p class="mu">{{ t('sync.other_copy_hint') }}</p>
+			</div>
+			<MenuSeparator />
+			<MenuItem icon="tabler:cloud-check" :label="t('sync.continue_here')" @select="continue_sync_here(folder, name)" />
+		</template>
 		<template v-else-if="!link">
 			<MenuLabel :label="in_cloud ? t('sync.cloud_only') : t('sync.local_only')" />
 			<MenuItem v-if="!in_cloud" icon="tabler:cloud-plus" :label="t('sync.copy_to_cloud')" keep_open @select="copy_to_cloud(folder, name, 'device')" />
