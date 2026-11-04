@@ -3,7 +3,7 @@ import { createFileManager } from '@pile-commander/file-manager'
 import type { FolderRef } from '@/domain/Drive'
 import { is_desktop } from '@/isDesktop'
 import { create_window_manager } from '@/services/window/WindowManager'
-import { normalize_workspace_id } from '@/services/workspace/paths'
+import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import { export_workspace_to_pile } from '@/services/workspace/pack'
 import { pile_archive_name, run_pile_export } from './exportPile'
 import store from '@/store'
@@ -11,6 +11,7 @@ import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
 import type { SyncNowOptions } from '@/services/cloud/sync/syncEngine'
 import { type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, unlink_folder } from '@/store/localSync'
+import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
 import { root_folder_id } from './folder_header'
@@ -92,8 +93,53 @@ export function sync_link_for(ref: FolderRef): SyncLink | null {
 		: sync_link_of(normalize_workspace_id(ref.folder_id))
 }
 
+/** This folder, then each parent, nearest first. `/a/b` yields `/a/b`, `/a`. */
+export function folder_and_ancestors(folder_id: string): string[] {
+	const sep = path_separator(folder_id)
+	const paths: string[] = []
+	let current = normalize_workspace_id(folder_id)
+	while (current) {
+		paths.push(current)
+		const slash = current.lastIndexOf(sep)
+		if (slash <= 0) break
+		current = current.slice(0, slash)
+	}
+	return paths
+}
+
+/**
+ * The signed-in account's sync link on this folder or a parent of it.
+ * Another account's link on this device does not count.
+ */
+export function sync_link_covering(ref: FolderRef): SyncLink | null {
+	const user_id = cloud.user?.id
+	if (!user_id) return null
+	if (ref.drive_id === 'cloud') return synced_folder_of(ref.root_id, user_id)
+	if (ref.drive_id !== 'local') return null
+	for (const path of folder_and_ancestors(ref.folder_id)) {
+		const link = sync_link_of(path)
+		if (link?.user_id === user_id) return link
+	}
+	return null
+}
+
+/**
+ * Share and publish open the cloud folder when one already exists: the cloud
+ * workspace itself, or the sync link of this account on this folder or a parent.
+ * Otherwise the folder still has to be copied.
+ */
+export function open_shared_cloud(ref: FolderRef, name: string, door: 'share' | 'publish'): void {
+	const workspace_id = ref.drive_id === 'cloud' ? ref.root_id : sync_link_covering(ref)?.workspace_id
+	if (workspace_id) {
+		if (door === 'share') open_share_panel(workspace_id)
+		else open_publish_panel(workspace_id)
+		return
+	}
+	copy_to_cloud(ref, name, door)
+}
+
 export function use_sync_link(ref: () => FolderRef) {
-	return computed(() => sync_link_for(ref()))
+	return computed(() => sync_link_covering(ref()))
 }
 
 /**

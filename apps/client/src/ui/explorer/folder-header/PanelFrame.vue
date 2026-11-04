@@ -7,7 +7,7 @@ withDefaults(
 		title: string
 		/** Sitting in a menu: the menu is already the box. */
 		plain?: boolean
-		kind?: 'export' | 'bridge'
+		kind?: 'export' | 'bridge' | 'share'
 	}>(),
 	{ plain: false, kind: 'bridge' },
 )
@@ -49,11 +49,15 @@ defineEmits<{ close: [] }>()
 .bridge {
 	width: 320px;
 }
+.share {
+	width: 380px;
+}
 :global(.explorer.lg) .export {
 	width: 250px;
 	font-size: 15px;
 }
-:global(.explorer.lg) .bridge {
+:global(.explorer.lg) .bridge,
+:global(.explorer.lg) .share {
 	font-size: 15px;
 }
 .plain {

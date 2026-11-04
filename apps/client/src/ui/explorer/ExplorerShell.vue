@@ -21,9 +21,8 @@ import cloud from '@/store/cloud'
 import { explorer_mounted, take_explorer_start } from '@/store/explorer/public_view'
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
-import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
-import ShareDialog from '@/ui/workspace/sidebar/ShareDialog.vue'
-import { publish_dialog, share_dialog, unlock_pointers } from './dialogs'
+import SharePublishPanel from '@/ui/explorer/folder-header/SharePublishPanel.vue'
+import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
 import { set_open_cloud_copy, set_resume_folder, take_bridge_intent } from '@/store/bridge'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
@@ -233,8 +232,8 @@ async function open_cloud_copy(item: WorkspacesListItem) {
 		color: 'success',
 		icon: 'i-lucide:cloud-upload',
 	})
-	if (intent.door === 'share') share_dialog.value?.open(item.id)
-	if (intent.door === 'publish') publish_dialog.value?.open(item.id)
+	if (intent.door === 'share') open_share_panel(item.id)
+	if (intent.door === 'publish') open_publish_panel(item.id)
 }
 
 onMounted(async () => {
@@ -301,9 +300,7 @@ onUnmounted(() => {
 			<div v-if="explorer_drawer_open" class="bd" @click="explorer_drawer_open = false" />
 		</template>
 		<TooltipLayer />
-		<!-- The old interface's dialogs, opened from the Share menu -->
-		<ShareDialog :ref="dialog => share_dialog = dialog as never" @closed="unlock_pointers" />
-		<PublishDialog :ref="dialog => publish_dialog = dialog as never" @closed="unlock_pointers" />
+		<SharePublishPanel />
 		<ExportPanel />
 		<BridgePanel />
 	</div>

@@ -10,6 +10,8 @@ defineProps<{
 	autofocus?: boolean
 	invalid?: boolean
 	disabled?: boolean
+	spellcheck?: boolean
+	autocapitalize?: string
 }>()
 
 const model = defineModel<string>({ required: true })
@@ -36,6 +38,8 @@ defineExpose({ focus })
 			:autocomplete="autocomplete"
 			:autofocus="autofocus"
 			:disabled="disabled"
+			:spellcheck="spellcheck"
+			:autocapitalize="autocapitalize"
 		/>
 	</label>
 </template>

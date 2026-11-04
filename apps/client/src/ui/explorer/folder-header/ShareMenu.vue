@@ -6,23 +6,21 @@ import { normalize_workspace_id } from '@/services/workspace/paths'
 import bridge, { reveal_bridge } from '@/store/bridge'
 import { bridge_hidden_tip } from '@/store/bridgePanel'
 import { export_anchor, set_export_anchor } from '@/store/explorer/exportPile'
-import { copy_to_cloud, export_folder, share_items } from '@/store/explorer/share'
+import { export_folder, open_shared_cloud, share_items } from '@/store/explorer/share'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
-import { publish_dialog, share_dialog } from '../dialogs'
 
 /**
- * "Share", as in the prototype. A cloud folder opens the old interface's
- * dialogs for its top-level folder. A folder on this Mac or in browser
- * storage is copied to the cloud first, then the same dialog opens there
+ * "Share", as in the prototype. A cloud folder, or a folder on this Mac that
+ * already syncs with one, opens the share panel for that cloud folder. A
+ * folder that is not synced is copied to the cloud first
  */
 const props = defineProps<{ folder: FolderRef; name: string; align: 'start' | 'end' }>()
 
 const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 const items = computed(() => share_items(props.folder))
-const cloud_folder = computed(() => props.folder.drive_id === 'cloud')
 const source_id = computed(() => normalize_workspace_id(props.folder.folder_id))
 const hidden_tip = computed(() => bridge_hidden_tip({
 	open: bridge.open,
@@ -52,13 +50,11 @@ onBeforeUnmount(() => {
 })
 
 function share_with() {
-	if (cloud_folder.value) share_dialog.value?.open(props.folder.root_id)
-	else copy_to_cloud(props.folder, props.name, 'share')
+	open_shared_cloud(props.folder, props.name, 'share')
 }
 
 function publish() {
-	if (cloud_folder.value) publish_dialog.value?.open(props.folder.root_id)
-	else copy_to_cloud(props.folder, props.name, 'publish')
+	open_shared_cloud(props.folder, props.name, 'publish')
 }
 </script>
 

@@ -1,9 +1,23 @@
 <script setup lang="ts">
+const props = defineProps<{ disabled?: boolean }>()
 const model = defineModel<boolean>({ required: true })
+
+function toggle() {
+	if (props.disabled) return
+	model.value = !model.value
+}
 </script>
 
 <template>
-	<button type="button" role="switch" class="sw" :class="{ on: model }" :aria-checked="model" @click="model = !model">
+	<button
+		type="button"
+		role="switch"
+		class="sw"
+		:class="{ on: model, off: disabled }"
+		:aria-checked="model"
+		:disabled="disabled"
+		@click="toggle"
+	>
 		<span class="kn" />
 	</button>
 </template>
@@ -37,6 +51,11 @@ const model = defineModel<boolean>({ required: true })
 }
 .sw.on .kn {
 	transform: translateX(14px);
+}
+.sw.off,
+.sw:disabled {
+	opacity: .45;
+	cursor: default;
 }
 .explorer.lg .sw {
 	width: 40px;

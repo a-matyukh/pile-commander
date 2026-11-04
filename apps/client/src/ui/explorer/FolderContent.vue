@@ -9,7 +9,7 @@ import { provideBoardPlacement } from '@/ui/workspace/folder-container/board/boa
 import { useClipboardShortcuts } from '@/ui/workspace/folder-container/useClipboardShortcuts'
 import { createScopeFromStore, provideFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { workspaceDialogsKey } from '@/ui/workspace/sidebar/workspaceDialogs'
-import { publish_dialog, share_dialog } from './dialogs'
+import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
 import { use_folder_keys } from './folder_keys'
 import ListView from './views/ListView.vue'
 import GalleryView from './views/GalleryView.vue'
@@ -29,8 +29,8 @@ useClipboardShortcuts(
 	() => scope.container.value?.children,
 )
 provide(workspaceDialogsKey, {
-	open_publish: id => publish_dialog.value?.open(id),
-	open_share: id => share_dialog.value?.open(id),
+	open_publish: id => open_publish_panel(id),
+	open_share: id => open_share_panel(id),
 	open_trash: () => { void explorer_navigation.open_page('trash') },
 })
 

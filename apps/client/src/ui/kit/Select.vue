@@ -40,7 +40,8 @@ const current = computed(() => props.options.find(o => o.value === model.value))
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	width: 100%;
+	width: auto;
+	min-width: 7.5rem;
 	height: 34px;
 	padding: 0 8px 0 10px;
 	border: 0.5px solid var(--border-strong);
