@@ -1,55 +1,51 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
 import { t } from '@/i18n'
 
 /**
- * What a cloud folder shows while it opens: grey tiles where its items will
- * be, at once, so the click answers before the network does (the header
- * already names the folder). Replaced by the folder as soon as it has opened.
+ * What a cloud folder shows while it opens: a spinner and "Opening the
+ * folder…" in the middle of the content, so the click answers before the
+ * network does (the header already names the folder). It fades in after a
+ * moment, so a quick open does not flash it. Replaced by the folder as soon
+ * as it has opened.
  */
-const TILES = 8
 </script>
 
 <template>
-	<div class="fph" role="status" aria-busy="true" :aria-label="t('folder.opening')">
-		<div v-for="n in TILES" :key="n" class="tile" :style="{ animationDelay: `${(n % 4) * 90}ms` }">
-			<div class="pic" />
-			<div class="line" />
-		</div>
+	<div class="fph" role="status" aria-busy="true">
+		<Icon icon="tabler:loader-2" class="spin" aria-hidden="true" />
+		<p>{{ t('folder.opening') }}</p>
 	</div>
 </template>
 
 <style scoped>
 .fph {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-	gap: 16px;
-	padding: 16px;
-	align-content: start;
-}
-.tile {
+	height: 100%;
+	min-height: 160px;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	animation: fph-pulse 1.4s ease-in-out infinite;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	color: var(--text-muted);
+	font-size: 13px;
+	opacity: 0;
+	animation: fph-in 160ms ease-out 140ms forwards;
 }
-.pic {
-	aspect-ratio: 4 / 3;
-	border-radius: 10px;
-	background: var(--surface-0);
-	border: 0.5px solid var(--border);
+.fph p {
+	margin: 0;
 }
-.line {
-	width: 60%;
-	height: 10px;
-	border-radius: 5px;
-	background: var(--surface-0);
-	align-self: center;
+.spin {
+	font-size: 22px;
+	animation: fph-spin 0.8s linear infinite;
 }
-@keyframes fph-pulse {
-	0%, 100% { opacity: 1; }
-	50% { opacity: .55; }
+@keyframes fph-in {
+	to { opacity: 1; }
+}
+@keyframes fph-spin {
+	to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-	.tile { animation: none; }
+	.spin { animation: none; }
 }
 </style>
