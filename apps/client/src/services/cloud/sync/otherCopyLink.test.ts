@@ -1,0 +1,41 @@
+import { describe, expect, test } from 'vitest'
+import { new_sync_state, other_copy_link, parse_sync_state, take_over_state } from './stateFile'
+
+const ROOT = '/Users/me/Desktop/Folder views'
+const ME = 'user-me'
+const HERE = 'device-here'
+const THERE = 'device-there'
+const WS = 'ws-folder-views'
+
+function file_from(device_id: string, over: Record<string, unknown> = {}) {
+	const state = new_sync_state({ root_path: ROOT, device_id, user_id: ME, workspace_id: WS })
+	state.entries = { 'note.md': { kind: 'file', size: 3, mtime_ms: 1, cloud_id: 'c1', cloud_modified_at: 't', xattrs: {} } } as never
+	return JSON.stringify({ ...state, ...over })
+}
+
+describe('a folder synced from another copy of the app', () => {
+	test('another copy\'s link file for this account and this very folder is found', () => {
+		expect(other_copy_link(file_from(THERE), { root_path: ROOT, user_id: ME, device_id: HERE }))
+			.toEqual({ workspace_id: WS, device_id: THERE })
+	})
+
+	test('this copy\'s own file, another account, or a folder copied from elsewhere: never', () => {
+		const here = { root_path: ROOT, user_id: ME, device_id: HERE }
+		expect(other_copy_link(file_from(HERE), here)).toBeNull()
+		expect(other_copy_link(file_from(THERE, { user_id: 'someone-else' }), here)).toBeNull()
+		expect(other_copy_link(file_from(THERE, { root_path: '/Users/me/Desktop/elsewhere' }), here)).toBeNull()
+		expect(other_copy_link('not json', here)).toBeNull()
+		expect(other_copy_link(JSON.stringify({ version: 2 }), here)).toBeNull()
+	})
+
+	test('continuing here keeps the base snapshot and makes the file this copy\'s', () => {
+		const owner = { root_path: ROOT, device_id: HERE, user_id: ME, workspace_id: WS }
+		const taken = take_over_state(file_from(THERE), owner, THERE)
+		expect(taken?.device_id).toBe(HERE)
+		expect(Object.keys(taken?.entries ?? {})).toEqual(['note.md'])
+		// this copy now reads it as its own; the other copy no longer does
+		const written = JSON.stringify(taken)
+		expect(parse_sync_state(written, owner)).not.toBeNull()
+		expect(parse_sync_state(written, { ...owner, device_id: THERE })).toBeNull()
+	})
+})

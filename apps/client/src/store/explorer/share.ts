@@ -10,7 +10,7 @@ import store from '@/store'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
 import type { SyncNowOptions } from '@/services/cloud/sync/syncEngine'
-import { type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, unlink_folder } from '@/store/localSync'
+import { type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
 import { bridge_door_for, open_share_window, type ShareWindow } from '@/store/explorer/sharePublishPanel'
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
@@ -168,6 +168,15 @@ export async function start_sync(ref: FolderRef, name: string): Promise<void> {
 		const root_name = cloud.workspaces.find(ws => ws.id === ref.root_id)?.name ?? name
 		const root = await sync_workspace_to_folder({ id: ref.root_id, name: root_name })
 		if (root) await explorer_navigation.open_local_path(root)
+	} catch (error) {
+		report(error)
+	}
+}
+
+/** "Continue syncing here" for a folder another copy of the app syncs */
+export async function continue_sync_here(ref: FolderRef, name: string): Promise<void> {
+	try {
+		await take_over_link(normalize_workspace_id(ref.folder_id), name)
 	} catch (error) {
 		report(error)
 	}

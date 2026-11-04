@@ -116,6 +116,16 @@ writes' own echoes wake finds nothing to do.
 - **Ownership.** A file whose `root_path`, `device_id`, `user_id` or
   `workspace_id` do not match the link is ignored. A folder copied elsewhere
   or to another device carries the file but is not linked.
+- **Another copy of the app.** A file for this account and this very
+  folder (`root_path` matches) whose `device_id` is not this copy's was
+  written by another copy of the app on this Mac (another build, or this app
+  before its data was reset). This copy does not sync it on its own: the
+  folder's Sync menu says so and offers **Continue syncing here**
+  (`take_over_link`), only when the cloud folder is in this account's list
+  and this copy syncs it with no other folder. Continuing rewrites
+  `device_id` and keeps the base snapshot, so deletes and conflicts stay
+  right; the other copy then no longer matches the file and pauses as
+  `unlinked`.
 - **`.pile` sidecars stay put, except new cover and background files.**
   `strokes.json`, `connections.json` and `sync.json` are never synced.
   A new `cover-<hash8>.webp` or `background-<hash8>.webp` is uploaded and

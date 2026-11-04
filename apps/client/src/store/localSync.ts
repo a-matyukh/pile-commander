@@ -23,8 +23,10 @@ import {
 	is_sync_state_path,
 	new_sync_state,
 	parse_sync_state,
+	other_copy_link,
 	sync_state_dir,
 	sync_state_path,
+	take_over_state,
 	type SyncLinkOwner,
 } from '@/services/cloud/sync/stateFile'
 import type { CloudEntry, SyncState } from '@/services/cloud/sync/types'
@@ -291,6 +293,58 @@ export async function unlink_folder(root: string): Promise<void> {
 	delete next[root]
 	links.value = next
 	await remove_state(root)
+}
+
+/** A folder this account syncs from another copy of the app (its link file is not this copy's) */
+export type OtherCopyLink = {
+	workspace_id: string
+	/** The cloud folder's name */
+	name: string
+	/** The other copy's id, as its link file names it */
+	device_id: string
+}
+
+/**
+ * The folder's link, when another copy of the app wrote it (another build,
+ * or this app before its data was reset): this copy does not sync it until
+ * the person says to continue here. Null when this copy links it already,
+ * when the cloud folder is not in this account's list, or when this copy
+ * syncs that cloud folder with another folder.
+ */
+export async function other_copy_link_of(root: string): Promise<OtherCopyLink | null> {
+	const user = cloud.user
+	if (!is_desktop || !user || links.value[root]) return null
+	let text: string
+	try {
+		text = await (await fs()).readTextFile(sync_state_path(root))
+	} catch {
+		return null
+	}
+	const found = other_copy_link(text, { root_path: root, user_id: user.id, device_id: client_instance_id() })
+	if (!found) return null
+	const workspace = cloud.workspaces.find(ws => ws.id === found.workspace_id)
+	if (!workspace || synced_folder_of(found.workspace_id, user.id)) return null
+	return { workspace_id: found.workspace_id, name: workspace.name, device_id: found.device_id }
+}
+
+/**
+ * "Continue syncing here": the link file becomes this copy's (its base
+ * snapshot stays, so deletes and conflicts stay right) and the folder syncs
+ * from this copy on. The other copy, still running, pauses as unlinked
+ */
+export async function take_over_link(root: string, name: string): Promise<void> {
+	const user = cloud.user
+	if (!is_desktop || !user) throw new Error('Sign in to sync this folder')
+	const found = await other_copy_link_of(root)
+	if (!found) throw new Error('This folder is no longer linked from another copy of the app.')
+	const link: SyncLink = { root, name, workspace_id: found.workspace_id, user_id: user.id }
+	const text = await (await fs()).readTextFile(sync_state_path(root))
+	const state = take_over_state(text, owner_of(link), found.device_id)
+	if (!state) throw new Error('This folder\'s link file could not be read.')
+	stop_engine(root)
+	await save_state(link, state)
+	links.value = { ...links.value, [root]: link }
+	start_engine(link)
 }
 
 export async function sync_now(root: string, options: SyncNowOptions = {}): Promise<void> {
