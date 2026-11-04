@@ -278,10 +278,11 @@ export type CloudStore = {
 	report_hub(workspace_id: string, reason: string): Promise<boolean>
 	hub_already_reported(workspace_id: string): Promise<boolean>
 	/**
-	 * Makes the workspace public under the slug (owner only), optionally
-	 * listing it on the Hub. `hub` null keeps it off the Hub (an existing
-	 * listing is removed).
+	 * Makes the workspace public under the slug (owner only). Does not
+	 * touch a Hub card. `publish` with `hub` null does: it calls this, then
+	 * remove_from_hub, which deletes only hub_publications.
 	 */
+	set_public_link(workspace_id: string, slug: string, allow_fork: boolean): Promise<boolean>
 	publish(
 		workspace_id: string,
 		slug: string,
@@ -1335,6 +1336,20 @@ const cloud: CloudStore = {
 		try {
 			return await hub_listing_reported(require_supabase(), workspace_id)
 		} catch {
+			return false
+		}
+	},
+
+	async set_public_link(workspace_id: string, slug: string, allow_fork: boolean): Promise<boolean> {
+		this.last_error = null
+		try {
+			await set_workspace_public(require_supabase(), workspace_id, slug, allow_fork)
+			this.published_slugs = { ...this.published_slugs, [workspace_id]: slug }
+			return true
+		} catch (error) {
+			if (!open_quota_wall_from_error(error)) {
+				this.last_error = error instanceof Error ? error.message : String(error)
+			}
 			return false
 		}
 	},

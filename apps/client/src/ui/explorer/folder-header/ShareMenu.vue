@@ -7,6 +7,7 @@ import bridge, { reveal_bridge } from '@/store/bridge'
 import { bridge_hidden_tip } from '@/store/bridgePanel'
 import { export_anchor, set_export_anchor } from '@/store/explorer/exportPile'
 import { export_folder, open_shared_cloud, share_items } from '@/store/explorer/share'
+import { SHARE_WINDOWS, type ShareWindow } from '@/store/explorer/sharePublishPanel'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
@@ -21,6 +22,9 @@ const props = defineProps<{ folder: FolderRef; name: string; align: 'start' | 'e
 const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 const items = computed(() => share_items(props.folder))
+const windows = computed(() => SHARE_WINDOWS.filter(item =>
+	item.window === 'people' ? items.value.share_with : items.value.publish,
+))
 const source_id = computed(() => normalize_workspace_id(props.folder.folder_id))
 const hidden_tip = computed(() => bridge_hidden_tip({
 	open: bridge.open,
@@ -49,12 +53,8 @@ onBeforeUnmount(() => {
 	if (published && export_anchor.value?.el === published) set_export_anchor(null)
 })
 
-function share_with() {
-	open_shared_cloud(props.folder, props.name, 'share')
-}
-
-function publish() {
-	open_shared_cloud(props.folder, props.name, 'publish')
+function open_window(window: ShareWindow) {
+	open_shared_cloud(props.folder, props.name, window)
 }
 </script>
 
@@ -69,7 +69,7 @@ function publish() {
 			:data-tip="hidden_tip"
 			@click="reveal_bridge"
 		/>
-		<DropMenu v-else v-model:open="open" :width="230" :align="align">
+		<DropMenu v-else v-model:open="open" :width="280" :align="align">
 			<template #trigger>
 				<IconButton
 					class="hb"
@@ -81,8 +81,13 @@ function publish() {
 				/>
 			</template>
 			<MenuItem v-if="items.export" icon="tabler:file-export" :label="t('share.export')" @select="export_folder(folder, name)" />
-			<MenuItem v-if="items.share_with" icon="tabler:user-plus" :label="t('share.share_with')" @select="share_with" />
-			<MenuItem v-if="items.publish" icon="tabler:world-upload" :label="t('share.publish')" @select="publish" />
+			<MenuItem
+				v-for="item in windows"
+				:key="item.window"
+				:icon="item.icon"
+				:label="t(item.label)"
+				@select="open_window(item.window)"
+			/>
 		</DropMenu>
 	</div>
 </template>

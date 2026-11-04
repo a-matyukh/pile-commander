@@ -35,6 +35,7 @@ afterEach(() => {
 	close_bridge()
 	bridge.door = 'list'
 	bridge.source = null
+	bridge.share_target = null
 	explorer_language.value = 'system'
 })
 
@@ -42,8 +43,8 @@ describe('open_shared_cloud', () => {
 	test('a synced folder opens the cloud panel and does not start a copy', () => {
 		cloud.user = { id: 'me' } as User
 		links.value = { '/Notes': link('/Notes', 'me') }
-		open_shared_cloud(notes, 'Notes', 'share')
-		expect(share_publish).toMatchObject({ open: true, mode: 'share', workspace_id: 'ws-1' })
+		open_shared_cloud(notes, 'Notes', 'people')
+		expect(share_publish).toMatchObject({ open: true, window: 'people', workspace_id: 'ws-1' })
 		expect(bridge.open).toBe(false)
 		expect(bridge.door).not.toBe('share')
 	})
@@ -51,24 +52,32 @@ describe('open_shared_cloud', () => {
 	test('a subfolder of a synced folder opens the same cloud folder', () => {
 		cloud.user = { id: 'me' } as User
 		links.value = { '/Notes': link('/Notes', 'me') }
-		open_shared_cloud(board, 'board', 'share')
-		expect(share_publish).toMatchObject({ open: true, mode: 'share', workspace_id: 'ws-1' })
+		open_shared_cloud(board, 'board', 'people')
+		expect(share_publish).toMatchObject({ open: true, window: 'people', workspace_id: 'ws-1', folder_name: 'Notes' })
 		expect(bridge.open).toBe(false)
 	})
 
 	test('a folder that is not synced starts a share copy', () => {
 		cloud.user = { id: 'me' } as User
-		open_shared_cloud(notes, 'Notes', 'share')
+		open_shared_cloud(notes, 'Notes', 'people')
 		expect(share_publish.open).toBe(false)
 		expect(bridge.open).toBe(true)
 		expect(bridge.door).toBe('share')
+		expect(bridge.share_target).toBe('people')
 		expect(bridge.source?.id).toBe('/Notes')
+	})
+
+	test('publishing on the Hub from an unsynced folder copies with a publish door and the hub window', () => {
+		cloud.user = { id: 'me' } as User
+		open_shared_cloud(notes, 'Notes', 'hub')
+		expect(bridge.door).toBe('publish')
+		expect(bridge.share_target).toBe('hub')
 	})
 
 	test('another account’s link on this device still copies', () => {
 		cloud.user = { id: 'me' } as User
 		links.value = { '/Notes': link('/Notes', 'someone-else') }
-		open_shared_cloud(board, 'board', 'share')
+		open_shared_cloud(board, 'board', 'people')
 		expect(share_publish.open).toBe(false)
 		expect(bridge.door).toBe('share')
 	})

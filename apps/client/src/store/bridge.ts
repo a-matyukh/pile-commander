@@ -3,6 +3,7 @@ import { useStorage } from '@vueuse/core'
 import type { FolderRef } from '@/domain/Drive'
 import { t } from '@/i18n'
 import { BRIDGE_DONE_MS } from '@/store/bridgePanel'
+import type { ShareWindow } from '@/store/explorer/sharePublishPanel'
 import {
 	createBrowserFileManager,
 	createFileManager,
@@ -58,7 +59,7 @@ export type BridgeSource = {
 export type BridgeStep = 'auth' | 'measuring' | 'summary' | 'copying' | 'error' | 'done'
 
 /** What the window of the new cloud workspace does once it is open. */
-export type BridgeIntent = { workspace_id: string; door: BridgeDoor }
+export type BridgeIntent = { workspace_id: string; door: BridgeDoor; target?: ShareWindow }
 
 export type BridgeState = {
 	open: boolean
@@ -82,6 +83,8 @@ export type BridgeState = {
 	origin: FolderRef | null
 	/** The cloud workspace a finished sync or device copy can open. */
 	finished_id: string | null
+	/** Which share window to open after a share or publish copy. */
+	share_target: ShareWindow | null
 }
 
 export type OpenBridgeOptions = {
@@ -89,6 +92,8 @@ export type OpenBridgeOptions = {
 	fm?: FileManager
 	/** The open folder, so a sign-in on the account page can come back here. */
 	origin?: FolderRef
+	/** People, the public link, or the Hub — set when the copy started from Share. */
+	share_target?: ShareWindow
 }
 
 const bridge: BridgeState = reactive({
@@ -107,6 +112,7 @@ const bridge: BridgeState = reactive({
 	pending_intent: null,
 	origin: null,
 	finished_id: null,
+	share_target: null,
 })
 
 let done_timer: ReturnType<typeof setTimeout> | null = null
@@ -248,6 +254,7 @@ export function open_bridge(source: BridgeSource, door: BridgeDoor, options: Ope
 		error: null,
 		origin: options.origin ?? null,
 		finished_id: null,
+		share_target: options.share_target ?? null,
 	}
 	clear_done_timer()
 	Object.assign(bridge, reset)
@@ -373,7 +380,9 @@ async function finish(workspace_id: string): Promise<void> {
 	}
 	if (bridge.door === 'share' || bridge.door === 'publish') {
 		const item = cloud.workspaces.find(ws => ws.id === workspace_id)
-		bridge.pending_intent = { workspace_id, door: bridge.door }
+		bridge.pending_intent = bridge.share_target
+			? { workspace_id, door: bridge.door, target: bridge.share_target }
+			: { workspace_id, door: bridge.door }
 		bridge.step = 'summary'
 		bridge.open = false
 		if (item) await open_cloud_copy(item)

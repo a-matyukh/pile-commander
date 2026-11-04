@@ -22,7 +22,6 @@ import {
 	MAX_DESCRIPTION,
 	MAX_TAGS,
 	close_share_publish,
-	fork_toggle_effect,
 	hub_payload_for_switch,
 	preview_problem,
 	publish_face,
@@ -30,17 +29,18 @@ import {
 	save_button_visible,
 	share_empty_line,
 	share_publish,
-	slug_blocks_publish,
+	slug_field_state,
+	slug_from_name,
 	tag_problem,
 	text_edit_effect,
 	unpublish_needs_confirm,
 	username_problem,
+	visitor_address,
 	waiting_invites,
 } from '@/store/explorer/sharePublishPanel'
 import Button from '@/ui/kit/Button.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import Modal from '@/ui/kit/Modal.vue'
-import Segmented from '@/ui/kit/Segmented.vue'
 import Select from '@/ui/kit/Select.vue'
 import Switch from '@/ui/kit/Switch.vue'
 import TextField from '@/ui/kit/TextField.vue'
@@ -52,14 +52,14 @@ const PUBLIC_BASE_URL: string = import.meta.env.VITE_PUBLIC_BASE_URL ?? window.l
 
 const { style } = use_anchored_panel(
 	() => export_anchor.value,
-	() => [share_publish.open, share_publish.mode, share_publish.workspace_id, export_anchor.value],
+	() => [share_publish.open, share_publish.window, share_publish.workspace_id, export_anchor.value],
 )
 
-const title = computed(() => share_publish.mode === 'share' ? t('share.tab_people') : t('publish.tab'))
-const tabs = computed(() => [
-	{ value: 'share' as const, label: t('share.tab_people') },
-	{ value: 'publish' as const, label: t('publish.tab') },
-])
+const title = computed(() => {
+	if (share_publish.window === 'people') return t('share.share_with')
+	if (share_publish.window === 'link') return t('share.make_public_folder')
+	return t('share.publish_hub')
+})
 const roles = computed(() => [
 	{ value: 'editor' as const, label: t('share.role_editor') },
 	{ value: 'viewer' as const, label: t('share.role_viewer') },
@@ -78,7 +78,6 @@ const publication = ref<Publication | null>(null)
 const loading_pub = ref(false)
 const saving = ref(false)
 const slug = ref('')
-const slug_attempted = ref(false)
 const link_copied = ref(false)
 const allow_fork = ref(true)
 const send_to_hub = ref(false)
@@ -87,7 +86,13 @@ const tag_input = ref('')
 const description = ref('')
 const username_draft = ref('')
 const saving_username = ref(false)
-const confirm_open = ref(false)
+const confirm_kind = ref<'unpublish' | 'delist' | null>(null)
+const confirm_open = computed({
+	get: () => confirm_kind.value !== null,
+	set: (value: boolean) => {
+		if (!value) confirm_kind.value = null
+	},
+})
 const file_input = ref<HTMLInputElement | null>(null)
 const saved_preview_key = ref<string | null>(null)
 const pending_file = ref<File | null>(null)
@@ -108,7 +113,8 @@ const hub_blocked = computed(() => hub_new_listing_blocked(hub_used.value, hub_c
 const waiting = computed(() => waiting_invites(members.value, invites.value))
 const only_you = computed(() => share_empty_line(members.value.length))
 const trimmed_slug = computed(() => slug.value.trim())
-const slug_invalid = computed(() => slug_attempted.value && slug_blocks_publish(slug.value))
+const slug_state = computed(() => slug_field_state(slug.value, share_publish.workspace_id, cloud.published_slugs))
+const live_address = computed(() => visitor_address(username.value, slug.value))
 const tag_issue = computed(() => tag_problem(tag_input.value, tags.value))
 const username_issue = computed(() => username_problem(username_draft.value))
 const preview_changed = computed(() => pending_file.value !== null || preview_removed.value)
@@ -159,8 +165,7 @@ watch(
 	() => share_publish.open ? share_publish.workspace_id : '',
 	(id) => {
 		notice.value = null
-		confirm_open.value = false
-		slug_attempted.value = false
+		confirm_kind.value = null
 		if (!id) {
 			revoke_preview()
 			return
@@ -181,7 +186,6 @@ function reset_publish_fields() {
 	revoke_preview()
 	publication.value = null
 	slug.value = ''
-	slug_attempted.value = false
 	link_copied.value = false
 	allow_fork.value = true
 	send_to_hub.value = false
@@ -227,6 +231,7 @@ async function load(id: string) {
 		invites.value = next_invites
 		publication.value = pub
 		if (pub) apply_publication(pub)
+		else if (!slug.value) slug.value = slug_from_name(share_publish.folder_name)
 		if (hub_blocked.value) send_to_hub.value = false
 	} finally {
 		loading_people.value = false
@@ -436,37 +441,72 @@ async function persist_switches(): Promise<boolean> {
 function on_public(next: boolean) {
 	if (saving.value) return
 	if (next) {
-		slug_attempted.value = true
-		if (slug_blocks_publish(slug.value)) return
-		void publish_drafts()
+		if (slug_state.value.problem) return
+		void save_public_link(slug.value.trim())
 		return
 	}
 	if (unpublish_needs_confirm(on_hub.value, fork_count.value)) {
-		confirm_open.value = true
+		confirm_kind.value = 'unpublish'
 		return
 	}
 	void do_unpublish()
 }
 
+async function save_public_link(next_slug: string) {
+	saving.value = true
+	const id = share_publish.workspace_id
+	try {
+		const ok = await cloud.set_public_link(id, next_slug, allow_fork.value)
+		if (!ok || share_publish.workspace_id !== id) return
+		const pub = await cloud.fetch_publication(id)
+		publication.value = pub
+		if (pub) apply_publication(pub)
+	} finally {
+		saving.value = false
+	}
+}
+
 async function on_fork(next: boolean) {
 	const previous = allow_fork.value
 	allow_fork.value = next
-	if (fork_toggle_effect(is_public.value) !== 'publish') return
-	if (!(await persist_switches())) allow_fork.value = previous
+	if (!is_public.value) return
+	saving.value = true
+	const id = share_publish.workspace_id
+	const ok = await cloud.set_public_link(id, publication.value?.slug ?? slug.value.trim(), next)
+	saving.value = false
+	if (!ok) allow_fork.value = previous
+	else if (publication.value && share_publish.workspace_id === id) {
+		publication.value = { ...publication.value, allow_fork: next }
+	}
 }
 
 async function set_hub(next: boolean) {
-	if (next && hub_blocked.value) return
+	if (saving.value || (next && hub_blocked.value)) return
+	if (!next) {
+		if (!on_hub.value) {
+			send_to_hub.value = false
+			return
+		}
+		confirm_kind.value = 'delist'
+		return
+	}
+	if (!is_public.value && slug_state.value.problem) return
 	const previous = send_to_hub.value
-	send_to_hub.value = next
-	if (fork_toggle_effect(is_public.value) !== 'publish') return
+	send_to_hub.value = true
+	if (!(await publish_drafts())) send_to_hub.value = previous
+}
+
+async function do_delist() {
+	confirm_kind.value = null
+	const previous = send_to_hub.value
+	send_to_hub.value = false
 	if (!(await persist_switches())) send_to_hub.value = previous
 }
 
 async function do_unpublish() {
 	if (saving.value) return
 	saving.value = true
-	confirm_open.value = false
+	confirm_kind.value = null
 	const id = share_publish.workspace_id
 	try {
 		if (await cloud.unpublish(id) && share_publish.workspace_id === id) {
@@ -502,10 +542,10 @@ function published_when(value: string | null): string {
 		@close="close_share_publish"
 	>
 		<div class="body">
-			<Segmented v-model="share_publish.mode" :options="tabs" />
+			<p v-if="share_publish.folder_name" class="folder">{{ share_publish.folder_name }}</p>
 			<p v-if="cloud.last_error" class="err">{{ cloud.last_error }}</p>
 
-			<template v-if="share_publish.mode === 'share'">
+			<template v-if="share_publish.window === 'people'">
 				<p v-if="notice" class="ok">{{ notice }}</p>
 				<p v-if="loading_people">{{ t('share.loading') }}</p>
 				<template v-else>
@@ -548,7 +588,7 @@ function published_when(value: string | null): string {
 				</template>
 			</template>
 
-			<template v-else>
+			<template v-else-if="share_publish.window === 'link'">
 				<div v-if="face.show_username" class="stack">
 					<p class="muted">{{ t('publish.need_username') }}</p>
 					<TextField
@@ -574,7 +614,6 @@ function published_when(value: string | null): string {
 						<p v-if="publication" class="muted">{{ t('publish.since', { when: published_when(publication.published_at) }) }}</p>
 						<Button @click="copy_link">{{ link_copied ? t('publish.copied') : t('publish.copy_link') }}</Button>
 					</div>
-					<p v-if="face.show_private_lead" class="muted">{{ t('publish.private_lead') }}</p>
 					<div class="slug">
 						<span class="at">/{{ username }}/</span>
 						<TextField
@@ -583,21 +622,79 @@ function published_when(value: string | null): string {
 							:placeholder="t('publish.slug_placeholder')"
 							autocapitalize="none"
 							:spellcheck="false"
-							:invalid="slug_invalid"
+							:invalid="!!slug_state.problem"
 						/>
 					</div>
-					<p v-if="slug_invalid" class="err">{{ t('publish.slug_invalid') }}</p>
+					<p class="url">{{ live_address }}</p>
+					<p v-if="slug_state.problem === 'taken'" class="err">{{ t('publish.slug_taken') }}</p>
+					<p v-else-if="slug_state.problem === 'format'" class="err">{{ t('publish.slug_invalid') }}</p>
+					<button v-if="slug_state.suggestion" type="button" class="suggest" @click="slug = slug_state.suggestion">
+						{{ t('publish.slug_free', { slug: slug_state.suggestion }) }}
+					</button>
 					<label class="swrow">
 						<Switch :model-value="is_public" :disabled="saving" @update:model-value="on_public" />
-						<span>{{ t('publish.make_public') }}</span>
+						<span>{{ t('publish.public_link') }}</span>
 					</label>
 					<label class="swrow">
 						<Switch :model-value="allow_fork" :disabled="saving" @update:model-value="on_fork" />
 						<span>{{ t('publish.allow_forks') }}</span>
 					</label>
 					<p class="muted">{{ t('publish.forks_hint') }}</p>
+					<Button
+						v-if="is_public && publication && slug.trim() !== publication.slug && !slug_state.problem"
+						variant="primary"
+						:loading="saving"
+						@click="save_public_link(slug.trim())"
+					>{{ t('publish.save') }}</Button>
+				</div>
+			</template>
+
+			<template v-else>
+				<div v-if="face.show_username" class="stack">
+					<p class="muted">{{ t('publish.need_username') }}</p>
+					<TextField
+						v-model="username_draft"
+						:placeholder="t('publish.username_placeholder')"
+						autocapitalize="none"
+						:spellcheck="false"
+						:invalid="!!username_issue"
+					/>
+					<p v-if="username_issue === 'format'" class="err">{{ t('publish.username_format') }}</p>
+					<p v-else-if="username_issue === 'reserved'" class="err">{{ t('publish.username_reserved') }}</p>
+					<Button
+						variant="primary"
+						:loading="saving_username"
+						:disabled="!username_draft.trim() || !!username_issue"
+						@click="save_username"
+					>{{ t('publish.username_save') }}</Button>
+				</div>
+				<p v-else-if="loading_pub">{{ t('share.loading') }}</p>
+				<div v-else class="stack">
+					<template v-if="is_public && publication">
+						<p class="url">{{ visitor_address(username, publication.slug) }}</p>
+					</template>
+					<template v-else>
+						<p class="muted">{{ t('publish.hub_needs_link') }}</p>
+						<div class="slug">
+							<span class="at">/{{ username }}/</span>
+							<TextField
+								v-model="slug"
+								class="grow"
+								:placeholder="t('publish.slug_placeholder')"
+								autocapitalize="none"
+								:spellcheck="false"
+								:invalid="!!slug_state.problem"
+							/>
+						</div>
+						<p class="url">{{ live_address }}</p>
+						<p v-if="slug_state.problem === 'taken'" class="err">{{ t('publish.slug_taken') }}</p>
+						<p v-else-if="slug_state.problem === 'format'" class="err">{{ t('publish.slug_invalid') }}</p>
+						<button v-if="slug_state.suggestion" type="button" class="suggest" @click="slug = slug_state.suggestion">
+							{{ t('publish.slug_free', { slug: slug_state.suggestion }) }}
+						</button>
+					</template>
 					<label class="swrow">
-						<Switch :model-value="send_to_hub" :disabled="saving || hub_blocked" @update:model-value="set_hub" />
+						<Switch :model-value="send_to_hub || on_hub" :disabled="saving || (hub_blocked && !on_hub)" @update:model-value="set_hub" />
 						<span>{{ t('publish.list_hub') }}</span>
 					</label>
 					<p class="muted">{{ hub_hint }}</p>
@@ -605,59 +702,63 @@ function published_when(value: string | null): string {
 						{{ t('publish.hidden') }}
 						<a :href="appeal">{{ t('publish.appeal', { email: ABUSE_EMAIL }) }}</a>
 					</p>
-					<template v-if="send_to_hub">
-						<div v-if="tags.length" class="tags">
-							<button
-								v-for="tag in tags"
-								:key="tag"
-								type="button"
-								class="tag"
-								:aria-label="t('publish.remove_tag', { tag })"
-								@click="remove_tag(tag)"
-							>#{{ tag }}</button>
-						</div>
-						<TextField
-							v-model="tag_input"
-							:placeholder="t('publish.tag_placeholder')"
-							autocapitalize="none"
-							:spellcheck="false"
-							:disabled="tags.length >= MAX_TAGS"
-							:invalid="!!tag_issue"
-							@keydown.enter.prevent="add_tag"
-						/>
-						<p v-if="tag_issue === 'format'" class="err">{{ t('publish.tag_format') }}</p>
-						<p v-else-if="tag_issue === 'dup'" class="err">{{ t('publish.tag_dup') }}</p>
-						<p v-else-if="tag_issue === 'limit'" class="err">{{ t('publish.tag_limit', { n: MAX_TAGS }) }}</p>
-						<Textarea v-model="description" :maxlength="MAX_DESCRIPTION" :placeholder="t('publish.description_placeholder')" />
-						<p class="count">{{ description.length }}/{{ MAX_DESCRIPTION }}</p>
-						<p class="muted">{{ t('publish.preview_hint') }}</p>
-						<div v-if="preview_src" class="shot">
-							<img
-								v-if="preview_src !== failed_preview_src"
-								:src="preview_src"
-								alt=""
-								:title="t('publish.replace_preview')"
-								@click="file_input?.click()"
-								@error="failed_preview_src = preview_src"
-							>
-							<button v-else type="button" class="miss" @click="file_input?.click()">{{ t('publish.preview_unavailable') }}</button>
-							<IconButton class="x" icon="tabler:x" :icon_size="16" :aria-label="t('publish.remove_preview')" @click="clear_preview" />
-						</div>
-						<Button v-else icon="tabler:photo" @click="file_input?.click()">{{ t('publish.add_preview') }}</Button>
-						<input ref="file_input" type="file" class="file" :accept="HUB_PREVIEW_ACCEPT" @change="on_preview_file">
-						<p v-if="preview_error" class="err">{{ preview_error }}</p>
-					</template>
-					<Button v-if="show_save" variant="primary" :loading="saving" :disabled="!is_valid_slug(trimmed_slug)" @click="publish_drafts">
+					<div v-if="tags.length" class="tags">
+						<button
+							v-for="tag in tags"
+							:key="tag"
+							type="button"
+							class="tag"
+							:aria-label="t('publish.remove_tag', { tag })"
+							@click="remove_tag(tag)"
+						>#{{ tag }}</button>
+					</div>
+					<TextField
+						v-model="tag_input"
+						:placeholder="t('publish.tag_placeholder')"
+						autocapitalize="none"
+						:spellcheck="false"
+						:disabled="tags.length >= MAX_TAGS"
+						:invalid="!!tag_issue"
+						@keydown.enter.prevent="add_tag"
+					/>
+					<p v-if="tag_issue === 'format'" class="err">{{ t('publish.tag_format') }}</p>
+					<p v-else-if="tag_issue === 'dup'" class="err">{{ t('publish.tag_dup') }}</p>
+					<p v-else-if="tag_issue === 'limit'" class="err">{{ t('publish.tag_limit', { n: MAX_TAGS }) }}</p>
+					<Textarea v-model="description" :maxlength="MAX_DESCRIPTION" :placeholder="t('publish.description_placeholder')" />
+					<p class="count">{{ description.length }}/{{ MAX_DESCRIPTION }}</p>
+					<p class="muted">{{ t('publish.preview_hint') }}</p>
+					<div v-if="preview_src" class="shot">
+						<img
+							v-if="preview_src !== failed_preview_src"
+							:src="preview_src"
+							alt=""
+							:title="t('publish.replace_preview')"
+							@click="file_input?.click()"
+							@error="failed_preview_src = preview_src"
+						>
+						<button v-else type="button" class="miss" @click="file_input?.click()">{{ t('publish.preview_unavailable') }}</button>
+						<IconButton class="x" icon="tabler:x" :icon_size="16" :aria-label="t('publish.remove_preview')" @click="clear_preview" />
+					</div>
+					<Button v-else icon="tabler:photo" @click="file_input?.click()">{{ t('publish.add_preview') }}</Button>
+					<input ref="file_input" type="file" class="file" :accept="HUB_PREVIEW_ACCEPT" @change="on_preview_file">
+					<p v-if="preview_error" class="err">{{ preview_error }}</p>
+					<Button v-if="show_save" variant="primary" :loading="saving" :disabled="!!slug_state.problem" @click="publish_drafts">
 						{{ t('publish.save') }}
 					</Button>
 				</div>
 			</template>
 		</div>
 	</PanelFrame>
-	<Modal v-model:open="confirm_open" :title="t('publish.unpublish_title')" :description="t('publish.unpublish_body')">
+	<Modal
+		v-model:open="confirm_open"
+		:title="confirm_kind === 'delist' ? t('publish.delist_title') : t('publish.unpublish_title')"
+		:description="confirm_kind === 'delist' ? t('publish.delist_body') : t('publish.unpublish_body')"
+	>
 		<template #footer>
-			<Button @click="confirm_open = false">{{ t('dialog.cancel') }}</Button>
-			<Button variant="danger" :loading="saving" @click="do_unpublish">{{ t('publish.unpublish_confirm') }}</Button>
+			<Button @click="confirm_kind = null">{{ t('dialog.cancel') }}</Button>
+			<Button variant="danger" :loading="saving" @click="confirm_kind === 'delist' ? do_delist() : do_unpublish()">
+				{{ confirm_kind === 'delist' ? t('publish.delist_confirm') : t('publish.unpublish_confirm') }}
+			</Button>
 		</template>
 	</Modal>
 </template>
@@ -695,9 +796,23 @@ function published_when(value: string | null): string {
 	text-transform: uppercase;
 	color: var(--text-muted);
 }
-.muted {
+.folder {
 	margin: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	color: var(--text-muted);
+}
+.suggest {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--text-accent, inherit);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 2px;
 }
 .ok {
 	margin: 0;

@@ -22,7 +22,7 @@ import { explorer_mounted, take_explorer_start } from '@/store/explorer/public_v
 import TooltipLayer from '@/ui/kit/TooltipLayer.vue'
 import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import SharePublishPanel from '@/ui/explorer/folder-header/SharePublishPanel.vue'
-import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
+import { intent_window, open_share_window } from '@/store/explorer/sharePublishPanel'
 import { set_open_cloud_copy, set_resume_folder, take_bridge_intent } from '@/store/bridge'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
@@ -232,8 +232,8 @@ async function open_cloud_copy(item: WorkspacesListItem) {
 		color: 'success',
 		icon: 'i-lucide:cloud-upload',
 	})
-	if (intent.door === 'share') open_share_panel(item.id)
-	if (intent.door === 'publish') open_publish_panel(item.id)
+	const target = intent_window(intent)
+	if (target) open_share_window(item.id, target, item.name)
 }
 
 onMounted(async () => {

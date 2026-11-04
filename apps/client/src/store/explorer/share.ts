@@ -11,7 +11,7 @@ import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
 import type { SyncNowOptions } from '@/services/cloud/sync/syncEngine'
 import { type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, unlink_folder } from '@/store/localSync'
-import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
+import { bridge_door_for, open_share_window, type ShareWindow } from '@/store/explorer/sharePublishPanel'
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
 import { root_folder_id } from './folder_header'
@@ -48,8 +48,8 @@ function bridge_source(ref: FolderRef, name: string) {
 	return { type: ref.drive_id === 'local' ? 'local' as const : 'browser' as const, id: normalize_workspace_id(ref.folder_id), name }
 }
 
-export function copy_to_cloud(ref: FolderRef, name: string, door: BridgeDoor): void {
-	open_bridge(bridge_source(ref, name), door, { origin: ref })
+export function copy_to_cloud(ref: FolderRef, name: string, door: BridgeDoor, share_target?: ShareWindow): void {
+	open_bridge(bridge_source(ref, name), door, { origin: ref, share_target })
 }
 
 /**
@@ -128,14 +128,18 @@ export function sync_link_covering(ref: FolderRef): SyncLink | null {
  * workspace itself, or the sync link of this account on this folder or a parent.
  * Otherwise the folder still has to be copied.
  */
-export function open_shared_cloud(ref: FolderRef, name: string, door: 'share' | 'publish'): void {
-	const workspace_id = ref.drive_id === 'cloud' ? ref.root_id : sync_link_covering(ref)?.workspace_id
-	if (workspace_id) {
-		if (door === 'share') open_share_panel(workspace_id)
-		else open_publish_panel(workspace_id)
+export function open_shared_cloud(ref: FolderRef, name: string, window: ShareWindow): void {
+	if (ref.drive_id === 'cloud') {
+		const cloud_name = cloud.workspaces.find(ws => ws.id === ref.root_id)?.name ?? name
+		open_share_window(ref.root_id, window, cloud_name)
 		return
 	}
-	copy_to_cloud(ref, name, door)
+	const link = sync_link_covering(ref)
+	if (link) {
+		open_share_window(link.workspace_id, window, link.name)
+		return
+	}
+	copy_to_cloud(ref, name, bridge_door_for(window), window)
 }
 
 export function use_sync_link(ref: () => FolderRef) {

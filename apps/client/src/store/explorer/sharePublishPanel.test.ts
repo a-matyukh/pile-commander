@@ -1,18 +1,30 @@
 import { afterEach, describe, expect, test } from 'vitest'
+import { is_valid_slug } from '@pile-commander/file-manager'
 import { explorer_language } from '@/store/explorer/language'
+import { TREE_FILTERS } from '@/store/explorer/tree_view'
 import {
+	SHARE_WINDOWS,
+	close_share_publish,
 	fork_toggle_effect,
+	hub_off_action,
+	hub_on_without_link,
 	hub_payload_for_switch,
+	intent_window,
+	open_share_window,
 	preview_problem,
 	publish_face,
 	publish_fields_dirty,
 	save_button_visible,
 	share_empty_line,
+	share_publish,
 	slug_blocks_publish,
+	slug_field_state,
+	slug_from_name,
 	tag_problem,
 	text_edit_effect,
 	unpublish_needs_confirm,
 	username_problem,
+	visitor_address,
 	waiting_invites,
 	MAX_DESCRIPTION,
 	MAX_TAGS,
@@ -99,6 +111,37 @@ describe('publish panel', () => {
 			{ slug: 'harbor', tags: ['film', 'mood'], description: 'Harbor', preview_changed: false },
 			{ slug: 'harbor', tags: ['film'], description: 'Harbor' },
 		)).toBe(true)
+	})
+
+	test('a Cyrillic folder name becomes a valid slug, and a taken one offers the next free address', () => {
+		expect(slug_from_name('Мой мудборд 2026')).toBe('moi-mudbord-2026')
+		expect(is_valid_slug(slug_from_name('Мой мудборд 2026'))).toBe(true)
+		const taken = slug_field_state('harbor', 'ws-2', { 'ws-1': 'harbor' })
+		expect(taken.problem).toBe('taken')
+		expect(taken.suggestion).toBe('harbor-2')
+		expect(visitor_address('alex', 'moi-mudbord-2026')).toBe('pile…/alex/moi-mudbord-2026')
+	})
+
+	test('the Hub without a link publishes both, and turning the Hub off only delists', () => {
+		expect(hub_on_without_link()).toEqual({ link: true, card: true })
+		expect(hub_off_action()).toBe('delist')
+	})
+
+	test('the three share windows use the folder-status icons and replace each other', () => {
+		expect(SHARE_WINDOWS.map(item => item.icon)).toEqual([
+			TREE_FILTERS.shared.icon,
+			TREE_FILTERS.public_link.icon,
+			TREE_FILTERS.in_hub.icon,
+		])
+		expect(SHARE_WINDOWS.map(item => item.window)).toEqual(['people', 'link', 'hub'])
+		open_share_window('ws-1', 'people', 'Notes')
+		expect(share_publish.window).toBe('people')
+		open_share_window('ws-1', 'hub', 'Notes')
+		expect(share_publish).toMatchObject({ open: true, window: 'hub', folder_name: 'Notes' })
+		close_share_publish()
+		expect(intent_window({ door: 'publish', target: 'hub' })).toBe('hub')
+		expect(intent_window({ door: 'share', target: 'people' })).toBe('people')
+		expect(intent_window({ door: 'publish' })).toBe('link')
 	})
 
 	test('slug, tags, description and preview follow their limits', () => {
