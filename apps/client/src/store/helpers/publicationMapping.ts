@@ -9,6 +9,17 @@ export function owned_public_slugs(
 	return published
 }
 
+/** Owned rows with at least one member. Pending invites do not count. */
+export function owned_has_members(
+	owned: { id: string; workspace_members?: unknown }[],
+): Record<string, true> {
+	const members: Record<string, true> = {}
+	for (const ws of owned) {
+		if (Array.isArray(ws.workspace_members) && ws.workspace_members.length > 0) members[ws.id] = true
+	}
+	return members
+}
+
 /** Owned rows with at least one invitee → id set for the workspace list Shared group. */
 export function owned_shared_out(
 	owned: { id: string; workspace_members?: unknown; workspace_invites?: unknown }[],

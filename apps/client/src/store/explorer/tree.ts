@@ -814,6 +814,10 @@ export function create_explorer_tree(
 		options: { open_parent?: boolean } = {},
 	) {
 		try {
+			if (item.drive.kind === 'cloud' && node.id === tree_root_folder_id(item)) {
+				await trash_cloud_root(item)
+				return
+			}
 			const workspace = await ensure_workspace(item)
 			const affected = affected_current(item, node.id)
 			const error_before = workspace.last_error
@@ -865,6 +869,21 @@ export function create_explorer_tree(
 		} catch (error) {
 			deps.on_error(error)
 		}
+	}
+
+	/** The workspace row goes to the trash. The root entry is not deleted. */
+	async function trash_cloud_root(item: ExplorerTreeRoot) {
+		await cloud.trash(item.root.id)
+		if (cloud.last_error) throw new Error(cloud.last_error)
+		const root_folder = tree_root_folder_id(item)
+		deps.forget_bookmarks?.(folder_ref(item, root_folder))
+		const loc = deps.current_location()
+		const inside = loc?.kind === 'folder'
+			&& loc.ref.drive_id === item.drive.id
+			&& loc.ref.root_id === item.root.id
+		if (state.listed_drive_id === item.drive.id) await show_drive(item.drive, inside ? null : current_ref())
+		else state.roots = state.roots.filter(root => root.drive.id !== item.drive.id || root.root.id !== item.root.id)
+		if (inside) await explorer_navigation.open_page('cloud')
 	}
 
 	/** The store reports a failure instead of throwing: the folder is gone only without a new error */

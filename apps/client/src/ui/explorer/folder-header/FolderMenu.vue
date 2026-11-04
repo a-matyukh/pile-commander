@@ -59,6 +59,18 @@ const items = computed(() => folder_menu_items(props.folder, {
 }))
 const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
 
+/** Members or a public link: the confirm says what trashing this workspace drops */
+const cloud_root_audience = computed(() => {
+	const folder = props.folder
+	if (folder.drive_id !== 'cloud' || folder.folder_id !== '/') return false
+	const id = folder.root_id
+	return !!cloud.has_members[id] || !!cloud.hub_listed[id] || !!cloud.published_slugs[id]
+})
+const trash_description = computed(() => {
+	const base = t(remove_text.value.description, { name: props.name })
+	return cloud_root_audience.value ? `${base} ${t('tree.trash_workspace_audience')}` : base
+})
+
 function cut() {
 	if (item.value) clipboard.cut(item.value, node.value, props.name)
 }
@@ -157,7 +169,7 @@ function reveal() {
 		v-if="item"
 		v-model:open="remove_open"
 		:title="t(remove_text.title, { name })"
-		:description="t(remove_text.description, { name })"
+		:description="trash_description"
 	>
 		<template #footer>
 			<Button @click="remove_open = false">{{ t('dialog.cancel') }}</Button>

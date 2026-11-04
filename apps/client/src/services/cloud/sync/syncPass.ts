@@ -115,6 +115,11 @@ export type SyncPassResult =
 	| ({ kind: 'mass_delete'; side: 'cloud' | 'local'; deletes: number; base_files: number } & LocalFolders)
 	/** The plan refused a file; what synced before it is kept in `state`. */
 	| ({ kind: 'plan_limit'; state: SyncState; report: SyncReport; info: PlanLimitInfo; file: string } & LocalFolders)
+	/**
+	 * The cloud listing has no root entry. The workspace was trashed, purged,
+	 * or hard-deleted. Reconcile must not treat that empty list as the cloud.
+	 */
+	| ({ kind: 'cloud_root_missing' } & LocalFolders)
 
 /** A pass that would trash at least this many files and over half of one side asks first. */
 export const MASS_DELETE_MIN = 20
@@ -237,6 +242,9 @@ export async function run_sync_pass(
 	}
 
 	const cloud_before = await deps.list_cloud()
+	if (!cloud_before.some(entry => entry.path === '/')) {
+		return { kind: 'cloud_root_missing', local_folders }
+	}
 	const plan = reconcile(state.entries, scanned.entries, cloud_before, reconcile_options)
 	const too_many = (deletes: number) => deletes >= MASS_DELETE_MIN && deletes * 2 > plan.base_files
 	if (!options.allow_cloud_deletes && too_many(plan.deletes)) {
@@ -249,6 +257,9 @@ export async function run_sync_pass(
 	const run = new PassRun(deps, state, local, cloud_before, plan.kept_for_hidden)
 	const stop = await run.apply(plan.actions)
 	const cloud_after = await deps.list_cloud()
+	if (!cloud_after.some(entry => entry.path === '/')) {
+		return { kind: 'cloud_root_missing', local_folders }
+	}
 	run.refresh(cloud_after)
 	if (!stop) {
 		// read after the actions: moves and downloads changed the folder's layout

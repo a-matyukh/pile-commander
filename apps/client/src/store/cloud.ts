@@ -19,6 +19,10 @@ import {
 	set_workspace_private,
 	purge_entry,
 	purge_trash,
+	purge_workspace,
+	trash_workspace,
+	restore_workspace,
+	list_trashed_workspaces,
 	remove_from_hub,
 	report_hub_listing,
 	hub_listing_reported,
@@ -37,6 +41,7 @@ import {
 	type OwnerUsage,
 	type Profile,
 	type TrashEntry,
+	type TrashedWorkspace,
 	type UserPublication,
 	type WorkspaceAccess,
 	type WorkspaceInvite,
@@ -64,7 +69,7 @@ import {
 	notify_cloud_workspaces_synced,
 	register_cloud_workspaces_refetch,
 } from './workspaces_list'
-import { owned_hub_hidden, owned_hub_listed, owned_public_slugs, owned_shared_out, publication_view_ids } from './helpers/publicationMapping'
+import { owned_has_members, owned_hub_hidden, owned_hub_listed, owned_public_slugs, owned_shared_out, publication_view_ids } from './helpers/publicationMapping'
 import {
 	invite_emails_match,
 	recalled_invite_workspace,
@@ -150,6 +155,8 @@ export type CloudStore = {
 	hub_hidden: Record<string, true>
 	/** Owned private boards with at least one invitee, filled by fetch_workspaces */
 	shared_out: Record<string, true>
+	/** Owned boards with at least one member, filled by fetch_workspaces */
+	has_members: Record<string, true>
 	is_loading: boolean
 	/** Message of the last failed cloud operation; UI may show and reset it */
 	last_error: string | null
@@ -242,6 +249,10 @@ export type CloudStore = {
 	/** Fetches one page of Hub tags (lazy on the Tags tab) */
 	fetch_hub_tags(opts?: { query?: string; page?: number }): Promise<void>
 	clear_error(): void
+	trash(workspace_id: string): Promise<void>
+	restore_trashed_workspace(workspace_id: string): Promise<boolean>
+	purge_trashed_workspace(workspace_id: string): Promise<boolean>
+	list_trashed(): Promise<TrashedWorkspace[]>
 	fetch_trash(workspace_id: string): Promise<TrashEntry[]>
 	fetch_usage(workspace_id: string): Promise<WorkspaceUsage | null>
 	restore(workspace_id: string, path: string): Promise<boolean>
@@ -302,6 +313,7 @@ const cloud: CloudStore = {
 	hub_listed: {},
 	hub_hidden: {},
 	shared_out: {},
+	has_members: {},
 	is_loading: false,
 	last_error: null,
 	notice: null,
@@ -550,6 +562,7 @@ const cloud: CloudStore = {
 				this.hub_listed = {}
 				this.hub_hidden = {}
 				this.shared_out = {}
+				this.has_members = {}
 				return
 			}
 
@@ -626,6 +639,7 @@ const cloud: CloudStore = {
 			this.hub_listed = owned_hub_listed(owned ?? [])
 			this.hub_hidden = owned_hub_hidden(owned ?? [])
 			this.shared_out = owned_shared_out(owned ?? [])
+			this.has_members = owned_has_members(owned ?? [])
 			if (this.last_error === CLOUD_UNAVAILABLE) this.last_error = null
 		} catch (error) {
 			this.last_error = cloud_failure_message(error, CLOUD_UNAVAILABLE)
@@ -920,6 +934,51 @@ const cloud: CloudStore = {
 
 	clear_error() {
 		this.last_error = null
+	},
+
+	async trash(workspace_id: string) {
+		this.last_error = null
+		try {
+			await trash_workspace(require_supabase(), workspace_id)
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			return
+		}
+		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
+			store.close_workspace()
+		}
+		await this.fetch_workspaces()
+	},
+
+	async restore_trashed_workspace(workspace_id: string): Promise<boolean> {
+		this.last_error = null
+		try {
+			await restore_workspace(require_supabase(), workspace_id)
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			return false
+		}
+		await this.fetch_workspaces()
+		return true
+	},
+
+	async purge_trashed_workspace(workspace_id: string): Promise<boolean> {
+		try {
+			await purge_workspace(require_supabase(), workspace_id)
+			return true
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			return false
+		}
+	},
+
+	async list_trashed(): Promise<TrashedWorkspace[]> {
+		try {
+			return await list_trashed_workspaces(require_supabase())
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			return []
+		}
 	},
 
 	async fetch_trash(workspace_id: string): Promise<TrashEntry[]> {

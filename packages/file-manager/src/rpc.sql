@@ -1271,7 +1271,8 @@ begin
         raise exception 'set_workspace_public: invalid slug';
     end if;
 
-    select * into v_workspace from public.workspaces w where w.id = p_workspace;
+    select * into v_workspace from public.workspaces w
+     where w.id = p_workspace and w.deleted_at is null;
     if not found then
         raise exception 'set_workspace_public: workspace % not found', p_workspace;
     end if;
@@ -1315,6 +1316,151 @@ begin
            slug = null,
            published_at = null
      where id = p_workspace;
+end
+$$;
+
+-- ----------------------------------------------------------------------------
+-- A top-level cloud folder (the workspace row) in the trash. Members and
+-- invites stay. Publication is dropped the same way as set_workspace_private,
+-- before deleted_at, while is_workspace_owner still sees the row.
+-- ----------------------------------------------------------------------------
+
+create or replace function private.trash_workspace(p_workspace uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_owner uuid;
+begin
+    if auth.uid() is null then
+        raise exception 'trash_workspace: not authenticated';
+    end if;
+    select w.owner_id into v_owner
+      from public.workspaces w
+     where w.id = p_workspace
+       and w.deleted_at is null;
+    if v_owner is null or v_owner <> auth.uid() then
+        raise exception 'trash_workspace: only the owner can trash a workspace';
+    end if;
+    perform private.lock_workspace_tree(p_workspace);
+    perform private.set_workspace_private(p_workspace);
+    update public.workspaces
+       set deleted_at = now()
+     where id = p_workspace
+       and deleted_at is null;
+end
+$$;
+
+create or replace function private.restore_workspace(p_workspace uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_owner uuid;
+begin
+    if auth.uid() is null then
+        raise exception 'restore_workspace: not authenticated';
+    end if;
+    select w.owner_id into v_owner
+      from public.workspaces w
+     where w.id = p_workspace
+       and w.deleted_at is not null;
+    if v_owner is null or v_owner <> auth.uid() then
+        raise exception 'restore_workspace: not in your trash';
+    end if;
+    perform private.lock_workspace_tree(p_workspace);
+    update public.workspaces
+       set deleted_at = null
+     where id = p_workspace
+       and owner_id = auth.uid()
+       and deleted_at is not null;
+end
+$$;
+
+create or replace function private.purge_workspace(p_workspace uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_owner uuid;
+begin
+    if auth.uid() is null then
+        raise exception 'purge_workspace: not authenticated';
+    end if;
+    select w.owner_id into v_owner
+      from public.workspaces w
+     where w.id = p_workspace
+       and w.deleted_at is not null;
+    if v_owner is null or v_owner <> auth.uid() then
+        raise exception 'purge_workspace: not in your trash';
+    end if;
+    perform private.lock_workspace_tree(p_workspace);
+    delete from public.workspaces
+     where id = p_workspace
+       and owner_id = auth.uid()
+       and deleted_at is not null;
+end
+$$;
+
+create or replace function private.list_trashed_workspaces()
+returns table (id uuid, name text, deleted_at timestamptz, size_bytes bigint)
+language sql
+security definer
+stable
+set search_path = public, extensions
+as $$
+    select w.id,
+           w.name,
+           w.deleted_at,
+           coalesce((
+               select sum(e.size_bytes) from public.entries e where e.workspace_id = w.id
+           ), 0)::bigint
+      from public.workspaces w
+     where w.owner_id = auth.uid()
+       and w.deleted_at is not null
+     order by w.deleted_at desc;
+$$;
+
+-- Why a linked folder's cloud root disappeared. A stranger learns nothing
+-- about the trash: a foreign id is 'gone', the same as a purged row.
+create or replace function private.workspace_state(p_workspace uuid)
+returns text
+language plpgsql
+security definer
+stable
+set search_path = public, extensions
+as $$
+declare
+    v_deleted timestamptz;
+    v_owner uuid;
+    v_known boolean;
+begin
+    if auth.uid() is null then
+        return 'gone';
+    end if;
+    select w.deleted_at, w.owner_id into v_deleted, v_owner
+      from public.workspaces w
+     where w.id = p_workspace;
+    if not found then
+        return 'gone';
+    end if;
+    v_known := v_owner = auth.uid() or exists (
+        select 1 from public.workspace_members m
+         where m.workspace_id = p_workspace and m.user_id = auth.uid()
+    );
+    if v_deleted is not null then
+        return case when v_known then 'trashed' else 'gone' end;
+    end if;
+    if private.can_read_workspace(p_workspace) then
+        return 'live';
+    end if;
+    return 'gone';
 end
 $$;
 
@@ -1727,7 +1873,7 @@ begin
     perform private.lock_workspace_tree(p_workspace);
 
     select * into v_source from public.workspaces w
-     where w.id = p_workspace and w.is_public;
+     where w.id = p_workspace and w.is_public and w.deleted_at is null;
     if not found then
         raise exception 'fork_workspace: workspace % is not public', p_workspace;
     end if;
@@ -2114,7 +2260,8 @@ begin
         raise exception 'create_blob_entry: storage_key does not belong to workspace %', p_workspace;
     end if;
 
-    select w.owner_id into v_owner from public.workspaces w where w.id = p_workspace;
+    select w.owner_id into v_owner from public.workspaces w
+     where w.id = p_workspace and w.deleted_at is null;
     if v_owner is null then
         raise exception 'create_blob_entry: workspace % not found', p_workspace;
     end if;
@@ -2207,7 +2354,8 @@ begin
         raise exception 'replace_blob_entry: entry % not found', p_entry;
     end if;
 
-    select w.owner_id into v_owner from public.workspaces w where w.id = p_workspace;
+    select w.owner_id into v_owner from public.workspaces w
+     where w.id = p_workspace and w.deleted_at is null;
     if v_owner is null then
         raise exception 'replace_blob_entry: workspace % not found', p_workspace;
     end if;
@@ -2265,7 +2413,7 @@ set search_path = public, extensions
 as $$
 begin
     if p_user is null or p_kind is null or p_kind not in ('blob', 'hub_preview') or not exists (
-        select 1 from public.workspaces w where w.id = p_workspace
+        select 1 from public.workspaces w where w.id = p_workspace and w.deleted_at is null
         and (w.owner_id = p_user or (p_kind = 'blob' and exists (
             select 1 from public.workspace_members m where m.workspace_id = w.id
             and m.user_id = p_user and m.role = 'editor'
@@ -2558,7 +2706,8 @@ begin
       join auth.users u on u.id = i.invited_by
       left join public.profiles pr on pr.id = i.invited_by
      where i.token = lower(btrim(p_token))
-       and i.expires_at > now();
+       and i.expires_at > now()
+       and w.deleted_at is null;
     return v_row;
 end
 $$;
@@ -2840,6 +2989,74 @@ set search_path = public, extensions
 as $$
     select private.set_workspace_private(p_workspace);
 $$;
+
+create or replace function public.trash_workspace(p_workspace uuid)
+returns void
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.trash_workspace(p_workspace);
+$$;
+
+create or replace function public.restore_workspace(p_workspace uuid)
+returns void
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.restore_workspace(p_workspace);
+$$;
+
+create or replace function public.purge_workspace(p_workspace uuid)
+returns void
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.purge_workspace(p_workspace);
+$$;
+
+create or replace function public.list_trashed_workspaces()
+returns table (id uuid, name text, deleted_at timestamptz, size_bytes bigint)
+language sql
+security invoker
+stable
+set search_path = public, extensions
+as $$
+    select * from private.list_trashed_workspaces();
+$$;
+
+create or replace function public.workspace_state(p_workspace uuid)
+returns text
+language sql
+security invoker
+stable
+set search_path = public, extensions
+as $$
+    select private.workspace_state(p_workspace);
+$$;
+
+revoke execute on function public.trash_workspace(uuid) from public, anon;
+revoke execute on function public.restore_workspace(uuid) from public, anon;
+revoke execute on function public.purge_workspace(uuid) from public, anon;
+revoke execute on function public.list_trashed_workspaces() from public, anon;
+revoke execute on function public.workspace_state(uuid) from public, anon;
+grant execute on function public.trash_workspace(uuid) to authenticated;
+grant execute on function public.restore_workspace(uuid) to authenticated;
+grant execute on function public.purge_workspace(uuid) to authenticated;
+grant execute on function public.list_trashed_workspaces() to authenticated;
+grant execute on function public.workspace_state(uuid) to authenticated;
+revoke execute on function private.trash_workspace(uuid) from public, anon;
+revoke execute on function private.restore_workspace(uuid) from public, anon;
+revoke execute on function private.purge_workspace(uuid) from public, anon;
+revoke execute on function private.list_trashed_workspaces() from public, anon;
+revoke execute on function private.workspace_state(uuid) from public, anon;
+grant execute on function private.trash_workspace(uuid) to authenticated;
+grant execute on function private.restore_workspace(uuid) to authenticated;
+grant execute on function private.purge_workspace(uuid) to authenticated;
+grant execute on function private.list_trashed_workspaces() to authenticated;
+grant execute on function private.workspace_state(uuid) to authenticated;
 
 create or replace function public.set_hub_listing(
     p_workspace uuid,

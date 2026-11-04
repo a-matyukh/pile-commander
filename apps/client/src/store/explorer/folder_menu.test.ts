@@ -82,15 +82,15 @@ describe('folder header menu: items', () => {
 		})
 	})
 
-	test('the owner of a cloud workspace may rename it, and not cut, copy or trash it', () => {
+	test('the owner of a cloud workspace may rename it and move it to the trash, and not cut or copy it', () => {
 		const cloud_top: FolderRef = { drive_id: 'cloud', root_id: 'ws-1', folder_id: '/' }
-		// Rename is what shows the icon and cover. The rest of a root stays off.
+		// Rename is what shows the icon and cover. Cut, copy and duplicate stay off.
 		expect(folder_menu_items(cloud_top, { ...writable(cloud_root), owner: true })).toEqual({
 			rename: true,
 			ungroup: false,
 			bookmarked: false,
 			show_in_finder: false,
-			move_to_trash: false,
+			move_to_trash: true,
 			copy: false,
 			cut: false,
 			duplicate: false,

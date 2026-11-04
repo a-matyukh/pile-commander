@@ -249,6 +249,13 @@ decided one by one.
   unplugged: the engine pauses as `folder_missing` and does not run a pass.
   That is not a mass delete and not an error that retries the pass. The link
   stays. The interval looks again and syncs once the folder is back.
+- **A missing cloud root pauses.** If the cloud listing has no `/` entry,
+  the pass does not reconcile and does not trash local files, however few
+  there are. `workspace_state` says why: `trashed` pauses as
+  `workspace_trashed` (restore the cloud folder or unlink); `gone` pauses
+  as `workspace_missing` (the cloud folder was deleted — unlink). The link
+  stays. The interval lists again, and a restored folder syncs on the next
+  pass.
 - **The system trash is only reached inside the root.** `local_trash` never
   touches the root itself or a `.pile` path, and `store/localSync.ts` checks
   the path again before calling `trash_path`.

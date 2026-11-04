@@ -115,6 +115,18 @@ show only these intentional INFOs. Anything else is a regression.
   by `prune_entry_derivatives` in the daily reconcile once no entry
   references their blob — a sweep, because a fork's re-key drops the last
   reference with an UPDATE, not a DELETE; the row delete queues the object.
+- **A trashed workspace is not a workspace.** `workspaces.deleted_at` hides the
+  row from every ordinary check — `readable_workspace_ids`,
+  `writable_workspace_ids`, `is_workspace_member` / `is_workspace_owner`,
+  `workspaces_select` (including anon on `is_public`), and the RPCs that
+  read `workspaces` directly (`fork_workspace`, upload, share, invites).
+  The owner sees it only through `trash_workspace`, `restore_workspace`,
+  `purge_workspace`, `list_trashed_workspaces`, and `workspace_state`
+  (`trashed` for the owner or a member, `gone` for anyone else). Members
+  and invites stay; the public link and Hub card do not. After 30 days
+  `purge_expired_workspaces` deletes the row, and the entry cascade queues
+  blobs as a hard delete does today. A direct `DELETE` of a live workspace
+  remains for an unfinished copy and for moving a root into another root.
 - **Trash is for writers.** Readers (anon on a public board, viewers) see
   live rows only; `GET /presign` refuses trashed rows. A 2-minute grace after
   `deleted_at` lets the soft-delete Realtime event reach readers. This covers

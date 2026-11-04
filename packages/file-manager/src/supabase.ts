@@ -2639,6 +2639,43 @@ export async function set_workspace_private(
 	if (error) throw new Error(`set_workspace_private failed: ${error.message}`)
 }
 
+export async function trash_workspace(client: SupabaseClient, workspace_id: string): Promise<void> {
+	const { error } = await client.rpc("trash_workspace", { p_workspace: workspace_id })
+	if (error) throw new Error(`trash_workspace failed: ${error.message}`)
+}
+
+export async function restore_workspace(client: SupabaseClient, workspace_id: string): Promise<void> {
+	const { error } = await client.rpc("restore_workspace", { p_workspace: workspace_id })
+	if (error) throw new Error(`restore_workspace failed: ${error.message}`)
+}
+
+export async function purge_workspace(client: SupabaseClient, workspace_id: string): Promise<void> {
+	const { error } = await client.rpc("purge_workspace", { p_workspace: workspace_id })
+	if (error) throw new Error(`purge_workspace failed: ${error.message}`)
+}
+
+export type TrashedWorkspace = {
+	id: string
+	name: string
+	deleted_at: string
+	size_bytes: number
+}
+
+export async function list_trashed_workspaces(client: SupabaseClient): Promise<TrashedWorkspace[]> {
+	const { data, error } = await client.rpc("list_trashed_workspaces")
+	if (error) throw new Error(`list_trashed_workspaces failed: ${error.message}`)
+	return (data ?? []) as TrashedWorkspace[]
+}
+
+export type WorkspaceState = "live" | "trashed" | "gone"
+
+export async function workspace_state(client: SupabaseClient, workspace_id: string): Promise<WorkspaceState> {
+	const { data, error } = await client.rpc("workspace_state", { p_workspace: workspace_id })
+	if (error) throw new Error(`workspace_state failed: ${error.message}`)
+	if (data === "live" || data === "trashed" || data === "gone") return data
+	return "gone"
+}
+
 /**
  * Forks a live public workspace into the caller's account as a regular
  * private workspace. Returns the new workspace id. Blobs are re-keyed

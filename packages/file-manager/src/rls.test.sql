@@ -64,6 +64,7 @@ declare
     v_gc_a    text;
     v_gc_b    text;
     v_upload  text;
+    v_cron    text;
     v_request jsonb;
     v_receipt jsonb;
 begin
@@ -1684,6 +1685,109 @@ begin
             jsonb_build_object(v_gc_a, true, v_gc_b, true, 'missing', false), null);
     execute 'reset role';
 
+    -- ------------------------------------------------------------------
+    -- a top-level cloud folder in the trash
+    -- ------------------------------------------------------------------
+    execute 'reset role';
+    update public.workspaces set is_public = true, slug = 'suite-board' where id = v_ws;
+    insert into public.workspace_members (workspace_id, user_id, role)
+    values (v_ws, c_editor, 'editor')
+    on conflict (workspace_id, user_id) do update set role = 'editor';
+    insert into public.workspace_members (workspace_id, user_id, role)
+    values (v_ws, c_viewer, 'viewer')
+    on conflict (workspace_id, user_id) do nothing;
+    select coalesce(sum(size_bytes) filter (where deleted_at is null), 0) into v_used
+      from public.entries where workspace_id = v_ws;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select live_bytes::int, trash_bytes into v_n, v_ws_used from public.owner_usage();
+    perform public.trash_workspace(v_ws);
+    insert into __results values ('trash: owner cannot select a trashed workspace',
+        (select count(*) from public.workspaces where id = v_ws) = 0, null);
+    insert into __results values ('trash: owner state is trashed',
+        public.workspace_state(v_ws) = 'trashed', public.workspace_state(v_ws));
+    insert into __results values ('trash: owner_usage moves the board into trash_bytes',
+        (select live_bytes = v_n - v_used and trash_bytes = v_ws_used + v_used from public.owner_usage()),
+        (select live_bytes::text || '/' || trash_bytes::text from public.owner_usage()));
+    begin
+        perform public.folder_read(v_ws, '/');
+        insert into __results values ('trash: owner folder_read refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('trash: owner folder_read refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
+        perform public.fork_workspace(v_ws);
+        insert into __results values ('trash: fork refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('trash: fork refused', sqlerrm like '%not public%' or sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_editor, 'role', 'authenticated')::text, true);
+    insert into __results values ('trash: editor cannot select',
+        (select count(*) from public.workspaces where id = v_ws) = 0, null);
+    insert into __results values ('trash: member state is trashed',
+        public.workspace_state(v_ws) = 'trashed', null);
+    begin
+        perform public.trash_workspace(v_ws);
+        insert into __results values ('trash: editor cannot trash', false, 'accepted');
+    exception when others then
+        insert into __results values ('trash: editor cannot trash', sqlerrm like '%only the owner%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_viewer, 'role', 'authenticated')::text, true);
+    insert into __results values ('trash: viewer cannot select',
+        (select count(*) from public.workspaces where id = v_ws) = 0, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    insert into __results values ('trash: stranger state is gone',
+        public.workspace_state(v_ws) = 'gone', public.workspace_state(v_ws));
+    insert into __results values ('trash: stranger cannot select',
+        (select count(*) from public.workspaces where id = v_ws) = 0, null);
+    execute 'set local role anon';
+    insert into __results values ('trash: anon cannot select',
+        (select count(*) from public.workspaces where id = v_ws) = 0, null);
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.webp', 60);
+        insert into __results values ('trash: upload refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('trash: upload refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    execute 'reset role';
+    insert into public.workspaces (owner_id, name, deleted_at)
+    values (c_owner, 'Old board', now() - interval '31 days')
+    returning id into v_ws2;
+    perform private.purge_expired_workspaces();
+    insert into __results values ('trash: cron purges a workspace older than 30 days',
+        (select count(*) from public.workspaces where id = v_ws2) = 0, null);
+    -- cron.job is pg_cron on Supabase; cron.jobs is the local stub in
+    -- postgres.test.ts. A static reference to either table aborts the
+    -- suite where that relation does not exist, so both reads are dynamic.
+    if to_regclass('cron.job') is not null then
+        execute 'select command from cron.job where jobname = $1 limit 1'
+            into v_cron using 'workspaces-hard-delete';
+    else
+        execute 'select command from cron.jobs where name = $1 limit 1'
+            into v_cron using 'workspaces-hard-delete';
+    end if;
+    insert into __results values ('trash: cron job is scheduled',
+        v_cron like '%purge_expired_workspaces%', v_cron);
+    insert into __results values ('trash: cron leaves a fresh trashed workspace',
+        (select count(*) from public.workspaces where id = v_ws and deleted_at is not null) = 1, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform public.restore_workspace(v_ws);
+    insert into __results values ('trash: restore keeps members and drops publication',
+        (select count(*) from public.workspace_members where workspace_id = v_ws and user_id = c_editor) = 1
+        and (select is_public is not true and slug is null from public.workspaces where id = v_ws), null);
+    insert into __results values ('trash: restored workspace is live',
+        public.workspace_state(v_ws) = 'live', null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    insert into __results values ('trash: purge is gone for a stranger',
+        public.workspace_state('00000000-0000-4000-8000-000000000099') = 'gone', null);
+    execute 'reset role';
+
     -- Function grants. EXECUTE defaults to PUBLIC on every new function, and
     -- `drop function` + `create` RESETS it — several functions in rpc.sql are
     -- recreated that way, so a backend-only path can reopen to anon without
@@ -1702,6 +1806,7 @@ begin
             ('private.lock_workspace_tree(uuid)', false, false),
             ('private.lock_entry_workspace(uuid)', false, false),
             ('private.purge_expired_entries()', false, false),
+            ('private.purge_expired_workspaces()', false, false),
             ('public.entries_tree_lock()', false, false),
             ('private.blob_references(text[])', false, false),
             ('public.blob_references(text[])', false, false),
@@ -1765,7 +1870,17 @@ begin
             ('public.claim_workspace_invites()', false, true),
             ('public.merge_entry_xattrs(uuid, jsonb, text)', false, true),
             ('public.report_hub_listing(uuid, text)', false, true),
-            ('public.owner_usage()', false, true)
+            ('public.owner_usage()', false, true),
+            ('public.trash_workspace(uuid)', false, true),
+            ('private.trash_workspace(uuid)', false, true),
+            ('public.restore_workspace(uuid)', false, true),
+            ('private.restore_workspace(uuid)', false, true),
+            ('public.purge_workspace(uuid)', false, true),
+            ('private.purge_workspace(uuid)', false, true),
+            ('public.list_trashed_workspaces()', false, true),
+            ('private.list_trashed_workspaces()', false, true),
+            ('public.workspace_state(uuid)', false, true),
+            ('private.workspace_state(uuid)', false, true)
           ) as g(signature, anon_may, authenticated_may)
     loop
         if to_regprocedure(v_grant.signature) is null then

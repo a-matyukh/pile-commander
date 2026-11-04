@@ -16,7 +16,7 @@ export type SyncStatus = {
 	 * folder_missing: the linked folder is not on this computer (moved,
 	 * deleted, or the disk is unplugged). The link stays.
 	 */
-	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked' | 'folder_missing'
+	reason?: 'mass_delete_cloud' | 'mass_delete_local' | 'plan_limit' | 'unlinked' | 'folder_missing' | 'workspace_trashed' | 'workspace_missing'
 	message?: string
 	last_synced_at?: number
 	/** Files a paused pass would trash (on the side `reason` names). */
@@ -51,6 +51,11 @@ export type SyncEngineDeps = {
 	watch(on_change: () => void): Promise<() => void>
 	/** Calls back on any change of the cloud workspace made elsewhere; resolves to the unwatch. */
 	watch_cloud?(on_change: () => void): Promise<() => void>
+	/**
+	 * Why the cloud root is missing from a listing. live means it came back
+	 * between the list and this call; the next pass reads the list again.
+	 */
+	workspace_state?(): Promise<'live' | 'trashed' | 'gone'>
 	on_status(status: SyncStatus): void
 }
 
@@ -259,6 +264,30 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 				skipped: result.skipped,
 				errors: [],
 				kept_for_hidden: kept_still_here([]),
+			})
+			return
+		}
+		if (result.kind === 'cloud_root_missing') {
+			const which = await deps.workspace_state?.() ?? 'gone'
+			if (which === 'live') {
+				publish({
+					phase: 'idle',
+					reason: undefined,
+					message: undefined,
+					pending_deletes: undefined,
+					errors: [],
+				})
+				return
+			}
+			publish({
+				phase: 'paused',
+				reason: which === 'trashed' ? 'workspace_trashed' : 'workspace_missing',
+				message: which === 'trashed'
+					? 'This cloud folder is in the trash — restore it or unlink.'
+					: 'This cloud folder was deleted — unlink sync.',
+				pending_deletes: undefined,
+				progress: undefined,
+				errors: [],
 			})
 			return
 		}

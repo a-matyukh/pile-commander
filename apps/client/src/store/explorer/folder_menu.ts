@@ -45,7 +45,8 @@ export function folder_menu_node(ref: FolderRef): WorkspaceTreeNode {
  * nor trashed here, as in the tree; nor is a read-only folder. A cloud
  * workspace root is the exception its owner may rename: the name is the
  * workspace's, and icon and cover are the root entry's. It is not cut,
- * copied, duplicated or trashed (deleting a workspace is not the trash).
+ * copied or duplicated. Its owner may move it to the trash; that is the
+ * workspace row, not a delete of the root entry.
  * "Ungroup folder" goes with a folder that can be renamed in place.
  * "Show in Finder" is the desktop's local drive only
  */
@@ -60,7 +61,7 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 		ungroup: editable,
 		bookmarked: is_bookmarked(ref),
 		show_in_finder: context.desktop && ref.drive_id === 'local',
-		move_to_trash: editable,
+		move_to_trash: editable || owns_cloud_root,
 		copy: !is_root && context.item !== null,
 		cut: editable,
 		duplicate: editable,

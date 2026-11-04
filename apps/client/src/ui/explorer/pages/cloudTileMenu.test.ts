@@ -33,7 +33,7 @@ describe('cloud tile context menu', () => {
 			owner: true,
 		})
 		expect(owner.rename).toBe(true)
-		expect(owner.move_to_trash).toBe(false)
+		expect(owner.move_to_trash).toBe(true)
 
 		const editor = cloud_tile_context_menu(
 			{ preventDefault: vi.fn(), clientX: 0, clientY: 0 },

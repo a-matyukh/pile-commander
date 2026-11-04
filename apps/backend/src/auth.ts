@@ -82,11 +82,11 @@ export async function require_write_access(
 ): Promise<void> {
 	const { data: workspace, error } = await client
 		.from("workspaces")
-		.select("owner_id")
+		.select("owner_id, deleted_at")
 		.eq("id", workspace_id)
 		.maybeSingle();
 	if (error) throw internal_error("workspace lookup", error);
-	if (!workspace) throw new ApiError(403, "no access to the workspace");
+	if (!workspace || workspace.deleted_at) throw new ApiError(403, "no access to the workspace");
 	if (workspace.owner_id === user.id) return;
 
 	const { data: member, error: member_error } = await client
@@ -111,11 +111,11 @@ export async function require_workspace_owner(
 ): Promise<void> {
 	const { data: workspace, error } = await client
 		.from("workspaces")
-		.select("owner_id")
+		.select("owner_id, deleted_at")
 		.eq("id", workspace_id)
 		.maybeSingle();
 	if (error) throw internal_error("workspace lookup", error);
-	if (!workspace) throw new ApiError(403, "no access to the workspace");
+	if (!workspace || workspace.deleted_at) throw new ApiError(403, "no access to the workspace");
 	if (workspace.owner_id !== user.id) {
 		throw new ApiError(403, "only the owner can do this");
 	}

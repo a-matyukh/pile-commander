@@ -8,6 +8,7 @@ import {
 	list_workspace_entries,
 	list_workspace_strokes,
 	purge_entry_id,
+	workspace_state,
 	type EntryRow,
 } from '@pile-commander/file-manager'
 import { is_desktop } from '@/isDesktop'
@@ -170,6 +171,7 @@ function start_engine(link: SyncLink): void {
 			purge: cloud_id => purge_entry_id(require_supabase(), cloud_id),
 		}),
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,
+		workspace_state: () => workspace_state(require_supabase(), link.workspace_id),
 		root_present: async () => {
 			try {
 				const info = await (await fs()).stat(link.root)

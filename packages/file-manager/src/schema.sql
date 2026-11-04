@@ -152,11 +152,20 @@ create table public.workspaces (
     published_at timestamptz,
     allow_fork boolean not null default true,
 
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+
+    -- Set by trash_workspace. A row here is invisible to every ordinary
+    -- check, including the owner's; only the owner's trash RPCs and
+    -- workspace_state see it. Null means the workspace is live.
+    deleted_at timestamptz
 );
 
 -- "my workspaces", owner_usage, readable/writable_workspace_ids, owner FK cascade
 create index workspaces_owner_idx on public.workspaces (owner_id);
+
+-- The daily purge of workspaces that spent 30 days in the trash
+create index workspaces_trashed_idx on public.workspaces (deleted_at)
+    where deleted_at is not null;
 
 create unique index workspaces_slug_per_owner
     on public.workspaces (owner_id, slug)
@@ -536,9 +545,15 @@ begin
      where i.email = v_email
        and i.expires_at > now()
        and w.owner_id <> p_user
+       and w.deleted_at is null
     on conflict do nothing;
-    delete from public.workspace_invites
-     where email = v_email;
+    delete from public.workspace_invites i
+     where i.email = v_email
+       and exists (
+           select 1 from public.workspaces w
+            where w.id = i.workspace_id
+              and w.deleted_at is null
+       );
 end
 $$;
 
@@ -670,7 +685,10 @@ begin
         raise exception 'record_hub_preview_upload: preview exceeds 2097152 bytes';
     end if;
     v_workspace := split_part(p_storage_key, '/', 2)::uuid;
-    if not exists (select 1 from public.workspaces w where w.id = v_workspace and w.owner_id = p_user) then
+    if not exists (
+        select 1 from public.workspaces w
+         where w.id = v_workspace and w.owner_id = p_user and w.deleted_at is null
+    ) then
         raise exception 'record_hub_preview_upload: access denied';
     end if;
     insert into private.hub_preview_uploads (storage_key, workspace_id, size_bytes, uploaded_by)
@@ -1368,7 +1386,9 @@ set search_path = public, extensions
 as $$
     select exists (
         select 1 from public.workspaces
-        where id = p_workspace_id and owner_id = auth.uid()
+        where id = p_workspace_id
+          and owner_id = auth.uid()
+          and deleted_at is null
     );
 $$;
 
@@ -1465,8 +1485,11 @@ stable
 set search_path = public, extensions
 as $$
     select exists (
-        select 1 from public.workspace_members
-        where workspace_id = p_workspace_id and user_id = auth.uid()
+        select 1 from public.workspace_members m
+        join public.workspaces w on w.id = m.workspace_id
+        where m.workspace_id = p_workspace_id
+          and m.user_id = auth.uid()
+          and w.deleted_at is null
     );
 $$;
 
@@ -1478,10 +1501,12 @@ stable
 set search_path = public, extensions
 as $$
     select exists (
-        select 1 from public.workspace_members
-        where workspace_id = p_workspace_id
-          and user_id = auth.uid()
-          and role = 'editor'
+        select 1 from public.workspace_members m
+        join public.workspaces w on w.id = m.workspace_id
+        where m.workspace_id = p_workspace_id
+          and m.user_id = auth.uid()
+          and m.role = 'editor'
+          and w.deleted_at is null
     );
 $$;
 
@@ -1495,6 +1520,7 @@ as $$
     select exists (
         select 1 from public.workspaces
         where id = p_workspace_id
+          and deleted_at is null
           and (owner_id = auth.uid() or is_public)
     ) or private.is_workspace_member(p_workspace_id);
 $$;
@@ -1528,10 +1554,13 @@ stable
 set search_path = public, extensions
 as $$
     select w.id from public.workspaces w
-     where w.owner_id = (select auth.uid()) or w.is_public
+     where w.deleted_at is null
+       and (w.owner_id = (select auth.uid()) or w.is_public)
     union
     select m.workspace_id from public.workspace_members m
-     where m.user_id = (select auth.uid());
+    join public.workspaces w on w.id = m.workspace_id
+     where m.user_id = (select auth.uid())
+       and w.deleted_at is null;
 $$;
 
 create or replace function private.writable_workspace_ids()
@@ -1542,10 +1571,14 @@ stable
 set search_path = public, extensions
 as $$
     select w.id from public.workspaces w
-     where w.owner_id = (select auth.uid())
+     where w.deleted_at is null
+       and w.owner_id = (select auth.uid())
     union
     select m.workspace_id from public.workspace_members m
-     where m.user_id = (select auth.uid()) and m.role = 'editor';
+    join public.workspaces w on w.id = m.workspace_id
+     where m.user_id = (select auth.uid())
+       and m.role = 'editor'
+       and w.deleted_at is null;
 $$;
 
 -- Serialize structural operations on one workspace, including direct INSERTs
@@ -1597,8 +1630,8 @@ set search_path = public, extensions
 as $$
     select
         coalesce(sum(e.size_bytes), 0)::bigint,
-        coalesce(sum(e.size_bytes) filter (where e.deleted_at is null), 0)::bigint,
-        coalesce(sum(e.size_bytes) filter (where e.deleted_at is not null), 0)::bigint
+        coalesce(sum(e.size_bytes) filter (where e.deleted_at is null and w.deleted_at is null), 0)::bigint,
+        coalesce(sum(e.size_bytes) filter (where e.deleted_at is not null or w.deleted_at is not null), 0)::bigint
       from public.entries e
       join public.workspaces w on w.id = e.workspace_id
      where w.owner_id = p_owner;
@@ -1829,9 +1862,12 @@ alter table public.folder_connections enable row level security;
 
 create policy workspaces_select on public.workspaces
     for select using (
-        owner_id = (select auth.uid())
-        or is_public
-        or private.is_workspace_member(id)
+        deleted_at is null
+        and (
+            owner_id = (select auth.uid())
+            or is_public
+            or private.is_workspace_member(id)
+        )
     );
 
 create policy workspaces_insert on public.workspaces
@@ -1842,11 +1878,11 @@ create policy workspaces_insert on public.workspaces
     );
 
 create policy workspaces_update on public.workspaces
-    for update using (owner_id = (select auth.uid()))
-    with check (owner_id = (select auth.uid()));
+    for update using (owner_id = (select auth.uid()) and deleted_at is null)
+    with check (owner_id = (select auth.uid()) and deleted_at is null);
 
 create policy workspaces_delete on public.workspaces
-    for delete using (owner_id = (select auth.uid()));
+    for delete using (owner_id = (select auth.uid()) and deleted_at is null);
 
 create policy members_select on public.workspace_members
     for select using (
@@ -2253,6 +2289,34 @@ begin
 end;
 $$;
 revoke execute on function private.purge_expired_entries() from public, anon, authenticated;
+
+-- A workspace that spent 30 days in the trash. Lock order matches the RPCs;
+-- deleting the row cascades entries, which queue their blobs.
+create or replace function private.purge_expired_workspaces()
+returns void language plpgsql security definer
+set search_path = public, extensions
+as $$
+declare v_workspace uuid;
+begin
+    for v_workspace in
+        select id from public.workspaces
+         where deleted_at < now() - interval '30 days'
+         order by id
+    loop
+        perform private.lock_workspace_tree(v_workspace);
+        delete from public.workspaces
+         where id = v_workspace
+           and deleted_at < now() - interval '30 days';
+    end loop;
+end;
+$$;
+revoke execute on function private.purge_expired_workspaces() from public, anon, authenticated;
+
+select cron.schedule(
+    'workspaces-hard-delete',
+    '20 3 * * *',
+    $$select private.purge_expired_workspaces()$$
+);
 
 select cron.schedule(
     'upload-sessions-prune', '40 3 * * *',

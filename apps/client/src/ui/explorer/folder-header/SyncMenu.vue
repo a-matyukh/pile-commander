@@ -65,6 +65,11 @@ const subtitle = computed(() => {
 })
 
 const tip = computed(() => (link.value ? title.value : t('actions.sync')))
+const cloud_pause = computed(() => {
+	if (status.value?.reason === 'workspace_trashed') return t('sync.workspace_trashed')
+	if (status.value?.reason === 'workspace_missing') return t('sync.workspace_missing')
+	return ''
+})
 </script>
 
 <template>
@@ -94,7 +99,8 @@ const tip = computed(() => (link.value ? title.value : t('actions.sync')))
 				<p class="tt">{{ title }}</p>
 				<p class="mu one" :title="subtitle">{{ subtitle }}</p>
 				<p class="mu">{{ t('sync.both_ways') }}</p>
-				<p v-if="status?.message" :class="{ er: status.phase === 'error' }">{{ status.message }}</p>
+				<p v-if="cloud_pause">{{ cloud_pause }}</p>
+				<p v-else-if="status?.message" :class="{ er: status.phase === 'error' }">{{ status.message }}</p>
 				<p v-if="status?.conflicts.length">
 					{{ t('sync.conflicts', { n: status.conflicts.length, names: status.conflicts.slice(-3).join(', ') }) }}
 				</p>

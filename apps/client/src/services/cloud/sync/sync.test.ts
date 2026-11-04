@@ -1110,6 +1110,90 @@ describe('sync engine', () => {
 		}
 	})
 
+	test('a cloud list without its root is not reconciled, even for three files', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/a.md', 'a')
+		local.seed_file('/ws/b.md', 'b')
+		local.seed_file('/ws/c.md', 'c')
+		const cloud = make_cloud()
+		const { deps, trashed } = make_deps(local, stat, cloud)
+		deps.list_cloud = async () => [
+			cloud_entry('/a.md', 'a'),
+			cloud_entry('/b.md', 'b'),
+			cloud_entry('/c.md', 'c'),
+		]
+		const result = await run_sync_pass(deps, new_state(), { max_file_bytes: 1_000_000, check_cloud: true })
+		expect(result.kind).toBe('cloud_root_missing')
+		expect(trashed).toEqual([])
+		expect(local.has('/ws/a.md')).toBe(true)
+	})
+
+	test('a trashed cloud folder pauses, and the next pass runs after restore', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+		try {
+			const { local, stat } = make_local()
+			local.seed_file('/ws/note.md', 'mine')
+			const cloud = make_cloud()
+			const { deps, trashed } = make_deps(local, stat, cloud)
+			const listed = deps.list_cloud
+			deps.list_cloud = async () => []
+			let which: 'live' | 'trashed' | 'gone' = 'trashed'
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => new_state(),
+				save_state: async () => {},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				workspace_state: async () => which,
+				watch: async () => () => {},
+				watch_cloud: async () => () => {},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+			await engine.start()
+			expect(statuses.at(-1)).toMatchObject({
+				phase: 'paused',
+				reason: 'workspace_trashed',
+				message: 'This cloud folder is in the trash — restore it or unlink.',
+			})
+			expect(trashed).toEqual([])
+			which = 'live'
+			deps.list_cloud = listed
+			await vi.advanceTimersByTimeAsync(60_000)
+			await vi.waitFor(() => expect(statuses.at(-1)?.phase).toBe('idle'))
+			expect(cloud.fake.has('/note.md')).toBe(true)
+			engine.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	test('a deleted cloud folder pauses as workspace_missing and keeps the local files', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/note.md', 'mine')
+		const cloud = make_cloud()
+		const { deps, trashed } = make_deps(local, stat, cloud)
+		deps.list_cloud = async () => []
+		const statuses: SyncStatus[] = []
+		const engine = create_sync_engine({
+			load_state: async () => new_state(),
+			save_state: async () => {},
+			pass_deps: () => deps,
+			max_file_bytes: () => 1_000_000,
+			workspace_state: async () => 'gone',
+			watch: async () => () => {},
+			watch_cloud: async () => () => {},
+			on_status: status => statuses.push(status),
+		}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+		await engine.start()
+		expect(statuses.at(-1)).toMatchObject({
+			phase: 'paused',
+			reason: 'workspace_missing',
+		})
+		expect(trashed).toEqual([])
+		expect(local.has('/ws/note.md')).toBe(true)
+		engine.stop()
+	})
+
 	test('a missing root pauses without a pass, then syncs once the folder is back', async () => {
 		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
