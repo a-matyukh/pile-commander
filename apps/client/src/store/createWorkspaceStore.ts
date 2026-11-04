@@ -27,6 +27,7 @@ import { note_cloud_root_look } from '@/store/cloud'
 import type { ClipboardState, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
+	active_step,
 	FolderWithChildrenXattrs,
 	type ConnectionsWatchEvent,
 	type FileManager,
@@ -204,7 +205,7 @@ export async function createWorkspaceStore(
 	fm: FileManager,
 	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
-	const opened_folder: FolderWithChildrenXattrs = await fm.folder_with_children_xattrs(root_folder_id)
+	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => fm.folder_with_children_xattrs(root_folder_id))
 
 	// Session content caches live per store instance (paths repeat across
 	// workspaces — forks share the tree — so module-level caches would leak
@@ -861,23 +862,23 @@ export async function createWorkspaceStore(
 		this.opening_folder_id = folder_id
 		let folder_data: FolderWithChildrenXattrs
 		try {
-			folder_data = await fm.folder_with_children_xattrs(folder_id)
+			folder_data = await active_step('read', () => fm.folder_with_children_xattrs(folder_id))
 			this.folders[folder_id] = folder_data
 			this.opened_folder_id = folder_id
 		} finally {
 			this.opening_folder_id = null
 		}
-		await this.prefetch_preview_folders(folder_data.children)
+		await active_step('prefetch', () => this.prefetch_preview_folders(folder_data.children))
 
 		if (folder_id === this.id || find_tree_node(this.tree, folder_id)) {
 			this.tree_loaded_folder_ids.add(folder_id)
 			sync_tree_from_folders(this)
 		}
 
-	await start_watching(this, folder_id)
+	await active_step('watch', () => start_watching(this, folder_id))
 	void this.ensure_strokes(folder_id)
 	void this.ensure_connections(folder_id)
-	await this.expand_folder_in_sidebar(folder_id)
+	await active_step('expand', () => this.expand_folder_in_sidebar(folder_id))
 	// Expansion changes the set after the opened-folder watch. The shallow
 	// watcher queues that pass; wait until it has caught up.
 	if (shallow_root) await shallow_reconcile_tail
@@ -2584,7 +2585,7 @@ export async function createWorkspaceStore(
 			)
 		}
 
-		await start_watching(workspace, root_folder_id)
+		await active_step('root_watch', () => start_watching(workspace, root_folder_id))
 		return workspace
 	} catch (error) {
 		console.error(error)

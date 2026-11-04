@@ -1,5 +1,6 @@
 import { reactive, ref, type Ref } from 'vue'
 import { useStorage } from '@vueuse/core'
+import { active_step, begin_active_trace, end_active_trace } from '@pile-commander/file-manager'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { is_desktop } from '@/isDesktop'
@@ -230,10 +231,14 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		seen: number,
 	): Promise<ExplorerLocation | null> {
 		state.in_flight += 1
+		const trace = target.kind === 'folder'
+			? begin_active_trace(`open ${target.ref.drive_id}:${target.ref.folder_id}`)
+			: null
 		try {
 			return await show_now(target, options, seen)
 		} finally {
 			state.in_flight -= 1
+			if (trace) end_active_trace(trace)
 		}
 	}
 
@@ -249,11 +254,11 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 
 		let workspace: WorkspaceStore
 		try {
-			workspace = await deps.open_root(
+			workspace = await active_step('open_root', () => deps.open_root(
 				target.ref.drive_id,
 				target.ref.root_id,
 				() => seen === generation,
-			)
+			))
 		} catch (error) {
 			if (seen !== generation) return null
 			const explained = explain_folder_error(error, target.ref.root_id)
@@ -265,7 +270,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		try {
 			if (workspace.opened_folder_id !== ref.folder_id) {
 				const folder_id = ref.folder_id
-				await workspace.open_folder(folder_id, { skipHistory: true })
+				await active_step('open_folder', () => workspace.open_folder(folder_id, { skipHistory: true }))
 			}
 		} catch (error) {
 			if (!options.fallback_to_root || !is_missing_path_error(error)) {

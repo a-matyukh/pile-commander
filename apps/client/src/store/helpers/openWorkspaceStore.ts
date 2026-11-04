@@ -1,4 +1,4 @@
-import { createFileManager, createBrowserFileManager, get_workspace_access } from '@pile-commander/file-manager'
+import { active_step, createFileManager, createBrowserFileManager, get_workspace_access } from '@pile-commander/file-manager'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
 import { create_demo_file_manager } from '@/services/demoPack'
 import type { LoadWorkspaceOptions, WorkspaceStore } from '@/domain/Store'
@@ -49,7 +49,7 @@ export async function open_workspace_store(
 	} else if (item.type === 'cloud') {
 		let access: Awaited<ReturnType<typeof get_workspace_access>>
 		try {
-			access = await get_workspace_access(require_supabase(), item.id)
+			access = await active_step('access', () => get_workspace_access(require_supabase(), item.id))
 		} catch (error) {
 			throw new Error(cloud_failure_message(error, CLOUD_WORKSPACE_OFFLINE))
 		}
@@ -64,11 +64,11 @@ export async function open_workspace_store(
 
 	let workspace: WorkspaceStore | null
 	try {
-		workspace = await createWorkspaceStore(item, fm, {
+		workspace = await active_step('create_store', () => createWorkspaceStore(item, fm, {
 			root_folder_id: item.type === 'cloud' ? '/' : item.id,
 			can_write,
 			live,
-		})
+		}))
 	} catch (error) {
 		if (item.type !== 'cloud') throw error
 		throw new Error(cloud_failure_message(error, CLOUD_WORKSPACE_OFFLINE))

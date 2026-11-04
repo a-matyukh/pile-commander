@@ -5,6 +5,7 @@ import { is_valid_slug } from "./reserved-slugs"
 import { parse_plan_limit_error, PlanLimitError } from "./planLimit"
 import { MediaUnavailableError, parse_media_unavailable } from "./mediaUnavailable"
 import { StorageUnreachableError } from "./storageUnreachable"
+import { add_server_timing, cloud_timing_enabled, cloud_trace, type CloudTrace } from "./cloudTiming"
 import type {
 	ConnectionsWatchEvent,
 	CreateFolderOptions,
@@ -442,10 +443,11 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// (forks share the source's key until re-keyed, copies share objects).
 	// `original` asks for the file itself rather than a visitor's preview
 	// (Download as .pile): signed-in only, charged to the caller
-	async function presign(entry_id: string, original = false): Promise<MediaSrc> {
+	async function presign(entry_id: string, original = false, trace?: CloudTrace): Promise<MediaSrc> {
 		const response = await fetch_with_auth(
 			`${backend_url}/presign?entry=${encodeURIComponent(entry_id)}${original ? "&original=1" : ""}`,
 		)
+		if (trace) add_server_timing(trace, response)
 		if (!response.ok) {
 			const refusal: unknown = await response.json().catch(() => null)
 			// a public-board visitor refused by the egress fair use gets a typed
@@ -468,12 +470,13 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		return media
 	}
 
-	async function backend_post<T>(path: string, body: unknown): Promise<T> {
+	async function backend_post<T>(path: string, body: unknown, trace?: CloudTrace): Promise<T> {
 		const response = await fetch_with_auth(`${backend_url}${path}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
 		})
+		if (trace) add_server_timing(trace, response)
 		if (!response.ok) {
 			const text = await response.text()
 			let parsed: unknown = text
@@ -608,29 +611,15 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// presign upload → PUT bytes straight to B2 → finalize. The backend
 	// copies staging into an immutable key and atomically records the entry
 	// with an idempotency receipt. Repeating finalize never deletes the blob.
-	async function traced<T>(
-		trace: ((step: string, ms: number) => void) | undefined,
-		step: string,
-		run: () => Promise<T>,
-	): Promise<T> {
-		if (!trace) return run()
-		const started = performance.now()
-		try {
-			return await run()
-		} finally {
-			trace(step, Math.round(performance.now() - started))
-		}
-	}
-
 	async function upload_file_impl(
 		folder_id: string,
 		filename: string,
 		data: Blob,
 		mime?: string,
 		onProgress?: UploadProgressCallback,
-		trace?: (step: string, ms: number) => void,
+		trace: CloudTrace = cloud_trace("upload", undefined, false),
 	): Promise<FolderChild> {
-		const folder = await traced(trace, "upload_resolve", () => resolve(folder_id))
+		const folder = await trace.step("upload_resolve", () => resolve(folder_id))
 		let type = mime || data.type || mime_from_name(filename)
 
 		if (is_text_mime(type)) {
@@ -653,13 +642,14 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		}
 
 		try {
-			const { storage_key, url } = await traced(trace, "presign", () =>
+			const { storage_key, url } = await trace.step("presign", () =>
 				backend_post<{ storage_key: string; url: string }>(
 					"/presign/upload",
 					{ workspace_id, name: filename, size_bytes: data.size, mime: type },
+					trace,
 				),
 			)
-			await traced(trace, "put", () =>
+			await trace.step("put", () =>
 				options.put_blob ? options.put_blob(url, type, data, onProgress) : put_with_progress(url, type, data, onProgress),
 			)
 
@@ -667,7 +657,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			// is recognized as our own write
 			const id = crypto.randomUUID()
 			mark_write(id)
-			const { entry } = await traced(trace, "finalize", () =>
+			const { entry } = await trace.step("finalize", () =>
 				backend_post<{ entry: EntryRow; size_bytes: number }>("/finalize", {
 					storage_key,
 					id,
@@ -675,7 +665,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 					name: filename,
 					mime: type,
 					client_id: client_instance_id(),
-				}),
+				}, trace),
 			)
 			return to_child(entry)
 		} catch (error) {
@@ -1076,6 +1066,8 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	}
 
 	const PILE_IMAGE_ATTRS = new Set(["cover", "background"])
+	/** A folder's look: what cloud-timing traces on a single attribute write */
+	const LOOK_ATTRS = new Set(["view", "icon", "cover", "background"])
 
 	/** `.pile` is a sidecar. Listings for the UI omit it; picture code addresses it by path. */
 	function without_pile_dir<T extends { name: string }>(children: T[]): T[] {
@@ -1127,22 +1119,18 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	}
 
 	async function write_pile_image(folder_id: string, role: PileImageRole, bytes: Uint8Array): Promise<string> {
-		const steps: Record<string, number> = {}
-		const time = async <T>(step: string, run: () => Promise<T>): Promise<T> => {
-			const started = performance.now()
-			try {
-				return await run()
-			} finally {
-				steps[step] = Math.round(performance.now() - started)
-			}
-		}
+		const trace = cloud_trace(`write ${role}`)
+		trace.note("bytes", bytes.byteLength)
 		try {
-			const folder = await time("resolve", () => resolve(folder_id))
+			const folder = await trace.step("resolve", () => resolve(folder_id))
 			if (folder.kind !== "folder") throw new Error("pile images belong to a folder")
-			const hash8 = await time("hash", () => pile_image_hash8(bytes))
+			const hash8 = await trace.step("hash", () => pile_image_hash8(bytes))
 			const file = `${role}-${hash8}.webp`
-			const pile = await time("ensure_pile_dir", () => ensure_pile_dir(folder))
-			if (await time("child_named", () => child_named(pile, file))) return pile_image_token(role, hash8)
+			const pile = await trace.step("ensure_pile_dir", () => ensure_pile_dir(folder))
+			if (await trace.step("child_named", () => child_named(pile, file))) {
+				trace.note("reused", 1)
+				return pile_image_token(role, hash8)
+			}
 			try {
 				const copy = new Uint8Array(bytes.byteLength)
 				copy.set(bytes)
@@ -1152,7 +1140,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 					new Blob([copy], { type: "image/webp" }),
 					"image/webp",
 					undefined,
-					(step, ms) => { steps[step] = ms },
+					trace,
 				)
 			} catch (error) {
 				if (!sibling_name_taken(error)) throw error
@@ -1160,49 +1148,43 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			}
 			return pile_image_token(role, hash8)
 		} finally {
-			console.info(`[pile-image] write ${role} ${bytes.byteLength}B`, steps)
+			trace.end()
 		}
 	}
 
 	async function read_pile_image(entry_id: string, token: string): Promise<Uint8Array | null> {
 		const parsed = parse_pile_image_token(token)
 		if (!parsed) return null
-		const steps: Record<string, number> = {}
-		const time = async <T>(step: string, run: () => Promise<T>): Promise<T> => {
-			const started = performance.now()
-			try {
-				return await run()
-			} finally {
-				steps[step] = (steps[step] ?? 0) + Math.round(performance.now() - started)
-			}
-		}
+		const trace = cloud_trace(`read ${parsed.role}`)
 		let bytes: Uint8Array | null = null
 		try {
 			let folder: EntryRow
 			try {
-				folder = await time("resolve", () => resolve(entry_id))
+				folder = await trace.step("resolve", () => resolve(entry_id))
 			} catch {
 				return null
 			}
 			if (folder.kind !== "folder") return null
 			let file: EntryRow
 			try {
-				file = await time("resolve", () => resolve(`${pile_dir_path(folder.path)}/${parsed.file}`))
+				file = await trace.step("resolve", () => resolve(`${pile_dir_path(folder.path)}/${parsed.file}`))
 			} catch {
 				return null
 			}
 			if (file.kind !== "file") return null
 			try {
-				const media = await time("presign", () => presign(file.id))
-				const response = await time("fetch", () => fetch(media.url))
+				const media = await trace.step("presign", () => presign(file.id, false, trace))
+				// headers, then the body: a slow first byte and a slow transfer look different
+				const response = await trace.step("fetch", () => fetch(media.url))
 				if (!response.ok) return null
-				bytes = new Uint8Array(await response.arrayBuffer())
+				bytes = new Uint8Array(await trace.step("body", () => response.arrayBuffer()))
 				return bytes
 			} catch {
 				return null
 			}
 		} finally {
-			console.info(`[pile-image] read ${token}`, { ...steps, bytes: bytes?.byteLength ?? 0 })
+			trace.note("bytes", bytes?.byteLength ?? 0)
+			trace.end()
 		}
 	}
 
@@ -1391,13 +1373,12 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		// a server-side jsonb merge (rpc.sql merge_entry_xattrs): two clients
 		// writing different keys of one entry no longer clobber each other
 		async set_xattr(id: string, name: string, value: string) {
-			const trace = PILE_IMAGE_ATTRS.has(name)
-			const steps: Record<string, number> = {}
-			const started = performance.now()
+			// only the folder's look: positions and camera write on every drag
+			const trace = cloud_trace(`set_xattr ${name}`, undefined, LOOK_ATTRS.has(name) && cloud_timing_enabled())
 			try {
-				const row = await resolve(id)
+				const row = await trace.step("resolve", () => resolve(id))
 				mark_write(row.id)
-				const [refused] = await merge_xattrs([{ path: row.path, xattrs: { [name]: value } }])
+				const [refused] = await trace.step("merge", () => merge_xattrs([{ path: row.path, xattrs: { [name]: value } }]))
 				if (refused) {
 					throw new Error(
 						refused.status === "too_large"
@@ -1405,12 +1386,9 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 							: `set_xattr failed: entry not found: ${id}`,
 					)
 				}
-				if (trace) steps.set_xattr = Math.round(performance.now() - started)
-				const sweep_started = performance.now()
-				await sweep_pile_images(row.path, [name])
-				if (trace) steps.sweep = Math.round(performance.now() - sweep_started)
+				await trace.step("sweep", () => sweep_pile_images(row.path, [name]))
 			} finally {
-				if (trace) console.info(`[pile-image] set_xattr ${name}`, steps)
+				trace.end()
 			}
 		},
 
@@ -1446,16 +1424,21 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		},
 
 		async remove_xattr(id: string, name: string) {
-			const row = await resolve(id)
-			mark_write(row.id)
-			const xattrs = { ...row.xattrs }
-			delete xattrs[name]
-			const { error } = await client
-				.from("entries")
-				.update({ xattrs, updated_by_client: client_instance_id() })
-				.eq("id", row.id)
-			if (error) throw new Error(`remove_xattr failed: ${error.message}`)
-			await sweep_pile_images(row.path, [name])
+			const trace = cloud_trace(`remove_xattr ${name}`, undefined, LOOK_ATTRS.has(name) && cloud_timing_enabled())
+			try {
+				const row = await trace.step("resolve", () => resolve(id))
+				mark_write(row.id)
+				const xattrs = { ...row.xattrs }
+				delete xattrs[name]
+				const { error } = await trace.step("update", async () => await client
+					.from("entries")
+					.update({ xattrs, updated_by_client: client_instance_id() })
+					.eq("id", row.id))
+				if (error) throw new Error(`remove_xattr failed: ${error.message}`)
+				await trace.step("sweep", () => sweep_pile_images(row.path, [name]))
+			} finally {
+				trace.end()
+			}
 		},
 
 		async list_xattrs(id: string) {

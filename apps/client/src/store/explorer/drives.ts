@@ -1,4 +1,5 @@
 import {
+	active_step,
 	createBrowserFileManager,
 	createFileManager,
 	workspace_root_info,
@@ -160,7 +161,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			return workspace
 		}
 		if (drive_id === 'cloud') {
-			const root = (await deps.cloud_roots()).find(item => item.id === root_id)
+			const root = (await active_step('cloud_roots', () => deps.cloud_roots())).find(item => item.id === root_id)
 			return deps.open_cloud({
 				id: root_id,
 				type: 'cloud',

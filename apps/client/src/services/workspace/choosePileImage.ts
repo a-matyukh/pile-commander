@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { readFile, stat } from '@tauri-apps/plugin-fs'
-import type { PileImageRole } from '@pile-commander/file-manager'
+import { cloud_trace, type PileImageRole } from '@pile-commander/file-manager'
 import type { WorkspaceStore } from '@/domain/Store'
 import { is_desktop } from '@/isDesktop'
 import { t } from '@/i18n'
@@ -107,12 +107,11 @@ export async function choose_pile_image(
 		}
 		begin_pile_image(folder_id, role)
 		busy = true
-		const encode_started = performance.now()
-		const webp = await encode_pile_image(picked.bytes, picked.mime)
-		console.info(`[pile-image] encode ${Math.round(performance.now() - encode_started)}ms`, {
-			in: picked.size,
-			out: webp.byteLength,
-		})
+		const trace = cloud_trace(`encode ${role}`)
+		trace.note('in', picked.size)
+		const webp = await trace.step('encode', () => encode_pile_image(picked.bytes, picked.mime))
+		trace.note('out', webp.byteLength)
+		trace.end()
 		const token = await store.file_manager.write_pile_image(folder_id, role, webp)
 		hold_pile_image_seed(folder_id, role, seed_pile_url(`${folder_id}\0${token}`, webp))
 		// Stays on through the caller's xattr write. That finally is what clears it.

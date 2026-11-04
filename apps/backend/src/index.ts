@@ -42,7 +42,8 @@ const CORS_HEADERS: Record<string, string> = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 	"Access-Control-Allow-Headers": "Authorization, Content-Type",
-	"Access-Control-Expose-Headers": "Retry-After",
+	// Server-Timing: step durations the app's cloud-timing trace reads
+	"Access-Control-Expose-Headers": "Retry-After, Server-Timing",
 };
 
 function with_cors(response: Response): Response {

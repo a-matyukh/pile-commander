@@ -4,6 +4,7 @@ import type { DerivMode, Env } from "./env";
 import type { EgressInput, EgressMeter } from "./egress";
 import { visitor_key } from "./ratelimit";
 import { finalize_upload, parse_staging_key } from "./uploads";
+import { server_timing } from "./timing";
 import {
 	ApiError,
 	bearer_token,
@@ -253,11 +254,13 @@ export async function handle_download_presign(
 	if (!UUID_ONLY_RE.test(entry)) throw new ApiError(400, "invalid entry id");
 	const want_original = params.get("original") === "1";
 
+	const timing = server_timing();
 	const token = bearer_token(req);
 	const client = user_client(env, token);
 	// the downloader pays for an original on request, so it takes an account
-	const user = want_original ? await require_user(client, token) : null;
-	const { data, error } = await client.rpc("download_target", { p_entry: entry });
+	const user = want_original ? await timing.step("auth", () => require_user(client, token)) : null;
+	const { data, error } = await timing.step("lookup", async () =>
+		await client.rpc("download_target", { p_entry: entry }));
 	if (error) throw lookup_error(error, "entry lookup");
 	const target = (data as DownloadTarget[] | null)?.[0];
 	if (!target) throw new ApiError(404, "blob not found");
@@ -265,22 +268,25 @@ export async function handle_download_presign(
 	const choice = choose_download(target, env.deriv.mode, want_original);
 	const ledger = download_ledger(target, want_original);
 	if (ledger === "owner" && meter) {
-		await meter_download(
+		await timing.step("meter", () => meter_download(
 			meter,
 			{ owner_id: target.owner_id, size_bytes: choice.size_bytes, gate_file_size: choice.gate_file_size },
 			ip,
-		);
+		));
 	} else if (ledger === "downloader" && downloads && user) {
-		await meter_download(
+		await timing.step("meter", () => meter_download(
 			downloads,
 			{ owner_id: user.id, size_bytes: choice.size_bytes, gate_file_size: false },
 			ip,
 			"download_budget",
-		);
+		));
 	}
 
 	const url = s3.presign(choice.key, { expiresIn: env.presign_get_ttl_seconds });
-	return Response.json({ url, expires_in: env.presign_get_ttl_seconds, variant: choice.variant });
+	return Response.json(
+		{ url, expires_in: env.presign_get_ttl_seconds, variant: choice.variant },
+		{ headers: timing.headers() },
+	);
 }
 
 export type ReplaceEntryRow = {
@@ -352,9 +358,10 @@ export async function handle_upload_presign(
 	req: Request,
 ): Promise<Response> {
 	if (!db) throw new ApiError(503, "service role is not configured on the backend");
+	const timing = server_timing();
 	const token = bearer_token(req);
 	const client = user_client(env, token);
-	const user = await require_user(client, token);
+	const user = await timing.step("auth", () => require_user(client, token));
 	const body = await read_json(req);
 
 	// lowercase: the key prefix is compared textually against workspace_id
@@ -370,28 +377,32 @@ export async function handle_upload_presign(
 	const name = typeof body.name === "string" ? body.name : "";
 	const file_mime = resolve_upload_file_mime(body);
 
-	await require_write_access(client, user, workspace_id);
+	await timing.step("access", () => require_write_access(client, user, workspace_id));
 	let row: ReplaceEntryRow | null = null;
 	if (body.replace != null && body.replace !== "" && UUID_ONLY_RE.test(String(body.replace))) {
-		const { data, error } = await client
+		const { data, error } = await timing.step("replace", async () => await client
 			.from("entries")
 			.select("workspace_id, kind, deleted_at, size_bytes")
 			.eq("id", String(body.replace).toLowerCase())
-			.maybeSingle();
+			.maybeSingle());
 		if (error) throw internal_error("replace lookup", error);
 		row = data as ReplaceEntryRow | null;
 	}
 	const replacing = presign_replace_charge(body.replace, workspace_id, size_bytes, row);
-	await assert_upload_quota(client, workspace_id, replacing?.delta_bytes ?? size_bytes, size_bytes, file_mime);
+	await timing.step("quota", () =>
+		assert_upload_quota(client, workspace_id, replacing?.delta_bytes ?? size_bytes, size_bytes, file_mime));
 
 	const ext = /(\.[a-z0-9]{1,16})$/i.exec(name)?.[1].toLowerCase() ?? "";
-	const { data: storage_key, error } = await db.rpc("register_upload", {
+	const { data: storage_key, error } = await timing.step("register", async () => await db.rpc("register_upload", {
 		p_workspace: workspace_id, p_user: user.id, p_kind: "blob", p_ext: ext, p_ttl: env.presign_put_ttl_seconds,
-	});
+	}));
 	if (error) throw rpc_error_to_api(error, "register upload");
 
 	const url = s3.presign(storage_key, { method: "PUT", expiresIn: env.presign_put_ttl_seconds });
-	return Response.json(upload_presign_body(storage_key, url, env.presign_put_ttl_seconds, replacing?.replace ?? null));
+	return Response.json(
+		upload_presign_body(storage_key, url, env.presign_put_ttl_seconds, replacing?.replace ?? null),
+		{ headers: timing.headers() },
+	);
 }
 
 // POST /finalize { storage_key, parent_id, name, mime, id?, client_id? } →
@@ -405,20 +416,22 @@ export async function handle_finalize(
 	req: Request,
 ): Promise<Response> {
 	if (!db) throw new ApiError(503, "service role is not configured on the backend");
+	const timing = server_timing();
 	const token = bearer_token(req);
 	const client = user_client(env, token);
-	const user = await require_user(client, token);
+	const user = await timing.step("auth", () => require_user(client, token));
 	const body = await read_json(req);
 
 	const storage_key = String(body.storage_key ?? "");
 	const staging = parse_staging_key(storage_key, "blob");
 	const request = finalize_blob_request(body, staging.id);
 
-	await require_write_access(client, user, staging.workspace_id);
+	await timing.step("access", () => require_write_access(client, user, staging.workspace_id));
 
-	return Response.json(await finalize_upload(s3, db, storage_key, user.id, "blob", request, (error, context) =>
+	const result = await finalize_upload(s3, db, storage_key, user.id, "blob", request, (error, context) =>
 		rpc_error_to_api(error, context, file_mime_extra(request.mime)),
-	));
+	undefined, timing);
+	return Response.json(result, { headers: timing.headers() });
 }
 
 // POST /presign/hub-preview-upload { workspace_id, name } →
