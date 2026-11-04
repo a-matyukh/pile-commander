@@ -247,22 +247,3 @@ export async function build_cloud_workspace_pile(
 	const attrs_json = serializePileAttrsManifest(await collectPileAttrs(fm, '/'))
 	return new Response(makeZip(pile_zip_entries(pile_root_name(name), tree, blobs, attrs_json))).blob()
 }
-
-/**
- * Desktop: a .pile goes to the cloud through a local extraction under the
- * app cache (the regular import, layout applied). `dispose` removes it.
- */
-export async function extract_pile_to_cache(
-	zip_path: string,
-): Promise<{ root: string; name: string; dispose: () => Promise<void> }> {
-	const scratch = await join(await appCacheDir(), 'pile-import', crypto.randomUUID())
-	await mkdir(scratch, { recursive: true })
-	const dispose = () => remove(scratch, { recursive: true })
-	try {
-		const { root, name } = await import_workspace_from_pile(zip_path, scratch)
-		return { root, name, dispose }
-	} catch (error) {
-		await dispose().catch(() => {})
-		throw error
-	}
-}

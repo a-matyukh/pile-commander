@@ -45,7 +45,7 @@ next launch catches up exactly, from the base.
 | The folder for "Sync to a folder…" | `…/sync/syncToFolder.ts` |
 | Tests | `…/sync/sync.test.ts` |
 | App store: links, engines, Tauri fs, `LocalWriter`, cloud wiring | `apps/client/src/store/localSync.ts` |
-| First upload of a local folder | `store/bridge.ts`, door `sync` (`BridgeDialog.vue`) |
+| First upload of a local folder | `store/bridge.ts`, door `sync` (steps in `SyncMenu.vue`) |
 | Menu items, status popover | `ui/workspace/sidebar/Sidebar.vue`, `SyncStatusButton.vue`, `workspaces-list/WorkspacesList.vue` |
 | Cloud reads and signal | `packages/file-manager/src/supabase.ts`: `list_workspace_entries`, `list_workspace_strokes`, `list_workspace_connections`, `watch_workspace`, `replace_file`, `purge_entry_id` |
 

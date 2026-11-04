@@ -18,7 +18,6 @@ import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
-import BridgeDialog from '@/ui/workspace/sidebar/BridgeDialog.vue'
 import UpdateBanner from '@/ui/app/UpdateBanner.vue'
 import SyncKeptHiddenToast from '@/ui/workspace/sidebar/SyncKeptHiddenToast.vue'
 import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
@@ -150,7 +149,6 @@ onUnmounted(() => {
 		<ExplorerShell v-if="!explorer_public_open" />
 		<PublicScreen v-else />
 		<QuotaWallDialog />
-		<BridgeDialog />
 		<PasswordDialog />
 		<BulkRenameDialog />
 		<SummaryDialog />

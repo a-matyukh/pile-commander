@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import { t } from '@/i18n'
+import { normalize_workspace_id } from '@/services/workspace/paths'
+import bridge, { reveal_bridge } from '@/store/bridge'
+import { bridge_hidden_tip } from '@/store/bridgePanel'
 import { export_anchor, set_export_anchor } from '@/store/explorer/exportPile'
 import { copy_to_cloud, export_folder, share_items } from '@/store/explorer/share'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -20,6 +23,14 @@ const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 const items = computed(() => share_items(props.folder))
 const cloud_folder = computed(() => props.folder.drive_id === 'cloud')
+const source_id = computed(() => normalize_workspace_id(props.folder.folder_id))
+const hidden_tip = computed(() => bridge_hidden_tip({
+	open: bridge.open,
+	step: bridge.step,
+	door: bridge.door,
+	source_id: bridge.source?.id ?? null,
+	progress: bridge.progress,
+}, source_id.value, 'share'))
 
 let published: HTMLElement | null = null
 
@@ -53,7 +64,16 @@ function publish() {
 
 <template>
 	<div v-if="items.export || items.share_with || items.publish" ref="anchor" class="share">
-		<DropMenu v-model:open="open" :width="230" :align="align">
+		<IconButton
+			v-if="hidden_tip"
+			class="hb spin"
+			icon="tabler:share-2"
+			:icon_size="18"
+			:aria-label="hidden_tip"
+			:data-tip="hidden_tip"
+			@click="reveal_bridge"
+		/>
+		<DropMenu v-else v-model:open="open" :width="230" :align="align">
 			<template #trigger>
 				<IconButton
 					class="hb"
@@ -74,5 +94,13 @@ function publish() {
 <style scoped>
 .share {
 	display: flex;
+}
+.spin :deep(svg) {
+	animation: share-spin 1s linear infinite;
+}
+@keyframes share-spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 </style>

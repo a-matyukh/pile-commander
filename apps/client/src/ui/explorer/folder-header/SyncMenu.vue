@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import { t } from '@/i18n'
+import { normalize_workspace_id } from '@/services/workspace/paths'
+import bridge, { dismiss_bridge } from '@/store/bridge'
+import { BRIDGE_PANEL_WIDTH, bridge_hidden_tip, bridge_in_sync_menu, bridge_title } from '@/store/bridgePanel'
 import { copy_to_cloud, open_other_side, start_sync, stop_sync, sync_link_now, use_sync_link } from '@/store/explorer/share'
 import { sync_statuses } from '@/store/localSync'
+import BridgeBody from './BridgeBody.vue'
+import PanelFrame from './PanelFrame.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
@@ -23,6 +28,30 @@ const in_cloud = computed(() => props.folder.drive_id === 'cloud')
 const link = use_sync_link(() => props.folder)
 const status = computed(() => (link.value ? sync_statuses[link.value.root] ?? null : null))
 const has_failures = computed(() => status.value?.phase === 'idle' && status.value.errors.length > 0)
+const source_id = computed(() => normalize_workspace_id(props.folder.folder_id))
+const session = computed(() =>
+	bridge.open && bridge.source?.id === source_id.value && bridge_in_sync_menu(bridge.door),
+)
+const hidden_tip = computed(() => bridge_hidden_tip({
+	open: bridge.open,
+	step: bridge.step,
+	door: bridge.door,
+	source_id: bridge.source?.id ?? null,
+	progress: bridge.progress,
+}, source_id.value, 'sync'))
+
+watch(session, (on, was) => {
+	if (on) open.value = true
+	else if (was) open.value = false
+}, { immediate: true })
+
+watch(open, (is_open, was_open) => {
+	if (was_open == null) return
+	if (is_open && hidden_tip.value) bridge.open = true
+	if (was_open && !is_open && bridge.open && bridge.source?.id === source_id.value && bridge_in_sync_menu(bridge.door)) {
+		dismiss_bridge()
+	}
+})
 
 const icon = computed(() => {
 	if (!link.value) return in_cloud.value ? 'tabler:cloud-down' : 'tabler:cloud-up'
@@ -64,7 +93,7 @@ const subtitle = computed(() => {
 	return at ? t('sync.last_synced', { when: ago(at) }) : t('sync.not_synced_yet')
 })
 
-const tip = computed(() => (link.value ? title.value : t('actions.sync')))
+const tip = computed(() => hidden_tip.value ?? (link.value ? title.value : t('actions.sync')))
 const cloud_pause = computed(() => {
 	if (status.value?.reason === 'workspace_trashed') return t('sync.workspace_trashed')
 	if (status.value?.reason === 'workspace_missing') return t('sync.workspace_missing')
@@ -73,11 +102,11 @@ const cloud_pause = computed(() => {
 </script>
 
 <template>
-	<DropMenu v-model:open="open" :width="300" :align="align">
+	<DropMenu v-model:open="open" :width="session ? BRIDGE_PANEL_WIDTH : 300" :align="align">
 		<template #trigger>
 			<IconButton
 				class="hb"
-				:class="{ spin: status?.phase === 'syncing' }"
+				:class="{ spin: status?.phase === 'syncing' || !!hidden_tip }"
 				:active="open"
 				:icon="icon"
 				:icon_size="18"
@@ -85,12 +114,16 @@ const cloud_pause = computed(() => {
 				:data-tip="tip"
 			/>
 		</template>
-		<template v-if="!link">
+		<PanelFrame v-if="session" plain :title="bridge_title(bridge.door)" @close="open = false">
+			<BridgeBody />
+		</PanelFrame>
+		<template v-else-if="!link">
 			<MenuLabel :label="in_cloud ? t('sync.cloud_only') : t('sync.local_only')" />
-			<MenuItem v-if="!in_cloud" icon="tabler:cloud-plus" :label="t('sync.copy_to_cloud')" @select="copy_to_cloud(folder, name, 'device')" />
+			<MenuItem v-if="!in_cloud" icon="tabler:cloud-plus" :label="t('sync.copy_to_cloud')" keep_open @select="copy_to_cloud(folder, name, 'device')" />
 			<MenuItem
 				:icon="in_cloud ? 'tabler:cloud-down' : 'tabler:cloud-up'"
 				:label="in_cloud ? t('sync.sync_with_disk') : t('sync.sync_with_cloud')"
+				:keep_open="!in_cloud"
 				@select="start_sync(folder, name)"
 			/>
 		</template>

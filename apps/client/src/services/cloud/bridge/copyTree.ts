@@ -163,11 +163,14 @@ export async function copy_tree(
 				settle(file.size_bytes)
 				return
 			}
-			current = file.relative
-			in_flight.set(file.relative, 0)
-			report()
 			try {
 				const blob = await read_entry_blob(src_fm, file.id, file.name, file.mime)
+				// The name stays hidden until this file's upload starts. Reading the
+				// blob can take a while, and the panel would otherwise sit on the
+				// first name at 0%.
+				current = file.relative
+				in_flight.set(file.relative, 0)
+				report()
 				await dst_fm.upload_file(
 					parent_id,
 					file.name,

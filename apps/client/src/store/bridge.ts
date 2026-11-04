@@ -1,5 +1,8 @@
 import { reactive, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
+import type { FolderRef } from '@/domain/Drive'
+import { t } from '@/i18n'
+import { BRIDGE_DONE_MS } from '@/store/bridgePanel'
 import {
 	createBrowserFileManager,
 	createFileManager,
@@ -23,8 +26,6 @@ import {
 	type BridgeJob,
 	type BridgeResult,
 } from '@/services/cloud/bridge/runBridge'
-import { create_window_manager } from '@/services/window/WindowManager'
-import { extract_pile_to_cache } from '@/services/workspace/pack'
 import store from '@/store'
 import cloud from '@/store/cloud'
 import { link_folder } from '@/store/localSync'
@@ -32,9 +33,10 @@ import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 
 /**
  * Where the copy started. `sync` is the first upload of Auto-sync (store/localSync):
- * the folder stays linked to the new cloud workspace afterwards
+ * the folder stays linked to the new cloud workspace afterwards.
+ * `pile` stays on bridge_events for rows already stored; nothing opens that door.
  */
-export type BridgeDoor = BridgeEventInput['door']
+export type BridgeDoor = Exclude<BridgeEventInput['door'], 'pile'>
 
 /**
  * Opens the cloud workspace a copy made (or found). The Explorer swaps in
@@ -53,7 +55,7 @@ export type BridgeSource = {
 	name: string
 }
 
-export type BridgeStep = 'auth' | 'measuring' | 'summary' | 'copying' | 'error'
+export type BridgeStep = 'auth' | 'measuring' | 'summary' | 'copying' | 'error' | 'done'
 
 /** What the window of the new cloud workspace does once it is open. */
 export type BridgeIntent = { workspace_id: string; door: BridgeDoor }
@@ -76,13 +78,17 @@ export type BridgeState = {
 	progress: CopyTreeProgress | null
 	error: string | null
 	pending_intent: BridgeIntent | null
+	/** The folder the copy was started from, so signing in can return there. */
+	origin: FolderRef | null
+	/** The cloud workspace a finished sync or device copy can open. */
+	finished_id: string | null
 }
 
 export type OpenBridgeOptions = {
 	/** The source's live file manager when the workspace is open (its store's FM). */
 	fm?: FileManager
-	/** Runs once the dialog is done with the source (a temporary .pile extraction). */
-	cleanup?: () => Promise<void>
+	/** The open folder, so a sign-in on the account page can come back here. */
+	origin?: FolderRef
 }
 
 const bridge: BridgeState = reactive({
@@ -99,10 +105,34 @@ const bridge: BridgeState = reactive({
 	progress: null,
 	error: null,
 	pending_intent: null,
+	origin: null,
+	finished_id: null,
 })
 
+let done_timer: ReturnType<typeof setTimeout> | null = null
+
+function clear_done_timer(): void {
+	if (done_timer === null) return
+	clearTimeout(done_timer)
+	done_timer = null
+}
+
+function schedule_done(): void {
+	clear_done_timer()
+	done_timer = setTimeout(() => {
+		done_timer = null
+		if (bridge.step === 'done') close_bridge()
+	}, BRIDGE_DONE_MS)
+}
+
+/** Opens the folder a signed-out copy was started from. The Explorer sets this. */
+let resume_folder: (ref: FolderRef) => Promise<void> = async () => {}
+
+export function set_resume_folder(resume: ((ref: FolderRef) => Promise<void>) | null): void {
+	resume_folder = resume ?? (async () => {})
+}
+
 let source_fm: FileManager | null = null
-let cleanup: (() => Promise<void>) | null = null
 let abort: AbortController | null = null
 let opened_recorded = false
 
@@ -156,17 +186,6 @@ function message_of(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
 
-async function run_cleanup(): Promise<void> {
-	const run = cleanup
-	cleanup = null
-	if (!run) return
-	try {
-		await run()
-	} catch (error) {
-		console.error(error)
-	}
-}
-
 /** One funnel step with the size picture of the workspace (bridge_events). */
 function record(step: BridgeEventInput['step'], extra: Partial<BridgeEventInput> = {}): void {
 	const user = cloud.user
@@ -174,7 +193,14 @@ function record(step: BridgeEventInput['step'], extra: Partial<BridgeEventInput>
 	const door = bridge.door
 	if (!user || !source) return
 	const preflight = bridge.preflight
-	void record_bridge_event(require_supabase(), user.id, {
+	let client
+	try {
+		client = require_supabase()
+	} catch (error) {
+		console.error(error)
+		return
+	}
+	void record_bridge_event(client, user.id, {
 		step,
 		door,
 		source_type: source.type,
@@ -203,12 +229,9 @@ export function open_bridge(source: BridgeSource, door: BridgeDoor, options: Ope
 	// one copy at a time: another door just brings the running one back
 	if (bridge.step === 'copying') {
 		bridge.open = true
-		void options.cleanup?.()
 		return
 	}
-	void run_cleanup()
 	source_fm = options.fm ?? source_file_manager(source)
-	cleanup = options.cleanup ?? null
 	opened_recorded = false
 	const reset: Partial<BridgeState> = {
 		open: true,
@@ -223,25 +246,12 @@ export function open_bridge(source: BridgeSource, door: BridgeDoor, options: Ope
 		copied: null,
 		progress: null,
 		error: null,
+		origin: options.origin ?? null,
+		finished_id: null,
 	}
+	clear_done_timer()
 	Object.assign(bridge, reset)
 	if (cloud.user) void measure()
-}
-
-/** Desktop: a .pile archive becomes a cloud workspace through a temporary local extraction. */
-export async function import_pile_to_cloud(pile_path?: string): Promise<void> {
-	try {
-		const zip_path = pile_path ?? await create_window_manager().pick_pile_file()
-		if (!zip_path) return
-		const extracted = await extract_pile_to_cache(zip_path)
-		open_bridge(
-			{ type: 'local', id: extracted.root, name: extracted.name },
-			'pile',
-			{ cleanup: extracted.dispose },
-		)
-	} catch (error) {
-		store.last_error = message_of(error)
-	}
 }
 
 /** Reads the plan and walks the workspace: sizes, the wall, a resumable or finished copy. */
@@ -256,7 +266,7 @@ export async function measure(): Promise<void> {
 		await Promise.all([cloud.fetch_plan(), cloud.fetch_workspaces()])
 		const billing = cloud.billing
 		const usage = cloud.owner_usage
-		if (!billing || !usage) throw new Error(cloud.last_error ?? 'Could not read your cloud plan')
+		if (!billing || !usage) throw new Error(cloud.last_error ?? t('bridge.plan_unread'))
 		const [preflight, pro] = await Promise.all([
 			preflight_tree(fm, source.id, {
 				quota_bytes: billing.quota_bytes,
@@ -290,8 +300,8 @@ export async function measure(): Promise<void> {
 
 function plan_limit_message(result: Extract<BridgeResult, { kind: 'plan_limit' }>): string {
 	return result.info.kind === 'file_size'
-		? `${result.file} is over the per-file limit. Leave it out and resume.`
-		: 'The cloud storage filled up during the copy. Leave out more files and resume.'
+		? t('bridge.over_file', { file: result.file })
+		: t('bridge.quota_filled')
 }
 
 /** Copies (or resumes copying) the measured workspace without the excluded files. */
@@ -325,7 +335,7 @@ export async function start_copy(): Promise<void> {
 		void cloud.fetch_plan()
 		if (result.kind === 'done') {
 			record('completed', { workspace_id: result.workspace_id })
-			await finish(result.workspace_id, key)
+			await finish(result.workspace_id)
 			return
 		}
 		if (result.kind === 'aborted') {
@@ -349,9 +359,7 @@ export async function start_copy(): Promise<void> {
 	}
 }
 
-async function finish(workspace_id: string, job_key: string): Promise<void> {
-	// an extracted .pile is removed after the copy: its job has nothing to resume
-	if (bridge.door === 'pile') jobs.remove(job_key)
+async function finish(workspace_id: string): Promise<void> {
 	const source = bridge.source
 	if (bridge.door === 'sync' && source) {
 		// the folder stays open here; its first sync pass adopts the copy just made
@@ -362,17 +370,19 @@ async function finish(workspace_id: string, job_key: string): Promise<void> {
 			exclude: [...bridge.exclude],
 			adopt_before: Date.now(),
 		})
-		bridge.open = false
+	}
+	if (bridge.door === 'share' || bridge.door === 'publish') {
+		const item = cloud.workspaces.find(ws => ws.id === workspace_id)
+		bridge.pending_intent = { workspace_id, door: bridge.door }
 		bridge.step = 'summary'
-		await run_cleanup()
+		bridge.open = false
+		if (item) await open_cloud_copy(item)
 		return
 	}
-	const item = cloud.workspaces.find(ws => ws.id === workspace_id)
-	bridge.pending_intent = { workspace_id, door: bridge.door }
-	bridge.step = 'summary'
-	bridge.open = false
-	await run_cleanup()
-	if (item) await open_cloud_copy(item)
+	bridge.finished_id = workspace_id
+	bridge.step = 'done'
+	bridge.open = true
+	schedule_done()
 }
 
 /** Stops the running copy after the uploads in flight; it stays resumable. */
@@ -380,11 +390,34 @@ export function cancel_copy(): void {
 	abort?.abort()
 }
 
+/** Hides the panel. A running copy keeps going; anything else ends the session. */
+export function dismiss_bridge(): void {
+	if (bridge.step === 'copying') {
+		bridge.open = false
+		return
+	}
+	close_bridge()
+}
+
+/** Shows the panel again. A click on sync or Share while a copy is hidden. */
+export function reveal_bridge(): void {
+	bridge.open = true
+}
+
 export function close_bridge(): void {
 	if (bridge.step === 'copying') return
+	clear_done_timer()
 	if (bridge.pro_step === 'asking') submit_pro(null)
 	bridge.open = false
-	void run_cleanup()
+	bridge.finished_id = null
+}
+
+/** Opens the cloud folder a finished sync or device copy just made. */
+export function open_finished(): void {
+	const id = bridge.finished_id
+	const item = id ? cloud.workspaces.find(ws => ws.id === id) : undefined
+	close_bridge()
+	if (item) void open_cloud_copy(item)
 }
 
 /** Removes the cloud workspace of an unfinished copy. */
@@ -459,15 +492,34 @@ export function take_bridge_intent(workspace_id: string): BridgeIntent | null {
 	return intent
 }
 
-// signing in from the dialog continues with the measurement; signing out
-// sends it back to the account step
+// signing in from the account page returns to the source folder and measures;
+// signing out sends an open session back to the account step
 watch(
 	() => cloud.user?.id ?? null,
 	(user_id) => {
-		if (!bridge.open || bridge.step === 'copying') return
-		if (user_id && bridge.step === 'auth') void measure()
-		if (!user_id) bridge.step = 'auth'
+		if (bridge.step === 'copying') return
+		if (!user_id) {
+			if (bridge.open) bridge.step = 'auth'
+			return
+		}
+		if (!bridge.open || bridge.step !== 'auth') return
+		void resume_after_sign_in()
 	},
 )
+
+async function resume_after_sign_in(): Promise<void> {
+	if (!bridge.open || bridge.step !== 'auth') return
+	await measure()
+	if (!bridge.open) return
+	const origin = bridge.origin
+	if (origin) {
+		try {
+			await resume_folder(origin)
+		} catch (error) {
+			console.error(error)
+		}
+	}
+	bridge.open = true
+}
 
 export default bridge

@@ -48,7 +48,7 @@ function bridge_source(ref: FolderRef, name: string) {
 }
 
 export function copy_to_cloud(ref: FolderRef, name: string, door: BridgeDoor): void {
-	open_bridge(bridge_source(ref, name), door)
+	open_bridge(bridge_source(ref, name), door, { origin: ref })
 }
 
 /**

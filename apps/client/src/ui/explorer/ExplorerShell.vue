@@ -8,6 +8,7 @@ import { explorer_navigation } from '@/store/explorer/navigation'
 import store, { adopt_workspace } from '@/store'
 import ImportProgressOverlay from '@/ui/workspace/folder-container/ImportProgressOverlay.vue'
 import ExportPanel from '@/ui/explorer/folder-header/ExportPanel.vue'
+import BridgePanel from '@/ui/explorer/folder-header/BridgePanel.vue'
 import { explorer_window_classes } from '@/ui/explorer/window_classes'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
@@ -23,7 +24,7 @@ import TopBar from '@/ui/explorer/top-bar/TopBar.vue'
 import PublishDialog from '@/ui/workspace/sidebar/PublishDialog.vue'
 import ShareDialog from '@/ui/workspace/sidebar/ShareDialog.vue'
 import { publish_dialog, share_dialog, unlock_pointers } from './dialogs'
-import { set_open_cloud_copy, take_bridge_intent } from '@/store/bridge'
+import { set_open_cloud_copy, set_resume_folder, take_bridge_intent } from '@/store/bridge'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import Sidebar from '@/ui/explorer/sidebar/Sidebar.vue'
 import { tree_drag } from '@/ui/explorer/sidebar/tree_drag'
@@ -239,6 +240,10 @@ async function open_cloud_copy(item: WorkspacesListItem) {
 onMounted(async () => {
 	explorer_mounted.value = true
 	set_open_cloud_copy(open_cloud_copy)
+	set_resume_folder(async (ref) => {
+		if (ref.drive_id === 'local') await explorer_navigation.open_local_path(ref.folder_id)
+		else await explorer_navigation.open_folder(ref)
+	})
 	// Back from a publication or an invitation, or /hub: there, not the last folder
 	const start = take_explorer_start()
 	try {
@@ -257,6 +262,7 @@ onUnmounted(() => {
 	clear_show()
 	clear_hide()
 	set_open_cloud_copy(null)
+	set_resume_folder(null)
 	explorer_navigation.cancel()
 	explorer_tree.reset()
 	explorer_drives.dispose_all()
@@ -299,6 +305,7 @@ onUnmounted(() => {
 		<ShareDialog :ref="dialog => share_dialog = dialog as never" @closed="unlock_pointers" />
 		<PublishDialog :ref="dialog => publish_dialog = dialog as never" @closed="unlock_pointers" />
 		<ExportPanel />
+		<BridgePanel />
 	</div>
 </template>
 
