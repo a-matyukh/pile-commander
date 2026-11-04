@@ -344,3 +344,24 @@ describe('explorer drives: a cloud root opens by its name alone', () => {
 		expect(opened[0]?.name).toBe('From the list')
 	})
 })
+
+describe('explorer drives: a cloud root does not wait for the list', () => {
+	test('opened under its id while the list loads, named once the list is in', async () => {
+		let list_in: (name: string) => void = () => {}
+		const opened: (WorkspaceStore & { name: string })[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_root_name: async () => undefined,
+			cloud_root_name_later: () => new Promise(resolve => { list_in = resolve }),
+			async open_cloud(item) {
+				const store = { name: item.name, dispose: vi.fn(), is_disposed: false } as unknown as WorkspaceStore & { name: string }
+				opened.push(store)
+				return store
+			},
+		}))
+		const store = await drives.open('cloud', 'root-a') as WorkspaceStore & { name: string }
+		expect(store.name).toBe('root-a')
+		list_in('Projects')
+		await new Promise(resolve => setTimeout(resolve, 0))
+		expect(store.name).toBe('Projects')
+	})
+})

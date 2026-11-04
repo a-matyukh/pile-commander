@@ -224,7 +224,15 @@ export type CloudStore = {
 	dismiss_password_prompt(): void
 	/** Deletes the account and everything it owns (backend cascades + GC) */
 	delete_account(password: string): Promise<void>
-	fetch_workspaces(): Promise<void>
+	/**
+	 * Reads the list of cloud folders. A call while a read is in flight is
+	 * answered by one more read once that one ends (shared by everyone who
+	 * asked meanwhile: a change made after it started must show); `join`
+	 * takes the read in flight as it is (sign-in, launch)
+	 */
+	fetch_workspaces(options?: { join?: boolean }): Promise<void>
+	/** One read of the list; `fetch_workspaces` decides when */
+	read_workspaces(): Promise<void>
 	/** Re-reads root covers, icons and views without reloading the workspace list. */
 	refresh_root_look(): Promise<void>
 	role_of(workspace_id: string): WorkspaceAccess | null
@@ -338,6 +346,10 @@ export function note_cloud_root_look(workspace_id: string, name: keyof RootLook,
 	else next[name] = value
 	cloud.root_look[workspace_id] = next
 }
+
+/** The list read in flight, and the one more read asked for while it runs */
+let workspaces_in_flight: Promise<void> | null = null
+let workspaces_again: Promise<void> | null = null
 
 const cloud: CloudStore = {
 	is_configured: is_cloud_configured,
@@ -455,7 +467,8 @@ const cloud: CloudStore = {
 			this.plan_loading = false
 			return
 		}
-		void this.fetch_workspaces()
+		// launch and the auth events that follow it ask together: one read
+		void this.fetch_workspaces({ join: true })
 		void this.fetch_profile()
 		void this.fetch_plan()
 		// signing in while viewing a publication may unlock the Edit button
@@ -593,7 +606,20 @@ const cloud: CloudStore = {
 		)._removeSession()
 	},
 
-	async fetch_workspaces() {
+	fetch_workspaces(options?: { join?: boolean }) {
+		if (workspaces_in_flight) {
+			if (options?.join) return workspaces_in_flight
+			workspaces_again ??= workspaces_in_flight.then(() => {
+				workspaces_again = null
+				return this.fetch_workspaces()
+			})
+			return workspaces_again
+		}
+		workspaces_in_flight = this.read_workspaces().finally(() => { workspaces_in_flight = null })
+		return workspaces_in_flight
+	},
+
+	async read_workspaces() {
 		this.is_loading = true
 		try {
 			const user_id = this.user?.id

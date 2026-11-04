@@ -44,6 +44,11 @@ export type ExplorerDriveDeps = {
 	 * the name comes from `cloud_roots`
 	 */
 	cloud_root_name?(root_id: string): Promise<string | undefined>
+	/**
+	 * The name once the list is in (at launch it may still be loading): a
+	 * root opened before it is named then, instead of waiting for the list
+	 */
+	cloud_root_name_later?(root_id: string): Promise<string | undefined>
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
 }
@@ -191,10 +196,16 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			const name = deps.cloud_root_name
 				? await active_step('root_name', () => deps.cloud_root_name!(root_id))
 				: (await active_step('cloud_roots', () => deps.cloud_roots())).find(item => item.id === root_id)?.name
-			return deps.open_cloud(
+			const store = await deps.open_cloud(
 				{ id: root_id, type: 'cloud', name: name ?? root_id },
 				folder_hint ? { also_read: folder_hint } : undefined,
 			)
+			if (!name && deps.cloud_root_name_later) {
+				void deps.cloud_root_name_later(root_id).then((later) => {
+					if (later && !store.is_disposed) store.name = later
+				})
+			}
+			return store
 		}
 		if (drive_id === 'public') {
 			// Someone's publication: read-only, as the old public viewer
@@ -456,7 +467,12 @@ export const explorer_drives = create_explorer_drives({
 		cloud_roots_in_flight ??= read_cloud_roots().finally(() => { cloud_roots_in_flight = null })
 		return cloud_roots_in_flight
 	},
+	// In hand when the list is loaded; at launch it may not be yet, and the
+	// root opens without waiting for it (its name follows)
 	async cloud_root_name(root_id) {
+		return cloud.workspaces.find(ws => ws.id === root_id)?.name
+	},
+	async cloud_root_name_later(root_id) {
 		await cloud_workspaces_ready()
 		return cloud.workspaces.find(ws => ws.id === root_id)?.name
 	},
