@@ -93,3 +93,32 @@ describe('pictures kept on the device', () => {
 		expect(download).toHaveBeenCalledOnce()
 	})
 })
+
+describe('a device store that does not answer (WebKit can leave a request without events)', () => {
+	it('the picture comes from the network once the wait is over', async () => {
+		vi.resetModules()
+		const cache = await import('./pileImageCache')
+		const silent = {
+			get: () => new Promise<Uint8Array | null>(() => {}),
+			put: async () => {},
+			clear: async () => {},
+		}
+		cache.set_pile_image_disk(silent, { wait_ms: 20 })
+		const download = vi.fn(async () => new Uint8Array([7]))
+		await expect(cache.load_pile_url(key, download)).resolves.toMatch(/^blob:/)
+		expect(download).toHaveBeenCalledOnce()
+	})
+
+	it('a device read that fails is a miss too', async () => {
+		vi.resetModules()
+		const cache = await import('./pileImageCache')
+		cache.set_pile_image_disk({
+			get: async () => { throw new Error('UnknownError') },
+			put: async () => {},
+			clear: async () => {},
+		})
+		const download = vi.fn(async () => new Uint8Array([8]))
+		await expect(cache.load_pile_url(key, download)).resolves.toMatch(/^blob:/)
+		expect(download).toHaveBeenCalledOnce()
+	})
+})

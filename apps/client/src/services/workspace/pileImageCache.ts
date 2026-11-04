@@ -22,10 +22,27 @@ type Row = { url: string; refs: number; bytes: number }
 /** Insertion order is recency: a row moves to the end when it goes idle */
 const urls = new Map<string, Row>()
 let disk: PictureDisk = indexeddb_picture_disk()
+/**
+ * A device read that has not answered by then is a miss: the picture comes
+ * from the network. The device is an extra, it never holds a picture back
+ */
+let disk_wait_ms = 1200
 
-/** Where pictures are kept between launches (tests put one in memory) */
-export function set_pile_image_disk(next: PictureDisk) {
+/** Where pictures are kept between launches (tests put one in memory, and may shorten the wait) */
+export function set_pile_image_disk(next: PictureDisk, options?: { wait_ms?: number }) {
 	disk = next
+	if (options?.wait_ms !== undefined) disk_wait_ms = options.wait_ms
+}
+
+/** The answer, or null once `ms` pass without one */
+function within<T>(promise: Promise<T | null>, ms: number): Promise<T | null> {
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => resolve(null), ms)
+		promise.then(
+			(value) => { clearTimeout(timer); resolve(value) },
+			() => { clearTimeout(timer); resolve(null) },
+		)
+	})
 }
 
 const OWNER_KEY = 'pile_pictures_owner'
@@ -132,7 +149,7 @@ export function load_pile_url(key: string, load: () => Promise<Uint8Array | null
 		const started_in = epoch
 		// memory, then this device, then the network (what it brings is kept on the device)
 		const read = async () => {
-			const kept = await disk.get(key)
+			const kept = await within(disk.get(key), disk_wait_ms)
 			if (kept) return kept
 			const bytes = await load()
 			if (bytes && started_in === epoch) void disk.put(key, bytes)

@@ -15,6 +15,9 @@ export type PictureDisk = {
 /** What the disk may hold before the least recently shown pictures go */
 export const DISK_BYTES = 200 * 1024 * 1024
 
+/** How long opening the device's store may take before the session goes without it */
+const OPEN_WAIT_MS = 1000
+
 const DB_NAME = 'pile-commander-pictures'
 const STORE = 'pictures'
 
@@ -40,18 +43,25 @@ export function indexeddb_picture_disk(limit = DISK_BYTES): PictureDisk {
 	let opened: Promise<IDBDatabase | null> | null = null
 	const db = () => {
 		opened ??= new Promise<IDBDatabase | null>((resolve) => {
+			// WebKit (mobile Safari) can leave an open request without any event:
+			// past the wait the device has no disk this session, never a hang
+			const gave_up = setTimeout(() => resolve(null), OPEN_WAIT_MS)
+			const settle = (database: IDBDatabase | null) => {
+				clearTimeout(gave_up)
+				resolve(database)
+			}
 			try {
-				if (typeof indexedDB === 'undefined') return resolve(null)
+				if (typeof indexedDB === 'undefined') return settle(null)
 				const req = indexedDB.open(DB_NAME, 1)
 				req.onupgradeneeded = () => {
 					const store = req.result.createObjectStore(STORE, { keyPath: 'key' })
 					store.createIndex('at', 'at')
 				}
-				req.onsuccess = () => resolve(req.result)
-				req.onerror = () => resolve(null)
-				req.onblocked = () => resolve(null)
+				req.onsuccess = () => settle(req.result)
+				req.onerror = () => settle(null)
+				req.onblocked = () => settle(null)
 			} catch {
-				resolve(null)
+				settle(null)
 			}
 		})
 		return opened
@@ -60,23 +70,20 @@ export function indexeddb_picture_disk(limit = DISK_BYTES): PictureDisk {
 	async function evict(database: IDBDatabase) {
 		const tx = database.transaction(STORE, 'readwrite')
 		const store = tx.objectStore(STORE)
+		const finished = done(tx)
 		let total = 0
-		const rows: { key: string; size: number }[] = []
-		await new Promise<void>((resolve, reject) => {
-			// newest first: what is past the limit at the end is the least recently shown
-			const cursor = store.index('at').openCursor(null, 'prev')
-			cursor.onerror = () => reject(cursor.error)
-			cursor.onsuccess = () => {
-				const at = cursor.result
-				if (!at) return resolve()
-				const row = at.value as Row
-				total += row.size
-				if (total > limit) rows.push({ key: row.key, size: row.size })
-				at.continue()
-			}
-		})
-		for (const row of rows) store.delete(row.key)
-		await done(tx)
+		// newest first: what is past the limit is the least recently shown, and
+		// goes inside the cursor's own callback, while the transaction is live
+		const cursor = store.index('at').openCursor(null, 'prev')
+		cursor.onsuccess = () => {
+			const at = cursor.result
+			if (!at) return
+			const row = at.value as Row
+			total += row.size
+			if (total > limit) at.delete()
+			at.continue()
+		}
+		await finished
 	}
 
 	return {
@@ -84,13 +91,16 @@ export function indexeddb_picture_disk(limit = DISK_BYTES): PictureDisk {
 			try {
 				const database = await db()
 				if (!database) return null
-				const tx = database.transaction(STORE, 'readwrite')
-				const store = tx.objectStore(STORE)
-				const row = await request(store.get(key)) as Row | undefined
+				const row = await request(database.transaction(STORE, 'readonly').objectStore(STORE).get(key)) as Row | undefined
 				if (!row) return null
-				// shown now: the last to go
-				store.put({ ...row, at: Date.now() })
-				await done(tx)
+				// shown now: the last to go. Its own transaction: one left waiting
+				// after an await may already be closed (WebKit)
+				try {
+					const touch = database.transaction(STORE, 'readwrite')
+					touch.objectStore(STORE).put({ ...row, at: Date.now() })
+				} catch {
+					// the order of eviction is a nicety
+				}
 				return new Uint8Array(row.bytes)
 			} catch {
 				return null
