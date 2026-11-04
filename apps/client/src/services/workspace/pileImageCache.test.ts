@@ -25,6 +25,9 @@ afterEach(() => {
 	vi.unstubAllGlobals()
 })
 
+/** The network read starts after the device check (a turn of the event loop) */
+const turn = () => new Promise(resolve => setTimeout(resolve, 0))
+
 const key = (n: number) => `board\0pile:cover-${String(n).padStart(8, '0')}.webp`
 
 describe('pile image cache', () => {
@@ -51,6 +54,7 @@ describe('pile image cache', () => {
 		let deliver: (bytes: Uint8Array) => void = () => {}
 		const first = load_pile_url(key(1), () => new Promise(resolve => { deliver = resolve }))
 		const second = load_pile_url(key(1), () => Promise.resolve(new Uint8Array([9])))
+		await turn()
 		deliver(new Uint8Array([1]))
 		await expect(first).resolves.toBe('blob:0')
 		release_pile_url(key(1))
@@ -63,6 +67,7 @@ describe('pile image cache', () => {
 		let deliver: (bytes: Uint8Array) => void = () => {}
 		const pending = load_pile_url(key(1), () => new Promise(resolve => { deliver = resolve }))
 		release_pile_url(key(1))
+		await turn()
 		deliver(new Uint8Array([1]))
 		await expect(pending).resolves.toBeNull()
 		const load = vi.fn(async () => new Uint8Array([2]))
@@ -124,6 +129,7 @@ describe('pile image cache', () => {
 		await load_pile_url(key(1), async () => new Uint8Array([1]))
 		let deliver: (bytes: Uint8Array) => void = () => {}
 		const pending = load_pile_url(key(2), () => new Promise(resolve => { deliver = resolve }))
+		await turn()
 		reset_pile_image_cache()
 		expect(revoked).toEqual(['blob:0'])
 		deliver(new Uint8Array([2]))

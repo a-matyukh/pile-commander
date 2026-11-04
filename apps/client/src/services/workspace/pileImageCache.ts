@@ -1,3 +1,5 @@
+import { indexeddb_picture_disk, type PictureDisk } from './pileImageDisk'
+
 /**
  * One blob per folder and token. A cloud root's folder id is `/` in every
  * workspace, so those tiles pass the workspace id and must not share a key.
@@ -19,6 +21,35 @@ type Row = { url: string; refs: number; bytes: number }
 
 /** Insertion order is recency: a row moves to the end when it goes idle */
 const urls = new Map<string, Row>()
+let disk: PictureDisk = indexeddb_picture_disk()
+
+/** Where pictures are kept between launches (tests put one in memory) */
+export function set_pile_image_disk(next: PictureDisk) {
+	disk = next
+}
+
+const OWNER_KEY = 'pile_pictures_owner'
+
+/**
+ * The account the device's pictures belong to. Another account's are dropped
+ * before anything shows (a sign-out this window did not see, a second account
+ * in the same browser)
+ */
+export function set_pile_image_owner(user_id: string) {
+	let owner: string | null = null
+	try {
+		owner = localStorage.getItem(OWNER_KEY)
+	} catch {
+		// no storage: nothing on the device either
+	}
+	if (owner === user_id) return
+	if (owner !== null) reset_pile_image_cache()
+	try {
+		localStorage.setItem(OWNER_KEY, user_id)
+	} catch {
+		// no storage
+	}
+}
 let idle_bytes = 0
 let idle_count = 0
 
@@ -84,6 +115,8 @@ function take(row: Row) {
 export function seed_pile_url(key: string, bytes: Uint8Array): () => void {
 	if (urls.has(key) || inflight.has(key)) return () => {}
 	park(key, { url: blob_url(bytes), refs: 0, bytes: bytes.byteLength })
+	// the device keeps it too: after a restart it shows without a download
+	void disk.put(key, bytes)
 	return () => {}
 }
 
@@ -97,7 +130,15 @@ export function load_pile_url(key: string, load: () => Promise<Uint8Array | null
 	if (!flight) {
 		const created: Flight = { promise: Promise.resolve(null), refs: 0 }
 		const started_in = epoch
-		created.promise = load().then((bytes) => {
+		// memory, then this device, then the network (what it brings is kept on the device)
+		const read = async () => {
+			const kept = await disk.get(key)
+			if (kept) return kept
+			const bytes = await load()
+			if (bytes && started_in === epoch) void disk.put(key, bytes)
+			return bytes
+		}
+		created.promise = read().then((bytes) => {
 			const refs = created.refs
 			if (inflight.get(key) === created) inflight.delete(key)
 			if (!bytes || started_in !== epoch) return null
@@ -133,9 +174,10 @@ export function release_pile_url(key: string) {
 	if (row.refs <= 0) park(key, row)
 }
 
-/** Forget every picture (sign-out: the next account must not see them) */
+/** Forget every picture, on this device too (sign-out: the next account must not see them) */
 export function reset_pile_image_cache() {
 	epoch += 1
+	void disk.clear()
 	for (const row of urls.values()) URL.revokeObjectURL(row.url)
 	urls.clear()
 	inflight.clear()

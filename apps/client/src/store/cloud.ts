@@ -80,7 +80,7 @@ import {
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
-import { reset_pile_image_cache } from '@/services/workspace/pileImageCache'
+import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
@@ -385,6 +385,8 @@ const cloud: CloudStore = {
 		this.user = cached_session_user()
 		if (take_password_recovery()) this.password_prompt = 'recovery'
 		if (this.user) {
+			// the pictures kept on this device belong to this account
+			set_pile_image_owner(this.user.id)
 			void this.load_after_sign_in()
 		}
 
@@ -395,6 +397,7 @@ const cloud: CloudStore = {
 			}
 			if (session) {
 				this.user = session.user
+				set_pile_image_owner(session.user.id)
 				// Defer out of the auth callback (lock + fresh JWT clock skew).
 				const user_id = session.user.id
 				setTimeout(() => {
