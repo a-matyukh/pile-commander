@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createMediaSrcCache } from './mediaSrcCache'
+import { createMediaSrcCache, IDLE_REMOTE_MEDIA } from './mediaSrcCache'
 
 describe('createMediaSrcCache', () => {
 	test('reuses blob url and tracks refCount across acquires', async () => {
@@ -82,7 +82,9 @@ describe('createMediaSrcCache', () => {
 		cache.release('file-1')
 		cache.release('file-1')
 		cache.release('file-1')
-		expect(cache.has('file-1')).toBe(false)
+		// still alive: kept for the way back
+		expect(cache.has('file-1')).toBe(true)
+		expect(cache.getRefCount('file-1')).toBe(0)
 	})
 
 	test('the variant is cached and follows an in-place refresh', async () => {
@@ -125,6 +127,86 @@ describe('createMediaSrcCache', () => {
 
 		expect(cache.has('file-1')).toBe(false)
 		expect(revoke).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe('createMediaSrcCache: presigned URLs nobody shows', () => {
+	const presigned = (now: () => number) => vi.fn(async () => ({
+		url: `https://b2/blob?sig=${now()}`,
+		revoke: () => {},
+		expires_at: now() + 10_000,
+	}))
+
+	test('coming back while the URL lives reuses it: the browser cache serves the file', async () => {
+		let now = 1_000_000
+		const cache = createMediaSrcCache(() => now)
+		const load = presigned(() => now)
+		const first = await cache.acquire('photo.png', load)
+		cache.release('photo.png')
+		now += 5_000
+		const again = await cache.acquire('photo.png', load)
+		expect(load).toHaveBeenCalledOnce()
+		expect(again.url).toBe(first.url)
+		expect(cache.getRefCount('photo.png')).toBe(1)
+	})
+
+	test('coming back after it expired gets a fresh URL', async () => {
+		let now = 1_000_000
+		const cache = createMediaSrcCache(() => now)
+		const load = presigned(() => now)
+		await cache.acquire('photo.png', load)
+		cache.release('photo.png')
+		now += 11_000
+		const again = await cache.acquire('photo.png', load)
+		expect(load).toHaveBeenCalledTimes(2)
+		expect(again.url).toBe('https://b2/blob?sig=1011000')
+	})
+
+	test('expired idle entries go at the next release', async () => {
+		let now = 1_000_000
+		const cache = createMediaSrcCache(() => now)
+		await cache.acquire('old.png', presigned(() => now))
+		cache.release('old.png')
+		now += 11_000
+		await cache.acquire('new.png', presigned(() => now))
+		cache.release('new.png')
+		expect(cache.has('old.png')).toBe(false)
+		expect(cache.has('new.png')).toBe(true)
+	})
+
+	test('past the limit the oldest idle ones go; one on screen stays', async () => {
+		const now = 1_000_000
+		const cache = createMediaSrcCache(() => now)
+		await cache.acquire('shown.png', presigned(() => now))
+		for (let n = 0; n <= IDLE_REMOTE_MEDIA; n++) {
+			await cache.acquire(`f${n}.png`, presigned(() => now))
+			cache.release(`f${n}.png`)
+		}
+		expect(cache.has('f0.png')).toBe(false)
+		expect(cache.has('f1.png')).toBe(true)
+		expect(cache.has(`f${IDLE_REMOTE_MEDIA}.png`)).toBe(true)
+		expect(cache.getRefCount('shown.png')).toBe(1)
+	})
+
+	test('an extra release does nothing', async () => {
+		const now = 1_000_000
+		const cache = createMediaSrcCache(() => now)
+		await cache.acquire('photo.png', presigned(() => now))
+		cache.release('photo.png')
+		cache.release('photo.png')
+		expect(cache.getRefCount('photo.png')).toBe(0)
+		expect(cache.has('photo.png')).toBe(true)
+	})
+
+	test('invalidate still forces a new URL for an idle entry', async () => {
+		const now = 1_000_000
+		const cache = createMediaSrcCache(() => now)
+		const load = presigned(() => now)
+		await cache.acquire('photo.png', load)
+		cache.release('photo.png')
+		cache.invalidate('photo.png')
+		await cache.acquire('photo.png', load)
+		expect(load).toHaveBeenCalledTimes(2)
 	})
 })
 
