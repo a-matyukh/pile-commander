@@ -15,11 +15,20 @@ type MediaCacheEntry = MediaBlob & {
 }
 
 /**
+ * Presigned cloud URLs nobody shows that stay until they expire. The same URL
+ * on the way back is a browser cache hit; a new one downloads the file again.
+ * Blob URLs (local files) still go at once: they hold the bytes in memory and
+ * a local read is fast.
+ */
+export const IDLE_REMOTE_MEDIA = 200
+
+/**
  * Instances are per workspace store: entry ids are paths, which repeat
  * across workspaces, so a shared cache would serve one window's blobs in
  * another window showing a different workspace.
  */
 export function createMediaSrcCache(now: () => number = Date.now) {
+	/** Insertion order is recency for idle entries: one moves to the end when it goes idle */
 	const mediaCache = new Map<string, MediaCacheEntry>()
 	const pendingLoads = new Map<string, Promise<MediaCacheEntry>>()
 	// Bumped when a file's bytes change under the same id (an edit on disk, a
@@ -92,15 +101,40 @@ export function createMediaSrcCache(now: () => number = Date.now) {
 		return entry
 	}
 
+	function drop(fileId: string, entry: MediaCacheEntry) {
+		entry.revoke()
+		mediaCache.delete(fileId)
+	}
+
+	/** Idle entries past their lifetime go; past the limit, the oldest idle ones go too */
+	function prune() {
+		let idle = 0
+		for (const entry of mediaCache.values()) if (entry.refCount <= 0) idle += 1
+		for (const [fileId, entry] of mediaCache) {
+			// a refresh in flight hands this very entry to its waiters
+			if (entry.refCount > 0 || pendingLoads.has(fileId)) continue
+			const expired = entry.expires_at !== undefined && now() >= entry.expires_at
+			if (!expired && idle <= IDLE_REMOTE_MEDIA) continue
+			drop(fileId, entry)
+			idle -= 1
+		}
+	}
+
 	function release(fileId: string) {
 		const entry = mediaCache.get(fileId)
-		if (!entry) return
+		if (!entry || entry.refCount <= 0) return
 
 		entry.refCount -= 1
-		if (entry.refCount <= 0) {
-			entry.revoke()
+		if (entry.refCount > 0) return
+		// a presigned URL still alive: kept for the way back, as the most recent idle one.
+		// A refresh in flight replaces the URL in place, so it stays too
+		if (entry.expires_at !== undefined && (now() < entry.expires_at || pendingLoads.has(fileId))) {
 			mediaCache.delete(fileId)
+			mediaCache.set(fileId, entry)
+			prune()
+			return
 		}
+		drop(fileId, entry)
 	}
 
 	function clear() {

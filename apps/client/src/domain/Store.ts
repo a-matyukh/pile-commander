@@ -15,7 +15,15 @@ type LoadWorkspaceOptions = {
 	 * outsiders read the board once, without realtime.
 	 */
 	public_readonly?: boolean
+	/**
+	 * The folder the opening navigation goes to: read alongside the root, so
+	 * a deep link does not wait for two reads in a row
+	 */
+	also_read?: string
 }
+
+/** A picture's upload the look attribute waits for (true: uploaded) */
+export type LookWriteOptions = { after?: Promise<boolean> }
 
 export
 type Store = {
@@ -192,15 +200,20 @@ type WorkspaceStore = {
 		should_apply?: () => boolean,
 		options?: { silent?: boolean; refresh?: boolean },
 	): Promise<void>
-	open_folder(folder_id: string, options?: { fromBack?: boolean; skipHistory?: boolean }): Promise<void>
+	/** Resolves `false` when a later open or `cancel_open` took over: nothing of this one was shown */
+	open_folder(folder_id: string, options?: { fromBack?: boolean; skipHistory?: boolean }): Promise<boolean>
 	/**
 	 * Shared navigation body (fetch, cache, watch, sidebar expand) used by
 	 * open_folder / go_back / tab methods. `force` refetches the current folder.
+	 * Each call supersedes the one in flight: the slower one does not apply
+	 * its folder and resolves `false`.
 	 */
 	navigate_open_folder(
 		folder_id: string,
 		options?: { fromBack?: boolean; skipHistory?: boolean; force?: boolean },
-	): Promise<void>
+	): Promise<boolean>
+	/** Drops the open in flight: its folder is not applied (the Explorer left for another place) */
+	cancel_open(): void
 	open_file(id: string): Promise<void>
 	/** Copies external filesystem paths into the currently opened folder. Local/demo only. */
 	import_external_files(paths: string[], position?: Position): Promise<void>
@@ -230,9 +243,15 @@ type WorkspaceStore = {
 	remove(id: string): Promise<void>
 
 	// opened folder
+	// A look change (view, cover, icon, background) shows at once and is written
+	// in the background; the promise settles with the write. A failed write puts
+	// back what the backend has and reports the error
 	change_folder_view(folder_id: string, new_view: FolderView): Promise<void>
-	/** The folder's own cover: a color, a picture link, or a local `pile:` image. Written on the folder itself, as its view */
-	change_folder_cover(folder_id: string, cover: string): Promise<void>
+	/**
+	 * The folder's own cover: a color, a picture link, or a local `pile:` image. Written on the folder itself, as its view.
+	 * `after`: a picture's upload; the attribute is written only once it succeeded
+	 */
+	change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions): Promise<void>
 	/** The folder's own icon, "<name>;<color>" ("none" clears it). Written on the folder itself */
 	change_folder_icon(folder_id: string, icon: string): Promise<void>
 	change_selected_slide_index(folder_id: string, index: number): Promise<void>
@@ -261,7 +280,7 @@ type WorkspaceStore = {
 	connections_folder_ids(): string[]
 	/** Rekeys the connections cache for a renamed/moved folder subtree. */
 	rekey_connections(old_id: string, new_id: string): void
-	change_background(id: string, new_background: ImageBase64 | Color): Promise<void>
+	change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions): Promise<void>
 	/** Image heading (`title`) or caption (`description`). An empty value removes the xattr. */
 	set_image_text(id: string, field: 'title' | 'description', value: string): Promise<void>
 	change_shape_fill(id: string, color: Color): Promise<void>

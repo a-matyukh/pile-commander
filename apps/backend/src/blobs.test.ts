@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ApiError } from "./auth";
 import {
+	download_presign_target,
 	choose_download,
 	download_ledger,
 	finalize_blob_request,
@@ -135,5 +136,28 @@ describe("upload_presign_body", () => {
 			storage_key: "k", url: "u", expires_in: 60, replace: ENTRY,
 		});
 		expect(upload_presign_body("k", "u", 60, null)).toEqual({ storage_key: "k", url: "u", expires_in: 60 });
+	});
+});
+
+describe("download_presign_target", () => {
+	const WS = "11111111-2222-3333-4444-555555555555";
+	const ask = (query: string) => download_presign_target(new URLSearchParams(query));
+
+	test("by id, as before", () => {
+		expect(ask(`entry=${WS}`)).toEqual({ entry: WS });
+		expect(() => ask("entry=nope")).toThrow(ApiError);
+	});
+
+	test("by workspace and path: a folder picture the client knows by path", () => {
+		expect(ask(`workspace=${WS.toUpperCase()}&path=${encodeURIComponent("/a b/.pile/cover-1a2b3c4d.webp")}`))
+			.toEqual({ workspace: WS, path: "/a b/.pile/cover-1a2b3c4d.webp" });
+	});
+
+	test("anything else is refused", () => {
+		expect(() => ask("")).toThrow(ApiError);
+		expect(() => ask(`workspace=${WS}`)).toThrow(ApiError);
+		expect(() => ask(`workspace=${WS}&path=relative`)).toThrow(ApiError);
+		expect(() => ask(`workspace=nope&path=/x`)).toThrow(ApiError);
+		expect(() => ask(`workspace=${WS}&path=${encodeURIComponent("/x\u0000y")}`)).toThrow(ApiError);
 	});
 });

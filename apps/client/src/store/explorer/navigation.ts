@@ -1,5 +1,6 @@
 import { reactive, ref, type Ref } from 'vue'
 import { useStorage } from '@vueuse/core'
+import { active_step, begin_active_trace, end_active_trace } from '@pile-commander/file-manager'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { is_desktop } from '@/isDesktop'
@@ -7,7 +8,7 @@ import { normalize_workspace_id, parent_folder_id_from_node_id } from '@/service
 import store from '@/store'
 import { is_missing_path_error } from '@/store/helpers/fsErrors'
 import { report_error } from '@/store/helpers/reportError'
-import { BROWSER_ROOT, explorer_drives, is_within } from './drives'
+import { BROWSER_ROOT, explorer_drives, is_within, type PreparedRoot } from './drives'
 import { is_transient_drive } from './public_roots'
 import { explain_folder_error } from './fsErrorMessage'
 
@@ -47,6 +48,14 @@ export type ExplorerNavigationDeps = {
 		root_id: string,
 		still_current?: () => boolean,
 	): Promise<WorkspaceStore>
+	/**
+	 * Opens the root without showing it (Drive's `prepare`). When given, the
+	 * navigation uses it instead of `open_root`: the root on screen changes
+	 * only once the target folder has opened, so a failed or dropped
+	 * transition leaves everything as it was
+	 */
+	// `folder_id`: the folder it goes to, read alongside a root that is not open yet
+	prepare_root?(drive_id: string, root_id: string, folder_id?: string): Promise<PreparedRoot>
 	/** Store currently on screen. Read when leaving a folder, not opened again. */
 	current_store(): WorkspaceStore | null
 	default_folder(): Promise<FolderRef>
@@ -64,6 +73,14 @@ export type ExplorerNavigationDeps = {
 
 export type ExplorerNavigation = {
 	location: ExplorerLocation | null
+	/**
+	 * Where a navigation into the cloud is going while it opens: shown at once
+	 * (the header names it, the content waits in a placeholder) while
+	 * `location`, history and the store on screen stay as they are until it
+	 * has opened. Null when nothing is opening, and for local folders, which
+	 * open faster than a placeholder would show.
+	 */
+	readonly target: ExplorerLocation | null
 	readonly can_go_back: boolean
 	readonly can_go_forward: boolean
 	/** A navigation is opening its folder: the store's open folder may differ from `location` meanwhile */
@@ -79,6 +96,7 @@ export type ExplorerNavigation = {
 	open_page(page: ExplorerPage, arg?: string): Promise<void>
 	/** A path inside ~ is a folder of the home root. Anything else is its own local root. */
 	open_local_path(path: string): Promise<void>
+	/** While a navigation is opening (`target`), going back drops it and stays where the window is */
 	go_back(): Promise<void>
 	go_forward(): Promise<void>
 	/**
@@ -89,8 +107,13 @@ export type ExplorerNavigation = {
 	 * default root and remembers it instead.
 	 */
 	open_at_launch(): Promise<void>
-	/** Drops a navigation still in flight. Does not close stores. */
+	/** Drops a navigation still in flight, and the folder open it started. Does not close stores. */
 	cancel(): void
+}
+
+/** Opening these goes to the network: a placeholder shows at once instead of the old folder */
+function shows_target(target: ExplorerLocation): boolean {
+	return target.kind === 'folder' && (target.ref.drive_id === 'cloud' || target.ref.drive_id === 'public')
 }
 
 export function read_folder_ref(raw: string): FolderRef | null {
@@ -197,12 +220,22 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 	const after_launch_settles = deps.after_launch_settles
 		?? ((done: () => void) => { setTimeout(done, LAUNCH_SETTLE_MS) })
 	let generation = 0
+	/** The generation whose navigation set `state.target` */
+	let target_owner = 0
 	const state = reactive({
 		location: null as ExplorerLocation | null,
+		target: null as ExplorerLocation | null,
 		history: [] as ExplorerLocation[],
 		index: 0,
 		in_flight: 0,
 	})
+
+	/** Drops the target with the navigation that set it, and the folder open it started on screen */
+	function drop_in_flight() {
+		generation += 1
+		state.target = null
+		deps.current_store()?.cancel_open()
+	}
 
 	function remember_selection() {
 		const current = state.location
@@ -224,17 +257,49 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		if (live.length > 0) workspace.set_selection(live)
 	}
 
+	/**
+	 * Opens the target. A successful folder keeps `target` set: the caller's
+	 * push (or `stand_on`) replaces it with the new location in one step, so
+	 * no render sees the old location without a target in between
+	 */
 	async function show(
 		target: ExplorerLocation,
 		options: ShowOptions,
 		seen: number,
 	): Promise<ExplorerLocation | null> {
+		if (seen !== generation) return null
+		// A folder open still in flight on screen (an earlier transition, or a
+		// view's double click) must not land after this one starts
+		deps.current_store()?.cancel_open()
 		state.in_flight += 1
+		// `state.target` reads back as a reactive proxy, so the owner is the generation, not the object
+		const pending = shows_target(target)
+		if (pending) {
+			state.target = target
+			target_owner = seen
+		}
+		const trace = target.kind === 'folder'
+			? begin_active_trace(`open ${target.ref.drive_id}:${target.ref.folder_id}`)
+			: null
+		let shown: ExplorerLocation | null = null
 		try {
-			return await show_now(target, options, seen)
+			shown = await show_now(target, options, seen)
+			return shown
 		} finally {
 			state.in_flight -= 1
+			if (pending && target_owner === seen && (!shown || seen !== generation)) state.target = null
+			if (trace) end_active_trace(trace)
 		}
+	}
+
+	/** The root's store for the target: prepared (not shown until commit) when the deps can */
+	async function open_target_root(target: FolderRef, seen: number): Promise<{ workspace: WorkspaceStore; prepared: PreparedRoot | null }> {
+		if (deps.prepare_root) {
+			const prepared = await deps.prepare_root(target.drive_id, target.root_id, target.folder_id)
+			return { workspace: prepared.store, prepared }
+		}
+		const workspace = await deps.open_root(target.drive_id, target.root_id, () => seen === generation)
+		return { workspace, prepared: null }
 	}
 
 	async function show_now(
@@ -247,54 +312,62 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		remember_selection()
 		if (target.kind === 'page') return target
 
-		let workspace: WorkspaceStore
+		let opened: { workspace: WorkspaceStore; prepared: PreparedRoot | null }
 		try {
-			workspace = await deps.open_root(
-				target.ref.drive_id,
-				target.ref.root_id,
-				() => seen === generation,
-			)
+			opened = await active_step('open_root', () => open_target_root(target.ref, seen))
 		} catch (error) {
 			if (seen !== generation) return null
 			const explained = explain_folder_error(error, target.ref.root_id)
 			if (options.recover_root) throw new DriveRootUnavailable(explained)
 			throw explained
 		}
-		if (seen !== generation || workspace.is_disposed) return null
-		let ref = target.ref
+		const { workspace, prepared } = opened
+		// Until commit the store is held; every way out below lets it go
+		let committed = false
 		try {
-			if (workspace.opened_folder_id !== ref.folder_id) {
-				const folder_id = ref.folder_id
-				await workspace.open_folder(folder_id, { skipHistory: true })
-			}
-		} catch (error) {
-			if (!options.fallback_to_root || !is_missing_path_error(error)) {
-				throw explain_folder_error(error, ref.folder_id)
+			if (seen !== generation || workspace.is_disposed) return null
+			let ref = target.ref
+			try {
+				if (workspace.opened_folder_id !== ref.folder_id) {
+					const folder_id = ref.folder_id
+					const applied = await active_step('open_folder', () => workspace.open_folder(folder_id, { skipHistory: true }))
+					if (!applied) return null
+				}
+			} catch (error) {
+				if (!options.fallback_to_root || !is_missing_path_error(error)) {
+					throw explain_folder_error(error, ref.folder_id)
+				}
+				if (seen !== generation || workspace.is_disposed) return null
+				if (workspace.opened_folder_id !== workspace.id) {
+					if (!await workspace.open_folder(workspace.id, { skipHistory: true })) return null
+				}
+				ref = { ...ref, folder_id: workspace.id }
 			}
 			if (seen !== generation || workspace.is_disposed) return null
-			if (workspace.opened_folder_id !== workspace.id) {
-				await workspace.open_folder(workspace.id, { skipHistory: true })
-			}
-			ref = { ...ref, folder_id: workspace.id }
-		}
-		if (seen !== generation || workspace.is_disposed) return null
 
-		const preferred = left?.kind === 'folder' ? ancestor_entry(left.ref, ref) : null
-		if (preferred && workspace.opened_folder.children.some(child => child.id === preferred)) {
-			apply_selection(workspace, [preferred], false)
-		} else {
-			const snapshot = selections.get(folder_key(ref))
-			if (snapshot) apply_selection(workspace, snapshot.ids, snapshot.selection_mode)
+			const preferred = left?.kind === 'folder' ? ancestor_entry(left.ref, ref) : null
+			if (preferred && workspace.opened_folder.children.some(child => child.id === preferred)) {
+				apply_selection(workspace, [preferred], false)
+			} else {
+				const snapshot = selections.get(folder_key(ref))
+				if (snapshot) apply_selection(workspace, snapshot.ids, snapshot.selection_mode)
+			}
+			// The root on screen changes only now, with the folder already open
+			if (prepared && !prepared.commit(() => seen === generation)) return null
+			committed = true
+			// A publication or the demo is not one of the user's places
+			if (options.remember && !is_transient_drive(ref.drive_id)) {
+				deps.last_location.value = { ...ref }
+				last_by_drive.value = { ...last_by_drive.value, [ref.drive_id]: { ...ref } }
+			}
+			return folder_location(ref)
+		} finally {
+			if (!committed) prepared?.release()
 		}
-		// A publication or the demo is not one of the user's places
-		if (options.remember && !is_transient_drive(ref.drive_id)) {
-			deps.last_location.value = { ...ref }
-			last_by_drive.value = { ...last_by_drive.value, [ref.drive_id]: { ...ref } }
-		}
-		return folder_location(ref)
 	}
 
 	function push(location: ExplorerLocation) {
+		state.target = null
 		const current = state.history[state.index]
 		if (current && same_location(current, location)) {
 			state.location = current
@@ -306,7 +379,11 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 	}
 
 	async function navigate(target: ExplorerLocation, fallback_to_root: boolean) {
-		if (state.location && same_location(state.location, target)) return
+		if (state.location && same_location(state.location, target)) {
+			// Clicking the place on screen while another one opens: stay here
+			if (state.target) drop_in_flight()
+			return
+		}
 		const seen = ++generation
 		const shown = await show(target, {
 			fallback_to_root,
@@ -338,7 +415,10 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 
 	async function open_bookmark(ref: FolderRef) {
 		const target = folder_location(ref)
-		if (state.location && same_location(state.location, target)) return
+		if (state.location && same_location(state.location, target)) {
+			if (state.target) drop_in_flight()
+			return
+		}
 		const seen = ++generation
 		try {
 			const shown = await show(target, {
@@ -365,6 +445,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 
 	/** A deleted history entry stands on its drive root, without a duplicate step. */
 	function stand_on(next_index: number, shown: ExplorerLocation, target: ExplorerLocation) {
+		state.target = null
 		if (same_location(shown, target)) {
 			state.index = next_index
 			state.location = state.history[state.index]!
@@ -390,6 +471,11 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 	}
 
 	async function go(next_index: number) {
+		// Back while a folder opens: drop it and stay where the window is
+		if (state.target && next_index < state.index) {
+			drop_in_flight()
+			return
+		}
 		if (next_index < 0 || next_index >= state.history.length) return
 		const target = state.history[next_index]
 		if (!target) return
@@ -467,7 +553,9 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 
 	return reactive({
 		get location() { return state.location },
-		get can_go_back() { return state.index > 0 },
+		get target() { return state.target },
+		// back also drops a folder that is still opening
+		get can_go_back() { return state.index > 0 || state.target !== null },
 		get can_go_forward() { return state.index < state.history.length - 1 },
 		get navigating() { return state.in_flight > 0 },
 		open_folder: (ref: FolderRef) => navigate(folder_location(ref), false),
@@ -478,7 +566,7 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		go_back: () => go(state.index - 1),
 		go_forward: () => go(state.index + 1),
 		open_at_launch,
-		cancel() { generation += 1 },
+		cancel: drop_in_flight,
 	})
 }
 
@@ -531,6 +619,10 @@ export const explorer_navigation = create_explorer_navigation({
 	open_root(drive_id, root_id, still_current) {
 		if (drive_id === 'local') return explorer_drives.open_local_path(root_id, still_current)
 		return explorer_drives.open(drive_id, root_id, still_current)
+	},
+	prepare_root(drive_id, root_id, folder_id) {
+		if (drive_id === 'local') return explorer_drives.prepare_local_path(root_id)
+		return explorer_drives.prepare(drive_id, root_id, folder_id)
 	},
 	current_store: () => store.workspace,
 	async default_folder() {

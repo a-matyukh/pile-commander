@@ -49,6 +49,7 @@ import {
 	type WorkspaceMember,
 	type WorkspaceRole,
 	type WorkspaceUsage,
+	cloud_trace,
 } from '@pile-commander/file-manager'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import type { LoadWorkspaceOptions } from '@/domain/Store'
@@ -79,6 +80,7 @@ import {
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
+import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
@@ -222,7 +224,15 @@ export type CloudStore = {
 	dismiss_password_prompt(): void
 	/** Deletes the account and everything it owns (backend cascades + GC) */
 	delete_account(password: string): Promise<void>
-	fetch_workspaces(): Promise<void>
+	/**
+	 * Reads the list of cloud folders. A call while a read is in flight is
+	 * answered by one more read once that one ends (shared by everyone who
+	 * asked meanwhile: a change made after it started must show); `join`
+	 * takes the read in flight as it is (sign-in, launch)
+	 */
+	fetch_workspaces(options?: { join?: boolean }): Promise<void>
+	/** One read of the list; `fetch_workspaces` decides when */
+	read_workspaces(): Promise<void>
 	/** Re-reads root covers, icons and views without reloading the workspace list. */
 	refresh_root_look(): Promise<void>
 	role_of(workspace_id: string): WorkspaceAccess | null
@@ -337,6 +347,10 @@ export function note_cloud_root_look(workspace_id: string, name: keyof RootLook,
 	cloud.root_look[workspace_id] = next
 }
 
+/** The list read in flight, and the one more read asked for while it runs */
+let workspaces_in_flight: Promise<void> | null = null
+let workspaces_again: Promise<void> | null = null
+
 const cloud: CloudStore = {
 	is_configured: is_cloud_configured,
 	user: null,
@@ -383,6 +397,8 @@ const cloud: CloudStore = {
 		this.user = cached_session_user()
 		if (take_password_recovery()) this.password_prompt = 'recovery'
 		if (this.user) {
+			// the pictures kept on this device belong to this account
+			set_pile_image_owner(this.user.id)
 			void this.load_after_sign_in()
 		}
 
@@ -393,6 +409,7 @@ const cloud: CloudStore = {
 			}
 			if (session) {
 				this.user = session.user
+				set_pile_image_owner(session.user.id)
 				// Defer out of the auth callback (lock + fresh JWT clock skew).
 				const user_id = session.user.id
 				setTimeout(() => {
@@ -408,6 +425,8 @@ const cloud: CloudStore = {
 			// cached user and local workspaces; cloud data retries on
 			// TOKEN_REFRESHED / SIGNED_IN and on the browser `online` event.
 			if (is_transient_empty_session(event, cached_session_user())) return
+			// Covers stay in memory between visits; the next account must not get them
+			reset_pile_image_cache()
 			this.workspaces = []
 			this.roles = {}
 			this.published_slugs = {}
@@ -448,7 +467,8 @@ const cloud: CloudStore = {
 			this.plan_loading = false
 			return
 		}
-		void this.fetch_workspaces()
+		// launch and the auth events that follow it ask together: one read
+		void this.fetch_workspaces({ join: true })
 		void this.fetch_profile()
 		void this.fetch_plan()
 		// signing in while viewing a publication may unlock the Edit button
@@ -586,7 +606,20 @@ const cloud: CloudStore = {
 		)._removeSession()
 	},
 
-	async fetch_workspaces() {
+	fetch_workspaces(options?: { join?: boolean }) {
+		if (workspaces_in_flight) {
+			if (options?.join) return workspaces_in_flight
+			workspaces_again ??= workspaces_in_flight.then(() => {
+				workspaces_again = null
+				return this.fetch_workspaces()
+			})
+			return workspaces_again
+		}
+		workspaces_in_flight = this.read_workspaces().finally(() => { workspaces_in_flight = null })
+		return workspaces_in_flight
+	},
+
+	async read_workspaces() {
 		this.is_loading = true
 		try {
 			const user_id = this.user?.id
@@ -603,26 +636,34 @@ const cloud: CloudStore = {
 			}
 
 			// Owned + member workspaces only — a bare is_public filter would
-			// also pull every public workspace in the project into this list
-			const { data: owned, error: owned_error } = await with_jwt_clock_retry(() =>
-				require_supabase()
-					.from('workspaces')
-					.select('id, name, owner_id, slug, is_public, hub_publications!source_workspace_id (source_workspace_id, hidden_at), workspace_members(user_id), workspace_invites(email, expires_at)')
-					.eq('owner_id', user_id)
-					.order('created_at'),
-			)
+			// also pull every public workspace in the project into this list.
+			// The two reads do not depend on each other: they go together
+			const trace = cloud_trace('cloud list')
+			const [
+				{ data: owned, error: owned_error },
+				{ data: memberships, error: members_error },
+			] = await trace.step('owned_members', () => Promise.all([
+				with_jwt_clock_retry(() =>
+					require_supabase()
+						.from('workspaces')
+						.select('id, name, owner_id, slug, is_public, hub_publications!source_workspace_id (source_workspace_id, hidden_at), workspace_members(user_id), workspace_invites(email, expires_at)')
+						.eq('owner_id', user_id)
+						.order('created_at'),
+				),
+				with_jwt_clock_retry(() =>
+					require_supabase()
+						.from('workspace_members')
+						.select('workspace_id, role')
+						.eq('user_id', user_id),
+				),
+			]))
 			if (owned_error) {
+				trace.end()
 				this.last_error = cloud_failure_message(owned_error, CLOUD_UNAVAILABLE)
 				return
 			}
-
-			const { data: memberships, error: members_error } = await with_jwt_clock_retry(() =>
-				require_supabase()
-					.from('workspace_members')
-					.select('workspace_id, role')
-					.eq('user_id', user_id),
-			)
 			if (members_error) {
+				trace.end()
 				this.last_error = cloud_failure_message(members_error, CLOUD_UNAVAILABLE)
 				return
 			}
@@ -634,13 +675,14 @@ const cloud: CloudStore = {
 
 			let shared: { id: string; name: string; owner_id: string }[] = []
 			if (member_ids.length > 0) {
-				const { data: shared_rows, error: shared_error } = await with_jwt_clock_retry(() =>
+				const { data: shared_rows, error: shared_error } = await trace.step('shared', () => with_jwt_clock_retry(() =>
 					require_supabase()
 						.from('workspaces')
 						.select('id, name, owner_id')
 						.in('id', member_ids),
-				)
+				))
 				if (shared_error) {
+					trace.end()
 					this.last_error = cloud_failure_message(shared_error, CLOUD_UNAVAILABLE)
 					return
 				}
@@ -676,7 +718,8 @@ const cloud: CloudStore = {
 			this.hub_hidden = owned_hub_hidden(owned ?? [])
 			this.shared_out = owned_shared_out(owned ?? [])
 			this.has_members = owned_has_members(owned ?? [])
-			this.root_look = await fetch_root_look(rows.map(ws => ws.id))
+			this.root_look = await trace.step('root_look', () => fetch_root_look(rows.map(ws => ws.id)))
+			trace.end()
 			if (this.last_error === CLOUD_UNAVAILABLE) this.last_error = null
 		} catch (error) {
 			this.last_error = cloud_failure_message(error, CLOUD_UNAVAILABLE)

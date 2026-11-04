@@ -24,9 +24,10 @@ import {
 import { path_separator } from '../services/workspace/paths'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { note_cloud_root_look } from '@/store/cloud'
-import type { ClipboardState, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
+import type { ClipboardState, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
+	active_step,
 	FolderWithChildrenXattrs,
 	type ConnectionsWatchEvent,
 	type FileManager,
@@ -47,7 +48,7 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, persist_xattr_now, show_xattr_locally, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -96,6 +97,7 @@ import {
 } from './helpers/persistCanvas'
 import {
 	cached_folders_affected_by,
+	folder_read_ticket,
 	refresh_cached_folder,
 } from './helpers/refreshCachedFolder'
 import { is_missing_path_error } from './helpers/fsErrors'
@@ -164,6 +166,40 @@ function clear_workspace_xattr(
 	)
 }
 
+type LookName = 'view' | 'cover' | 'icon' | 'background'
+
+/**
+ * A look attribute: on screen at once (the folder, the listings that hold it,
+ * the Cloud page's tile for a root), written in the background. A failed
+ * write shows what the backend has again, the same way
+ */
+function persist_look_xattr(
+	store: PersistXattrStore & { type: string; uid: string },
+	fm: Pick<FileManager, 'set_xattr' | 'remove_xattr' | 'get_xattr'>,
+	owner: FolderWithChildrenXattrs,
+	id: string,
+	name: LookName,
+	value: string,
+	after?: Promise<boolean>,
+): Promise<void> {
+	const holder = owner.id === id ? owner : owner.children?.find(child => child.id === id)
+	const previous = holder?.xattrs.find(xattr => xattr.name === name)?.value ?? null
+	const hooks = xattr_hooks(store, owner.id)
+	return persist_xattr_now(fm, owner.id, id, name, value, {
+		scope: store.uid,
+		previous,
+		after,
+		show(shown) {
+			show_xattr_locally(owner, id, name, shown, store.preview_folders, hooks)
+			const listed = shown ?? 'none'
+			if (name === 'cover' || name === 'icon') mirror_to_listings(store, id, name, listed)
+			if (name !== 'background' && store.type === 'cloud' && id === '/') note_cloud_root_look(store.uid, name, listed)
+		},
+		reread: () => fm.get_xattr(id, name),
+		on_error: error => report_error(store, error),
+	})
+}
+
 /**
  * A folder's own attribute (its cover, its icon) written on the folder also
  * shows in the listings that hold it as a child: a board or a canvas draws its
@@ -197,14 +233,24 @@ export type WorkspaceStoreOptions = {
 	 * expanded branches). Off, one recursive watch follows the opened folder.
 	 */
 	shallow_root?: boolean
+	/** The root's read, already started (alongside the access check) */
+	initial_root?: Promise<FolderWithChildrenXattrs>
+	/** Folder reads started before the store existed; the first open of each takes its own once */
+	prefetched?: Map<string, Promise<FolderWithChildrenXattrs>>
 }
 
 export async function createWorkspaceStore(
 	ws: WorkspacesListItem,
 	fm: FileManager,
-	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false }: WorkspaceStoreOptions = {},
+	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
-	const opened_folder: FolderWithChildrenXattrs = await fm.folder_with_children_xattrs(root_folder_id)
+	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => initial_root ?? fm.folder_with_children_xattrs(root_folder_id))
+	/** A read started before the store existed, taken once by the first open of that folder */
+	const take_prefetched = (folder_id: string) => {
+		const read = prefetched?.get(folder_id)
+		prefetched?.clear()
+		return read
+	}
 
 	// Session content caches live per store instance (paths repeat across
 	// workspaces — forks share the tree — so module-level caches would leak
@@ -219,7 +265,18 @@ export async function createWorkspaceStore(
 	// A watch that resolves after a newer start_watching (quick navigation)
 	// or after dispose is released at once instead of leaking its channel
 	let watch_generation = 0
+	// Bumped by every folder open and by cancel_open: an open applies its
+	// folder only while it is the latest
+	let open_generation = 0
 	let disposed = false
+	/**
+	 * The store's first watch can take a second or two (the cloud channel's
+	 * join), and the folder shows without waiting for it. Until it is live a
+	 * change elsewhere goes unseen, so the folders read before then are read
+	 * once more when it is. Only the cloud: a local or browser watch is
+	 * instant, and those stores (and one without live updates) wait as before
+	 */
+	let watch_live = !live || shallow_root || ws.type !== 'cloud'
 
 	/** Stable identity for `preview_folders` while folder keys / opened id are unchanged. */
 	let preview_folders_cache: {
@@ -526,6 +583,16 @@ export async function createWorkspaceStore(
 		}
 	}
 
+	/** Re-reads the root and the open folder once: what changed before the first watch was live */
+	const became_live = (store: WorkspaceState & CanvasPersistStore & { content_caches: EntryContentCaches }) => {
+		if (watch_live) return
+		watch_live = true
+		if (disposed) return
+		for (const id of new Set([root_folder_id, store.opened_folder_id])) {
+			if (store.folders[id]) void refresh_cached_folder(store, fm, id, { kind: 'modify', ids: [id] })
+		}
+	}
+
 	const start_watching = async (
 		store: WorkspaceState & CanvasPersistStore & { content_caches: EntryContentCaches },
 		folder_id: string,
@@ -545,6 +612,7 @@ export async function createWorkspaceStore(
 				(event) => handle_watch_event(store as WorkspaceStore, folder_id, event),
 				{ recursive: true },
 			)
+			became_live(store)
 			if (disposed || generation !== watch_generation) {
 				next()
 				return
@@ -843,44 +911,67 @@ export async function createWorkspaceStore(
 			folder_id: string,
 			options?: { fromBack?: boolean; skipHistory?: boolean },
 		) {
-			await this.navigate_open_folder(folder_id, options)
+			return this.navigate_open_folder(folder_id, options)
+		},
+
+		cancel_open() {
+			open_generation += 1
+			this.opening_folder_id = null
 		},
 
 		async navigate_open_folder(
 			folder_id: string,
 			options?: { fromBack?: boolean; skipHistory?: boolean; force?: boolean },
 		) {
-			if (!options?.force && folder_id === this.opened_folder_id) return
+			if (!options?.force && folder_id === this.opened_folder_id) return true
+
+			// The slower of two opens must not put its folder back on screen
+			const generation = ++open_generation
+			const current = () => generation === open_generation && !disposed
+			const left = this.opened_folder_id
+			const started_live = watch_live
 
 			this.exit_selection_mode()
 
-			if (!options?.fromBack && !options?.skipHistory) {
-				this.folder_back_stack.push(this.opened_folder_id)
-			}
-
 		this.opening_folder_id = folder_id
+		const ticket = folder_read_ticket(this, folder_id)
 		let folder_data: FolderWithChildrenXattrs
 		try {
-			folder_data = await fm.folder_with_children_xattrs(folder_id)
+			folder_data = await active_step('read', () => take_prefetched(folder_id) ?? fm.folder_with_children_xattrs(folder_id))
+			if (!current()) return false
+			// a refresh that started later already put a newer one in place
+			if (ticket.is_latest()) {
+				ticket.applied()
+			} else if (this.folders[folder_id]) {
+				folder_data = this.folders[folder_id]!
+			}
+			if (!options?.fromBack && !options?.skipHistory) this.folder_back_stack.push(left)
 			this.folders[folder_id] = folder_data
 			this.opened_folder_id = folder_id
 		} finally {
-			this.opening_folder_id = null
+			if (this.opening_folder_id === folder_id && current()) this.opening_folder_id = null
 		}
-		await this.prefetch_preview_folders(folder_data.children)
+		await active_step('prefetch', () => this.prefetch_preview_folders(folder_data.children))
 
 		if (folder_id === this.id || find_tree_node(this.tree, folder_id)) {
 			this.tree_loaded_folder_ids.add(folder_id)
 			sync_tree_from_folders(this)
 		}
 
-	await start_watching(this, folder_id)
+	// The first watch of a store is the slow one: the folder does not wait for it
+	if (watch_live) await active_step('watch', () => start_watching(this, folder_id))
+	else void start_watching(this, folder_id)
+	// It went live while this folder was read: read it once more
+	if (!started_live && watch_live && current()) {
+		void refresh_cached_folder(this, fm, folder_id, { kind: 'modify', ids: [folder_id] })
+	}
 	void this.ensure_strokes(folder_id)
 	void this.ensure_connections(folder_id)
-	await this.expand_folder_in_sidebar(folder_id)
+	await active_step('expand', () => this.expand_folder_in_sidebar(folder_id))
 	// Expansion changes the set after the opened-folder watch. The shallow
 	// watcher queues that pass; wait until it has caught up.
 	if (shallow_root) await shallow_reconcile_tail
+	return current()
 },
 
 			async change_folder_view(folder_id: string, new_view: FolderView) {
@@ -893,21 +984,15 @@ export async function createWorkspaceStore(
 					return
 				}
 				this.exit_selection_mode()
-				const stored = stored_folder_view(new_view)
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored) && this.type === 'cloud' && folder_id === '/') {
-					note_cloud_root_look(this.uid, 'view', stored)
-				}
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
 			},
 
-			async change_folder_cover(folder_id: string, cover: string) {
+			async change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)) {
-					mirror_to_listings(this, folder_id, 'cover', cover)
-					if (this.type === 'cloud' && folder_id === '/') note_cloud_root_look(this.uid, 'cover', cover)
-				}
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'cover', cover, options?.after)
 			},
 
 			async change_folder_icon(folder_id: string, icon: string) {
@@ -915,10 +1000,7 @@ export async function createWorkspaceStore(
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)) {
-					mirror_to_listings(this, folder_id, 'icon', icon)
-					if (this.type === 'cloud' && folder_id === '/') note_cloud_root_look(this.uid, 'icon', icon)
-				}
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'icon', icon)
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {
@@ -1335,7 +1417,7 @@ export async function createWorkspaceStore(
 				}
 			},
 
-			async change_background(id: string, new_background: ImageBase64 | Color) {
+			async change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1345,7 +1427,7 @@ export async function createWorkspaceStore(
 				if (entity?.background === new_background) {
 					return
 				}
-				await persist_workspace_xattr(this, fm, folder_data, id, 'background', new_background)
+				await persist_look_xattr(this, fm, folder_data, id, 'background', new_background, options?.after)
 			},
 
 			async set_image_text(id: string, field: ImageTextField, value: string) {
@@ -1630,7 +1712,7 @@ export async function createWorkspaceStore(
 				bump_folder_cache_generation(folder_id)
 				try {
 					const folder_data = await fm.folder_with_children_xattrs(folder_id)
-					apply_pending_entry_xattrs(folder_data)
+					apply_pending_entry_xattrs(folder_data, this.uid)
 					this.folders[folder_id] = {
 						...folder_data,
 						xattrs: [...folder_data.xattrs],
@@ -2584,7 +2666,10 @@ export async function createWorkspaceStore(
 			)
 		}
 
-		await start_watching(workspace, root_folder_id)
+		// The first watch (the cloud channel's join) does not hold the store back;
+		// became_live re-reads what was shown before it
+		if (watch_live) await active_step('root_watch', () => start_watching(workspace, root_folder_id))
+		else void start_watching(workspace, root_folder_id)
 		return workspace
 	} catch (error) {
 		console.error(error)

@@ -199,6 +199,32 @@ begin
         and (select xattrs->>'c' = '3' from public.entries where id = v_file),
         format('refused=%s', v_n));
 
+    -- null removes a key in the same statement; the other keys stay
+    select count(*) into v_n from public.merge_entry_xattrs(v_ws, jsonb_build_array(
+        jsonb_build_object('path', '/docs/note.md',
+            'xattrs', jsonb_build_object('a', null, 'd', '4', 'never_set', null))), 'suite');
+    insert into __results values ('owner: merge_entry_xattrs null removes the key, keeps the rest',
+        v_n = 0 and (select not (xattrs ? 'a') and not (xattrs ? 'never_set')
+                            and xattrs ? 'x' and xattrs->>'b' = '2'
+                            and xattrs->>'c' = '3' and xattrs->>'d' = '4'
+                       from public.entries where id = v_file),
+        (select xattrs::text from public.entries where id = v_file));
+
+    -- the 64 KB cap applies to the result: removing the big key while adding
+    -- another big one fits
+    select count(*) into v_n from public.merge_entry_xattrs(v_ws, jsonb_build_array(
+        jsonb_build_object('path', '/docs', 'xattrs', jsonb_build_object('big', repeat('x', 40000)))), null);
+    select count(*) into v_n from public.merge_entry_xattrs(v_ws, jsonb_build_array(
+        jsonb_build_object('path', '/docs',
+            'xattrs', jsonb_build_object('big', null, 'big2', repeat('y', 40000))))) s
+     where s.status = 'too_large';
+    insert into __results values ('owner: merge_entry_xattrs counts the 64 KB cap after removals',
+        v_n = 0 and (select not (xattrs ? 'big') and length(xattrs->>'big2') = 40000
+                       from public.entries where id = v_folder),
+        format('refused=%s', v_n));
+    perform public.merge_entry_xattrs(v_ws, jsonb_build_array(
+        jsonb_build_object('path', '/docs', 'xattrs', jsonb_build_object('big2', null))), null);
+
     begin
         perform public.merge_entry_xattrs(v_ws, jsonb_build_array(
             jsonb_build_object('path', '/docs/note.md', 'xattrs', jsonb_build_object('n', 1))), null);

@@ -248,3 +248,120 @@ describe('explorer drives', () => {
 		expect(second.is_disposed).toBe(false)
 	})
 })
+
+describe('explorer drives: prepare (a root opened for a transition, shown on commit)', () => {
+	beforeEach(() => {
+		explorer_language.value = 'en'
+	})
+
+	function tracked() {
+		const created: Record<string, WorkspaceStore & { disposed: boolean }> = {}
+		const adopted: (WorkspaceStore | null)[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_roots: async () => ['a', 'b'].map(id => ({ id, name: id, can_write: true })),
+			async open_cloud(item: WorkspacesListItem) {
+				const store = {
+					disposed: false,
+					get is_disposed() { return this.disposed },
+					dispose() { this.disposed = true },
+				} as unknown as WorkspaceStore & { disposed: boolean }
+				created[item.id] = store
+				return store
+			},
+			adopt: store => { adopted.push(store) },
+		}))
+		return { drives, created, adopted }
+	}
+
+	test('nothing changes on screen until commit; commit shows it and closes the root it left', async () => {
+		const { drives, created, adopted } = tracked()
+		const a = await drives.prepare('cloud', 'a')
+		expect(a.commit()).toBe(true)
+		expect(adopted).toEqual([created.a])
+
+		const b = await drives.prepare('cloud', 'b')
+		expect(adopted).toEqual([created.a])
+		expect(created.a!.disposed).toBe(false)
+		expect(b.commit()).toBe(true)
+		expect(adopted).toEqual([created.a, created.b])
+		expect(created.a!.disposed).toBe(true)
+		expect(b.commit()).toBe(false)
+	})
+
+	test('a released transition closes the store it opened and leaves the root on screen', async () => {
+		const { drives, created, adopted } = tracked()
+		;(await drives.prepare('cloud', 'a')).commit()
+		const b = await drives.prepare('cloud', 'b')
+		b.release()
+		expect(created.b!.disposed).toBe(true)
+		expect(created.a!.disposed).toBe(false)
+		expect(adopted).toEqual([created.a])
+	})
+
+	test('two transitions share a new store: the one that loses does not close it under the winner', async () => {
+		const { drives, created, adopted } = tracked()
+		;(await drives.prepare('cloud', 'a')).commit()
+		const [first, second] = await Promise.all([drives.prepare('cloud', 'b'), drives.prepare('cloud', 'b')])
+		expect(first.store).toBe(second.store)
+		first.release()
+		expect(created.b!.disposed).toBe(false)
+		expect(second.commit()).toBe(true)
+		expect(adopted.at(-1)).toBe(created.b)
+	})
+
+	test('a transition that lost meanwhile does not show its root', async () => {
+		const { drives, created, adopted } = tracked()
+		;(await drives.prepare('cloud', 'a')).commit()
+		const b = await drives.prepare('cloud', 'b')
+		expect(b.commit(() => false)).toBe(false)
+		expect(adopted).toEqual([created.a])
+		expect(created.b!.disposed).toBe(true)
+	})
+
+	test('closing every drive in between: commit refuses', async () => {
+		const { drives, adopted } = tracked()
+		const a = await drives.prepare('cloud', 'a')
+		drives.dispose_all()
+		expect(a.commit()).toBe(false)
+		expect(adopted).toEqual([])
+	})
+})
+
+describe('explorer drives: a cloud root opens by its name alone', () => {
+	test('the root list with its look-ahead reads is not needed to open one root', async () => {
+		const cloud_roots = vi.fn(async () => [{ id: 'a', name: 'From roots', can_write: true }])
+		const opened: WorkspacesListItem[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_roots,
+			cloud_root_name: async () => 'From the list',
+			async open_cloud(item) {
+				opened.push(item)
+				return { dispose: vi.fn(), is_disposed: false } as unknown as WorkspaceStore
+			},
+		}))
+		await drives.open('cloud', 'a')
+		expect(cloud_roots).not.toHaveBeenCalled()
+		expect(opened[0]?.name).toBe('From the list')
+	})
+})
+
+describe('explorer drives: a cloud root does not wait for the list', () => {
+	test('opened under its id while the list loads, named once the list is in', async () => {
+		let list_in: (name: string) => void = () => {}
+		const opened: (WorkspaceStore & { name: string })[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_root_name: async () => undefined,
+			cloud_root_name_later: () => new Promise(resolve => { list_in = resolve }),
+			async open_cloud(item) {
+				const store = { name: item.name, dispose: vi.fn(), is_disposed: false } as unknown as WorkspaceStore & { name: string }
+				opened.push(store)
+				return store
+			},
+		}))
+		const store = await drives.open('cloud', 'root-a') as WorkspaceStore & { name: string }
+		expect(store.name).toBe('root-a')
+		list_in('Projects')
+		await new Promise(resolve => setTimeout(resolve, 0))
+		expect(store.name).toBe('Projects')
+	})
+})

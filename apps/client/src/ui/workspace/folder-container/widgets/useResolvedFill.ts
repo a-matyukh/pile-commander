@@ -39,7 +39,9 @@ export function useResolvedFill(
 	// flight, and the abandoned call revoked the blob URL the card then showed.
 	watch(
 		() => {
-			const workspace_id = toValue(options?.workspace_id) ?? ''
+			// The store on screen by default: the cache key is always per workspace,
+			// so a board and the Cloud page share one picture (and the seed of a new one)
+			const workspace_id = toValue(options?.workspace_id) ?? workspace.value?.uid ?? ''
 			const id = toValue(entry_id)
 			const raw = toValue(value)?.trim() ?? ''
 			return `${workspace_id}\0${id}\0${raw}`

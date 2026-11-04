@@ -14,6 +14,8 @@ const cloud = vi.hoisted(() => ({
 	session: null as { user: { id: string } } | null,
 	block_supabase: false,
 	access_calls: 0,
+	/** When set, the membership check waits for it */
+	access_gate: null as Promise<void> | null,
 }))
 
 vi.mock('@/services/workspace/browserStorage', () => ({
@@ -28,6 +30,7 @@ vi.mock('@pile-commander/file-manager', async (importOriginal) => ({
 	createCloudFileManager: () => cloud.fake!.fm,
 	get_workspace_access: async () => {
 		cloud.access_calls++
+		if (cloud.access_gate) await cloud.access_gate
 		if (cloud.access instanceof Error) throw cloud.access
 		return cloud.access
 	},
@@ -176,5 +179,59 @@ describe('open_workspace_store: cloud without a connection', () => {
 		cloud.access = null
 		cloud.session = { user: { id: 'user-1' } }
 		await expect(open_workspace_store(item)).rejects.toThrow(/No access to workspace/)
+	})
+})
+
+describe('open_workspace_store: cloud reads while it checks access', () => {
+	const item = { id: 'ws-1', type: 'cloud' as const, name: 'Board' }
+
+	it('starts reading the root before the membership check answers', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/')
+		cloud.fake = fake
+		cloud.access = 'owner'
+		let answer: () => void = () => {}
+		cloud.access_gate = new Promise(resolve => { answer = resolve })
+		try {
+			const opening = open_workspace_store(item)
+			await new Promise(resolve => setTimeout(resolve, 0))
+			expect(fake.calls.filter(call => call.method === 'folder_with_children_xattrs').map(call => call.args[0])).toEqual(['/'])
+			answer()
+			const workspace = await opening
+			await new Promise(resolve => setTimeout(resolve, 0))
+			// the read in flight became the store's root; the one other read of `/`
+			// is the re-read once the watch is live, not a second read on the way
+			const methods = fake.calls.map(call => `${call.method}:${String(call.args[0])}`)
+			const root_reads = methods.flatMap((method, index) => method === 'folder_with_children_xattrs:/' ? [index] : [])
+			expect(root_reads).toHaveLength(2)
+			expect(methods.indexOf('watch:/')).toBeGreaterThan(root_reads[0]!)
+			expect(methods.indexOf('watch:/')).toBeLessThan(root_reads[1]!)
+			expect(workspace.can_write).toBe(true)
+			workspace.dispose()
+		} finally {
+			cloud.access_gate = null
+		}
+	})
+
+	it('with access, a root that cannot be read still fails the open', async () => {
+		cloud.fake = createFakeFileManager()
+		cloud.access = 'owner'
+		cloud.session = { user: { id: 'user-1' } }
+		await expect(open_workspace_store(item)).rejects.toThrow()
+	})
+
+	it('reads the folder the navigation goes to alongside the root, and opening it uses that read', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/')
+		fake.seed_folder('/docs')
+		cloud.fake = fake
+		cloud.access = 'owner'
+		const workspace = await open_workspace_store(item, { also_read: '/docs' })
+		const reads = () => fake.calls.filter(call => call.method === 'folder_with_children_xattrs' && call.args[0] === '/docs')
+		expect(reads()).toHaveLength(1)
+		await expect(workspace.open_folder('/docs', { skipHistory: true })).resolves.toBe(true)
+		expect(workspace.opened_folder_id).toBe('/docs')
+		expect(reads()).toHaveLength(1)
+		workspace.dispose()
 	})
 })

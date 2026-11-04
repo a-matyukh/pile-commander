@@ -59,6 +59,15 @@ export {
 } from './pile-attrs'
 export { resolve_connection_endpoint, reprefix_path } from './connectionPaths'
 export {
+	CLOUD_TIMING_KEY,
+	active_step,
+	begin_active_trace,
+	cloud_timing_enabled,
+	cloud_trace,
+	end_active_trace,
+	type CloudTrace,
+} from './cloudTiming'
+export {
 	default as createCloudFileManager,
 	type CloudFileManager,
 	create_workspace,

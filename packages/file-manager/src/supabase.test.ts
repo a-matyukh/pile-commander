@@ -352,10 +352,20 @@ describe("cloud pile images", () => {
 		}
 	}
 
-	function world(options?: { purge_error?: string }) {
+	function world(options?: {
+		purge_error?: string
+		/** a database before the null-removes merge: refuses null values */
+		old_merge?: boolean
+		/** another client writes this key right before each merge lands */
+		concurrent_key?: string
+		/** The server clock: rows written get it as updated_at */
+		now?: () => string
+	}) {
+		const now = () => options?.now?.() ?? ""
 		const rows = new Map<string, Row>()
 		rows.set("root", blank({ id: "root", parent_id: null, name: "", kind: "folder", path: "/" }))
 		const puts: string[] = []
+		const calls = { merges: 0, updates: 0 }
 		const live = (path: string) => [...rows.values()].find(row => row.path === path && row.deleted_at === null) ?? null
 
 		const client = {
@@ -376,6 +386,7 @@ describe("cloud pile images", () => {
 									const row = blank({
 										...patch,
 										path: parent && parent.path !== "/" ? `${parent.path}/${patch.name}` : `/${patch.name}`,
+										updated_at: now(),
 									})
 									rows.set(row.id, row)
 									return { data: row, error: null }
@@ -384,10 +395,11 @@ describe("cloud pile images", () => {
 						}
 					},
 					update(patch: Partial<Row>) {
+						calls.updates += 1
 						return {
 							eq: async (_column: string, value: string) => {
 								const row = [...rows.values()].find(item => item.id === value)
-								if (row) Object.assign(row, patch)
+								if (row) Object.assign(row, patch, { updated_at: now() })
 								return { error: null }
 							},
 						}
@@ -404,12 +416,24 @@ describe("cloud pile images", () => {
 					return { data: { folder, children }, error: null }
 				}
 				if (name === "merge_entry_xattrs") {
+					calls.merges += 1
+					const items = args.p_items as { path: string; xattrs: Record<string, string | null> }[]
+					if (options?.old_merge && items.some(item => Object.values(item.xattrs).some(value => value === null))) {
+						return { data: null, error: { message: "merge_entry_xattrs: every item needs a path and string xattr values" } }
+					}
 					const refused: { path: string; status: string }[] = []
-					for (const item of args.p_items as { path: string; xattrs: Record<string, string> }[]) {
+					for (const item of items) {
 						const row = live(item.path)
 						if (!row) { refused.push({ path: item.path, status: "missing" }); continue }
 						if (item.xattrs.cover === "TOO") { refused.push({ path: item.path, status: "too_large" }); continue }
-						row.xattrs = { ...row.xattrs, ...item.xattrs }
+						if (options?.concurrent_key) row.xattrs = { ...row.xattrs, [options.concurrent_key]: "theirs" }
+						const next: Record<string, string> = { ...row.xattrs }
+						for (const [key, value] of Object.entries(item.xattrs)) {
+							if (value === null) delete next[key]
+							else next[key] = value
+						}
+						row.xattrs = next
+						row.updated_at = now()
 					}
 					return { data: refused, error: null }
 				}
@@ -437,8 +461,15 @@ describe("cloud pile images", () => {
 			backend_url: "https://backend.example",
 			put_blob: async (url) => { puts.push(url) },
 		})
-		return { fm, rows, puts, live }
+		return { fm, rows, puts, live, calls }
 	}
+
+	/** finalize stamps new files with this clock (the backend's) */
+	let finalize_now = () => ""
+	/** The backend in install_fetch is an older one, without presign by path */
+	let presign_by_path_refused = false
+	/** Which kind of presign each picture read used */
+	const presigns: string[] = []
 
 	function install_fetch(rows: Map<string, { id: string; parent_id: string | null; name: string; kind: string; path: string; deleted_at: string | null }>, bytes: Uint8Array) {
 		const original = globalThis.fetch
@@ -466,13 +497,21 @@ describe("cloud pile images", () => {
 					deleted_at: null,
 					updated_by: null,
 					updated_by_client: null,
-					updated_at: "",
+					updated_at: finalize_now(),
 					content_modified_at: null,
 				}
 				rows.set(row.id, row)
 				return new Response(JSON.stringify({ entry: row, size_bytes: bytes.byteLength }))
 			}
 			if (path.includes("/presign?")) {
+				const query = new URL(path).searchParams
+				if (query.has("path")) {
+					// an older backend knows only entry ids
+					if (presign_by_path_refused) return new Response(JSON.stringify({ error: "invalid entry id" }), { status: 400 })
+					const found = [...rows.values()].some(row => row.path === query.get("path") && row.deleted_at === null)
+					if (!found) return new Response(JSON.stringify({ error: "blob not found" }), { status: 404 })
+				}
+				presigns.push(query.has("path") ? "path" : "entry")
 				return new Response(JSON.stringify({ url: "https://b2.example/get", expires_in: 60 }))
 			}
 			if (path === "https://b2.example/get") {
@@ -572,6 +611,106 @@ describe("cloud pile images", () => {
 			expect(logged.some(args => args[0] === "pile image cleanup failed")).toBe(true)
 		} finally {
 			console.error = original
+			restore()
+		}
+	})
+
+	test("remove_xattr removes one key in the merge: a key another client wrote meanwhile survives", async () => {
+		const { fm, live, calls } = world({ concurrent_key: "view" })
+		await fm.set_xattr("/", "icon", "tabler:star")
+		await fm.remove_xattr("/", "icon")
+		expect(live("/")?.xattrs).toEqual({ view: "theirs" })
+		expect(calls.updates).toBe(0)
+	})
+
+	test("remove_xattr on a database without the null merge falls back to the rewrite, once", async () => {
+		const { fm, live, calls } = world({ old_merge: true })
+		await fm.set_xattr("/", "icon", "tabler:star")
+		await fm.set_xattr("/", "view", "grid")
+		const merges_before = calls.merges
+		await fm.remove_xattr("/", "icon")
+		expect(live("/")?.xattrs).toEqual({ view: "grid" })
+		expect(calls.merges - merges_before).toBe(1)
+		expect(calls.updates).toBe(1)
+		await fm.remove_xattr("/", "view")
+		expect(live("/")?.xattrs).toEqual({})
+		// remembered: no second refused merge
+		expect(calls.merges - merges_before).toBe(1)
+		expect(calls.updates).toBe(2)
+	})
+
+	test("cleanup leaves an unnamed picture younger than an hour; an older one goes", async () => {
+		let clock = Date.parse("2026-11-04T10:00:00Z")
+		const at = () => new Date(clock).toISOString()
+		const { fm, rows } = world({ now: at })
+		finalize_now = at
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			const old = await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			clock += 2 * 60 * 60 * 1000
+			const named = await fm.write_pile_image("/", "cover", new Uint8Array([2]))
+			clock += 60 * 1000
+			// the next picture, uploaded, its attribute not written yet
+			const next = await fm.write_pile_image("/", "cover", new Uint8Array([3]))
+			clock += 60 * 1000
+			await fm.set_xattr("/", "cover", named)
+			const left = files_named(rows, "cover").map(row => row.name).sort()
+			expect(left).toEqual([named, next].map(token => token.slice("pile:".length)).sort())
+			expect(left).not.toContain(old.slice("pile:".length))
+		} finally {
+			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("choosing an old picture again freshens it, so the cleanup keeps it", async () => {
+		let clock = Date.parse("2026-11-04T10:00:00Z")
+		const at = () => new Date(clock).toISOString()
+		const { fm, rows } = world({ now: at })
+		finalize_now = at
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			const again = await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			const current = await fm.write_pile_image("/", "cover", new Uint8Array([2]))
+			await fm.set_xattr("/", "cover", current)
+			clock += 2 * 60 * 60 * 1000
+			// two hours later the first picture, unnamed, is chosen again
+			await expect(fm.write_pile_image("/", "cover", new Uint8Array([1]))).resolves.toBe(again)
+			clock += 1000
+			// a cleanup from another write runs before its attribute is written
+			await fm.set_xattr("/", "cover", current)
+			expect(files_named(rows, "cover").map(row => row.name)).toContain(again.slice("pile:".length))
+		} finally {
+			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("a picture is read with one presign by path; an older backend falls back to the id lookup", async () => {
+		const { fm, rows } = world()
+		const bytes = new Uint8Array([5, 6])
+		const restore = install_fetch(rows, bytes)
+		presigns.length = 0
+		try {
+			const token = await fm.write_pile_image("/", "cover", bytes)
+			await expect(fm.read_pile_image("/", token)).resolves.toEqual(bytes)
+			expect(presigns).toEqual(["path"])
+
+			const older = world()
+			const restore_older = install_fetch(older.rows, bytes)
+			presign_by_path_refused = true
+			presigns.length = 0
+			try {
+				const again = await older.fm.write_pile_image("/", "cover", bytes)
+				await expect(older.fm.read_pile_image("/", again)).resolves.toEqual(bytes)
+				await expect(older.fm.read_pile_image("/", again)).resolves.toEqual(bytes)
+				// one refused try, then the id lookup for both reads
+				expect(presigns).toEqual(["entry", "entry"])
+			} finally {
+				presign_by_path_refused = false
+				restore_older()
+			}
+		} finally {
 			restore()
 		}
 	})

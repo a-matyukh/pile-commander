@@ -1,4 +1,5 @@
 import {
+	active_step,
 	createBrowserFileManager,
 	createFileManager,
 	workspace_root_info,
@@ -37,8 +38,32 @@ export type ExplorerDriveDeps = {
 	/** The demo pack, in memory: changes are not saved */
 	open_demo?(): Promise<WorkspaceStore>
 	cloud_roots(): Promise<DriveRoot[]>
+	/**
+	 * A cloud root's name, for opening its store: from the list already in
+	 * hand, without `cloud_roots`' look-ahead reads of every root. Without it
+	 * the name comes from `cloud_roots`
+	 */
+	cloud_root_name?(root_id: string): Promise<string | undefined>
+	/**
+	 * The name once the list is in (at launch it may still be loading): a
+	 * root opened before it is named then, instead of waiting for the list
+	 */
+	cloud_root_name_later?(root_id: string): Promise<string | undefined>
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
+}
+
+/**
+ * A root's store opened for a transition but not shown yet. It is held, so
+ * no sweep closes it while the transition reads its folder. `commit` shows
+ * it (the current root, adopted, then a sweep); `release` lets it go. Either
+ * ends the hold; the second call does nothing.
+ */
+export type PreparedRoot = {
+	store: WorkspaceStore
+	/** False when the transition lost or the drive was closed: nothing changes */
+	commit(still_current?: () => boolean): boolean
+	release(): void
 }
 
 export type ExplorerDrives = {
@@ -48,6 +73,14 @@ export type ExplorerDrives = {
 	drive(id: string): Drive | null
 	/** Opens the root's store and shows it, without disposing stores Drive still holds. */
 	open(drive_id: string, root_id: string, still_current?: () => boolean): Promise<WorkspaceStore>
+	/**
+	 * Opens the root's store without showing it: the root on screen stays
+	 * current until `commit`, so a transition that fails or is dropped leaves
+	 * it as it was
+	 */
+	prepare(drive_id: string, root_id: string, folder_hint?: string): Promise<PreparedRoot>
+	/** `prepare` for a local path: under ~ the home root, anything else its own root */
+	prepare_local_path(path: string): Promise<PreparedRoot>
 	/** A path under ~ uses the home store. Anything else becomes its own local root. */
 	open_local_path(path: string, still_current?: () => boolean): Promise<WorkspaceStore>
 	/** Desktop opens ~. The web app opens the browser-storage root. */
@@ -143,7 +176,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		return workspace
 	}
 
-	async function load_store(drive_id: string, root_id: string): Promise<WorkspaceStore> {
+	async function load_store(drive_id: string, root_id: string, folder_hint?: string): Promise<WorkspaceStore> {
 		if (drive_id === 'local') {
 			const home_path = await home_id()
 			const name = root_id === home_path ? t('source.local') : basename_of(root_id)
@@ -160,12 +193,19 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			return workspace
 		}
 		if (drive_id === 'cloud') {
-			const root = (await deps.cloud_roots()).find(item => item.id === root_id)
-			return deps.open_cloud({
-				id: root_id,
-				type: 'cloud',
-				name: root?.name ?? root_id,
-			})
+			const name = deps.cloud_root_name
+				? await active_step('root_name', () => deps.cloud_root_name!(root_id))
+				: (await active_step('cloud_roots', () => deps.cloud_roots())).find(item => item.id === root_id)?.name
+			const store = await deps.open_cloud(
+				{ id: root_id, type: 'cloud', name: name ?? root_id },
+				folder_hint ? { also_read: folder_hint } : undefined,
+			)
+			if (!name && deps.cloud_root_name_later) {
+				void deps.cloud_root_name_later(root_id).then((later) => {
+					if (later && !store.is_disposed) store.name = later
+				})
+			}
+			return store
 		}
 		if (drive_id === 'public') {
 			// Someone's publication: read-only, as the old public viewer
@@ -178,7 +218,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		throw new Error(`Unknown drive “${drive_id}”`)
 	}
 
-	async function store_for(drive_id: string, root_id: string): Promise<WorkspaceStore> {
+	async function store_for(drive_id: string, root_id: string, folder_hint?: string): Promise<WorkspaceStore> {
 		const key = store_key(drive_id, root_id)
 		const existing = stores.get(key)
 		if (existing && !existing.is_disposed) return existing
@@ -186,7 +226,7 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		const pending = opening.get(key)
 		if (pending) return pending
 		const epoch_at_start = epoch
-		const job = load_store(drive_id, root_id).then(
+		const job = load_store(drive_id, root_id, folder_hint).then(
 			(store) => {
 				opening.delete(key)
 				if (epoch_at_start !== epoch) {
@@ -222,6 +262,63 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		deps.adopt(store)
 		sweep()
 		return store
+	}
+
+	function hold(root_id: string) {
+		holds.set(root_id, (holds.get(root_id) ?? 0) + 1)
+		let released = false
+		return () => {
+			if (released) return
+			released = true
+			const left = (holds.get(root_id) ?? 1) - 1
+			if (left > 0) holds.set(root_id, left)
+			else holds.delete(root_id)
+			sweep()
+		}
+	}
+
+	async function prepare(drive_id: string, root_id: string, folder_hint?: string): Promise<PreparedRoot> {
+		const epoch_at_start = epoch
+		// Held from the start: another transition's sweep must not close the
+		// store while this one reads its folder (they may share it)
+		const release_hold = hold(root_id)
+		let store: WorkspaceStore
+		try {
+			store = await store_for(drive_id, root_id, folder_hint)
+		} catch (error) {
+			release_hold()
+			throw error
+		}
+		let done = false
+		return {
+			store,
+			commit(still_current) {
+				if (done) return false
+				done = true
+				if (epoch_at_start !== epoch || store.is_disposed || (still_current && !still_current())) {
+					release_hold()
+					return false
+				}
+				current_root_id = root_id
+				current_drive_id = drive_id
+				deps.adopt(store)
+				// the sweep now keeps this root as the current one
+				release_hold()
+				return true
+			},
+			release() {
+				if (done) return
+				done = true
+				release_hold()
+			},
+		}
+	}
+
+	async function local_root(path: string): Promise<string> {
+		const id = normalize_workspace_id(path)
+		const home_path = await home_id()
+		if (!is_within(id, home_path)) outside.add(id)
+		return is_within(id, home_path) ? home_path : id
 	}
 
 	function dispose_all() {
@@ -318,27 +415,17 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			return drives().find(item => item.id === id) ?? null
 		},
 		open,
+		prepare,
+		async prepare_local_path(path: string) {
+			return prepare('local', await local_root(path))
+		},
 		async open_local_path(path: string, still_current?: () => boolean) {
-			const id = normalize_workspace_id(path)
-			const home_path = await home_id()
-			if (!is_within(id, home_path)) outside.add(id)
-			return open('local', is_within(id, home_path) ? home_path : id, still_current)
+			return open('local', await local_root(path), still_current)
 		},
 		open_default: () => deps.is_desktop
 			? home_id().then(id => open('local', id))
 			: open('browser', BROWSER_ROOT),
-		hold(root_id: string) {
-			holds.set(root_id, (holds.get(root_id) ?? 0) + 1)
-			let released = false
-			return () => {
-				if (released) return
-				released = true
-				const left = (holds.get(root_id) ?? 1) - 1
-				if (left > 0) holds.set(root_id, left)
-				else holds.delete(root_id)
-				sweep()
-			}
-		},
+		hold,
 		set_expanded(root_ids: Iterable<string>, drive_id: string | null = current_drive_id) {
 			expanded_drive_id = drive_id
 			expanded.clear()
@@ -347,6 +434,23 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		},
 		dispose_all,
 	}
+}
+
+let cloud_roots_in_flight: Promise<DriveRoot[]> | null = null
+
+async function read_cloud_roots(): Promise<DriveRoot[]> {
+	await cloud_workspaces_ready()
+	const roots: DriveRoot[] = cloud.workspaces.map(ws => ({
+		id: ws.id,
+		name: ws.name,
+		can_write: cloud.role_of(ws.id) !== 'viewer',
+	}))
+	// Each top-level folder's own view and subfolders, so the tree shows its
+	// icon and chevron before it is opened. Without them: a plain folder
+	// with a chevron
+	const info: Record<string, WorkspaceRootInfo> = await workspace_root_info(require_supabase(), roots.map(root => root.id))
+		.catch(() => ({}))
+	return roots.map(root => ({ ...root, view: info[root.id]?.view, subfolders: info[root.id]?.subfolders }))
 }
 
 export const explorer_drives = create_explorer_drives({
@@ -358,19 +462,19 @@ export const explorer_drives = create_explorer_drives({
 	local_file_manager: create_explorer_local_file_manager,
 	open_cloud: (item, opts) => open_workspace_store(item, opts),
 	open_demo: () => open_workspace_store({ type: 'demo', id: DEMO_ROOT, name: 'Demo' }),
-	async cloud_roots() {
+	cloud_roots: () => {
+		// The tree asks again on every move; callers at the same time share one read
+		cloud_roots_in_flight ??= read_cloud_roots().finally(() => { cloud_roots_in_flight = null })
+		return cloud_roots_in_flight
+	},
+	// In hand when the list is loaded; at launch it may not be yet, and the
+	// root opens without waiting for it (its name follows)
+	async cloud_root_name(root_id) {
+		return cloud.workspaces.find(ws => ws.id === root_id)?.name
+	},
+	async cloud_root_name_later(root_id) {
 		await cloud_workspaces_ready()
-		const roots: DriveRoot[] = cloud.workspaces.map(ws => ({
-			id: ws.id,
-			name: ws.name,
-			can_write: cloud.role_of(ws.id) !== 'viewer',
-		}))
-		// Each top-level folder's own view and subfolders, so the tree shows its
-		// icon and chevron before it is opened. Without them: a plain folder
-		// with a chevron
-		const info: Record<string, WorkspaceRootInfo> = await workspace_root_info(require_supabase(), roots.map(root => root.id))
-			.catch(() => ({}))
-		return roots.map(root => ({ ...root, view: info[root.id]?.view, subfolders: info[root.id]?.subfolders }))
+		return cloud.workspaces.find(ws => ws.id === root_id)?.name
 	},
 	async browser_file_manager() {
 		await ensure_browser_root()
