@@ -91,6 +91,8 @@ async function open_pile(path: string) {
 }
 
 function on_files_drop(payload: DroppedFilesPayload) {
+	// A cloud folder is opening: the folder on screen is not where the files would go
+	if (explorer_navigation.target) return
 	const workspace = store.workspace
 	if (!workspace) {
 		store.last_error = 'Open a folder before importing files'

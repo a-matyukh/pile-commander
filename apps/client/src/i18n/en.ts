@@ -465,6 +465,7 @@ export const en: typeof ru = {
 	},
 	folder: {
 		empty: 'This folder is empty',
+		opening: 'Opening the folder…',
 	},
 	list: {
 		name: 'Name',

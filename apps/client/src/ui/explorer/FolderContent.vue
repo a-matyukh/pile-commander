@@ -11,6 +11,7 @@ import { createScopeFromStore, provideFolderContainerScope } from '@/ui/workspac
 import { workspaceDialogsKey } from '@/ui/workspace/sidebar/workspaceDialogs'
 import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
 import { use_folder_keys } from './folder_keys'
+import FolderPlaceholder from './FolderPlaceholder.vue'
 import ListView from './views/ListView.vue'
 import GalleryView from './views/GalleryView.vue'
 
@@ -23,9 +24,11 @@ const workspace = useWorkspace()
 const scope = createScopeFromStore()
 provideFolderContainerScope(scope)
 provideBoardPlacement()
+// While a cloud folder opens the old one is not on screen: its shortcuts must not touch it
+const opening = computed(() => explorer_navigation.target?.kind === 'folder')
 useClipboardShortcuts(
 	workspace,
-	() => workspace.value === store.workspace,
+	() => workspace.value === store.workspace && !opening.value,
 	() => scope.container.value?.children,
 )
 provide(workspaceDialogsKey, {
@@ -40,7 +43,8 @@ const location = computed(() => {
 })
 
 const box = ref<HTMLElement | null>(null)
-use_folder_keys(() => box.value, workspace, scope.container, location)
+const keys_workspace = computed(() => opening.value ? null : workspace.value)
+use_folder_keys(() => box.value, keys_workspace, scope.container, location)
 
 // A view opens a subfolder through the store (a double click). The Explorer
 // follows, so the header, the tree, history and bookmarks know where it is
@@ -53,7 +57,9 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 </script>
 
 <template>
-	<div v-if="location && workspace" ref="box" class="fc">
+	<!-- The old folder goes at once, with its own shortcuts (Delete, F2, the canvas tools) -->
+	<FolderPlaceholder v-if="opening" />
+	<div v-else-if="location && workspace" ref="box" class="fc">
 		<!-- The prototype's views replace the current ones one by one (steps 3.6–3.12) -->
 		<ListView
 			v-if="scope.container.value?.view === 'list'"

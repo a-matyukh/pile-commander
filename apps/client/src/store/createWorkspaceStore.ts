@@ -220,6 +220,9 @@ export async function createWorkspaceStore(
 	// A watch that resolves after a newer start_watching (quick navigation)
 	// or after dispose is released at once instead of leaking its channel
 	let watch_generation = 0
+	// Bumped by every folder open and by cancel_open: an open applies its
+	// folder only while it is the latest
+	let open_generation = 0
 	let disposed = false
 
 	/** Stable identity for `preview_folders` while folder keys / opened id are unchanged. */
@@ -844,29 +847,37 @@ export async function createWorkspaceStore(
 			folder_id: string,
 			options?: { fromBack?: boolean; skipHistory?: boolean },
 		) {
-			await this.navigate_open_folder(folder_id, options)
+			return this.navigate_open_folder(folder_id, options)
+		},
+
+		cancel_open() {
+			open_generation += 1
+			this.opening_folder_id = null
 		},
 
 		async navigate_open_folder(
 			folder_id: string,
 			options?: { fromBack?: boolean; skipHistory?: boolean; force?: boolean },
 		) {
-			if (!options?.force && folder_id === this.opened_folder_id) return
+			if (!options?.force && folder_id === this.opened_folder_id) return true
+
+			// The slower of two opens must not put its folder back on screen
+			const generation = ++open_generation
+			const current = () => generation === open_generation && !disposed
+			const left = this.opened_folder_id
 
 			this.exit_selection_mode()
-
-			if (!options?.fromBack && !options?.skipHistory) {
-				this.folder_back_stack.push(this.opened_folder_id)
-			}
 
 		this.opening_folder_id = folder_id
 		let folder_data: FolderWithChildrenXattrs
 		try {
 			folder_data = await active_step('read', () => fm.folder_with_children_xattrs(folder_id))
+			if (!current()) return false
+			if (!options?.fromBack && !options?.skipHistory) this.folder_back_stack.push(left)
 			this.folders[folder_id] = folder_data
 			this.opened_folder_id = folder_id
 		} finally {
-			this.opening_folder_id = null
+			if (this.opening_folder_id === folder_id && current()) this.opening_folder_id = null
 		}
 		await active_step('prefetch', () => this.prefetch_preview_folders(folder_data.children))
 
@@ -882,6 +893,7 @@ export async function createWorkspaceStore(
 	// Expansion changes the set after the opened-folder watch. The shallow
 	// watcher queues that pass; wait until it has caught up.
 	if (shallow_root) await shallow_reconcile_tail
+	return current()
 },
 
 			async change_folder_view(folder_id: string, new_view: FolderView) {

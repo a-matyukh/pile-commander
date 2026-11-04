@@ -49,23 +49,25 @@ export function use_folder_place() {
 		publication_author: (ref: FolderRef) => public_roots.get(ref.root_id)?.username ?? null,
 	}))
 
+	// A cloud folder that is still opening is named at once; its store (and so
+	// the folder's actions) comes when it has opened
 	const location = computed(() => {
-		const value = explorer_navigation.location
+		const value = explorer_navigation.target ?? explorer_navigation.location
 		return value?.kind === 'folder' ? value.ref : null
 	})
 	const page = computed(() => {
-		const value = explorer_navigation.location
+		const value = explorer_navigation.target ?? explorer_navigation.location
 		return value?.kind === 'page' ? value.page : null
 	})
 	const page_arg = computed(() => {
-		const value = explorer_navigation.location
+		const value = explorer_navigation.target ?? explorer_navigation.location
 		return value?.kind === 'page' ? value.arg ?? null : null
 	})
 	/** The store on screen, once it has opened the folder the location names */
 	const workspace = computed(() => {
 		const ref = location.value
 		const current = store.workspace
-		if (!ref || !current || current.is_disposed) return null
+		if (!ref || !current || current.is_disposed || explorer_navigation.target) return null
 		return current.opened_folder_id === ref.folder_id ? current : null
 	})
 	/** The parents; none when the settings show the folder name alone */

@@ -462,6 +462,7 @@ export const ru = {
 	},
 	folder: {
 		empty: 'Папка пустая',
+		opening: 'Папка открывается…',
 	},
 	list: {
 		name: 'Имя',

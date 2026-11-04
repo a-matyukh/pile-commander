@@ -248,3 +248,81 @@ describe('explorer drives', () => {
 		expect(second.is_disposed).toBe(false)
 	})
 })
+
+describe('explorer drives: prepare (a root opened for a transition, shown on commit)', () => {
+	beforeEach(() => {
+		explorer_language.value = 'en'
+	})
+
+	function tracked() {
+		const created: Record<string, WorkspaceStore & { disposed: boolean }> = {}
+		const adopted: (WorkspaceStore | null)[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_roots: async () => ['a', 'b'].map(id => ({ id, name: id, can_write: true })),
+			async open_cloud(item: WorkspacesListItem) {
+				const store = {
+					disposed: false,
+					get is_disposed() { return this.disposed },
+					dispose() { this.disposed = true },
+				} as unknown as WorkspaceStore & { disposed: boolean }
+				created[item.id] = store
+				return store
+			},
+			adopt: store => { adopted.push(store) },
+		}))
+		return { drives, created, adopted }
+	}
+
+	test('nothing changes on screen until commit; commit shows it and closes the root it left', async () => {
+		const { drives, created, adopted } = tracked()
+		const a = await drives.prepare('cloud', 'a')
+		expect(a.commit()).toBe(true)
+		expect(adopted).toEqual([created.a])
+
+		const b = await drives.prepare('cloud', 'b')
+		expect(adopted).toEqual([created.a])
+		expect(created.a!.disposed).toBe(false)
+		expect(b.commit()).toBe(true)
+		expect(adopted).toEqual([created.a, created.b])
+		expect(created.a!.disposed).toBe(true)
+		expect(b.commit()).toBe(false)
+	})
+
+	test('a released transition closes the store it opened and leaves the root on screen', async () => {
+		const { drives, created, adopted } = tracked()
+		;(await drives.prepare('cloud', 'a')).commit()
+		const b = await drives.prepare('cloud', 'b')
+		b.release()
+		expect(created.b!.disposed).toBe(true)
+		expect(created.a!.disposed).toBe(false)
+		expect(adopted).toEqual([created.a])
+	})
+
+	test('two transitions share a new store: the one that loses does not close it under the winner', async () => {
+		const { drives, created, adopted } = tracked()
+		;(await drives.prepare('cloud', 'a')).commit()
+		const [first, second] = await Promise.all([drives.prepare('cloud', 'b'), drives.prepare('cloud', 'b')])
+		expect(first.store).toBe(second.store)
+		first.release()
+		expect(created.b!.disposed).toBe(false)
+		expect(second.commit()).toBe(true)
+		expect(adopted.at(-1)).toBe(created.b)
+	})
+
+	test('a transition that lost meanwhile does not show its root', async () => {
+		const { drives, created, adopted } = tracked()
+		;(await drives.prepare('cloud', 'a')).commit()
+		const b = await drives.prepare('cloud', 'b')
+		expect(b.commit(() => false)).toBe(false)
+		expect(adopted).toEqual([created.a])
+		expect(created.b!.disposed).toBe(true)
+	})
+
+	test('closing every drive in between: commit refuses', async () => {
+		const { drives, adopted } = tracked()
+		const a = await drives.prepare('cloud', 'a')
+		drives.dispose_all()
+		expect(a.commit()).toBe(false)
+		expect(adopted).toEqual([])
+	})
+})

@@ -192,15 +192,20 @@ type WorkspaceStore = {
 		should_apply?: () => boolean,
 		options?: { silent?: boolean; refresh?: boolean },
 	): Promise<void>
-	open_folder(folder_id: string, options?: { fromBack?: boolean; skipHistory?: boolean }): Promise<void>
+	/** Resolves `false` when a later open or `cancel_open` took over: nothing of this one was shown */
+	open_folder(folder_id: string, options?: { fromBack?: boolean; skipHistory?: boolean }): Promise<boolean>
 	/**
 	 * Shared navigation body (fetch, cache, watch, sidebar expand) used by
 	 * open_folder / go_back / tab methods. `force` refetches the current folder.
+	 * Each call supersedes the one in flight: the slower one does not apply
+	 * its folder and resolves `false`.
 	 */
 	navigate_open_folder(
 		folder_id: string,
 		options?: { fromBack?: boolean; skipHistory?: boolean; force?: boolean },
-	): Promise<void>
+	): Promise<boolean>
+	/** Drops the open in flight: its folder is not applied (the Explorer left for another place) */
+	cancel_open(): void
 	open_file(id: string): Promise<void>
 	/** Copies external filesystem paths into the currently opened folder. Local/demo only. */
 	import_external_files(paths: string[], position?: Position): Promise<void>

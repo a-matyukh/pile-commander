@@ -42,6 +42,19 @@ export type ExplorerDriveDeps = {
 	adopt(workspace: WorkspaceStore | null): void
 }
 
+/**
+ * A root's store opened for a transition but not shown yet. It is held, so
+ * no sweep closes it while the transition reads its folder. `commit` shows
+ * it (the current root, adopted, then a sweep); `release` lets it go. Either
+ * ends the hold; the second call does nothing.
+ */
+export type PreparedRoot = {
+	store: WorkspaceStore
+	/** False when the transition lost or the drive was closed: nothing changes */
+	commit(still_current?: () => boolean): boolean
+	release(): void
+}
+
 export type ExplorerDrives = {
 	/** The sources the user picks: this Mac or browser storage, and the cloud */
 	drives(): Drive[]
@@ -49,6 +62,14 @@ export type ExplorerDrives = {
 	drive(id: string): Drive | null
 	/** Opens the root's store and shows it, without disposing stores Drive still holds. */
 	open(drive_id: string, root_id: string, still_current?: () => boolean): Promise<WorkspaceStore>
+	/**
+	 * Opens the root's store without showing it: the root on screen stays
+	 * current until `commit`, so a transition that fails or is dropped leaves
+	 * it as it was
+	 */
+	prepare(drive_id: string, root_id: string): Promise<PreparedRoot>
+	/** `prepare` for a local path: under ~ the home root, anything else its own root */
+	prepare_local_path(path: string): Promise<PreparedRoot>
 	/** A path under ~ uses the home store. Anything else becomes its own local root. */
 	open_local_path(path: string, still_current?: () => boolean): Promise<WorkspaceStore>
 	/** Desktop opens ~. The web app opens the browser-storage root. */
@@ -225,6 +246,63 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		return store
 	}
 
+	function hold(root_id: string) {
+		holds.set(root_id, (holds.get(root_id) ?? 0) + 1)
+		let released = false
+		return () => {
+			if (released) return
+			released = true
+			const left = (holds.get(root_id) ?? 1) - 1
+			if (left > 0) holds.set(root_id, left)
+			else holds.delete(root_id)
+			sweep()
+		}
+	}
+
+	async function prepare(drive_id: string, root_id: string): Promise<PreparedRoot> {
+		const epoch_at_start = epoch
+		// Held from the start: another transition's sweep must not close the
+		// store while this one reads its folder (they may share it)
+		const release_hold = hold(root_id)
+		let store: WorkspaceStore
+		try {
+			store = await store_for(drive_id, root_id)
+		} catch (error) {
+			release_hold()
+			throw error
+		}
+		let done = false
+		return {
+			store,
+			commit(still_current) {
+				if (done) return false
+				done = true
+				if (epoch_at_start !== epoch || store.is_disposed || (still_current && !still_current())) {
+					release_hold()
+					return false
+				}
+				current_root_id = root_id
+				current_drive_id = drive_id
+				deps.adopt(store)
+				// the sweep now keeps this root as the current one
+				release_hold()
+				return true
+			},
+			release() {
+				if (done) return
+				done = true
+				release_hold()
+			},
+		}
+	}
+
+	async function local_root(path: string): Promise<string> {
+		const id = normalize_workspace_id(path)
+		const home_path = await home_id()
+		if (!is_within(id, home_path)) outside.add(id)
+		return is_within(id, home_path) ? home_path : id
+	}
+
 	function dispose_all() {
 		epoch += 1
 		for (const store of stores.values()) store.dispose()
@@ -319,27 +397,17 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			return drives().find(item => item.id === id) ?? null
 		},
 		open,
+		prepare,
+		async prepare_local_path(path: string) {
+			return prepare('local', await local_root(path))
+		},
 		async open_local_path(path: string, still_current?: () => boolean) {
-			const id = normalize_workspace_id(path)
-			const home_path = await home_id()
-			if (!is_within(id, home_path)) outside.add(id)
-			return open('local', is_within(id, home_path) ? home_path : id, still_current)
+			return open('local', await local_root(path), still_current)
 		},
 		open_default: () => deps.is_desktop
 			? home_id().then(id => open('local', id))
 			: open('browser', BROWSER_ROOT),
-		hold(root_id: string) {
-			holds.set(root_id, (holds.get(root_id) ?? 0) + 1)
-			let released = false
-			return () => {
-				if (released) return
-				released = true
-				const left = (holds.get(root_id) ?? 1) - 1
-				if (left > 0) holds.set(root_id, left)
-				else holds.delete(root_id)
-				sweep()
-			}
-		},
+		hold,
 		set_expanded(root_ids: Iterable<string>, drive_id: string | null = current_drive_id) {
 			expanded_drive_id = drive_id
 			expanded.clear()

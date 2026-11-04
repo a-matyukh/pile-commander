@@ -35,12 +35,13 @@ import './tokens.css'
 const restore_workspace = store.workspace
 let alive = true
 
+// A cloud folder that is still opening already replaces the page (its placeholder shows)
 const page = computed(() => {
-	const location = explorer_navigation.location
+	const location = explorer_navigation.target ?? explorer_navigation.location
 	return location?.kind === 'page' ? location.page : null
 })
 const page_arg = computed(() => {
-	const location = explorer_navigation.location
+	const location = explorer_navigation.target ?? explorer_navigation.location
 	return location?.kind === 'page' ? location.arg ?? null : null
 })
 
