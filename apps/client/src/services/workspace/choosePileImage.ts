@@ -116,7 +116,7 @@ export async function choose_pile_image(
 			report_error(store, new Error(t('style.picture_too_large')))
 			return null
 		}
-		begin_pile_image(folder_id, role)
+		begin_pile_image(store.uid, folder_id, role)
 		busy = true
 		const trace = cloud_trace(`encode ${role}`)
 		trace.note('in', picked.size)
@@ -138,7 +138,7 @@ export async function choose_pile_image(
 		}).finally(uploaded)
 		return { token, upload }
 	} catch (error) {
-		if (busy) end_pile_image(folder_id, role)
+		if (busy) end_pile_image(store.uid, folder_id, role)
 		report_error(store, error)
 		return null
 	}
@@ -159,6 +159,6 @@ export async function set_pile_image(
 	if (!picked) return false
 	void apply(picked.token, picked.upload)
 		.catch((error: unknown) => { report_error(store, error) })
-		.finally(() => { end_pile_image(folder_id, role) })
+		.finally(() => { end_pile_image(store.uid, folder_id, role) })
 	return true
 }
