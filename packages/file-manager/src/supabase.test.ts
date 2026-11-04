@@ -466,6 +466,10 @@ describe("cloud pile images", () => {
 
 	/** finalize stamps new files with this clock (the backend's) */
 	let finalize_now = () => ""
+	/** The backend in install_fetch is an older one, without presign by path */
+	let presign_by_path_refused = false
+	/** Which kind of presign each picture read used */
+	const presigns: string[] = []
 
 	function install_fetch(rows: Map<string, { id: string; parent_id: string | null; name: string; kind: string; path: string; deleted_at: string | null }>, bytes: Uint8Array) {
 		const original = globalThis.fetch
@@ -500,6 +504,14 @@ describe("cloud pile images", () => {
 				return new Response(JSON.stringify({ entry: row, size_bytes: bytes.byteLength }))
 			}
 			if (path.includes("/presign?")) {
+				const query = new URL(path).searchParams
+				if (query.has("path")) {
+					// an older backend knows only entry ids
+					if (presign_by_path_refused) return new Response(JSON.stringify({ error: "invalid entry id" }), { status: 400 })
+					const found = [...rows.values()].some(row => row.path === query.get("path") && row.deleted_at === null)
+					if (!found) return new Response(JSON.stringify({ error: "blob not found" }), { status: 404 })
+				}
+				presigns.push(query.has("path") ? "path" : "entry")
 				return new Response(JSON.stringify({ url: "https://b2.example/get", expires_in: 60 }))
 			}
 			if (path === "https://b2.example/get") {
@@ -670,6 +682,35 @@ describe("cloud pile images", () => {
 			expect(files_named(rows, "cover").map(row => row.name)).toContain(again.slice("pile:".length))
 		} finally {
 			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("a picture is read with one presign by path; an older backend falls back to the id lookup", async () => {
+		const { fm, rows } = world()
+		const bytes = new Uint8Array([5, 6])
+		const restore = install_fetch(rows, bytes)
+		presigns.length = 0
+		try {
+			const token = await fm.write_pile_image("/", "cover", bytes)
+			await expect(fm.read_pile_image("/", token)).resolves.toEqual(bytes)
+			expect(presigns).toEqual(["path"])
+
+			const older = world()
+			const restore_older = install_fetch(older.rows, bytes)
+			presign_by_path_refused = true
+			presigns.length = 0
+			try {
+				const again = await older.fm.write_pile_image("/", "cover", bytes)
+				await expect(older.fm.read_pile_image("/", again)).resolves.toEqual(bytes)
+				await expect(older.fm.read_pile_image("/", again)).resolves.toEqual(bytes)
+				// one refused try, then the id lookup for both reads
+				expect(presigns).toEqual(["entry", "entry"])
+			} finally {
+				presign_by_path_refused = false
+				restore_older()
+			}
+		} finally {
 			restore()
 		}
 	})

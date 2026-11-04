@@ -17,12 +17,15 @@ export function parse_staging_key(key: string, kind: UploadKind) {
 // Bound multipart buffers (2 uploads × one 5 MiB part) and queued requests.
 let active = 0;
 const waiting: (() => void)[] = [];
-async function with_copy_slot<T>(task: () => Promise<T>): Promise<T> {
+/** `task` learns whether it waited for its slot: another request may have finished the same upload meanwhile */
+async function with_copy_slot<T>(task: (waited: boolean) => Promise<T>): Promise<T> {
+	let waited = false;
 	if (active >= 2) {
 		if (waiting.length >= 16) throw new ApiError(429, "upload processing busy", {}, { "Retry-After": "2" });
 		await new Promise<void>((resolve) => waiting.push(resolve));
+		waited = true;
 	} else active += 1;
-	try { return await task(); }
+	try { return await task(waited); }
 	finally {
 		const next = waiting.shift();
 		if (next) next();
@@ -59,10 +62,11 @@ export async function finalize_upload(
 	const initial = await prepare();
 	if (initial.result) return initial.result;
 	const queued = performance.now();
-	return with_copy_slot(async () => {
+	return with_copy_slot(async (waited) => {
 		timing.add("slot", performance.now() - queued);
-		// Another request may have finished while this one waited for a slot.
-		const state = await prepare();
+		// Another request may have finished while this one waited for a slot;
+		// a slot taken at once follows the first prepare directly
+		const state = waited ? await prepare() : initial;
 		if (state.result) return state.result;
 		const max_bytes = kind === "hub_preview" ? Math.min(hub_cap, Number(state.max_bytes)) : Number(state.max_bytes);
 		const final_key = `${kind === "hub_preview" ? "hub/" : ""}${parsed.workspace_id}/${crypto.randomUUID()}${parsed.ext}`;

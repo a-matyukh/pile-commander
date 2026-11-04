@@ -241,6 +241,25 @@ async function meter_download(
 // image, not a playable video. `original=1` is Download as .pile: the file
 // itself for a signed-in caller where the author allows it, charged to the
 // caller's own download allowance rather than the owner's egress
+/**
+ * What GET /presign asks for: `entry` (the id), or `workspace` + `path` (a
+ * folder picture the client knows by path). Anything else is a 400.
+ */
+export function download_presign_target(
+	params: URLSearchParams,
+): { entry: string } | { workspace: string; path: string } {
+	const entry = params.get("entry");
+	if (entry !== null) {
+		if (!UUID_ONLY_RE.test(entry)) throw new ApiError(400, "invalid entry id");
+		return { entry };
+	}
+	const workspace = (params.get("workspace") ?? "").toLowerCase();
+	const path = params.get("path") ?? "";
+	if (!WORKSPACE_ID_RE.test(workspace)) throw new ApiError(400, "invalid entry id");
+	if (!path.startsWith("/") || path.length > 4096 || path.includes("\0")) throw new ApiError(400, "invalid path");
+	return { workspace, path };
+}
+
 export async function handle_download_presign(
 	env: Env,
 	s3: S3Client,
@@ -250,13 +269,31 @@ export async function handle_download_presign(
 	ip: string,
 ): Promise<Response> {
 	const params = new URL(req.url).searchParams;
-	const entry = params.get("entry") ?? "";
-	if (!UUID_ONLY_RE.test(entry)) throw new ApiError(400, "invalid entry id");
+	const asked = download_presign_target(params);
 	const want_original = params.get("original") === "1";
 
 	const timing = server_timing();
 	const token = bearer_token(req);
 	const client = user_client(env, token);
+	// By path: one round trip from the client instead of looking the id up
+	// first. The row is found under the caller's own RLS (a public guest sees
+	// a public workspace's live rows), then everything goes through
+	// download_target as by id: rights, previews, egress, the trash
+	let entry: string;
+	if ("entry" in asked) {
+		entry = asked.entry;
+	} else {
+		const { data: row, error: row_error } = await timing.step("resolve", async () => await client
+			.from("entries")
+			.select("id")
+			.eq("workspace_id", asked.workspace)
+			.eq("path", asked.path)
+			.is("deleted_at", null)
+			.maybeSingle());
+		if (row_error) throw lookup_error(row_error, "entry lookup");
+		if (!row) throw new ApiError(404, "blob not found");
+		entry = String(row.id);
+	}
 	// the downloader pays for an original on request, so it takes an account
 	const user = want_original ? await timing.step("auth", () => require_user(client, token)) : null;
 	const { data, error } = await timing.step("lookup", async () =>

@@ -308,6 +308,14 @@ export type CloudFileManager = FileManager & {
 	watch_workspace(on_change: () => void): Promise<Unwatch>
 }
 
+/** The backend refused a presign (the status tells a gone file from an older backend) */
+class PresignRefused extends Error {
+	constructor(readonly status: number) {
+		super(`presign failed: ${status}`)
+		this.name = "PresignRefused"
+	}
+}
+
 function createCloudFileManager(options: CloudFileManagerOptions): CloudFileManager {
 	const { client, workspace_id, backend_url } = options
 
@@ -471,9 +479,30 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// `original` asks for the file itself rather than a visitor's preview
 	// (Download as .pile): signed-in only, charged to the caller
 	async function presign(entry_id: string, original = false, trace?: CloudTrace): Promise<MediaSrc> {
-		const response = await fetch_with_auth(
-			`${backend_url}/presign?entry=${encodeURIComponent(entry_id)}${original ? "&original=1" : ""}`,
-		)
+		return presign_query(`entry=${encodeURIComponent(entry_id)}${original ? "&original=1" : ""}`, trace)
+	}
+
+	// A backend before presign-by-path answers 400 (no entry id): this session
+	// then looks the id up first, as before. Drop once every backend has it
+	let presign_by_path = true
+
+	/**
+	 * A picture in a folder's `.pile`, by path: one round trip instead of
+	 * looking up the folder and the file first. Null when the file is gone
+	 * (or the backend is older: then `presign_by_path` turns off).
+	 */
+	async function presign_path(path: string, trace?: CloudTrace): Promise<MediaSrc | null> {
+		try {
+			return await presign_query(`workspace=${encodeURIComponent(workspace_id)}&path=${encodeURIComponent(path)}`, trace)
+		} catch (error) {
+			if (error instanceof PresignRefused && error.status === 400) presign_by_path = false
+			if (error instanceof PresignRefused && (error.status === 400 || error.status === 404)) return null
+			throw error
+		}
+	}
+
+	async function presign_query(query: string, trace?: CloudTrace): Promise<MediaSrc> {
+		const response = await fetch_with_auth(`${backend_url}/presign?${query}`)
 		if (trace) add_server_timing(trace, response)
 		if (!response.ok) {
 			const refusal: unknown = await response.json().catch(() => null)
@@ -484,7 +513,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			if ((refusal as { error?: unknown } | null)?.error === "download_not_allowed") {
 				throw new Error("The author does not allow downloads of this workspace")
 			}
-			throw new Error(`presign failed: ${response.status}`)
+			throw new PresignRefused(response.status)
 		}
 		const body = (await response.json()) as { url: string; expires_in?: number; variant?: unknown }
 		const media: MediaSrc = { url: body.url }
@@ -645,8 +674,10 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		mime?: string,
 		onProgress?: UploadProgressCallback,
 		trace: CloudTrace = cloud_trace("upload", undefined, false),
+		/** The folder's row when the caller already has it: no second lookup */
+		known?: EntryRow,
 	): Promise<FolderChild> {
-		const folder = await trace.step("upload_resolve", () => resolve(folder_id))
+		const folder = known ?? await trace.step("upload_resolve", () => resolve(folder_id))
 		let type = mime || data.type || mime_from_name(filename)
 
 		if (is_text_mime(type)) {
@@ -1147,25 +1178,35 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		}
 	}
 
+	/**
+	 * The folder's `.pile` by its path, in one lookup; only when it is missing
+	 * is the folder read and `.pile` made
+	 */
+	async function pile_dir_of(folder_id: string): Promise<EntryRow> {
+		try {
+			const pile = await resolve(pile_dir_path(folder_id))
+			if (pile.kind !== "folder") throw new Error(`create_folder failed: ${PILE_DIR_NAME} is not a folder`)
+			return pile
+		} catch (error) {
+			if (!(error instanceof Error && /entry not found/.test(error.message))) throw error
+			const folder = await resolve(folder_id)
+			if (folder.kind !== "folder") throw new Error("pile images belong to a folder")
+			return ensure_pile_dir(folder)
+		}
+	}
+
 	async function write_pile_image(folder_id: string, role: PileImageRole, bytes: Uint8Array): Promise<string> {
 		const trace = cloud_trace(`write ${role}`)
 		trace.note("bytes", bytes.byteLength)
 		try {
-			const folder = await trace.step("resolve", () => resolve(folder_id))
-			if (folder.kind !== "folder") throw new Error("pile images belong to a folder")
 			const hash8 = await trace.step("hash", () => pile_image_hash8(bytes))
 			const file = `${role}-${hash8}.webp`
-			const pile = await trace.step("ensure_pile_dir", () => ensure_pile_dir(folder))
-			if (await trace.step("child_named", () => child_named(pile, file))) {
-				trace.note("reused", 1)
-				// An old unnamed file chosen again: freshen it, so no cleanup (here or
-				// on another device) takes it before its attribute is written
-				await trace.step("freshen", () => merge_xattrs([{ path: `${pile.path}/${file}`, xattrs: {} }]))
-				return pile_image_token(role, hash8)
-			}
+			const pile = await trace.step("pile_dir", () => pile_dir_of(folder_id))
 			try {
 				const copy = new Uint8Array(bytes.byteLength)
 				copy.set(bytes)
+				// No "is it there already" lookup first: choosing a picture that is
+				// already in `.pile` is rare, and the name conflict says so
 				await upload_file_impl(
 					pile.path,
 					file,
@@ -1173,10 +1214,15 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 					"image/webp",
 					undefined,
 					trace,
+					pile,
 				)
 			} catch (error) {
 				if (!sibling_name_taken(error)) throw error
 				if (!(await child_named(pile, file))) throw error
+				trace.note("reused", 1)
+				// An old unnamed file chosen again: freshen it, so no cleanup (here or
+				// on another device) takes it before its attribute is written
+				await trace.step("freshen", () => merge_xattrs([{ path: `${pile.path}/${file}`, xattrs: {} }]))
 			}
 			return pile_image_token(role, hash8)
 		} finally {
@@ -1190,24 +1236,41 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		const trace = cloud_trace(`read ${parsed.role}`)
 		let bytes: Uint8Array | null = null
 		try {
-			let folder: EntryRow
-			try {
-				folder = await trace.step("resolve", () => resolve(entry_id))
-			} catch {
-				return null
+			let media: MediaSrc | null = null
+			if (presign_by_path) {
+				// the folder id is its path: the file's path is known without a lookup
+				try {
+					media = await trace.step("presign_path", () => presign_path(`${pile_dir_path(entry_id)}/${parsed.file}`, trace))
+				} catch {
+					return null
+				}
+				if (!media && presign_by_path) return null
 			}
-			if (folder.kind !== "folder") return null
-			let file: EntryRow
-			try {
-				file = await trace.step("resolve", () => resolve(`${pile_dir_path(folder.path)}/${parsed.file}`))
-			} catch {
-				return null
+			if (!media) {
+				let folder: EntryRow
+				try {
+					folder = await trace.step("resolve", () => resolve(entry_id))
+				} catch {
+					return null
+				}
+				if (folder.kind !== "folder") return null
+				let file: EntryRow
+				try {
+					file = await trace.step("resolve", () => resolve(`${pile_dir_path(folder.path)}/${parsed.file}`))
+				} catch {
+					return null
+				}
+				if (file.kind !== "file") return null
+				try {
+					media = await trace.step("presign", () => presign(file.id, false, trace))
+				} catch {
+					return null
+				}
 			}
-			if (file.kind !== "file") return null
 			try {
-				const media = await trace.step("presign", () => presign(file.id, false, trace))
+				const ready = media
 				// headers, then the body: a slow first byte and a slow transfer look different
-				const response = await trace.step("fetch", () => fetch(media.url))
+				const response = await trace.step("fetch", () => fetch(ready.url))
 				if (!response.ok) return null
 				bytes = new Uint8Array(await trace.step("body", () => response.arrayBuffer()))
 				return bytes
