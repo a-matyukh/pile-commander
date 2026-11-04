@@ -1467,8 +1467,8 @@ $$;
 -- ----------------------------------------------------------------------------
 -- set_hub_listing / remove_from_hub: the /hub gallery rows. Owner only; the
 -- workspace must already be public (the card links to /<username>/<slug>).
--- Description, tags, and preview_key are optional; each tag is validated
--- against the lowercase slug pattern. preview_key is a B2 object
+-- Description, tags, and preview_key are optional; each tag is lowercase
+-- letters of any script, digits and hyphens. preview_key is a B2 object
 -- hub/<workspace_id>/<uuid>.ext (empty/null = no preview) that the backend
 -- has finalized (private.hub_preview_uploads, size-capped). Upsert keeps
 -- listed_at stable on re-edits. Delisting does not make the workspace private.
@@ -1537,8 +1537,12 @@ begin
         raise exception 'set_hub_listing: make the workspace public first';
     end if;
 
+    -- Lowercase letters of any script, digits and hyphens, 2–32 characters.
+    -- ASCII is limited to a-z0-9 and the hyphen; anything from U+00C0 up
+    -- passes the range, so the check does not depend on the database locale.
     foreach v_tag in array coalesce(p_tags, '{}') loop
-        if v_tag !~ '^[a-z0-9][a-z0-9-]{1,31}$' then
+        if v_tag !~ '^[a-z0-9\u00C0-\uFFFF][a-z0-9\u00C0-\uFFFF-]{1,31}$'
+           or v_tag <> lower(v_tag) then
             raise exception 'set_hub_listing: invalid tag "%"', v_tag;
         end if;
     end loop;

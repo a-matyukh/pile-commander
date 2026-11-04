@@ -52,7 +52,17 @@ export function intent_window(intent: { door: string; target?: ShareWindow }): S
 }
 
 /** DB: set_hub_listing validates each tag against this pattern. */
-export const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/
+/**
+ * DB: set_hub_listing. Lowercase letters of any script, digits and hyphens,
+ * 2–32 characters. Typed capitals are lowered (normalize_tag), not refused.
+ */
+export const TAG_PATTERN = /^[\p{Ll}\p{Lo}\p{Nd}][\p{Ll}\p{Lo}\p{Nd}-]{1,31}$/u
+/** The database admits ASCII a-z0-9 and anything from U+00C0; Latin-1 signs in between are out. */
+const TAG_LATIN1_GAP = /[\u0080-\u00BF]/
+
+export function normalize_tag(value: string): string {
+	return value.trim().replace(/^#+/, '').toLowerCase()
+}
 export const MAX_TAGS = 5
 export const MAX_DESCRIPTION = 280
 
@@ -73,11 +83,6 @@ export function username_problem(value: string): 'format' | 'reserved' | null {
 	if (!USERNAME_PATTERN.test(trimmed)) return 'format'
 	if (is_reserved_slug(trimmed)) return 'reserved'
 	return null
-}
-
-/** Turning the public switch on does nothing until the slug can be published. */
-export function slug_blocks_publish(slug: string): boolean {
-	return !is_valid_slug(slug.trim())
 }
 
 const CYRILLIC: Record<string, string> = {
@@ -132,22 +137,24 @@ export function slug_field_state(
 	return { problem: null, suggestion: null }
 }
 
-/** The address a visitor would open, shortened in front. */
-export function visitor_address(username: string | null, slug: string): string {
-	return `pile…/${username || '…'}/${slug.trim() || '…'}`
+/** Host of the public site, without the scheme. `https://pile.app` → `pile.app`. */
+export function public_host(base: string): string {
+	const with_scheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(base) ? base : `https://${base}`
+	try {
+		return new URL(with_scheme).host
+	} catch {
+		return base.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split('/')[0] ?? base
+	}
 }
 
-/**
- * Turning the Hub off keeps the public link: publish with no card.
- * remove_from_hub deletes only hub_publications; set_workspace_public leaves the slug.
- */
-export function hub_off_action(): 'delist' {
-	return 'delist'
+/** The gray prefix in the address field: `pile.app/alex/`. */
+export function address_prefix(base: string, username: string): string {
+	return `${public_host(base)}/${username}/`
 }
 
-/** No public link yet: one publish creates the link and the Hub card together. */
-export function hub_on_without_link(): { link: true; card: true } {
-	return { link: true, card: true }
+/** A full Free allowance explains itself; it does not publish. */
+export function hub_publish_click(blocked: boolean): 'explain' | 'publish' {
+	return blocked ? 'explain' : 'publish'
 }
 
 /**
@@ -156,20 +163,6 @@ export function hub_on_without_link(): { link: true; card: true } {
  */
 export function unpublish_needs_confirm(on_hub: boolean, fork_count: number): boolean {
 	return on_hub || fork_count > 0
-}
-
-/** Forks and Hub on a public board are written at once. While private they wait. */
-export function fork_toggle_effect(is_public: boolean): 'publish' | 'stage' {
-	return is_public ? 'publish' : 'stage'
-}
-
-/** Tags, the description, the preview and the slug wait for Save. */
-export function text_edit_effect(): 'stage' {
-	return 'stage'
-}
-
-export function save_button_visible(is_public: boolean, dirty: boolean): boolean {
-	return is_public && dirty
 }
 
 export function same_tags(a: readonly string[], b: readonly string[]): boolean {
@@ -203,9 +196,9 @@ export function hub_payload_for_switch(
 }
 
 export function tag_problem(value: string, tags: readonly string[]): 'format' | 'dup' | 'limit' | null {
-	const trimmed = value.trim()
+	const trimmed = normalize_tag(value)
 	if (!trimmed) return null
-	if (!TAG_PATTERN.test(trimmed)) return 'format'
+	if (!TAG_PATTERN.test(trimmed) || TAG_LATIN1_GAP.test(trimmed)) return 'format'
 	if (tags.includes(trimmed)) return 'dup'
 	if (tags.length >= MAX_TAGS) return 'limit'
 	return null
@@ -219,33 +212,4 @@ export function preview_problem(file: { name: string; type: string; size: number
 
 export function share_empty_line(member_count: number): string | null {
 	return member_count === 0 ? t('share.only_you') : null
-}
-
-export type PublishFace = {
-	show_username: boolean
-	show_form: boolean
-	show_link: boolean
-	show_private_lead: boolean
-	show_hidden: boolean
-	show_save: boolean
-	unpublish_confirm: boolean
-}
-
-export function publish_face(input: {
-	has_username: boolean
-	is_public: boolean
-	on_hub: boolean
-	hidden: boolean
-	fork_count: number
-	dirty: boolean
-}): PublishFace {
-	return {
-		show_username: !input.has_username,
-		show_form: input.has_username,
-		show_link: input.has_username && input.is_public,
-		show_private_lead: input.has_username && !input.is_public,
-		show_hidden: input.has_username && input.hidden,
-		show_save: save_button_visible(input.is_public, input.dirty),
-		unpublish_confirm: input.is_public && unpublish_needs_confirm(input.on_hub, input.fork_count),
-	}
 }

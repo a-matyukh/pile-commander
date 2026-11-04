@@ -4,27 +4,22 @@ import { explorer_language } from '@/store/explorer/language'
 import { TREE_FILTERS } from '@/store/explorer/tree_view'
 import {
 	SHARE_WINDOWS,
+	address_prefix,
 	close_share_publish,
-	fork_toggle_effect,
-	hub_off_action,
-	hub_on_without_link,
 	hub_payload_for_switch,
+	hub_publish_click,
 	intent_window,
 	open_share_window,
 	preview_problem,
-	publish_face,
 	publish_fields_dirty,
-	save_button_visible,
 	share_empty_line,
 	share_publish,
-	slug_blocks_publish,
 	slug_field_state,
 	slug_from_name,
+	normalize_tag,
 	tag_problem,
-	text_edit_effect,
 	unpublish_needs_confirm,
 	username_problem,
-	visitor_address,
 	waiting_invites,
 	MAX_DESCRIPTION,
 	MAX_TAGS,
@@ -54,37 +49,13 @@ describe('share panel', () => {
 })
 
 describe('publish panel', () => {
-	test('without a username the form stays behind the username field', () => {
-		const face = publish_face({
-			has_username: false,
-			is_public: false,
-			on_hub: false,
-			hidden: false,
-			fork_count: 0,
-			dirty: false,
-		})
-		expect(face.show_username).toBe(true)
-		expect(face.show_form).toBe(false)
+	test('the address prefix is the public host and the username', () => {
+		expect(address_prefix('https://pile.example', 'alex')).toBe('pile.example/alex/')
 	})
 
-	test('a private board has no link, a public one does', () => {
-		const shared = {
-			has_username: true,
-			on_hub: false,
-			hidden: false,
-			fork_count: 0,
-			dirty: false,
-		}
-		expect(publish_face({ ...shared, is_public: false }).show_link).toBe(false)
-		expect(publish_face({ ...shared, is_public: false }).show_private_lead).toBe(true)
-		expect(publish_face({ ...shared, is_public: true }).show_link).toBe(true)
-		expect(publish_face({ ...shared, is_public: true, on_hub: true, hidden: true }).show_hidden).toBe(true)
-	})
-
-	test('turning public on needs a valid slug', () => {
-		expect(slug_blocks_publish('')).toBe(true)
-		expect(slug_blocks_publish('No')).toBe(true)
-		expect(slug_blocks_publish('harbor-mood')).toBe(false)
+	test('a full Free allowance explains itself instead of publishing', () => {
+		expect(hub_publish_click(true)).toBe('explain')
+		expect(hub_publish_click(false)).toBe('publish')
 	})
 
 	test('turning public off asks when the Hub card or its forks would be lost', () => {
@@ -93,13 +64,7 @@ describe('publish panel', () => {
 		expect(unpublish_needs_confirm(false, 3)).toBe(true)
 	})
 
-	test('a public board writes a fork switch immediately and keeps a tag edit until Save', () => {
-		expect(fork_toggle_effect(true)).toBe('publish')
-		expect(fork_toggle_effect(false)).toBe('stage')
-		expect(text_edit_effect()).toBe('stage')
-		expect(save_button_visible(true, true)).toBe(true)
-		expect(save_button_visible(true, false)).toBe(false)
-		expect(save_button_visible(false, true)).toBe(false)
+	test('turning the Hub off keeps the saved card fields, and a tag edit makes the card dirty', () => {
 		const saved = { description: 'Harbor', tags: ['film'], preview_key: 'hub/a' }
 		expect(hub_payload_for_switch(saved, true, false)).toEqual({
 			description: 'Harbor',
@@ -119,12 +84,6 @@ describe('publish panel', () => {
 		const taken = slug_field_state('harbor', 'ws-2', { 'ws-1': 'harbor' })
 		expect(taken.problem).toBe('taken')
 		expect(taken.suggestion).toBe('harbor-2')
-		expect(visitor_address('alex', 'moi-mudbord-2026')).toBe('pile…/alex/moi-mudbord-2026')
-	})
-
-	test('the Hub without a link publishes both, and turning the Hub off only delists', () => {
-		expect(hub_on_without_link()).toEqual({ link: true, card: true })
-		expect(hub_off_action()).toBe('delist')
 	})
 
 	test('the three share windows use the folder-status icons and replace each other', () => {
@@ -148,8 +107,14 @@ describe('publish panel', () => {
 		expect(username_problem('Ab')).toBe('format')
 		expect(username_problem('hub')).toBe('reserved')
 		expect(username_problem('alex')).toBeNull()
-		expect(tag_problem('Film', [])).toBe('format')
-		expect(tag_problem('film', ['film'])).toBe('dup')
+		expect(tag_problem('Film', [])).toBeNull()
+		expect(tag_problem('мудборд', [])).toBeNull()
+		expect(tag_problem('#Café-2026', [])).toBeNull()
+		expect(normalize_tag('#Мудборд ')).toBe('мудборд')
+		expect(tag_problem('two words', [])).toBe('format')
+		expect(tag_problem('a', [])).toBe('format')
+		expect(tag_problem('x½', [])).toBe('format')
+		expect(tag_problem('Film', ['film'])).toBe('dup')
 		expect(tag_problem('mood', Array.from({ length: MAX_TAGS }, (_, i) => `t${i}`))).toBe('limit')
 		expect(tag_problem('mood', ['film'])).toBeNull()
 		expect(preview_problem({ name: 'a.gif', type: 'image/gif', size: 10 })).toBe('type')

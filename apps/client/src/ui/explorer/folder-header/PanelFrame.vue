@@ -1,15 +1,20 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
 import { t } from '@/i18n'
 import IconButton from '@/ui/kit/IconButton.vue'
 
 withDefaults(
 	defineProps<{
 		title: string
+		/** The folder-status icon of the action, before the title. */
+		icon?: string
 		/** Sitting in a menu: the menu is already the box. */
 		plain?: boolean
 		kind?: 'export' | 'bridge' | 'share'
+		/** A short status next to the title, such as “Open”. */
+		mark?: string
 	}>(),
-	{ plain: false, kind: 'bridge' },
+	{ plain: false, kind: 'bridge', mark: '', icon: '' },
 )
 
 defineEmits<{ close: [] }>()
@@ -18,7 +23,10 @@ defineEmits<{ close: [] }>()
 <template>
 	<div class="panel" :class="[kind, { plain }]" role="status" aria-live="polite">
 		<div class="hd">
+			<Icon v-if="icon" :icon="icon" class="hic" />
 			<span class="title">{{ title }}</span>
+			<span v-if="mark" class="mark">{{ mark }}</span>
+			<span class="spacer" />
 			<IconButton
 				icon="tabler:x"
 				:icon_size="16"
@@ -78,10 +86,32 @@ defineEmits<{ close: [] }>()
 .hd {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
 	gap: 8px;
 }
 .title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 600;
+}
+.hic {
+	flex: none;
+	width: 17px;
+	height: 17px;
+	margin-right: -2px;
+	color: var(--text-secondary);
+}
+.spacer {
+	flex: 1;
+}
+.mark {
+	flex: none;
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: var(--bg-success, #EAF3DE);
+	color: var(--text-success);
+	font-size: 11px;
 	font-weight: 600;
 }
 </style>

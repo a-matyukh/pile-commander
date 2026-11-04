@@ -1430,6 +1430,23 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform public.remove_from_hub(v_ws);
+    perform public.set_hub_listing(v_ws, 'suite', array['rls', 'мудборд', 'café-2026'], true, v_hub_key);
+    execute 'reset role';
+    insert into __results values ('hub: tags in any script are kept',
+        (select tags = array['rls', 'мудборд', 'café-2026'] from public.hub_publications where source_workspace_id = v_ws), null);
+    execute 'set local role authenticated';
+    begin
+        perform public.set_hub_listing(v_ws, 'suite', array['Rls'], true, v_hub_key);
+        insert into __results values ('hub: an uppercase tag is refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('hub: an uppercase tag is refused', sqlerrm like '%invalid tag%', sqlerrm);
+    end;
+    begin
+        perform public.set_hub_listing(v_ws, 'suite', array['two words'], true, v_hub_key);
+        insert into __results values ('hub: a tag with a space is refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('hub: a tag with a space is refused', sqlerrm like '%invalid tag%', sqlerrm);
+    end;
     perform public.set_hub_listing(v_ws, 'suite', array['rls'], true, v_hub_key);
     execute 'reset role';
     insert into __results values ('re-list: old qualified reports auto-hide again',

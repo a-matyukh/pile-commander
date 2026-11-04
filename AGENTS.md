@@ -121,12 +121,13 @@ No Docker (daemon not running)? Postgres.app works too — a throwaway cluster
 in a temp folder, not the app's own data. Its bundled version (18 at the time
 of writing) runs the suite fine. `-k ''` turns off the Unix socket: a long
 temp path exceeds the 103-byte socket path limit and the server refuses to
-start:
+start. `-E UTF8` matches Supabase: without it initdb may pick SQL_ASCII, and
+the Hub tag checks (letters of any script) fail:
 
 ```bash
 PG=/Applications/Postgres.app/Contents/Versions/latest/bin
 DATA=$(mktemp -d)/pgdata
-$PG/initdb -D "$DATA" -U postgres -A trust
+$PG/initdb -D "$DATA" -U postgres -A trust -E UTF8 --locale=en_US.UTF-8
 $PG/pg_ctl -D "$DATA" -o "-p 56623 -k '' -c listen_addresses=127.0.0.1" -l "$DATA.log" start
 $PG/createdb -h 127.0.0.1 -p 56623 -U postgres pile_security_test
 # … run the test command above …
