@@ -3,8 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
 import { DEFAULT_GRID_SIZE } from '@/services/board/layout'
-import { choose_pile_image } from '@/services/workspace/choosePileImage'
-import { end_pile_image, settle_pile_image_seed } from '@/services/workspace/pileImageUpload'
+import { set_pile_image } from '@/services/workspace/choosePileImage'
 import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import { to_folder_container } from '@/services/workspace/folderContainer'
 import { PRESET_COLORS } from '@/ui/workspace/menu/useColorSubmenu'
@@ -61,14 +60,9 @@ function apply_custom() {
 async function choose_picture() {
 	const folder_id = props.folder_id
 	const store = ws()
-	const token = await choose_pile_image(store, folder_id, 'background')
-	if (!token) return
-	try {
-		await store.change_background(folder_id, token)
+	// on screen at once; the upload and the attribute follow
+	if (await set_pile_image(store, folder_id, 'background', (token, after) => store.change_background(folder_id, token, { after }))) {
 		open.value = false
-	} finally {
-		settle_pile_image_seed(folder_id, 'background')
-		end_pile_image(folder_id, 'background')
 	}
 }
 </script>

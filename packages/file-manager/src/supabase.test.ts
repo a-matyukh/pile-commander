@@ -358,7 +358,10 @@ describe("cloud pile images", () => {
 		old_merge?: boolean
 		/** another client writes this key right before each merge lands */
 		concurrent_key?: string
+		/** The server clock: rows written get it as updated_at */
+		now?: () => string
 	}) {
+		const now = () => options?.now?.() ?? ""
 		const rows = new Map<string, Row>()
 		rows.set("root", blank({ id: "root", parent_id: null, name: "", kind: "folder", path: "/" }))
 		const puts: string[] = []
@@ -383,6 +386,7 @@ describe("cloud pile images", () => {
 									const row = blank({
 										...patch,
 										path: parent && parent.path !== "/" ? `${parent.path}/${patch.name}` : `/${patch.name}`,
+										updated_at: now(),
 									})
 									rows.set(row.id, row)
 									return { data: row, error: null }
@@ -395,7 +399,7 @@ describe("cloud pile images", () => {
 						return {
 							eq: async (_column: string, value: string) => {
 								const row = [...rows.values()].find(item => item.id === value)
-								if (row) Object.assign(row, patch)
+								if (row) Object.assign(row, patch, { updated_at: now() })
 								return { error: null }
 							},
 						}
@@ -429,6 +433,7 @@ describe("cloud pile images", () => {
 							else next[key] = value
 						}
 						row.xattrs = next
+						row.updated_at = now()
 					}
 					return { data: refused, error: null }
 				}
@@ -459,6 +464,9 @@ describe("cloud pile images", () => {
 		return { fm, rows, puts, live, calls }
 	}
 
+	/** finalize stamps new files with this clock (the backend's) */
+	let finalize_now = () => ""
+
 	function install_fetch(rows: Map<string, { id: string; parent_id: string | null; name: string; kind: string; path: string; deleted_at: string | null }>, bytes: Uint8Array) {
 		const original = globalThis.fetch
 		globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -485,7 +493,7 @@ describe("cloud pile images", () => {
 					deleted_at: null,
 					updated_by: null,
 					updated_by_client: null,
-					updated_at: "",
+					updated_at: finalize_now(),
 					content_modified_at: null,
 				}
 				rows.set(row.id, row)
@@ -617,6 +625,53 @@ describe("cloud pile images", () => {
 		// remembered: no second refused merge
 		expect(calls.merges - merges_before).toBe(1)
 		expect(calls.updates).toBe(2)
+	})
+
+	test("cleanup leaves an unnamed picture younger than an hour; an older one goes", async () => {
+		let clock = Date.parse("2026-11-04T10:00:00Z")
+		const at = () => new Date(clock).toISOString()
+		const { fm, rows } = world({ now: at })
+		finalize_now = at
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			const old = await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			clock += 2 * 60 * 60 * 1000
+			const named = await fm.write_pile_image("/", "cover", new Uint8Array([2]))
+			clock += 60 * 1000
+			// the next picture, uploaded, its attribute not written yet
+			const next = await fm.write_pile_image("/", "cover", new Uint8Array([3]))
+			clock += 60 * 1000
+			await fm.set_xattr("/", "cover", named)
+			const left = files_named(rows, "cover").map(row => row.name).sort()
+			expect(left).toEqual([named, next].map(token => token.slice("pile:".length)).sort())
+			expect(left).not.toContain(old.slice("pile:".length))
+		} finally {
+			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("choosing an old picture again freshens it, so the cleanup keeps it", async () => {
+		let clock = Date.parse("2026-11-04T10:00:00Z")
+		const at = () => new Date(clock).toISOString()
+		const { fm, rows } = world({ now: at })
+		finalize_now = at
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			const again = await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			const current = await fm.write_pile_image("/", "cover", new Uint8Array([2]))
+			await fm.set_xattr("/", "cover", current)
+			clock += 2 * 60 * 60 * 1000
+			// two hours later the first picture, unnamed, is chosen again
+			await expect(fm.write_pile_image("/", "cover", new Uint8Array([1]))).resolves.toBe(again)
+			clock += 1000
+			// a cleanup from another write runs before its attribute is written
+			await fm.set_xattr("/", "cover", current)
+			expect(files_named(rows, "cover").map(row => row.name)).toContain(again.slice("pile:".length))
+		} finally {
+			finalize_now = () => ""
+			restore()
+		}
 	})
 
 	test("a refused xattr path does not purge its picture", async () => {

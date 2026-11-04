@@ -1093,6 +1093,8 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	}
 
 	const PILE_IMAGE_ATTRS = new Set(["cover", "background"])
+	/** A picture file this young is never cleaned up, even unnamed (see sweep_pile_images) */
+	const PILE_IMAGE_GRACE_MS = 60 * 60 * 1000
 	/** A folder's look: what cloud-timing traces on a single attribute write */
 	const LOOK_ATTRS = new Set(["view", "icon", "cover", "background"])
 
@@ -1156,6 +1158,9 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			const pile = await trace.step("ensure_pile_dir", () => ensure_pile_dir(folder))
 			if (await trace.step("child_named", () => child_named(pile, file))) {
 				trace.note("reused", 1)
+				// An old unnamed file chosen again: freshen it, so no cleanup (here or
+				// on another device) takes it before its attribute is written
+				await trace.step("freshen", () => merge_xattrs([{ path: `${pile.path}/${file}`, xattrs: {} }]))
 				return pile_image_token(role, hash8)
 			}
 			try {
@@ -1246,12 +1251,21 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			console.error("pile image cleanup failed", pile.path, error)
 			return
 		}
+		// Server clocks only: the folder's updated_at was set by the attribute write
+		// that led here. A file younger than the grace may be one whose attribute
+		// is not written yet (the next picture, another device's): the next
+		// cleanup takes it if it stays unnamed
+		const folder_time = Date.parse(folder.updated_at)
+		const fresh = (row: EntryRow) => {
+			const file_time = Date.parse(row.updated_at)
+			return Number.isFinite(folder_time) && Number.isFinite(file_time) && folder_time - file_time < PILE_IMAGE_GRACE_MS
+		}
 		for (const role of roles) {
 			const parsed = parse_pile_image_token(folder.xattrs[role] ?? "")
 			const keep = parsed?.role === role ? parsed.file : null
 			for (const child of children) {
 				if (child.kind !== "file" || !is_pile_image_file(child.name) || pile_image_file_role(child.name) !== role) continue
-				if (child.name === keep) continue
+				if (child.name === keep || fresh(child)) continue
 				try {
 					await drop_pile_file(child)
 				} catch (error) {

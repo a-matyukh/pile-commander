@@ -7,6 +7,7 @@ import { report_error } from '@/store/helpers/reportError'
 import { explorer_public_open } from '@/store/explorer/public_view'
 import { add_bookmark } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { has_unsaved_writes } from '@/services/workspace/xattrs'
 import { local_bookmark_ref, point_in_rect } from '@/ui/explorer/top-bar/folderDrop'
 import type { ClientPoint } from '@/services/workspace/dropClientPosition'
 import {
@@ -104,6 +105,16 @@ function on_files_drop(payload: DroppedFilesPayload) {
 
 let unlistenDrop: (() => void) | null = null
 let unlistenOpened: (() => void) | null = null
+
+// A look change or a picture is on screen before it reaches the cloud:
+// closing the tab meanwhile would lose it, so the browser asks first
+function warn_unsaved(event: BeforeUnloadEvent) {
+	if (!has_unsaved_writes()) return
+	event.preventDefault()
+	event.returnValue = ''
+}
+onMounted(() => { window.addEventListener('beforeunload', warn_unsaved) })
+onUnmounted(() => { window.removeEventListener('beforeunload', warn_unsaved) })
 
 onMounted(async () => {
 	if (!is_desktop) return

@@ -6,8 +6,7 @@ import type { WorkspaceStore } from '@/domain/Store'
 import app_store from '@/store'
 import { report_error } from '@/store/helpers/reportError'
 import { t } from '@/i18n'
-import { choose_pile_image } from '@/services/workspace/choosePileImage'
-import { end_pile_image, settle_pile_image_seed } from '@/services/workspace/pileImageUpload'
+import { set_pile_image } from '@/services/workspace/choosePileImage'
 import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import { FOLDER_ICON_COLORS, folder_icon_of, write_folder_icon, type FolderIcon } from '@/store/explorer/folder_cover'
@@ -101,15 +100,12 @@ async function choose_cover() {
 	const store = props.store ?? props.item?.workspace
 	if (!store) return
 	const folder_id = props.folder.folder_id
-	const token = await choose_pile_image(store, folder_id, 'cover')
-	if (!token) return
-	try {
-		if (props.store) await in_store(current => current.change_folder_cover(folder_id, token))
-		else if (props.item) await explorer_tree.set_folder_cover(props.item, folder_id, token)
-	} finally {
-		settle_pile_image_seed(folder_id, 'cover')
-		end_pile_image(folder_id, 'cover')
-	}
+	const item = props.item
+	// on screen at once; the upload and the attribute follow
+	await set_pile_image(store, folder_id, 'cover', async (token, after) => {
+		if (props.store) await in_store(current => current.change_folder_cover(folder_id, token, { after }))
+		else if (item) await explorer_tree.set_folder_cover(item, folder_id, token, { after })
+	})
 }
 </script>
 

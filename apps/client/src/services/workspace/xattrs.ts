@@ -137,57 +137,65 @@ export function bump_folder_cache_generation(folder_id: string): number {
 	return next
 }
 
-export function set_pending_entry_xattr(entry_id: string, name: string, value: string) {
-	let attrs = pending_entry_xattrs.get(entry_id)
+/**
+ * The overlay key: a look write passes its workspace (`scope`), so a pending
+ * value on `/` of one root never lands on `/` of another open root. Older
+ * writes pass none (the path alone, as before)
+ */
+function pending_key(entry_id: string, scope?: string): string {
+	return scope ? `${scope}\0${entry_id}` : entry_id
+}
+
+export function set_pending_entry_xattr(entry_id: string, name: string, value: string, scope?: string) {
+	const key = pending_key(entry_id, scope)
+	let attrs = pending_entry_xattrs.get(key)
 	if (!attrs) {
 		attrs = new Map()
-		pending_entry_xattrs.set(entry_id, attrs)
+		pending_entry_xattrs.set(key, attrs)
 	}
 	attrs.set(name, value)
 }
 
-export function clear_pending_entry_xattr(entry_id: string, name: string, value?: string) {
-	const attrs = pending_entry_xattrs.get(entry_id)
+export function clear_pending_entry_xattr(entry_id: string, name: string, value?: string, scope?: string) {
+	const key = pending_key(entry_id, scope)
+	const attrs = pending_entry_xattrs.get(key)
 	if (!attrs) return
 	if (value !== undefined && attrs.get(name) !== value) return
 	attrs.delete(name)
 	if (attrs.size === 0) {
-		pending_entry_xattrs.delete(entry_id)
+		pending_entry_xattrs.delete(key)
 	}
 }
 
-/** Keep in-flight xattr overlays attached after rename/move path changes. */
+/** Keep in-flight xattr overlays attached after rename/move path changes (in every workspace scope). */
 export function rekey_pending_entry_xattrs(old_id: string, new_id: string) {
 	if (old_id === new_id) return
-	const pending = pending_entry_xattrs.get(old_id)
-	if (!pending) return
-	pending_entry_xattrs.delete(old_id)
-	const existing = pending_entry_xattrs.get(new_id)
-	if (!existing) {
-		pending_entry_xattrs.set(new_id, pending)
-		return
-	}
-	for (const [name, value] of pending) {
-		existing.set(name, value)
+	for (const key of [...pending_entry_xattrs.keys()]) {
+		const scoped = key.endsWith(`\0${old_id}`)
+		if (key !== old_id && !scoped) continue
+		const next_key = scoped ? `${key.slice(0, key.length - old_id.length)}${new_id}` : new_id
+		const pending = pending_entry_xattrs.get(key)!
+		pending_entry_xattrs.delete(key)
+		const existing = pending_entry_xattrs.get(next_key)
+		if (!existing) {
+			pending_entry_xattrs.set(next_key, pending)
+			continue
+		}
+		for (const [name, value] of pending) existing.set(name, value)
 	}
 }
 
-/** Re-apply in-flight local writes onto a freshly fetched folder snapshot. */
-export function apply_pending_entry_xattrs(folder: FolderWithChildrenXattrs) {
-	const root_pending = pending_entry_xattrs.get(folder.id)
-	if (root_pending) {
-		for (const [name, value] of root_pending) {
-			apply_pending_value(folder.xattrs, name, value)
+/** Re-apply in-flight local writes onto a freshly fetched folder snapshot (`scope`: its workspace). */
+export function apply_pending_entry_xattrs(folder: FolderWithChildrenXattrs, scope?: string) {
+	const apply = (entry_id: string, xattrs: FolderWithChildrenXattrs['xattrs']) => {
+		for (const key of scope ? [entry_id, pending_key(entry_id, scope)] : [entry_id]) {
+			const pending = pending_entry_xattrs.get(key)
+			if (!pending) continue
+			for (const [name, value] of pending) apply_pending_value(xattrs, name, value)
 		}
 	}
-
-	for (const child of folder.children ?? []) {
-		const pending = pending_entry_xattrs.get(child.id)
-		if (!pending) continue
-		for (const [name, value] of pending) {
-			apply_pending_value(child.xattrs, name, value)
-		}
-	}
+	apply(folder.id, folder.xattrs)
+	for (const child of folder.children ?? []) apply(child.id, child.xattrs)
 }
 
 function clone_folder_for_cache(folder: FolderWithChildrenXattrs): FolderWithChildrenXattrs {
@@ -343,6 +351,160 @@ export async function clear_xattr(
 	}, 2000)
 
 	return true
+}
+
+/** Shows one attribute value on a cached folder (`null`: not set), as a write that succeeded would */
+export function show_xattr_locally(
+	folder: FolderWithChildrenXattrs,
+	id: string,
+	name: string,
+	value: string | null,
+	preview_folders?: Record<string, FolderWithChildrenXattrs>,
+	hooks?: PersistXattrHooks,
+) {
+	const target = hooks?.resolve_folder?.() ?? folder
+	if (!target) return
+	if (value === null) apply_cleared_xattr(target, id, name, preview_folders)
+	else apply_persisted_xattr(target, id, name, value, preview_folders)
+	hooks?.replace_folder?.(clone_folder_for_cache(target))
+}
+
+type LookWrite = {
+	/** The value the backend has, as far as this client knows */
+	confirmed: string | null
+	/** The value on screen, to be written */
+	wanted: string | null
+	/** Bumped by every change: a write that finds it moved lets the newer value go next */
+	version: number
+	options: WriteNowOptions
+	running?: Promise<void>
+}
+
+/** Per file manager (one per workspace store), by entry id and attribute */
+const look_writes = new WeakMap<object, Map<string, LookWrite>>()
+let unsaved_writes = 0
+
+/** A look change or a picture upload has not reached the backend yet (closing now would lose it) */
+export function has_unsaved_writes(): boolean {
+	return unsaved_writes > 0
+}
+
+/** Counts work that must finish before the window closes; the returned function ends it once */
+export function track_unsaved_write(): () => void {
+	unsaved_writes += 1
+	let open = true
+	return () => {
+		if (!open) return
+		open = false
+		unsaved_writes -= 1
+	}
+}
+
+export type WriteNowOptions = {
+	/** The workspace: the pending overlay is kept per workspace (see pending_key) */
+	scope?: string
+	/** The attribute's value before this change (null: not set) */
+	previous: string | null
+	/** Puts a value on screen wherever the attribute shows; a rollback goes through it too */
+	show(value: string | null): void
+	/** The attribute as the backend has it, after a failed write */
+	reread(): Promise<string | null>
+	on_error(error: unknown): void
+	/**
+	 * Write only once this resolves true (a picture's upload: the attribute
+	 * must never name a file that is not there). False: put the last saved
+	 * value back without writing; the upload reported its own error
+	 */
+	after?: Promise<boolean>
+}
+
+/**
+ * A folder's look (view, icon, cover, background) changes on screen at once;
+ * the write goes in the background, one at a time per attribute, newest value
+ * last (the server does not order concurrent merges). A failed write that no
+ * newer change has replaced shows what the backend really has: re-read (the
+ * answer may have been lost after the save), or the last saved value when
+ * even that fails. Resolves once the attribute has settled.
+ */
+export function persist_xattr_now(
+	fm: Pick<FileManager, 'set_xattr' | 'remove_xattr'>,
+	owner_id: string,
+	id: string,
+	name: string,
+	value: string | null,
+	options: WriteNowOptions,
+): Promise<void> {
+	let writes = look_writes.get(fm)
+	if (!writes) {
+		writes = new Map()
+		look_writes.set(fm, writes)
+	}
+	const key = `${id}\0${name}`
+	let entry = writes.get(key)
+	if (!entry) {
+		entry = { confirmed: options.previous, wanted: value, version: 0, options }
+		writes.set(key, entry)
+	}
+	entry.wanted = value
+	entry.version += 1
+	entry.options = options
+
+	// a refresh that started before this change must not put the old value back
+	bump_folder_cache_generation(owner_id)
+	set_pending_entry_xattr(id, name, value ?? PENDING_XATTR_REMOVED, options.scope)
+	options.show(value)
+	if (entry.running) return entry.running
+
+	const own = entry
+	const all = writes
+	const done = track_unsaved_write()
+	const put_back = (shown: string | null) => {
+		own.wanted = shown
+		set_pending_entry_xattr(id, name, shown ?? PENDING_XATTR_REMOVED, own.options.scope)
+		own.options.show(shown)
+	}
+	own.running = (async () => {
+		try {
+			for (;;) {
+				const version = own.version
+				const sending = own.wanted
+				const after = own.options.after
+				if (after && !(await after)) {
+					if (own.version !== version) continue
+					put_back(own.confirmed)
+					break
+				}
+				if (own.version !== version) continue
+				try {
+					if (sending === null) await fm.remove_xattr(id, name)
+					else await fm.set_xattr(id, name, sending)
+					own.confirmed = sending
+				} catch (error) {
+					if (own.version !== version) continue
+					let cloud = own.confirmed
+					try {
+						cloud = await own.options.reread()
+					} catch {
+						// offline: the last value this client saw saved
+					}
+					own.confirmed = cloud
+					put_back(cloud)
+					own.options.on_error(error)
+					break
+				}
+				if (own.version === version) break
+			}
+		} finally {
+			all.delete(key)
+			done()
+			// refreshes that raced the write may hold a stale snapshot
+			bump_folder_cache_generation(owner_id)
+			const settled = own.wanted ?? PENDING_XATTR_REMOVED
+			const scope = own.options.scope
+			setTimeout(() => clear_pending_entry_xattr(id, name, settled, scope), 2000)
+		}
+	})()
+	return own.running
 }
 
 export function find_entry_owner_folder(

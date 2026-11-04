@@ -24,7 +24,7 @@ import {
 import { path_separator } from '../services/workspace/paths'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { note_cloud_root_look } from '@/store/cloud'
-import type { ClipboardState, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
+import type { ClipboardState, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
 	active_step,
@@ -48,7 +48,7 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, persist_xattr_now, show_xattr_locally, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -164,6 +164,40 @@ function clear_workspace_xattr(
 		(error) => report_error(store, error),
 		xattr_hooks(store, owner_id),
 	)
+}
+
+type LookName = 'view' | 'cover' | 'icon' | 'background'
+
+/**
+ * A look attribute: on screen at once (the folder, the listings that hold it,
+ * the Cloud page's tile for a root), written in the background. A failed
+ * write shows what the backend has again, the same way
+ */
+function persist_look_xattr(
+	store: PersistXattrStore & { type: string; uid: string },
+	fm: Pick<FileManager, 'set_xattr' | 'remove_xattr' | 'get_xattr'>,
+	owner: FolderWithChildrenXattrs,
+	id: string,
+	name: LookName,
+	value: string,
+	after?: Promise<boolean>,
+): Promise<void> {
+	const holder = owner.id === id ? owner : owner.children?.find(child => child.id === id)
+	const previous = holder?.xattrs.find(xattr => xattr.name === name)?.value ?? null
+	const hooks = xattr_hooks(store, owner.id)
+	return persist_xattr_now(fm, owner.id, id, name, value, {
+		scope: store.uid,
+		previous,
+		after,
+		show(shown) {
+			show_xattr_locally(owner, id, name, shown, store.preview_folders, hooks)
+			const listed = shown ?? 'none'
+			if (name === 'cover' || name === 'icon') mirror_to_listings(store, id, name, listed)
+			if (name !== 'background' && store.type === 'cloud' && id === '/') note_cloud_root_look(store.uid, name, listed)
+		},
+		reread: () => fm.get_xattr(id, name),
+		on_error: error => report_error(store, error),
+	})
 }
 
 /**
@@ -950,21 +984,15 @@ export async function createWorkspaceStore(
 					return
 				}
 				this.exit_selection_mode()
-				const stored = stored_folder_view(new_view)
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'view', stored) && this.type === 'cloud' && folder_id === '/') {
-					note_cloud_root_look(this.uid, 'view', stored)
-				}
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
 			},
 
-			async change_folder_cover(folder_id: string, cover: string) {
+			async change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'cover', cover)) {
-					mirror_to_listings(this, folder_id, 'cover', cover)
-					if (this.type === 'cloud' && folder_id === '/') note_cloud_root_look(this.uid, 'cover', cover)
-				}
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'cover', cover, options?.after)
 			},
 
 			async change_folder_icon(folder_id: string, icon: string) {
@@ -972,10 +1000,7 @@ export async function createWorkspaceStore(
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
-				if (await persist_workspace_xattr(this, fm, folder_data, folder_id, 'icon', icon)) {
-					mirror_to_listings(this, folder_id, 'icon', icon)
-					if (this.type === 'cloud' && folder_id === '/') note_cloud_root_look(this.uid, 'icon', icon)
-				}
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'icon', icon)
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {
@@ -1392,7 +1417,7 @@ export async function createWorkspaceStore(
 				}
 			},
 
-			async change_background(id: string, new_background: ImageBase64 | Color) {
+			async change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1402,7 +1427,7 @@ export async function createWorkspaceStore(
 				if (entity?.background === new_background) {
 					return
 				}
-				await persist_workspace_xattr(this, fm, folder_data, id, 'background', new_background)
+				await persist_look_xattr(this, fm, folder_data, id, 'background', new_background, options?.after)
 			},
 
 			async set_image_text(id: string, field: ImageTextField, value: string) {
@@ -1687,7 +1712,7 @@ export async function createWorkspaceStore(
 				bump_folder_cache_generation(folder_id)
 				try {
 					const folder_data = await fm.folder_with_children_xattrs(folder_id)
-					apply_pending_entry_xattrs(folder_data)
+					apply_pending_entry_xattrs(folder_data, this.uid)
 					this.folders[folder_id] = {
 						...folder_data,
 						xattrs: [...folder_data.xattrs],

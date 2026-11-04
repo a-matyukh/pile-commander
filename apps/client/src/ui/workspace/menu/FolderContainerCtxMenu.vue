@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Position } from '@/domain/Widget'
-import { choose_pile_image } from '@/services/workspace/choosePileImage'
-import { end_pile_image, settle_pile_image_seed } from '@/services/workspace/pileImageUpload'
+import { set_pile_image } from '@/services/workspace/choosePileImage'
 import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerMenuItems } from './useFolderContainerMenuItems'
@@ -24,14 +23,8 @@ async function choose_background() {
 	const ws = workspace.value
 	const folder_id = folderId.value
 	if (!ws) return
-	const token = await choose_pile_image(ws, folder_id, 'background')
-	if (!token) return
-	try {
-		await ws.change_background(folder_id, token)
-	} finally {
-		settle_pile_image_seed(folder_id, 'background')
-		end_pile_image(folder_id, 'background')
-	}
+	// on screen at once; the upload and the attribute follow
+	await set_pile_image(ws, folder_id, 'background', (token, after) => ws.change_background(folder_id, token, { after }))
 }
 
 const {

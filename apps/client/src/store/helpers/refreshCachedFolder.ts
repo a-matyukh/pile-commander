@@ -170,7 +170,8 @@ export async function refresh_cached_folder(
 		}
 		ticket.applied()
 
-		apply_pending_entry_xattrs(folder_data)
+		// look writes keep their overlay per workspace: `/` of another root is not this one
+		apply_pending_entry_xattrs(folder_data, (store as { uid?: string }).uid)
 		restore_layout_lost_on_save(fm, previous_children, folder_data, event)
 
 		const new_children = folder_data.children ?? []

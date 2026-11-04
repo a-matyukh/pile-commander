@@ -1,12 +1,13 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { readFile, stat } from '@tauri-apps/plugin-fs'
-import { cloud_trace, type PileImageRole } from '@pile-commander/file-manager'
+import { cloud_trace, pile_image_hash8, pile_image_token, type PileImageRole } from '@pile-commander/file-manager'
 import type { WorkspaceStore } from '@/domain/Store'
 import { is_desktop } from '@/isDesktop'
 import { t } from '@/i18n'
 import { report_error } from '@/store/helpers/reportError'
-import { seed_pile_url } from './pileImageCache'
-import { begin_pile_image, end_pile_image, hold_pile_image_seed } from './pileImageUpload'
+import { track_unsaved_write } from './xattrs'
+import { pile_cache_key, seed_pile_url } from './pileImageCache'
+import { begin_pile_image, end_pile_image } from './pileImageUpload'
 
 /** The file the person picks may be this large. What we store is a resized webp. */
 export const PILE_IMAGE_INPUT_LIMIT = 8 * 1024 * 1024
@@ -88,15 +89,25 @@ function pick_web_image(): Promise<PickedImage | null> {
 	})
 }
 
+/** A picture picked and encoded: its token, known before the upload, and the upload in flight */
+export type PickedPicture = {
+	token: string
+	/** True once the file is in the folder's `.pile`; false when it failed (the error is reported) */
+	upload: Promise<boolean>
+}
+
 /**
- * A file dialog, then a resized webp in the folder's `.pile`.
- * Returns the token to store, or null when the person cancels or the file is unusable.
+ * A file dialog, then a resized webp. The token comes from the bytes, so it
+ * is known at once: the bytes are seeded into the picture cache (shown
+ * without a download) and the upload into the folder's `.pile` starts in the
+ * background. Null when the person cancels or the file is unusable.
+ * The "uploading" mark is on from the encode; whoever applies the token ends it.
  */
 export async function choose_pile_image(
 	store: WorkspaceStore,
 	folder_id: string,
 	role: PileImageRole,
-): Promise<string | null> {
+): Promise<PickedPicture | null> {
 	let busy = false
 	try {
 		const picked = is_desktop ? await pick_desktop_image() : await pick_web_image()
@@ -112,14 +123,42 @@ export async function choose_pile_image(
 		const webp = await trace.step('encode', () => encode_pile_image(picked.bytes, picked.mime))
 		trace.note('out', webp.byteLength)
 		trace.end()
-		const token = await store.file_manager.write_pile_image(folder_id, role, webp)
-		hold_pile_image_seed(folder_id, role, seed_pile_url(`${folder_id}\0${token}`, webp))
-		// Stays on through the caller's xattr write. That finally is what clears it.
-		busy = false
-		return token
+		const token = pile_image_token(role, await pile_image_hash8(webp))
+		// Seeded before anything shows the token: a download for it would make the seed a no-op
+		seed_pile_url(pile_cache_key(store.uid, folder_id, token), webp)
+		const uploaded = track_unsaved_write()
+		const upload = store.file_manager.write_pile_image(folder_id, role, webp).then(
+			(written) => {
+				if (written !== token) throw new Error(`The picture was stored as ${written}, not ${token}`)
+				return true
+			},
+		).catch((error: unknown) => {
+			report_error(store, error)
+			return false
+		}).finally(uploaded)
+		return { token, upload }
 	} catch (error) {
 		if (busy) end_pile_image(folder_id, role)
 		report_error(store, error)
 		return null
 	}
+}
+
+/**
+ * Picks a picture and puts it in place at once (`apply` shows the token and
+ * writes it after the upload). Resolves true once it is on screen, while the
+ * upload and the attribute go on in the background with the "uploading" mark
+ */
+export async function set_pile_image(
+	store: WorkspaceStore,
+	folder_id: string,
+	role: PileImageRole,
+	apply: (token: string, after: Promise<boolean>) => Promise<void>,
+): Promise<boolean> {
+	const picked = await choose_pile_image(store, folder_id, role)
+	if (!picked) return false
+	void apply(picked.token, picked.upload)
+		.catch((error: unknown) => { report_error(store, error) })
+		.finally(() => { end_pile_image(folder_id, role) })
+	return true
 }

@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
-import type { WorkspaceStore } from '@/domain/Store'
+import type { LookWriteOptions, WorkspaceStore } from '@/domain/Store'
 import type { WorkspaceTree, WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { entry_is_dimmed } from '@/store/hiddenPaths'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
@@ -610,11 +610,11 @@ export function create_explorer_tree(
 	 * folder the tree lists but has not read yet is read first: the cover is
 	 * written on the folder itself
 	 */
-	async function set_folder_cover(item: ExplorerTreeRoot, folder_id: string, cover: string) {
+	async function set_folder_cover(item: ExplorerTreeRoot, folder_id: string, cover: string, options?: LookWriteOptions) {
 		try {
 			const workspace = await ensure_workspace(item)
 			if (!workspace.resolve_folder_data(folder_id)) await workspace.show_folder_children(folder_id, undefined, { silent: true })
-			await workspace.change_folder_cover(folder_id, cover)
+			await workspace.change_folder_cover(folder_id, cover, options)
 		} catch (error) {
 			deps.on_error(error)
 		}

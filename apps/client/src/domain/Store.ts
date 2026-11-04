@@ -22,6 +22,9 @@ type LoadWorkspaceOptions = {
 	also_read?: string
 }
 
+/** A picture's upload the look attribute waits for (true: uploaded) */
+export type LookWriteOptions = { after?: Promise<boolean> }
+
 export
 type Store = {
 	is_workspace_loading: boolean
@@ -240,9 +243,15 @@ type WorkspaceStore = {
 	remove(id: string): Promise<void>
 
 	// opened folder
+	// A look change (view, cover, icon, background) shows at once and is written
+	// in the background; the promise settles with the write. A failed write puts
+	// back what the backend has and reports the error
 	change_folder_view(folder_id: string, new_view: FolderView): Promise<void>
-	/** The folder's own cover: a color, a picture link, or a local `pile:` image. Written on the folder itself, as its view */
-	change_folder_cover(folder_id: string, cover: string): Promise<void>
+	/**
+	 * The folder's own cover: a color, a picture link, or a local `pile:` image. Written on the folder itself, as its view.
+	 * `after`: a picture's upload; the attribute is written only once it succeeded
+	 */
+	change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions): Promise<void>
 	/** The folder's own icon, "<name>;<color>" ("none" clears it). Written on the folder itself */
 	change_folder_icon(folder_id: string, icon: string): Promise<void>
 	change_selected_slide_index(folder_id: string, index: number): Promise<void>
@@ -271,7 +280,7 @@ type WorkspaceStore = {
 	connections_folder_ids(): string[]
 	/** Rekeys the connections cache for a renamed/moved folder subtree. */
 	rekey_connections(old_id: string, new_id: string): void
-	change_background(id: string, new_background: ImageBase64 | Color): Promise<void>
+	change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions): Promise<void>
 	/** Image heading (`title`) or caption (`description`). An empty value removes the xattr. */
 	set_image_text(id: string, field: 'title' | 'description', value: string): Promise<void>
 	change_shape_fill(id: string, color: Color): Promise<void>
