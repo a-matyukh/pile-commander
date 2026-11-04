@@ -190,6 +190,13 @@ function start_engine(link: SyncLink): void {
 			}, { recursive: true, delayMs: 500 })
 		},
 		on_status: (status) => {
+			// A link to a cloud folder that no longer exists, with no link file
+			// left in the folder: drop the record, so the folder stops showing
+			// as synced (the folder itself stays as it is)
+			if (status.reason === 'link_stale') {
+				void unlink_folder(link.root)
+				return
+			}
 			// The whole status, including folders kept for hidden files.
 			sync_statuses[link.root] = status
 		},

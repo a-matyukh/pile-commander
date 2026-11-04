@@ -1201,6 +1201,46 @@ describe('sync engine', () => {
 		engine.stop()
 	})
 
+	test('no link file and no cloud folder: the link is stale (nothing to sync)', async () => {
+		const statuses: SyncStatus[] = []
+		const { local, stat } = make_local()
+		const { deps } = make_deps(local, stat, make_cloud())
+		const engine = create_sync_engine({
+			load_state: async () => null,
+			save_state: async () => {},
+			pass_deps: () => deps,
+			max_file_bytes: () => 1_000_000,
+			workspace_state: async () => 'gone',
+			watch: async () => () => {},
+			watch_cloud: async () => () => {},
+			on_status: status => statuses.push(status),
+		}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+		await engine.start()
+		expect(statuses.at(-1)).toMatchObject({ phase: 'paused', reason: 'link_stale' })
+		engine.stop()
+	})
+
+	test('no link file but the cloud folder lives (or the check fails): only unlinked, the link stays', async () => {
+		for (const workspace_state of [async () => 'live' as const, async () => { throw new Error('offline') }]) {
+			const statuses: SyncStatus[] = []
+			const { local, stat } = make_local()
+			const { deps } = make_deps(local, stat, make_cloud())
+			const engine = create_sync_engine({
+				load_state: async () => null,
+				save_state: async () => {},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				workspace_state,
+				watch: async () => () => {},
+				watch_cloud: async () => () => {},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+			await engine.start()
+			expect(statuses.at(-1)).toMatchObject({ phase: 'paused', reason: 'unlinked' })
+			engine.stop()
+		}
+	})
+
 	test('a missing root pauses without a pass, then syncs once the folder is back', async () => {
 		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {})

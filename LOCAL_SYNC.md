@@ -256,6 +256,14 @@ decided one by one.
   as `workspace_missing` (the cloud folder was deleted — unlink). The link
   stays. The interval lists again, and a restored folder syncs on the next
   pass.
+- **A stale link is dropped.** When the folder has no `.pile/sync.json`
+  (nothing can sync: the pass would pause as `unlinked`) and
+  `workspace_state` answers `gone`, the engine reports `link_stale` and
+  `store/localSync.ts` removes the device's record of the link, so the
+  folder stops showing as synced. The folder is not touched. A failed
+  check, or a cloud folder that is `live` or `trashed`, keeps the link
+  (`unlinked`). A missing folder never drops its link (a disk may be
+  unplugged).
 - **The system trash is only reached inside the root.** `local_trash` never
   touches the root itself or a `.pile` path, and `store/localSync.ts` checks
   the path again before calling `trash_path`.
