@@ -84,7 +84,10 @@ import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
+import { t } from '@/i18n'
 import { reset_folder_list_cache, set_folder_list_owner } from '@/services/cloud/folderListCache'
+import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
+import { has_unsaved_writes } from '@/services/workspace/xattrs'
 
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
@@ -529,10 +532,16 @@ const cloud: CloudStore = {
 
 	async sign_out() {
 		this.last_error = null
+		// a picture or a look still on its way to the cloud would be dropped: ask first
+		const dropping = has_unsaved_writes()
+		if (!(await may_drop_unsaved('sign_out'))) return
 		const { error } = await require_supabase().auth.signOut()
 		if (error) {
 			this.last_error = error.message
+			return
 		}
+		// the store that started it is gone: the sign-in form says it
+		if (dropping) this.last_error = t('unsaved.cancelled')
 	},
 
 	async request_password_reset(email: string) {

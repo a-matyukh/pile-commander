@@ -252,6 +252,9 @@ export async function createWorkspaceStore(
 	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched, recall_folder }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
 	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => initial_root ?? fm.folder_with_children_xattrs(root_folder_id))
+	// A look still being saved in another store of this workspace (the cloud
+	// copy and its publication) shows here too from the first read
+	if (ws.type === 'cloud') apply_pending_entry_xattrs(opened_folder, ws.id, true)
 	/** A read started before the store existed, taken once by the first open of that folder */
 	const take_prefetched = (folder_id: string) => {
 		const read = prefetched?.get(folder_id)
@@ -902,7 +905,7 @@ export async function createWorkspaceStore(
 				if (this.folders[folder_id]) return
 				if (kept && ticket.is_latest()) {
 					// a preview shows what this device kept; the cloud's answer follows it
-					apply_pending_entry_xattrs(kept, this.uid)
+					apply_pending_entry_xattrs(kept, this.uid, true)
 					folder_data = kept
 					this.folders[folder_id] = kept
 					void refresh_cached_folder(this, fm, folder_id, reread_event(folder_id), { read, ticket })
@@ -913,8 +916,10 @@ export async function createWorkspaceStore(
 						report_error(this, error)
 						return
 					}
-					if (ticket.is_latest()) ticket.applied()
-					else if (this.folders[folder_id]) return
+					if (ticket.is_latest()) {
+						ticket.applied()
+						if (shows_kept) apply_pending_entry_xattrs(folder_data, this.uid, true)
+					} else if (this.folders[folder_id]) return
 				}
 
 		this.folders[folder_id] = folder_data
@@ -986,7 +991,7 @@ export async function createWorkspaceStore(
 					: null
 				if (!current()) return false
 				if (kept && ticket.is_latest()) {
-					apply_pending_entry_xattrs(kept, this.uid)
+					apply_pending_entry_xattrs(kept, this.uid, true)
 					folder_data = kept
 					this.folders[folder_id] = kept
 					reread = refresh_cached_folder(this, fm, folder_id, reread_event(folder_id), { read, ticket })
@@ -996,6 +1001,7 @@ export async function createWorkspaceStore(
 					// a refresh that started later already put a newer one in place
 					if (ticket.is_latest()) {
 						ticket.applied()
+						if (shows_kept) apply_pending_entry_xattrs(folder_data, this.uid, true)
 					} else if (this.folders[folder_id]) {
 						folder_data = this.folders[folder_id]!
 					}

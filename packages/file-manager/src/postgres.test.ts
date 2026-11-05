@@ -241,6 +241,108 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 		}, 15_000)
 	}
 
+	/**
+	 * A folder `/f` with a `.pile` of cover files: `aaaaaaaa` named by its
+	 * cover attribute, `bbbbbbbb` spare and two hours old, `cccccccc` spare
+	 * and young, and an old `background-dddddddd`. Committed
+	 */
+	async function pile_fixture() {
+		return db.begin(async tx => {
+			const owner = crypto.randomUUID()
+			await tx`insert into auth.users(id, email) values (${owner}::uuid, ${`${owner}@example.invalid`})`
+			await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: owner, role: "authenticated" })}, true)`
+			const [ws] = await tx`select public.create_workspace('sweep') as id`
+			const [root] = await tx`select id from public.entries where workspace_id = ${ws.id}::uuid and parent_id is null`
+			const [folder] = await tx`insert into public.entries(workspace_id, parent_id, name, kind, xattrs)
+				values (${ws.id}::uuid, ${root.id}::uuid, 'f', 'folder', '{"cover":"pile:cover-aaaaaaaa.webp"}'::jsonb) returning id`
+			const [pile] = await tx`insert into public.entries(workspace_id, parent_id, name, kind)
+				values (${ws.id}::uuid, ${folder.id}::uuid, '.pile', 'folder') returning id`
+			const ids: Record<string, string> = {}
+			for (const name of ["cover-aaaaaaaa.webp", "cover-bbbbbbbb.webp", "cover-cccccccc.webp", "background-dddddddd.webp"]) {
+				const [row] = await tx`insert into public.entries(workspace_id, parent_id, name, kind, mime)
+					values (${ws.id}::uuid, ${pile.id}::uuid, ${name}, 'file', 'image/webp') returning id`
+				ids[name] = row.id as string
+			}
+			// past the triggers that stamp updated_at: two of them are old
+			await tx.unsafe("set local session_replication_role = replica")
+			await tx`update public.entries set updated_at = now() - interval '2 hours'
+				where id in (${ids["cover-aaaaaaaa.webp"]}::uuid, ${ids["cover-bbbbbbbb.webp"]}::uuid, ${ids["background-dddddddd.webp"]}::uuid)`
+			await tx.unsafe("set local session_replication_role = origin")
+			return { owner, workspace: ws.id as string, ids }
+		})
+	}
+
+	async function as_owner(connection: Awaited<ReturnType<typeof db.reserve>>, owner: string) {
+		await connection.unsafe("begin; set local deadlock_timeout = '200ms'; set local role authenticated; set local search_path = public, extensions; set local statement_timeout = '5s'").simple()
+		await connection`select set_config('request.jwt.claims', ${JSON.stringify({ sub: owner, role: "authenticated" })}, true)`
+	}
+
+	test("sweep_pile_images drops a spare old picture of the asked role only, in one call, and leaves no trash", async () => {
+		const f = await pile_fixture()
+		const a = await db.reserve()
+		try {
+			await as_owner(a, f.owner)
+			const [{ dropped }] = await a`select public.sweep_pile_images(${f.workspace}::uuid, '/f', array['cover'], null) as dropped`
+			expect(dropped).toBe(1)
+			await a.unsafe("commit").simple()
+			const left = await db`select name from public.entries where id = any(${`{${Object.values(f.ids).join(",")}}`}::uuid[]) order by name`
+			// the named one, the young one and the other role stay; the spare one is gone, trash included
+			expect(left.map((row: { name: string }) => row.name)).toEqual(["background-dddddddd.webp", "cover-aaaaaaaa.webp", "cover-cccccccc.webp"])
+		} finally {
+			await a.unsafe("rollback").simple()
+			a.release()
+		}
+	}, 15_000)
+
+	test("a picture freshened while the sweep holds it comes back missing, not saved", async () => {
+		const f = await pile_fixture()
+		const a = await db.reserve()
+		const b = await db.reserve()
+		try {
+			await as_owner(a, f.owner)
+			await as_owner(b, f.owner)
+			const [{ dropped }] = await a`select public.sweep_pile_images(${f.workspace}::uuid, '/f', array['cover'], null) as dropped`
+			expect(dropped).toBe(1)
+			const [{ pid }] = await b`select pg_backend_pid() as pid`
+			const freshen = b`select * from public.merge_entry_xattrs(${f.workspace}::uuid, ${JSON.stringify([{ path: "/f/.pile/cover-bbbbbbbb.webp", xattrs: {} }])}::text::jsonb, null)`
+				.then(rows => rows.map((row: { status: string }) => row.status), (error: Error) => error)
+			expect(await is_waiting_for_lock(pid)).toBe(true)
+			await a.unsafe("commit").simple()
+			expect(await freshen).toEqual(["missing"])
+		} finally {
+			await a.unsafe("rollback").simple()
+			await b.unsafe("rollback").simple()
+			a.release()
+			b.release()
+		}
+	}, 15_000)
+
+	test("a picture freshened before the sweep reaches it stays", async () => {
+		const f = await pile_fixture()
+		const a = await db.reserve()
+		const b = await db.reserve()
+		try {
+			await as_owner(a, f.owner)
+			await as_owner(b, f.owner)
+			const freshened = await b`select * from public.merge_entry_xattrs(${f.workspace}::uuid, ${JSON.stringify([{ path: "/f/.pile/cover-bbbbbbbb.webp", xattrs: {} }])}::text::jsonb, null)`
+			expect(freshened).toEqual([])
+			const [{ pid }] = await a`select pg_backend_pid() as pid`
+			const sweep = a`select public.sweep_pile_images(${f.workspace}::uuid, '/f', array['cover'], null) as dropped`
+				.then(rows => rows[0].dropped as number, (error: Error) => error)
+			expect(await is_waiting_for_lock(pid)).toBe(true)
+			await b.unsafe("commit").simple()
+			expect(await sweep).toBe(0)
+			await a.unsafe("commit").simple()
+			const [row] = await db`select deleted_at from public.entries where id = ${f.ids["cover-bbbbbbbb.webp"]}::uuid`
+			expect(row.deleted_at).toBeNull()
+		} finally {
+			await a.unsafe("rollback").simple()
+			await b.unsafe("rollback").simple()
+			a.release()
+			b.release()
+		}
+	}, 15_000)
+
 	function blob_key(workspace: string): string {
 		return `${workspace}/${crypto.randomUUID()}.png`
 	}

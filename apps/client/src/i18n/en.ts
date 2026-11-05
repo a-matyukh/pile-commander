@@ -218,7 +218,15 @@ export const en: typeof ru = {
 		empty: 'Nothing in this folder to work with yet.',
 		item_summarize: 'AI: summarize',
 		item_translate: 'AI: translate',
-		folder: {
+		unsaved: {
+		close: 'A picture or a folder look is still being saved to the cloud. If you close now, it will not be saved.',
+		sign_out: 'A picture or a folder look is still being saved to the cloud. If you sign out now, it will not be saved.',
+		close_anyway: 'Close anyway',
+		sign_out_anyway: 'Sign out anyway',
+		wait: 'Wait',
+		cancelled: 'Signed out before it reached the cloud: the last picture or look was not saved',
+	},
+	folder: {
 			tidy: 'Tidy up: sort into folders',
 			rename_by_content: 'Rename files by content',
 			duplicates: 'Find duplicates',

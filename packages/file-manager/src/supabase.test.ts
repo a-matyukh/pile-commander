@@ -360,12 +360,17 @@ describe("cloud pile images", () => {
 		concurrent_key?: string
 		/** The server clock: rows written get it as updated_at */
 		now?: () => string
+		/** a database with sweep_pile_images; without it the RPC is "not found", as in an older schema */
+		server_sweep?: boolean
+		/** a cleanup drops the file right as the next freshen reaches it */
+		freshen_misses_once?: boolean
 	}) {
 		const now = () => options?.now?.() ?? ""
 		const rows = new Map<string, Row>()
 		rows.set("root", blank({ id: "root", parent_id: null, name: "", kind: "folder", path: "/" }))
 		const puts: string[] = []
-		const calls = { merges: 0, updates: 0 }
+		const calls = { merges: 0, updates: 0, sweeps: 0, deletes: 0 }
+		let freshen_misses = options?.freshen_misses_once ?? false
 		const live = (path: string) => [...rows.values()].find(row => row.path === path && row.deleted_at === null) ?? null
 
 		const client = {
@@ -423,6 +428,11 @@ describe("cloud pile images", () => {
 					}
 					const refused: { path: string; status: string }[] = []
 					for (const item of items) {
+						if (freshen_misses && Object.keys(item.xattrs).length === 0) {
+							freshen_misses = false
+							const gone = live(item.path)
+							if (gone) rows.delete(gone.id)
+						}
 						const row = live(item.path)
 						if (!row) { refused.push({ path: item.path, status: "missing" }); continue }
 						if (item.xattrs.cover === "TOO") { refused.push({ path: item.path, status: "too_large" }); continue }
@@ -437,7 +447,28 @@ describe("cloud pile images", () => {
 					}
 					return { data: refused, error: null }
 				}
+				if (name === "sweep_pile_images") {
+					if (!options?.server_sweep) {
+						return { data: null, error: { code: "PGRST202", message: "Could not find the function public.sweep_pile_images" } }
+					}
+					calls.sweeps += 1
+					const folder = live(String(args.p_path))
+					const pile = folder && [...rows.values()].find(row => row.parent_id === folder.id && row.name === ".pile" && row.deleted_at === null)
+					if (!folder || !pile) return { data: 0, error: null }
+					const roles = args.p_roles as string[]
+					let dropped = 0
+					for (const row of [...rows.values()]) {
+						if (row.parent_id !== pile.id || row.kind !== "file" || row.deleted_at) continue
+						const role = row.name.split("-")[0]!
+						if (!roles.includes(role) || folder.xattrs[role] === `pile:${row.name}`) continue
+						if (Date.parse(folder.updated_at) - Date.parse(row.updated_at) < 60 * 60 * 1000) continue
+						rows.delete(row.id)
+						dropped += 1
+					}
+					return { data: dropped, error: null }
+				}
 				if (name === "delete_entry") {
+					calls.deletes += 1
 					const row = rows.get(String(args.p_entry))
 					if (!row || row.deleted_at) return { error: { message: "delete_entry: entry not found" } }
 					row.deleted_at = "now"
@@ -682,6 +713,53 @@ describe("cloud pile images", () => {
 			clock += 1000
 			// a cleanup from another write runs before its attribute is written
 			await fm.set_xattr("/", "cover", current)
+			expect(files_named(rows, "cover").map(row => row.name)).toContain(again.slice("pile:".length))
+		} finally {
+			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("a database with the sweep RPC cleans up in one call, with the same rule", async () => {
+		let clock = Date.parse("2026-11-04T10:00:00Z")
+		const at = () => new Date(clock).toISOString()
+		const { fm, rows, calls } = world({ now: at, server_sweep: true })
+		finalize_now = at
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			const old = await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			clock += 2 * 60 * 60 * 1000
+			const named = await fm.write_pile_image("/", "cover", new Uint8Array([2]))
+			clock += 60 * 1000
+			const next = await fm.write_pile_image("/", "cover", new Uint8Array([3]))
+			clock += 60 * 1000
+			await fm.set_xattr("/", "cover", named)
+			const left = files_named(rows, "cover").map(row => row.name).sort()
+			expect(left).toEqual([named, next].map(token => token.slice("pile:".length)).sort())
+			expect(left).not.toContain(old.slice("pile:".length))
+			expect(calls.sweeps).toBe(1)
+			expect(calls.deletes).toBe(0)
+		} finally {
+			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("an old picture chosen again that a cleanup took at that moment is uploaded again", async () => {
+		let clock = Date.parse("2026-11-04T10:00:00Z")
+		const at = () => new Date(clock).toISOString()
+		const { fm, rows, puts } = world({ now: at, freshen_misses_once: true })
+		finalize_now = at
+		const restore = install_fetch(rows, new Uint8Array([1]))
+		try {
+			const again = await fm.write_pile_image("/", "cover", new Uint8Array([1]))
+			const current = await fm.write_pile_image("/", "cover", new Uint8Array([2]))
+			await fm.set_xattr("/", "cover", current)
+			clock += 2 * 60 * 60 * 1000
+			const uploads = puts.length
+			await expect(fm.write_pile_image("/", "cover", new Uint8Array([1]))).resolves.toBe(again)
+			// the freshen found it gone: the bytes went up once more, and the file is there
+			expect(puts.length).toBe(uploads + 2)
 			expect(files_named(rows, "cover").map(row => row.name)).toContain(again.slice("pile:".length))
 		} finally {
 			finalize_now = () => ""

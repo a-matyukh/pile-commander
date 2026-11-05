@@ -8,6 +8,7 @@ import { explorer_public_open } from '@/store/explorer/public_view'
 import { add_bookmark } from '@/store/explorer/bookmarks'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { has_unsaved_writes } from '@/services/workspace/xattrs'
+import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
 import { local_bookmark_ref, point_in_rect } from '@/ui/explorer/top-bar/folderDrop'
 import type { ClientPoint } from '@/services/workspace/dropClientPosition'
 import {
@@ -113,8 +114,24 @@ function warn_unsaved(event: BeforeUnloadEvent) {
 	event.preventDefault()
 	event.returnValue = ''
 }
-onMounted(() => { window.addEventListener('beforeunload', warn_unsaved) })
-onUnmounted(() => { window.removeEventListener('beforeunload', warn_unsaved) })
+// The desktop window has no beforeunload prompt: it asks through the system dialog
+let stop_close_request: (() => void) | null = null
+let unmounted = false
+onMounted(async () => {
+	window.addEventListener('beforeunload', warn_unsaved)
+	if (!is_desktop) return
+	const { getCurrentWindow } = await import('@tauri-apps/api/window')
+	const stop = await getCurrentWindow().onCloseRequested(async (event) => {
+		if (!(await may_drop_unsaved('close'))) event.preventDefault()
+	})
+	if (unmounted) stop()
+	else stop_close_request = stop
+})
+onUnmounted(() => {
+	unmounted = true
+	window.removeEventListener('beforeunload', warn_unsaved)
+	stop_close_request?.()
+})
 
 onMounted(async () => {
 	if (!is_desktop) return

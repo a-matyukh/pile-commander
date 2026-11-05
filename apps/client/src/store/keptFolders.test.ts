@@ -147,3 +147,16 @@ describe('a folder opened from a view', () => {
 		expect(store.opened_folder_id).toBe('/one')
 	})
 })
+
+describe('a look in flight in another store of the workspace', () => {
+	test('shows in a store opened while it is saved (the cloud copy and its publication)', async () => {
+		const { set_pending_entry_xattr, clear_pending_entry_xattr } = await import('@/services/workspace/xattrs')
+		set_pending_entry_xattr('/', 'view', 'gallery', 'ws')
+		try {
+			const { store } = await cloud_store()
+			expect(store.folders['/']!.xattrs.find(xattr => xattr.name === 'view')?.value).toBe('gallery')
+		} finally {
+			clear_pending_entry_xattr('/', 'view', undefined, 'ws')
+		}
+	})
+})
