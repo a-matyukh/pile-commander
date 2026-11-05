@@ -8,7 +8,7 @@ import { reset_pile_image_cache, set_pile_image_disk } from '@/services/workspac
 const workspace = ref<unknown>(null)
 vi.mock('@/ui/workspace/useWorkspace', () => ({ useWorkspace: () => workspace }))
 
-const { useMediaSrc } = await import('./useMediaSrc')
+const { useMediaSrc, sniff_image_type, KEEP_ORIGINAL_MAX_BYTES } = await import('./useMediaSrc')
 
 const settle = async () => {
 	for (let i = 0; i < 5; i++) {
@@ -68,16 +68,18 @@ describe('a tile asks for the preview of an image', () => {
 		expect(asked).toEqual([{ id: '/photo.jpg', preview: false }])
 	})
 
-	test('the original that came instead of a preview not made yet is not kept for the way back', async () => {
+	test('the original that came instead of a preview is kept for the way back while its URL lives', async () => {
 		const { asked, media_cache } = store(() => ({ url: 'https://b2/photo', expires_at: Date.now() + 60_000 }))
 		const first = effectScope()
 		first.run(() => useMediaSrc(() => '/photo.jpg', () => 'photo.jpg'))
 		await settle()
 		first.stop()
-		expect(media_cache.has('/photo.jpg\0preview')).toBe(false)
-		mount('/photo.jpg', 'photo.jpg')
+		expect(media_cache.has('/photo.jpg\0preview')).toBe(true)
+		const again = mount('/photo.jpg', 'photo.jpg')
 		await settle()
-		expect(asked).toHaveLength(2)
+		// the same URL: a browser cache hit, no new presign
+		expect(asked).toHaveLength(1)
+		expect(again.src.value).toBe('https://b2/photo')
 	})
 })
 
@@ -150,5 +152,92 @@ describe('a cloud image preview kept on this device', () => {
 			vi.unstubAllGlobals()
 			reset_pile_image_cache()
 		}
+	})
+
+	function original(bytes: number, type = 'image/png') {
+		const body = new Uint8Array(Math.min(bytes, 16))
+		body.set([0x89, 0x50, 0x4e, 0x47])
+		return new Response(body, { headers: { 'Content-Type': type, 'Content-Length': String(bytes) } })
+	}
+
+	test('a small original without a preview is kept, and after a restart shown at once without a download', async () => {
+		set_pile_image_disk(memory_picture_disk())
+		const fetched: string[] = []
+		vi.stubGlobal('fetch', async (url: string) => {
+			fetched.push(url)
+			return original(16)
+		})
+		try {
+			const photo = (sig: string): MediaSrc => ({ url: `https://b2/ws/blob?sig=${sig}`, expires_at: Date.now() + 60_000 })
+			cloud(() => photo('a'))
+			const first = mount('/small.png', 'small.png')
+			await settle()
+			expect(fetched).toHaveLength(1)
+			expect(first.src.value.startsWith('blob:')).toBe(true)
+
+			// a restart: a new store, an empty memory cache, the device as it was
+			cloud(() => photo('b'))
+			const again = mount('/small.png', 'small.png')
+			await settle()
+			expect(again.src.value.startsWith('blob:')).toBe(true)
+			expect(fetched).toHaveLength(1)
+		} finally {
+			vi.unstubAllGlobals()
+			reset_pile_image_cache()
+		}
+	})
+
+	test('a large original, or one of another type, stays on the presigned URL', async () => {
+		set_pile_image_disk(memory_picture_disk())
+		const answers = [original(KEEP_ORIGINAL_MAX_BYTES + 1), original(100, 'image/svg+xml')]
+		vi.stubGlobal('fetch', async () => answers.shift()!)
+		try {
+			cloud(() => ({ url: 'https://b2/ws/big?sig=a', expires_at: Date.now() + 60_000 }))
+			const big = mount('/big.png', 'big.png')
+			await settle()
+			expect(big.src.value).toBe('https://b2/ws/big?sig=a')
+			cloud(() => ({ url: 'https://b2/ws/odd?sig=a', expires_at: Date.now() + 60_000 }))
+			const odd = mount('/odd.png', 'odd.png')
+			await settle()
+			expect(odd.src.value).toBe('https://b2/ws/odd?sig=a')
+		} finally {
+			vi.unstubAllGlobals()
+			reset_pile_image_cache()
+		}
+	})
+
+	test('a preview made later replaces the kept original', async () => {
+		set_pile_image_disk(memory_picture_disk())
+		const fetched: string[] = []
+		vi.stubGlobal('fetch', async (url: string) => {
+			fetched.push(new URL(url).pathname)
+			return url.includes('thumb') ? new Response(new Uint8Array([1])) : original(16)
+		})
+		try {
+			cloud(() => ({ url: 'https://b2/ws/blob?s=1', expires_at: Date.now() + 60_000 }))
+			mount('/photo.png', 'photo.png')
+			await settle()
+			cloud(() => ({ url: 'https://b2/deriv/ws/blob/thumb.webp?s=2', expires_at: Date.now() + 60_000, variant: 'thumb' }))
+			mount('/photo.png', 'photo.png')
+			await settle()
+			expect(fetched).toEqual(['/ws/blob', '/deriv/ws/blob/thumb.webp'])
+		} finally {
+			vi.unstubAllGlobals()
+			reset_pile_image_cache()
+		}
+	})
+})
+
+describe('the type of bytes kept on the device', () => {
+	const bytes = (...head: number[]) => new Uint8Array([...head, 0, 0, 0, 0, 0, 0, 0, 0])
+	const text = (s: string) => [...s].map(ch => ch.charCodeAt(0))
+	test.each([
+		['image/jpeg', bytes(0xff, 0xd8, 0xff)],
+		['image/png', bytes(0x89, ...text('PNG'))],
+		['image/gif', bytes(...text('GIF89a'))],
+		['image/avif', bytes(0, 0, 0, 0x1c, ...text('ftypavif'))],
+		['image/webp', bytes(...text('RIFF'), 0, 0, 0, 0, ...text('WEBP'))],
+	])('%s', (type, head) => {
+		expect(sniff_image_type(head)).toBe(type)
 	})
 })
