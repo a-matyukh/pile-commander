@@ -9,9 +9,25 @@ use tauri::ipc::{InvokeBody, Request};
 use tauri::State;
 use tokio::sync::mpsc;
 
-/// Host of the presigned PUT URLs the backend issues. Anything else is refused:
-/// these commands are a raw byte pipe, not a general HTTP client.
+/// Host of the presigned PUT URLs the backend issues today (Backblaze B2).
+/// Anything else is refused: these commands are a raw byte pipe, not a
+/// general HTTP client.
 const STORAGE_HOST: &str = "s3.us-east-005.backblazeb2.com";
+
+/// Cloudflare R2 presigned URLs: `<account>.r2.cloudflarestorage.com`, with
+/// the bucket either in the path or as one more label, and jurisdiction
+/// buckets under `<account>.eu.` / `<account>.fedramp.`. Accepted ahead of
+/// any move, so installed desktops can upload there the day the backend
+/// starts issuing such URLs. Any R2 account matches, the same exposure as
+/// the B2 host above, which every B2 customer in that region shares.
+const R2_HOST_SUFFIX: &str = ".r2.cloudflarestorage.com";
+
+fn is_storage_host(host: &str) -> bool {
+    host == STORAGE_HOST
+        || host
+            .strip_suffix(R2_HOST_SUFFIX)
+            .is_some_and(|account| !account.is_empty() && account.split('.').all(|label| !label.is_empty()))
+}
 
 /// How long one chunk (or the final response) may wait before the upload is
 /// treated as stalled. Connect and per-chunk waits are bounded; the whole
@@ -86,7 +102,7 @@ impl Uploads {
 
 fn storage_url(url: &str) -> Result<reqwest::Url, String> {
     let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
-    if parsed.scheme() != "https" || parsed.host_str() != Some(STORAGE_HOST) {
+    if parsed.scheme() != "https" || !parsed.host_str().is_some_and(is_storage_host) {
         return Err("upload url is not the storage endpoint".into());
     }
     Ok(parsed)
@@ -262,6 +278,18 @@ mod tests {
         assert!(storage_url("https://example.com/bucket/key").is_err());
         assert!(storage_url(&format!("https://{STORAGE_HOST}.example.com/key")).is_err());
         assert!(storage_url("not a url").is_err());
+    }
+
+    #[test]
+    fn r2_storage_urls_are_accepted() {
+        assert!(storage_url("https://abc123.r2.cloudflarestorage.com/bucket/key?sig=1").is_ok());
+        assert!(storage_url("https://bucket.abc123.r2.cloudflarestorage.com/key?sig=1").is_ok());
+        assert!(storage_url("https://abc123.eu.r2.cloudflarestorage.com/bucket/key").is_ok());
+        assert!(storage_url("http://abc123.r2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(storage_url("https://r2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(storage_url("https://.r2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(storage_url("https://evilr2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(storage_url("https://abc123.r2.cloudflarestorage.com.example.com/key").is_err());
     }
 
     /// Reads one HTTP/1.1 request with a Content-Length body, answers 200 and
