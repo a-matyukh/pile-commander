@@ -36,8 +36,10 @@ trait SessionIo: Send + Sync {
     fn close(&self, id: u64);
 }
 
+#[cfg(all(test, unix))]
 struct SilentIo;
 
+#[cfg(all(test, unix))]
 impl SessionIo for SilentIo {
     fn bytes(&self, _id: u64, _data: &[u8]) {}
     fn close(&self, _id: u64) {}
@@ -109,6 +111,7 @@ impl Access {
         }
     }
 
+    #[cfg(all(test, unix))]
     pub fn set_enabled(&self, dir: &Path, enabled: bool) -> io::Result<()> {
         self.set_enabled_with(dir, enabled, Arc::new(SilentIo))
     }
@@ -140,19 +143,10 @@ impl Access {
     /// Writes raw bytes to an accepted session. Unknown ids are an error.
     /// The socket locks are released before the write, so a client that does
     /// not read cannot block shutdown.
-    #[cfg(unix)]
+    #[cfg(all(test, unix))]
     pub fn write_session(&self, id: u64, bytes: &[u8]) -> io::Result<()> {
         let mut stream = self.clone_session(id)?;
         write_with_timeout(&mut stream, bytes)
-    }
-
-    #[cfg(not(unix))]
-    pub fn write_session(&self, id: u64, bytes: &[u8]) -> io::Result<()> {
-        let _ = (id, bytes);
-        Err(io::Error::new(
-            ErrorKind::Unsupported,
-            "agent access uses a unix socket",
-        ))
     }
 
     #[cfg(unix)]
