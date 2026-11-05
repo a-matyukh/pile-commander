@@ -15,6 +15,7 @@ import {
 	rekey_entry_content_caches,
 	type EntryContentCaches,
 } from '@/ui/workspace/folder-container/textContentCache'
+import { held_entries } from '@/services/cloud/pendingEntries'
 import { is_missing_path_error } from './fsErrors'
 import { report_error } from './reportError'
 import {
@@ -114,6 +115,33 @@ function restore_layout_lost_on_save(
 }
 
 /**
+ * An entry created or renamed here is on screen before the cloud has it: a
+ * read that answers meanwhile does not drop it (nor bring back the name it
+ * replaced). Its request is held in `pendingEntries.ts`; once it lands, the
+ * next read sees it as the cloud does
+ */
+function keep_held_children(
+	fm: FileManager,
+	previous_children: readonly FolderWithChildrenXattrs['children'][number][],
+	folder_data: FolderWithChildrenXattrs,
+) {
+	const held = held_entries(fm)
+	if (held.size === 0) return
+	const children = folder_data.children ?? []
+	const present = new Set(children.map(child => child.id))
+	for (const child of previous_children) {
+		const hold = held.get(child.id)
+		if (!hold || present.has(child.id)) continue
+		if (hold.replaces) {
+			const index = children.findIndex(other => other.id === hold.replaces)
+			if (index !== -1) children.splice(index, 1)
+		}
+		children.push({ ...child, xattrs: child.xattrs.map(xattr => ({ ...xattr })) })
+	}
+	folder_data.children = children
+}
+
+/**
  * Re-fetches a cached folder from disk, replaces the cache entry and
  * refreshes the projected tree; cleans up disappeared entries.
  *
@@ -176,6 +204,7 @@ export async function refresh_cached_folder(
 			continue
 		}
 		ticket.applied()
+		keep_held_children(fm, previous_children, folder_data)
 
 		// look writes keep their overlay per workspace: `/` of another root is not this one
 		apply_pending_entry_xattrs(folder_data, (store as { uid?: string }).uid)

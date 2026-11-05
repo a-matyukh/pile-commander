@@ -96,6 +96,7 @@ import {
 	type CanvasPersistStore,
 } from './helpers/persistCanvas'
 import { t } from '@/i18n'
+import { hold_entry } from '@/services/cloud/pendingEntries'
 import {
 	cached_folders_affected_by,
 	folder_read_ticket,
@@ -267,6 +268,12 @@ export async function createWorkspaceStore(
 	 * network; it only no longer waits for it. Local drives wait as before
 	 */
 	const shows_kept = ws.type === 'cloud'
+	/**
+	 * Cloud: the id a new entry will have (ids are paths), so it shows before
+	 * the cloud answers. Elsewhere creating waits as before
+	 */
+	const optimistic_child = (folder_id: string, name: string) =>
+		ws.type === 'cloud' ? (folder_id === '/' ? `/${name}` : `${folder_id}/${name}`) : undefined
 	/** Set by the Explorer: a folder opened from a view goes through its navigation (its placeholder, history, header) */
 	let open_folder_hook: ((folder_id: string) => unknown) | null = null
 
@@ -1846,6 +1853,7 @@ export async function createWorkspaceStore(
 				)
 
 				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: [
 						{ name: 'is_preview', value: 'true' },
 						...(position
@@ -1884,6 +1892,7 @@ export async function createWorkspaceStore(
 					: SHAPE_SQUARE_DEFAULT_SIZE
 
 				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					content: shape_template_svg(template),
 					xattrs: [
 						{ name: 'is_preview', value: 'true' },
@@ -1935,6 +1944,7 @@ export async function createWorkspaceStore(
 				})
 
 				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					content: svg,
 					xattrs: [
 						{ name: 'is_preview', value: 'true' },
@@ -2116,6 +2126,7 @@ export async function createWorkspaceStore(
 				)
 
 				const node = await create_entry(this, fm, folder_id, 'folder', folder_name, {
+					optimistic_id: optimistic_child(folder_id, folder_name),
 					xattrs: [
 						{ name: 'view', value: stored_folder_view(options?.view ?? 'board') },
 						...(position
@@ -2215,6 +2226,7 @@ export async function createWorkspaceStore(
 				)
 
 				await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: position
 						? [{ name: 'position', value: JSON.stringify(position) }]
 						: [],
@@ -2230,6 +2242,7 @@ export async function createWorkspaceStore(
 				)
 
 				await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: position
 						? [{ name: 'position', value: JSON.stringify(position) }]
 						: [],
@@ -2504,17 +2517,36 @@ export async function createWorkspaceStore(
 
 				if (!tree_node && !folder_entry && !is_opened_folder) return
 
+				// Cloud: the new name (and the paths under it) shows at once; the
+				// request holds every later call that names the entry, and a refusal
+				// puts the old name back and says why
+				const expected = optimistic_child(parent_folder_id_from_node_id(id, this.id), name)
+				const old_name = folder_entry?.name ?? tree_node?.name ?? (is_opened_folder ? this.opened_folder.name : undefined)
+				const shown_early = expected !== undefined && expected !== id && old_name !== undefined
+				if (shown_early) {
+					rekey_entry_content_caches(content_caches, id, expected)
+					apply_id_changed(this, id, expected, name)
+				}
+				const request = fm.rename(id, name)
+				if (shown_early) hold_entry(fm, expected, request, { replaces: id })
 				let result
 				try {
-					result = await fm.rename(id, name)
+					result = await request
 				} catch (error) {
+					if (shown_early) {
+						rekey_entry_content_caches(content_caches, expected, id)
+						apply_id_changed(this, expected, id, old_name)
+					}
 					if (options?.report === false) throw error
 					report_error(this, error)
 					return
 				}
 
-		rekey_entry_content_caches(content_caches, id, result.id)
-		apply_id_changed(this, id, result.id, result.name)
+		const shown_id = shown_early ? expected : id
+		if (result.id !== shown_id || !shown_early) {
+			rekey_entry_content_caches(content_caches, shown_id, result.id)
+			apply_id_changed(this, shown_id, result.id, result.name)
+		}
 		note_hidden_name(this, result.name)
 		await rename_folder_canvas_connections(this, id, result.id)
 	},
