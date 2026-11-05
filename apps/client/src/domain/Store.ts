@@ -325,7 +325,8 @@ type WorkspaceStore = {
 	/** Creates a line/arrow shape spanning two absolute pane points. */
 	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug): Promise<string>
 	read_note_content(id: string): Promise<string>
-	get_media_src(id: string, filename: string): Promise<MediaSrc>
+	/** `preview`: a tile asks for the image's ready preview instead of the original */
+	get_media_src(id: string, filename: string, options?: { preview?: boolean }): Promise<MediaSrc>
 	save_note_content(id: string, new_content: string): Promise<void>
 
 	open(widget: FolderContainerWidgetChild): void

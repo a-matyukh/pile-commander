@@ -2036,10 +2036,11 @@ $$;
 -- apps/backend/src/derivatives.ts). The worker PULLS its work, like the
 -- re-key sweep above: there is no enqueue at /finalize or at re-key to
 -- forget, uploads made before a deploy are backfilled, and a crash in the
--- middle of a generation is simply picked up again. Only public workspaces:
--- previews go to non-members, and a non-member sees public boards alone —
--- publishing a board makes its blobs pending on the next tick, and until
--- then visitors get the original under max_public_file_bytes, as before.
+-- middle of a generation is simply picked up again. Every workspace: a
+-- non-member of a public board gets the preview instead of the original, and
+-- members get it in tiles when they ask for one (GET /presign?preview=1; the
+-- original stays theirs for viewing, downloads, export and sync). Until a
+-- blob is decided, everyone gets the original, as before.
 -- Trashed rows count: the trash is restorable. All four are service role
 -- only (revoked at the bottom of this file, private functions included)
 -- ----------------------------------------------------------------------------
@@ -2048,8 +2049,8 @@ $$;
 -- their mime maps to (image/* → thumb, video/* → poster; p_kinds lets the
 -- backend leave video out while posters are off): no row yet, or a failed
 -- row past its backoff with attempts left. One row per key — copies share
--- the object — oldest blob first. The grouping runs over every public blob
--- per call; fine at this scale, a cursor or a pending flag later
+-- the object — oldest blob first. The grouping runs over every image and
+-- video blob per call; fine at this scale, a cursor or a pending flag later
 create or replace function private.list_pending_derivatives(
     p_kinds text[],
     p_max_attempts int,
@@ -2069,9 +2070,7 @@ as $$
                  max(e.size_bytes) as size_bytes,
                  min(e.created_at) as first_seen
             from public.entries e
-            join public.workspaces w on w.id = e.workspace_id
            where e.storage_key is not null
-             and w.is_public
              and (lower(e.mime) like 'image/%' or lower(e.mime) like 'video/%')
            group by e.storage_key
       ) k

@@ -748,11 +748,11 @@ begin
         execute 'set local role service_role';
     end;
 
-    -- previews go to non-members only, who see public boards alone: the
-    -- blobs of a private board are never pending
-    insert into __results values ('service: list_pending_derivatives skips private boards',
+    -- members get previews in tiles too: a private board's images are pending
+    insert into __results values ('service: list_pending_derivatives includes private boards',
         (select count(*) from public.list_pending_derivatives(array['thumb', 'poster'], 5, 100) p
-          where p.storage_key like v_ws::text || '/%') = 0, null);
+          where p.storage_key = v_ws::text || '/dddddddd-dddd-4ddd-8ddd-dddddddddddd.png'
+            and p.kind = 'thumb') = 1, null);
 
     execute 'reset role';
 
@@ -1222,7 +1222,7 @@ begin
         v_ws::text || '/14141414-1414-4414-8414-141414141414.jpg', 3000, c_owner, null);
     v_retry := (v_json->>'id')::uuid;
 
-    insert into __results values ('service: list_pending_derivatives maps image → thumb, video → poster on a public board',
+    insert into __results values ('service: list_pending_derivatives maps image → thumb, video → poster',
         (select count(*) from public.list_pending_derivatives(array['thumb', 'poster'], 5, 100) p
           where (p.storage_key, p.kind) in (
               (v_ws::text || '/dddddddd-dddd-4ddd-8ddd-dddddddddddd.png', 'thumb'),

@@ -156,22 +156,26 @@ export type DownloadChoice = {
 	variant: MediaVariant;
 };
 
-// Owners and members always get the original. A non-member gets the ready
-// preview when previews are served, charged at the preview's own size and
-// without the size gate — like a Hub cover. Without one (not generated yet,
-// skipped, or DERIV_ENABLE short of serve) the original goes through exactly
-// as before, gate included: that gate is the stand-in until a preview exists.
+// A non-member gets the ready preview when previews are served, charged at
+// the preview's own size and without the size gate — like a Hub cover. Owners
+// and members get the original, unless a tile asks for the preview
+// (`want_preview`): the original stays theirs for viewing, downloads, export
+// and sync. Without one (not generated yet, skipped, or DERIV_ENABLE short of
+// serve) the original goes through exactly as before, gate included: that
+// gate is the stand-in until a preview exists.
 // `want_original` is Download as .pile: the file itself, never a preview, and
 // for a non-member only where the author allows forks and downloads
 export function choose_download(
 	target: DownloadTarget,
 	deriv_mode: DerivMode,
 	want_original = false,
+	want_preview = false,
 ): DownloadChoice {
 	if (want_original && !target.is_member && !target.allow_download) {
 		throw new ApiError(403, "download_not_allowed");
 	}
-	if (!want_original && !target.is_member && deriv_mode === "serve" && target.deriv_key && target.deriv_kind) {
+	const gets_preview = !target.is_member || want_preview;
+	if (!want_original && gets_preview && deriv_mode === "serve" && target.deriv_key && target.deriv_kind) {
 		return {
 			key: target.deriv_key,
 			size_bytes: Number(target.deriv_size_bytes ?? 0),
@@ -229,7 +233,7 @@ async function meter_download(
 	);
 }
 
-// GET /presign?entry=<entries.id>[&original=1] → { url, expires_in, variant }.
+// GET /presign?entry=<entries.id>[&original=1][&preview=1] → { url, expires_in, variant }.
 // Access goes through the caller's JWT (or anon): download_target returns the
 // row only when its workspace is readable by this caller and the entry is
 // live, so one 404 covers a missing blob, no access and the trash — existence
@@ -240,7 +244,9 @@ async function meter_download(
 // (choose_download). `variant` tells the client which it got: a poster is an
 // image, not a playable video. `original=1` is Download as .pile: the file
 // itself for a signed-in caller where the author allows it, charged to the
-// caller's own download allowance rather than the owner's egress
+// caller's own download allowance rather than the owner's egress. `preview=1`
+// is a tile: a member gets the ready preview too (an older client never asks,
+// and gets the original as before)
 /**
  * What GET /presign asks for: `entry` (the id), or `workspace` + `path` (a
  * folder picture the client knows by path). Anything else is a 400.
@@ -271,6 +277,7 @@ export async function handle_download_presign(
 	const params = new URL(req.url).searchParams;
 	const asked = download_presign_target(params);
 	const want_original = params.get("original") === "1";
+	const want_preview = params.get("preview") === "1";
 
 	const timing = server_timing();
 	const token = bearer_token(req);
@@ -302,7 +309,7 @@ export async function handle_download_presign(
 	const target = (data as DownloadTarget[] | null)?.[0];
 	if (!target) throw new ApiError(404, "blob not found");
 
-	const choice = choose_download(target, env.deriv.mode, want_original);
+	const choice = choose_download(target, env.deriv.mode, want_original, want_preview);
 	const ledger = download_ledger(target, want_original);
 	if (ledger === "owner" && meter) {
 		await timing.step("meter", () => meter_download(

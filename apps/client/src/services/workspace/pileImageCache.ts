@@ -197,6 +197,28 @@ export function release_pile_url(key: string) {
 	if (row.refs <= 0) park(key, row)
 }
 
+/**
+ * Other bytes kept on this device under the same account rules as covers
+ * (image previews of files, `tilePreviewCache.ts`): wiped with them, and a
+ * write started before a wipe lands nowhere. `device_epoch()` is taken when
+ * the bytes start coming, and handed to `keep_device_bytes`
+ */
+export function device_epoch(): number {
+	return device.epoch()
+}
+
+export function keep_device_bytes(key: string, bytes: Uint8Array, started_in: number) {
+	const target = disk
+	void device.write(started_in, () => target.put(key, bytes))
+}
+
+/** The bytes kept under this key, or null (none, a wipe meanwhile, or the device is slow) */
+export async function recall_device_bytes(key: string, wait_ms = 150): Promise<Uint8Array | null> {
+	const started_in = device.epoch()
+	const kept = await within(disk.get(key), wait_ms)
+	return started_in === device.epoch() ? kept : null
+}
+
 /** Forget every picture, on this device too (sign-out: the next account must not see them) */
 export function reset_pile_image_cache() {
 	const target = disk

@@ -470,6 +470,8 @@ describe("cloud pile images", () => {
 	let presign_by_path_refused = false
 	/** Which kind of presign each picture read used */
 	const presigns: string[] = []
+	/** every presign's query string, in order */
+	const presign_queries: string[] = []
 
 	function install_fetch(rows: Map<string, { id: string; parent_id: string | null; name: string; kind: string; path: string; deleted_at: string | null }>, bytes: Uint8Array) {
 		const original = globalThis.fetch
@@ -512,6 +514,7 @@ describe("cloud pile images", () => {
 					if (!found) return new Response(JSON.stringify({ error: "blob not found" }), { status: 404 })
 				}
 				presigns.push(query.has("path") ? "path" : "entry")
+				presign_queries.push(query.toString())
 				return new Response(JSON.stringify({ url: "https://b2.example/get", expires_in: 60 }))
 			}
 			if (path === "https://b2.example/get") {
@@ -682,6 +685,27 @@ describe("cloud pile images", () => {
 			expect(files_named(rows, "cover").map(row => row.name)).toContain(again.slice("pile:".length))
 		} finally {
 			finalize_now = () => ""
+			restore()
+		}
+	})
+
+	test("a tile asks for the preview; an original on request never does", async () => {
+		const { fm, rows } = world()
+		const bytes = new Uint8Array([5, 6])
+		const restore = install_fetch(rows, bytes)
+		try {
+			const token = await fm.write_pile_image("/", "cover", bytes)
+			const path = `/.pile/${token.slice("pile:".length)}`
+			presign_queries.length = 0
+			await fm.get_media_src(path, { preview: true })
+			await fm.get_media_src(path)
+			await fm.get_media_src(path, { preview: true, original: true })
+			expect(presign_queries.map(query => [query.includes("preview=1"), query.includes("original=1")])).toEqual([
+				[true, false],
+				[false, false],
+				[false, true],
+			])
+		} finally {
 			restore()
 		}
 	})

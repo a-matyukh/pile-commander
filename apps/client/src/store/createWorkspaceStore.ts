@@ -1956,8 +1956,8 @@ export async function createWorkspaceStore(
 			}
 		},
 
-			async get_media_src(id: string, filename: string) {
-				return fm.get_media_src(id, { mimeType: get_mime_type(filename) })
+			async get_media_src(id: string, filename: string, options?: { preview?: boolean }) {
+				return fm.get_media_src(id, { mimeType: get_mime_type(filename), preview: options?.preview })
 			},
 
 		async save_note_content(id: string, new_content: string) {

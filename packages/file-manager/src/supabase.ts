@@ -477,9 +477,11 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// By entry id, not storage key: the row decides whose egress budget pays
 	// (forks share the source's key until re-keyed, copies share objects).
 	// `original` asks for the file itself rather than a visitor's preview
-	// (Download as .pile): signed-in only, charged to the caller
-	async function presign(entry_id: string, original = false, trace?: CloudTrace): Promise<MediaSrc> {
-		return presign_query(`entry=${encodeURIComponent(entry_id)}${original ? "&original=1" : ""}`, trace)
+	// (Download as .pile): signed-in only, charged to the caller. `preview`
+	// is a tile asking for the ready preview, members included
+	async function presign(entry_id: string, original = false, trace?: CloudTrace, preview = false): Promise<MediaSrc> {
+		const asks = `${original ? "&original=1" : ""}${preview && !original ? "&preview=1" : ""}`
+		return presign_query(`entry=${encodeURIComponent(entry_id)}${asks}`, trace)
 	}
 
 	// A backend before presign-by-path answers 400 (no entry id): this session
@@ -645,12 +647,13 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		mime_override?: string,
 		as_document = false,
 		original = false,
+		preview = false,
 	): Promise<MediaSrc> {
 		const row = await resolve(id)
 		if (row.storage_key) {
 			// presigned URLs expire on their own, no revoke needed. The object
 			// is served from the B2 origin, never from this one
-			return presign(row.id, original)
+			return presign(row.id, original, undefined, preview)
 		}
 		const content = await read_content(row.id)
 		if (content !== null) {
@@ -1394,8 +1397,8 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			return content
 		},
 
-		async get_media_src(id: string, media_options?: { mimeType?: string; original?: boolean }) {
-			return get_media_src_impl(id, media_options?.mimeType, false, media_options?.original)
+		async get_media_src(id: string, media_options?: { mimeType?: string; original?: boolean; preview?: boolean }) {
+			return get_media_src_impl(id, media_options?.mimeType, false, media_options?.original, media_options?.preview)
 		},
 
 		async save_text_file(id: string, content: string) {
