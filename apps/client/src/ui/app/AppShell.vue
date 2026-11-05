@@ -6,7 +6,7 @@ import { is_desktop } from '@/isDesktop'
 import { report_error } from '@/store/helpers/reportError'
 import { explorer_public_open } from '@/store/explorer/public_view'
 import { add_bookmark } from '@/store/explorer/bookmarks'
-import { explorer_navigation } from '@/store/explorer/navigation'
+import { explorer_navigation, remember_current_folder } from '@/store/explorer/navigation'
 import { has_unsaved_writes } from '@/services/workspace/xattrs'
 import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
 import { local_bookmark_ref, point_in_rect } from '@/ui/explorer/top-bar/folderDrop'
@@ -119,10 +119,15 @@ let stop_close_request: (() => void) | null = null
 let unmounted = false
 onMounted(async () => {
 	window.addEventListener('beforeunload', warn_unsaved)
+	window.addEventListener('pagehide', remember_current_folder)
 	if (!is_desktop) return
 	const { getCurrentWindow } = await import('@tauri-apps/api/window')
 	const stop = await getCurrentWindow().onCloseRequested(async (event) => {
-		if (!(await may_drop_unsaved('close'))) event.preventDefault()
+		if (!(await may_drop_unsaved('close'))) {
+			event.preventDefault()
+			return
+		}
+		remember_current_folder()
 	})
 	if (unmounted) stop()
 	else stop_close_request = stop
@@ -130,6 +135,7 @@ onMounted(async () => {
 onUnmounted(() => {
 	unmounted = true
 	window.removeEventListener('beforeunload', warn_unsaved)
+	window.removeEventListener('pagehide', remember_current_folder)
 	stop_close_request?.()
 })
 

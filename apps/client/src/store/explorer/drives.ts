@@ -16,6 +16,7 @@ import { normalize_workspace_id, path_separator } from '@/services/workspace/pat
 import { pending_entry_xattr } from '@/services/workspace/xattrs'
 import cloud from '@/store/cloud'
 import { require_supabase } from '@/services/cloud/client'
+import { root_info_with_kept } from '@/services/cloud/rootInfoMemory'
 import { cloud_workspaces_ready } from './cloud_list'
 import { DEMO_ROOT, public_roots } from './public_roots'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
@@ -449,8 +450,11 @@ async function read_cloud_roots(): Promise<DriveRoot[]> {
 	// Each top-level folder's own view and subfolders, so the tree shows its
 	// icon and chevron before it is opened. Without them: a plain folder
 	// with a chevron
-	const info: Record<string, WorkspaceRootInfo> = await workspace_root_info(require_supabase(), roots.map(root => root.id))
-		.catch(() => ({}))
+	// A failed read keeps what the last one said, so the icons and chevrons do not blink away
+	const ids = roots.map(root => root.id)
+	const fresh: Record<string, WorkspaceRootInfo> | null = await workspace_root_info(require_supabase(), ids)
+		.catch(() => null)
+	const info = root_info_with_kept(cloud.user?.id, ids, fresh)
 	// A view still being saved shows on the closed root too: the list read before the write landed must not put the old one back
 	return roots.map((root) => {
 		const pending = pending_entry_xattr('/', 'view', root.id)

@@ -71,7 +71,6 @@ function setup() {
 		async default_folder() { return { drive_id: 'cloud', root_id: 'a', folder_id: '/' } },
 		async home_path() { return '/Users/me' },
 		last_location: ref<FolderRef | null>(null),
-		after_launch_settles: () => {},
 	})
 	return { nav, gated, prepared, current: () => current }
 }

@@ -26,15 +26,6 @@ export type ExplorerLocation =
 export const EXPLORER_LAST_LOCATION_KEY = 'pile_commander_explorer_location'
 /** The last folder of each drive, so switching back to a drive returns to it */
 export const EXPLORER_DRIVE_LOCATIONS_KEY = 'pile_commander_explorer_drive_locations'
-/**
- * Set while launch opens the last place, cleared once it is open. Still set
- * at the next launch means that open hung or crashed: launch then opens the
- * default folder instead, so the app does not hang again on every start.
- */
-export const EXPLORER_LAUNCH_PENDING_KEY = 'pile_commander_explorer_launch_pending'
-
-/** How long a launch has to keep running before its last place counts as safe */
-export const LAUNCH_SETTLE_MS = 10_000
 
 type SelectionSnapshot = { ids: string[]; selection_mode: boolean }
 
@@ -63,10 +54,6 @@ export type ExplorerNavigationDeps = {
 	last_location: Ref<FolderRef | null>
 	/** The last folder opened on each drive, for switching back to it. Kept in memory when absent. */
 	last_by_drive?: Ref<Record<string, FolderRef>>
-	/** The launch mark (see EXPLORER_LAUNCH_PENDING_KEY). Kept in memory when absent. */
-	launch_pending?: Ref<boolean>
-	/** Runs `done` once the launch has stayed responsive for a while. Defaults to a timer. */
-	after_launch_settles?: (done: () => void) => void
 	/** A bookmark whose drive cannot be opened. The shell reads `store.last_error`. */
 	on_error?(error: unknown): void
 }
@@ -103,8 +90,6 @@ export type ExplorerNavigation = {
 	 * Opens the folder that was open before exit. A folder that is gone opens
 	 * the root of its drive. If that root cannot be opened, opens the default
 	 * root and keeps the saved place. With nothing saved, opens the default root.
-	 * If the previous launch never finished opening the saved place, opens the
-	 * default root and remembers it instead.
 	 */
 	open_at_launch(): Promise<void>
 	/** Drops a navigation still in flight, and the folder open it started. Does not close stores. */
@@ -213,12 +198,6 @@ type ShowOptions = {
 export function create_explorer_navigation(deps: ExplorerNavigationDeps): ExplorerNavigation {
 	const last_by_drive = deps.last_by_drive ?? ref<Record<string, FolderRef>>({})
 	const selections = new Map<string, SelectionSnapshot>()
-	const launch_pending = deps.launch_pending ?? ref(false)
-	let launched_in_process = false
-	/** Only the latest launch's settle timer may clear the mark */
-	let launch_seq = 0
-	const after_launch_settles = deps.after_launch_settles
-		?? ((done: () => void) => { setTimeout(done, LAUNCH_SETTLE_MS) })
 	let generation = 0
 	/** The generation whose navigation set `state.target` */
 	let target_owner = 0
@@ -508,33 +487,8 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		state.history = []
 		state.index = 0
 		state.location = null
-		// Only the first launch in this process can find a mark left by a hung
-		// one: a later call (the shell mounted again after an invitation or a
-		// missing publication) would read the mark its own process set seconds ago
-		const interrupted = !launched_in_process && launch_pending.value
-		launched_in_process = true
-		const last = deps.last_location.value ? { ...deps.last_location.value } : null
-		// The last place hung or crashed the previous launch: skip it once
-		const saved = interrupted ? null : last
-		launch_pending.value = saved !== null
-		// A newer launch owns the mark from here on: an older settle timer that
-		// fires while this one is still opening must not clear it
-		const launch = ++launch_seq
-		let shown: ExplorerLocation | null = null
-		try {
-			shown = saved ? await open_saved(saved, seen) : null
-		} catch (error) {
-			// A throw is not a hang
-			launch_pending.value = false
-			throw error
-		}
-		// A hang can also come right after the open (look-ahead reads, watch
-		// events), so the mark stays until the app has kept running a while
-		if (launch_pending.value) {
-			after_launch_settles(() => {
-				if (launch === launch_seq) launch_pending.value = false
-			})
-		}
+		const saved = deps.last_location.value ? { ...deps.last_location.value } : null
+		const shown = saved ? await open_saved(saved, seen) : null
 		if (seen !== generation) return
 		const opened = shown ?? await (async () => {
 			const fallback = await deps.default_folder()
@@ -595,6 +549,8 @@ export const explorer_drive_locations = useStorage<Record<string, FolderRef>>(
 			read: read_drive_locations,
 			write: (value) => JSON.stringify(value),
 		},
+		// The window can close before the next tick. The next launch must already see this.
+		flush: 'sync',
 	},
 )
 
@@ -607,6 +563,7 @@ export const explorer_last_location = useStorage<FolderRef | null>(
 			read: read_folder_ref,
 			write: (value) => JSON.stringify(value),
 		},
+		flush: 'sync',
 	},
 )
 
@@ -635,9 +592,24 @@ export const explorer_navigation = create_explorer_navigation({
 	home_path,
 	last_location: explorer_last_location,
 	last_by_drive: explorer_drive_locations,
-	// Written at once: the next launch must see it even if this one hangs
-	launch_pending: useStorage(EXPLORER_LAUNCH_PENDING_KEY, false, undefined, { flush: 'sync' }),
 	on_error(error) {
 		report_error(store, error)
 	},
 })
+
+/** The folder on screen, written before the window goes away. A page leaves the last folder. */
+export function remember_current_folder() {
+	const location = explorer_navigation.location
+	if (!location || location.kind !== 'folder') return
+	if (is_transient_drive(location.ref.drive_id)) return
+	const ref = {
+		drive_id: location.ref.drive_id,
+		root_id: location.ref.root_id,
+		folder_id: location.ref.folder_id,
+	}
+	explorer_last_location.value = ref
+	explorer_drive_locations.value = {
+		...explorer_drive_locations.value,
+		[ref.drive_id]: { ...ref },
+	}
+}
