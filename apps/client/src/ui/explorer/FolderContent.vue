@@ -46,7 +46,20 @@ const box = ref<HTMLElement | null>(null)
 const keys_workspace = computed(() => opening.value ? null : workspace.value)
 use_folder_keys(() => box.value, keys_workspace, scope.container, location)
 
-// A view opens a subfolder through the store (a double click). The Explorer
+// A double click on a folder in a view goes through the navigation, as a
+// click in the tree does: the header answers at once and a cloud folder
+// shows its placeholder instead of the old folder waiting for the network
+watch(workspace, (ws, _old, on_cleanup) => {
+	if (!ws) return
+	ws.set_open_folder_hook((folder_id) => {
+		const ref = location.value
+		if (!ref || ws !== store.workspace) return ws.open_folder(folder_id)
+		return explorer_navigation.open_folder({ ...ref, folder_id })
+	})
+	on_cleanup(() => ws.set_open_folder_hook(null))
+}, { immediate: true })
+
+// Anything else that opens a subfolder through the store: the Explorer
 // follows, so the header, the tree, history and bookmarks know where it is
 watch(() => workspace.value?.opened_folder_id, (opened) => {
 	const ref = location.value

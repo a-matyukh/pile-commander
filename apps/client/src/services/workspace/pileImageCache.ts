@@ -1,3 +1,4 @@
+import { create_device_queue } from './deviceQueue'
 import { indexeddb_picture_disk, type PictureDisk } from './pileImageDisk'
 
 /**
@@ -76,8 +77,11 @@ type Flight = {
 	refs: number
 }
 const inflight = new Map<string, Flight>()
-/** Bumped by a reset: a download started before it keeps nothing after it */
-let epoch = 0
+/**
+ * Device writes and the reset's wipe in one line: a reset bumps the epoch, a
+ * download or seed started before it keeps nothing after it, on the device too
+ */
+const device = create_device_queue()
 
 function blob_url(bytes: Uint8Array): string {
 	const copy = new Uint8Array(bytes.byteLength)
@@ -133,7 +137,8 @@ export function seed_pile_url(key: string, bytes: Uint8Array): () => void {
 	if (urls.has(key) || inflight.has(key)) return () => {}
 	park(key, { url: blob_url(bytes), refs: 0, bytes: bytes.byteLength })
 	// the device keeps it too: after a restart it shows without a download
-	void disk.put(key, bytes)
+	const target = disk
+	void device.write(device.epoch(), () => target.put(key, bytes))
 	return () => {}
 }
 
@@ -146,19 +151,20 @@ export function load_pile_url(key: string, load: () => Promise<Uint8Array | null
 	let flight = inflight.get(key)
 	if (!flight) {
 		const created: Flight = { promise: Promise.resolve(null), refs: 0 }
-		const started_in = epoch
+		const started_in = device.epoch()
 		// memory, then this device, then the network (what it brings is kept on the device)
 		const read = async () => {
 			const kept = await within(disk.get(key), disk_wait_ms)
 			if (kept) return kept
 			const bytes = await load()
-			if (bytes && started_in === epoch) void disk.put(key, bytes)
+			const target = disk
+			if (bytes && started_in === device.epoch()) void device.write(started_in, () => target.put(key, bytes))
 			return bytes
 		}
 		created.promise = read().then((bytes) => {
 			const refs = created.refs
 			if (inflight.get(key) === created) inflight.delete(key)
-			if (!bytes || started_in !== epoch) return null
+			if (!bytes || started_in !== device.epoch()) return null
 			const row: Row = { url: blob_url(bytes), refs: 0, bytes: bytes.byteLength }
 			// Everyone backed out while it downloaded: keep it for the way back
 			if (refs <= 0) {
@@ -193,8 +199,8 @@ export function release_pile_url(key: string) {
 
 /** Forget every picture, on this device too (sign-out: the next account must not see them) */
 export function reset_pile_image_cache() {
-	epoch += 1
-	void disk.clear()
+	const target = disk
+	void device.wipe(() => target.clear())
 	for (const row of urls.values()) URL.revokeObjectURL(row.url)
 	urls.clear()
 	inflight.clear()

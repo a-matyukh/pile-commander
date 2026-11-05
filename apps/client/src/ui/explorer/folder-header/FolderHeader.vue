@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Icon } from '@iconify/vue'
+import { t } from '@/i18n'
 import { actions_on_top, explorer_settings, path_in_header, path_on_top } from '@/store/explorer/settings'
 import Breadcrumbs from './Breadcrumbs.vue'
 import FolderActions from './FolderActions.vue'
@@ -18,6 +20,12 @@ const { location, page, page_arg, workspace, crumbs, title } = use_folder_place(
 const shows_place = computed(() => path_in_header.value || (!!page.value && !path_on_top.value))
 const compact = computed(() => explorer_settings.header_style === 'compact' || (!!page.value && !explorer_settings.path_full))
 const visible = computed(() => (location.value || page.value) && (shows_place.value || (!actions_on_top.value && !!workspace.value)))
+/**
+ * The folder shows what was kept (memory or this device) while the cloud is
+ * read again: a quiet mark by the title, only if that takes a moment
+ */
+const refreshing = computed(() => !!workspace.value && !!location.value
+	&& workspace.value.refreshing_folder_id === location.value.folder_id)
 </script>
 
 <template>
@@ -25,6 +33,7 @@ const visible = computed(() => (location.value || page.value) && (shows_place.va
 		<div v-if="shows_place && compact" class="ph0 cp">
 			<div class="hrow">
 				<Breadcrumbs :crumbs="crumbs" :title="title" />
+				<Icon v-if="refreshing" icon="tabler:loader-2" class="rfm" :title="t('folder.refreshing')" :aria-label="t('folder.refreshing')" />
 				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="title" align="end" />
 			</div>
 		</div>
@@ -37,6 +46,7 @@ const visible = computed(() => (location.value || page.value) && (shows_place.va
 			</template>
 			<div class="hrow">
 				<div class="ttl">{{ title }}</div>
+				<Icon v-if="refreshing" icon="tabler:loader-2" class="rfm" :title="t('folder.refreshing')" :aria-label="t('folder.refreshing')" />
 				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="title" align="end" />
 			</div>
 		</div>
@@ -101,5 +111,28 @@ const visible = computed(() => (location.value || page.value) && (shows_place.va
 }
 .explorer.lg .ttl {
 	font-size: 21px;
+}
+/* Quiet: shows only when the cloud takes a moment to answer, so a quick check does not flash.
+   It sits by the title: the free space moves from the title to it */
+.ttl:has(+ .rfm),
+.ph0.cp .hrow > :deep(.bc):has(+ .rfm) {
+	margin-right: 0;
+}
+.rfm {
+	flex: none;
+	margin: 0 auto 0 6px;
+	font-size: 14px;
+	color: var(--text-muted);
+	opacity: 0;
+	animation: rfm-in 160ms ease-out 400ms forwards, rfm-spin 0.9s linear infinite;
+}
+@keyframes rfm-in {
+	to { opacity: 0.7; }
+}
+@keyframes rfm-spin {
+	to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.rfm { animation: rfm-in 160ms ease-out 400ms forwards; }
 }
 </style>

@@ -474,6 +474,8 @@ export const en: typeof ru = {
 	folder: {
 		empty: 'This folder is empty',
 		opening: 'Opening the folder…',
+		refreshing: 'Checking with the cloud…',
+		gone: 'This folder was deleted or moved elsewhere',
 	},
 	list: {
 		name: 'Name',

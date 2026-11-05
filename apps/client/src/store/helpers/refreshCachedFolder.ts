@@ -50,6 +50,8 @@ export function folder_read_ticket(store: object, folder_id: string) {
 	}
 }
 
+export type FolderReadTicket = ReturnType<typeof folder_read_ticket>
+
 /** Cached folder ids that should be re-fetched for the given watch paths. */
 export function cached_folders_affected_by(
 	folders: Record<string, FolderWithChildrenXattrs>,
@@ -118,24 +120,29 @@ function restore_layout_lost_on_save(
  * Retries when a local xattr write bumps the folder cache generation during
  * the fetch — otherwise a stale snapshot can overwrite an optimistic update
  * (e.g. folder view switch appears to do nothing until the folder is re-opened).
+ *
+ * Resolves 'gone' when the open folder itself no longer exists.
  */
 export async function refresh_cached_folder(
 	store: WorkspaceState & CanvasPersistStore & { content_caches: EntryContentCaches },
 	fm: FileManager,
 	folder_id: string,
 	event: WatchEvent,
-): Promise<void> {
+	/** A read of this folder already in flight, with the ticket taken when it started: the first attempt uses it */
+	started?: { read: Promise<FolderWithChildrenXattrs>; ticket: FolderReadTicket },
+): Promise<'gone' | void> {
 	for (let attempt = 0; attempt < 3; attempt++) {
 		if (!store.folders[folder_id]) return
 
 		const generation_at_start = folder_cache_generation(folder_id)
 		const previous_children = store.folders[folder_id]!.children ?? []
 		const old_child_ids = new Set(previous_children.map(c => c.id))
-		const ticket = folder_read_ticket(store, folder_id)
+		const reuse = attempt === 0 ? started : undefined
+		const ticket = reuse?.ticket ?? folder_read_ticket(store, folder_id)
 
 		let folder_data: FolderWithChildrenXattrs
 		try {
-			folder_data = await fm.folder_with_children_xattrs(folder_id)
+			folder_data = await (reuse?.read ?? fm.folder_with_children_xattrs(folder_id))
 		} catch (error) {
 			// A later read already answered: this failure is old news
 			if (!ticket.is_latest()) return
@@ -155,7 +162,7 @@ export async function refresh_cached_folder(
 			// the view on (the Explorer opens the parent). Nothing to report
 			if (is_missing_path_error(error) && store.opened_folder_id === folder_id) {
 				ticket.applied()
-				return
+				return 'gone'
 			}
 			report_error(store, error)
 			return
@@ -212,4 +219,14 @@ export async function refresh_cached_folder(
 		sync_tree_from_folders(store)
 		return
 	}
+}
+
+/**
+ * The event for reading a folder again after it was shown from what was
+ * kept (memory or this device). It only reads: a key the kept copy has and
+ * the cloud does not is gone, not lost, so nothing is written back
+ * (`content_changed: false` skips `restore_layout_lost_on_save`)
+ */
+export function reread_event(folder_id: string): WatchEvent {
+	return { kind: 'modify', ids: [folder_id], content_changed: false }
 }

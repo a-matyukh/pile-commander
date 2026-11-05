@@ -70,6 +70,26 @@ describe('pictures kept on the device', () => {
 		expect(disk.keys()).toEqual([])
 	})
 
+	it('a seed still on its way to the device when the account signs out lands nowhere', async () => {
+		const disk = memory_picture_disk()
+		let finish: () => void = () => {}
+		const cache = await launch(disk)
+		cache.set_pile_image_disk({
+			...disk,
+			async put(name, bytes) {
+				await new Promise<void>(resolve => { finish = resolve })
+				await disk.put(name, bytes)
+			},
+		})
+		cache.seed_pile_url(key, new Uint8Array([7]))
+		await settle()
+		cache.reset_pile_image_cache()
+		finish()
+		await settle()
+		await settle()
+		expect(disk.keys()).toEqual([])
+	})
+
 	it('another account on this device drops the pictures; the same account keeps them', async () => {
 		const disk = memory_picture_disk()
 		const cache = await launch(disk)

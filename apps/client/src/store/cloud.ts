@@ -84,6 +84,7 @@ import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
+import { reset_folder_list_cache, set_folder_list_owner } from '@/services/cloud/folderListCache'
 
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
@@ -417,6 +418,7 @@ const cloud: CloudStore = {
 		if (this.user) {
 			// the pictures kept on this device belong to this account
 			set_pile_image_owner(this.user.id)
+			set_folder_list_owner(this.user.id)
 			void this.load_after_sign_in()
 		}
 
@@ -428,6 +430,7 @@ const cloud: CloudStore = {
 			if (session) {
 				this.user = session.user
 				set_pile_image_owner(session.user.id)
+				set_folder_list_owner(session.user.id)
 				// Defer out of the auth callback (lock + fresh JWT clock skew).
 				const user_id = session.user.id
 				setTimeout(() => {
@@ -443,8 +446,9 @@ const cloud: CloudStore = {
 			// cached user and local workspaces; cloud data retries on
 			// TOKEN_REFRESHED / SIGNED_IN and on the browser `online` event.
 			if (is_transient_empty_session(event, cached_session_user())) return
-			// Covers stay in memory between visits; the next account must not get them
+			// Covers and folder lists stay between visits; the next account must not get them
 			reset_pile_image_cache()
+			void reset_folder_list_cache()
 			this.workspaces = []
 			this.roles = {}
 			this.published_slugs = {}
