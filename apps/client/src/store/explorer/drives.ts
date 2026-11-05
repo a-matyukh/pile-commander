@@ -13,6 +13,7 @@ import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { require_browser_storage } from '@/services/workspace/browserStorage'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
+import { pending_entry_xattr } from '@/services/workspace/xattrs'
 import cloud from '@/store/cloud'
 import { require_supabase } from '@/services/cloud/client'
 import { cloud_workspaces_ready } from './cloud_list'
@@ -450,7 +451,12 @@ async function read_cloud_roots(): Promise<DriveRoot[]> {
 	// with a chevron
 	const info: Record<string, WorkspaceRootInfo> = await workspace_root_info(require_supabase(), roots.map(root => root.id))
 		.catch(() => ({}))
-	return roots.map(root => ({ ...root, view: info[root.id]?.view, subfolders: info[root.id]?.subfolders }))
+	// A view still being saved shows on the closed root too: the list read before the write landed must not put the old one back
+	return roots.map((root) => {
+		const pending = pending_entry_xattr('/', 'view', root.id)
+		const view = pending === undefined ? info[root.id]?.view : (pending ?? undefined)
+		return { ...root, view, subfolders: info[root.id]?.subfolders }
+	})
 }
 
 export const explorer_drives = create_explorer_drives({

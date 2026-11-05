@@ -7,6 +7,8 @@ import {
 	type FolderWithChildrenXattrs,
 } from '@pile-commander/file-manager'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
+import { keep_folder_lists, recall_folder_list } from '@/services/cloud/folderListCache'
+import { gate_pending_entries } from '@/services/cloud/pendingEntries'
 import { create_demo_file_manager } from '@/services/demoPack'
 import type { LoadWorkspaceOptions, WorkspaceStore } from '@/domain/Store'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
@@ -41,7 +43,7 @@ export async function open_workspace_store(
 	// cloud workspaces need the shared supabase client; their root
 	// folder id is "/" while item.id stays the workspace UUID (uid)
 	const fm = item.type === 'cloud'
-		? create_app_cloud_file_manager(item.id)
+		? gate_pending_entries(keep_folder_lists(create_app_cloud_file_manager(item.id), item.id))
 		: item.type === 'browser'
 			// web desktops: item.id is the virtual root path; no access check
 			? createBrowserFileManager(require_browser_storage())
@@ -94,6 +96,7 @@ export async function open_workspace_store(
 			can_write,
 			live,
 			...reads,
+			recall_folder: item.type === 'cloud' ? folder_id => recall_folder_list(item.id, folder_id) : undefined,
 		}))
 	} catch (error) {
 		if (item.type !== 'cloud') throw error

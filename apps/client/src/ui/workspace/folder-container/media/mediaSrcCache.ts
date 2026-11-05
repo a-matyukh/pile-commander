@@ -23,6 +23,14 @@ type MediaCacheEntry = MediaBlob & {
 export const IDLE_REMOTE_MEDIA = 200
 
 /**
+ * The cache key of a file and what was asked for it: a tile's preview is not
+ * the original, and the two may sit side by side (a tile and a viewer)
+ */
+export function media_cache_key(file_id: string, preview: boolean): string {
+	return preview ? `${file_id}\0preview` : file_id
+}
+
+/**
  * Instances are per workspace store: entry ids are paths, which repeat
  * across workspaces, so a shared cache would serve one window's blobs in
  * another window showing a different workspace.
@@ -152,8 +160,10 @@ export function createMediaSrcCache(now: () => number = Date.now) {
 	 * makes every holder reload
 	 */
 	function invalidate(fileId: string) {
-		const cached = mediaCache.get(fileId)
-		if (cached) cached.expires_at = 0
+		for (const key of [fileId, media_cache_key(fileId, true)]) {
+			const cached = mediaCache.get(key)
+			if (cached) cached.expires_at = 0
+		}
 		versions.set(fileId, (versions.get(fileId) ?? 0) + 1)
 	}
 

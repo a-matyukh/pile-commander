@@ -94,8 +94,10 @@ $$;
 -- statement (remove_xattr used to rewrite the whole object and could drop a
 -- key another client wrote meanwhile). Each path at most once. Refused rows
 -- come back instead of aborting the batch: 'missing' (gone, trashed, or not
--- in this workspace) and 'too_large' (the result would break the 64 KB xattrs
--- CHECK; the row stays untouched)
+-- in this workspace — also when it went while this merge waited for its row:
+-- a picture freshened at the moment a cleanup drops it must not look saved)
+-- and 'too_large' (the result would break the 64 KB xattrs CHECK; the row
+-- stays untouched)
 -- ----------------------------------------------------------------------------
 
 create or replace function private.merge_entry_xattrs(
@@ -165,13 +167,17 @@ begin
           from targets t
          where e.id = t.entry_id
            and t.fits
+           and e.deleted_at is null
+     returning e.id
     )
     select it.item_path,
-           case when t.entry_id is null then 'missing' else 'too_large' end
+           case when t.entry_id is not null and not t.fits then 'too_large' else 'missing' end
       from items it
       left join targets t on t.item_path = it.item_path
+      left join merged m on m.id = t.entry_id
      where t.entry_id is null
-        or not t.fits;
+        or not t.fits
+        or m.id is null;
 end
 $$;
 
@@ -1053,6 +1059,84 @@ begin
     delete from public.entries d
      where d.node_path <@ v_entry.node_path
        and d.deleted_at is not null;
+end
+$$;
+
+-- ----------------------------------------------------------------------------
+-- sweep_pile_images: the folder's spare cover / background files, dropped in
+-- one call (the client used to read `.pile`, then delete and purge file by
+-- file). A file of a requested role goes when that role's attribute does not
+-- name it AND it is at least an hour older than the folder's own updated_at —
+-- server clocks only, read from the locked folder row. Younger means its
+-- attribute may not be written yet (the next picture, another device's, an
+-- old one just chosen again and freshened): it stays for a later sweep.
+-- The age check is inside the UPDATE, so a freshen that commits first is seen
+-- (READ COMMITTED re-checks the row); one that comes after finds the row gone
+-- and gets 'missing' from merge_entry_xattrs — the client uploads again.
+-- Soft delete, then hard delete in one transaction, as delete_moved_entry:
+-- watchers get the removal and nothing is left in the trash (the blob goes to
+-- blob_deletions through the trigger). By path: one round trip. Lock order:
+-- workspace (lock_entry_workspace) → folder row → files. Returns how many.
+-- ----------------------------------------------------------------------------
+
+create or replace function private.sweep_pile_images(
+    p_workspace uuid,
+    p_path text,
+    p_roles text[],
+    p_client_id text default null
+)
+returns int
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_id uuid;
+    v_folder public.entries%rowtype;
+    v_pile uuid;
+    v_keep text[];
+    v_ids uuid[];
+begin
+    select e.id into v_id from public.entries e
+     where e.workspace_id = p_workspace and e.path = p_path and e.deleted_at is null;
+    if v_id is null then
+        return 0;
+    end if;
+    perform private.lock_entry_workspace(v_id);
+    select * into v_folder from public.entries e
+     where e.id = v_id and e.deleted_at is null
+       for update;
+    if not found or v_folder.kind <> 'folder' then
+        return 0;
+    end if;
+    select e.id into v_pile from public.entries e
+     where e.parent_id = v_folder.id and e.name = '.pile' and e.kind = 'folder' and e.deleted_at is null;
+    if v_pile is null then
+        return 0;
+    end if;
+    -- the file each requested role names now (`pile:<role>-<hash8>.webp`)
+    select coalesce(array_agg(substr(v_folder.xattrs->>r, 6)), '{}')
+      into v_keep
+      from unnest(p_roles) r
+     where v_folder.xattrs->>r ~ ('^pile:' || r || '-[0-9a-f]{8}\.webp$');
+    with dropped as (
+        update public.entries f
+           set deleted_at = now(), updated_by_client = p_client_id
+         where f.parent_id = v_pile
+           and f.kind = 'file'
+           and f.deleted_at is null
+           and f.name ~ '^(cover|background)-[0-9a-f]{8}\.webp$'
+           and split_part(f.name, '-', 1) = any (p_roles)
+           and not (f.name = any (v_keep))
+           and f.updated_at <= v_folder.updated_at - interval '1 hour'
+     returning f.id
+    )
+    select coalesce(array_agg(d.id), '{}') into v_ids from dropped d;
+    if cardinality(v_ids) = 0 then
+        return 0;
+    end if;
+    delete from public.entries d where d.id = any (v_ids);
+    return cardinality(v_ids);
 end
 $$;
 
@@ -2036,10 +2120,11 @@ $$;
 -- apps/backend/src/derivatives.ts). The worker PULLS its work, like the
 -- re-key sweep above: there is no enqueue at /finalize or at re-key to
 -- forget, uploads made before a deploy are backfilled, and a crash in the
--- middle of a generation is simply picked up again. Only public workspaces:
--- previews go to non-members, and a non-member sees public boards alone —
--- publishing a board makes its blobs pending on the next tick, and until
--- then visitors get the original under max_public_file_bytes, as before.
+-- middle of a generation is simply picked up again. Every workspace: a
+-- non-member of a public board gets the preview instead of the original, and
+-- members get it in tiles when they ask for one (GET /presign?preview=1; the
+-- original stays theirs for viewing, downloads, export and sync). Until a
+-- blob is decided, everyone gets the original, as before.
 -- Trashed rows count: the trash is restorable. All four are service role
 -- only (revoked at the bottom of this file, private functions included)
 -- ----------------------------------------------------------------------------
@@ -2048,8 +2133,8 @@ $$;
 -- their mime maps to (image/* → thumb, video/* → poster; p_kinds lets the
 -- backend leave video out while posters are off): no row yet, or a failed
 -- row past its backoff with attempts left. One row per key — copies share
--- the object — oldest blob first. The grouping runs over every public blob
--- per call; fine at this scale, a cursor or a pending flag later
+-- the object — oldest blob first. The grouping runs over every image and
+-- video blob per call; fine at this scale, a cursor or a pending flag later
 create or replace function private.list_pending_derivatives(
     p_kinds text[],
     p_max_attempts int,
@@ -2069,9 +2154,7 @@ as $$
                  max(e.size_bytes) as size_bytes,
                  min(e.created_at) as first_seen
             from public.entries e
-            join public.workspaces w on w.id = e.workspace_id
            where e.storage_key is not null
-             and w.is_public
              and (lower(e.mime) like 'image/%' or lower(e.mime) like 'video/%')
            group by e.storage_key
       ) k
@@ -2857,6 +2940,20 @@ security invoker
 set search_path = public, extensions
 as $$
     select private.delete_entry(p_entry, p_client_id);
+$$;
+
+create or replace function public.sweep_pile_images(
+    p_workspace uuid,
+    p_path text,
+    p_roles text[],
+    p_client_id text default null
+)
+returns int
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.sweep_pile_images(p_workspace, p_path, p_roles, p_client_id);
 $$;
 
 create or replace function public.restore_entry(p_entry uuid, p_client_id text default null)

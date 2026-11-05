@@ -308,6 +308,11 @@ export type CloudFileManager = FileManager & {
 	watch_workspace(on_change: () => void): Promise<Unwatch>
 }
 
+/** PostgREST: the RPC is not in this database (an older schema) */
+function is_missing_function(error: { code?: string; message?: string }): boolean {
+	return error.code === "PGRST202" || /could not find the function/i.test(error.message ?? "")
+}
+
 /** The backend refused a presign (the status tells a gone file from an older backend) */
 class PresignRefused extends Error {
 	constructor(readonly status: number) {
@@ -477,9 +482,11 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// By entry id, not storage key: the row decides whose egress budget pays
 	// (forks share the source's key until re-keyed, copies share objects).
 	// `original` asks for the file itself rather than a visitor's preview
-	// (Download as .pile): signed-in only, charged to the caller
-	async function presign(entry_id: string, original = false, trace?: CloudTrace): Promise<MediaSrc> {
-		return presign_query(`entry=${encodeURIComponent(entry_id)}${original ? "&original=1" : ""}`, trace)
+	// (Download as .pile): signed-in only, charged to the caller. `preview`
+	// is a tile asking for the ready preview, members included
+	async function presign(entry_id: string, original = false, trace?: CloudTrace, preview = false): Promise<MediaSrc> {
+		const asks = `${original ? "&original=1" : ""}${preview && !original ? "&preview=1" : ""}`
+		return presign_query(`entry=${encodeURIComponent(entry_id)}${asks}`, trace)
 	}
 
 	// A backend before presign-by-path answers 400 (no entry id): this session
@@ -645,12 +652,13 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		mime_override?: string,
 		as_document = false,
 		original = false,
+		preview = false,
 	): Promise<MediaSrc> {
 		const row = await resolve(id)
 		if (row.storage_key) {
 			// presigned URLs expire on their own, no revoke needed. The object
 			// is served from the B2 origin, never from this one
-			return presign(row.id, original)
+			return presign(row.id, original, undefined, preview)
 		}
 		const content = await read_content(row.id)
 		if (content !== null) {
@@ -1202,27 +1210,38 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			const hash8 = await trace.step("hash", () => pile_image_hash8(bytes))
 			const file = `${role}-${hash8}.webp`
 			const pile = await trace.step("pile_dir", () => pile_dir_of(folder_id))
-			try {
-				const copy = new Uint8Array(bytes.byteLength)
-				copy.set(bytes)
-				// No "is it there already" lookup first: choosing a picture that is
-				// already in `.pile` is rare, and the name conflict says so
-				await upload_file_impl(
-					pile.path,
-					file,
-					new Blob([copy], { type: "image/webp" }),
-					"image/webp",
-					undefined,
-					trace,
-					pile,
-				)
-			} catch (error) {
-				if (!sibling_name_taken(error)) throw error
-				if (!(await child_named(pile, file))) throw error
-				trace.note("reused", 1)
-				// An old unnamed file chosen again: freshen it, so no cleanup (here or
-				// on another device) takes it before its attribute is written
-				await trace.step("freshen", () => merge_xattrs([{ path: `${pile.path}/${file}`, xattrs: {} }]))
+			// One more round when the file went at the very moment it was found:
+			// a cleanup (here or on another device) dropped it, so it is uploaded again
+			for (let attempt = 0; ; attempt++) {
+				try {
+					const copy = new Uint8Array(bytes.byteLength)
+					copy.set(bytes)
+					// No "is it there already" lookup first: choosing a picture that is
+					// already in `.pile` is rare, and the name conflict says so
+					await upload_file_impl(
+						pile.path,
+						file,
+						new Blob([copy], { type: "image/webp" }),
+						"image/webp",
+						undefined,
+						trace,
+						pile,
+					)
+					break
+				} catch (error) {
+					if (!sibling_name_taken(error)) throw error
+					if (!(await child_named(pile, file))) {
+						if (attempt === 0) continue
+						throw error
+					}
+					trace.note("reused", 1)
+					// An old unnamed file chosen again: freshen it, so no cleanup (here or
+					// on another device) takes it before its attribute is written. A
+					// cleanup that got there first leaves it missing: upload it again
+					const [refused] = await trace.step("freshen", () => merge_xattrs([{ path: `${pile.path}/${file}`, xattrs: {} }]))
+					if (refused?.status !== "missing") break
+					if (attempt > 0) throw new Error(`the picture ${file} went while it was being saved`)
+				}
 			}
 			return pile_image_token(role, hash8)
 		} finally {
@@ -1283,14 +1302,40 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		}
 	}
 
+	// A database with sweep_pile_images drops the spare files in one call, the
+	// age check under the folder's lock; an older one answers "function not
+	// found" and the file-by-file path below runs for the rest of the session.
+	// Drop the fallback once the diff is everywhere
+	let server_sweep = true
+
 	/**
 	 * Drop every file of these roles in the folder's `.pile` except the one the
-	 * xattr names now. Best-effort: the attribute is already stored, so a
-	 * failed delete is logged and does not fail the xattr write.
+	 * xattr names now (and any younger than an hour: its attribute may not be
+	 * written yet). Best-effort: the attribute is already stored, so a failed
+	 * delete is logged and does not fail the xattr write.
 	 */
 	async function sweep_pile_images(folder_id: string, names: Iterable<string>) {
 		const roles = [...names].filter((name) => PILE_IMAGE_ATTRS.has(name))
 		if (roles.length === 0) return
+		if (server_sweep) {
+			const { error } = await client.rpc("sweep_pile_images", {
+				p_workspace: workspace_id,
+				p_path: folder_id,
+				p_roles: roles,
+				p_client_id: client_instance_id(),
+			})
+			if (!error) return
+			if (!is_missing_function(error)) {
+				console.error("pile image cleanup failed", folder_id, error)
+				return
+			}
+			server_sweep = false
+		}
+		await sweep_pile_images_one_by_one(folder_id, roles)
+	}
+
+	/** The pre-RPC cleanup: read `.pile`, then delete and purge file by file */
+	async function sweep_pile_images_one_by_one(folder_id: string, roles: string[]) {
 		let folder: EntryRow
 		try {
 			folder = await resolve(folder_id)
@@ -1394,8 +1439,8 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			return content
 		},
 
-		async get_media_src(id: string, media_options?: { mimeType?: string; original?: boolean }) {
-			return get_media_src_impl(id, media_options?.mimeType, false, media_options?.original)
+		async get_media_src(id: string, media_options?: { mimeType?: string; original?: boolean; preview?: boolean }) {
+			return get_media_src_impl(id, media_options?.mimeType, false, media_options?.original, media_options?.preview)
 		},
 
 		async save_text_file(id: string, content: string) {

@@ -153,6 +153,8 @@ type WorkspaceStore = {
 	is_folder_loading(folder_id: string): boolean
 	/** Set while `open_folder` awaits the fetch; drives the header loading spinner. */
 	opening_folder_id: string | null
+	/** The open folder shows what was kept (memory or this device) while the cloud is read again */
+	refreshing_folder_id: string | null
 
 	/** Normalized folder cache: single source of truth for folder data. */
 	folders: Record<string, FolderWithChildrenXattrs>
@@ -323,10 +325,13 @@ type WorkspaceStore = {
 	/** Creates a line/arrow shape spanning two absolute pane points. */
 	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug): Promise<string>
 	read_note_content(id: string): Promise<string>
-	get_media_src(id: string, filename: string): Promise<MediaSrc>
+	/** `preview`: a tile asks for the image's ready preview instead of the original */
+	get_media_src(id: string, filename: string, options?: { preview?: boolean }): Promise<MediaSrc>
 	save_note_content(id: string, new_content: string): Promise<void>
 
 	open(widget: FolderContainerWidgetChild): void
+	/** The Explorer opens folders from views through its navigation; null: the store opens them itself */
+	set_open_folder_hook(hook: ((folder_id: string) => unknown) | null): void
 
 } & SelectionStore & ClipboardStore
 

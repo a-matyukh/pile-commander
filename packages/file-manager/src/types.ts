@@ -198,9 +198,13 @@ interface FileManager {
 	 * `original`: the file itself where a public-board visitor would be served a
 	 * preview (Download as .pile). The backend signs it only for a signed-in
 	 * caller, where the author allows forks and downloads, and charges the
-	 * caller's own download allowance
+	 * caller's own download allowance.
+	 * `preview`: a tile asks for the file's ready preview (an image's webp
+	 * thumb, a video's poster) instead of the original; `variant` in the answer
+	 * says which came. Cloud only; elsewhere, and while there is none, the
+	 * original comes
 	 */
-	get_media_src(id: string, options?: { mimeType?: string; original?: boolean }): Promise<MediaSrc>
+	get_media_src(id: string, options?: { mimeType?: string; original?: boolean; preview?: boolean }): Promise<MediaSrc>
 	save_text_file(id: string, content: string): Promise<void>
 	/**
 	 * Imports a file from bytes (drag & drop, browser file picker, OS import

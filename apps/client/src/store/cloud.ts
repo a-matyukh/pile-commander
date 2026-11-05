@@ -84,6 +84,10 @@ import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
+import { t } from '@/i18n'
+import { reset_folder_list_cache, set_folder_list_owner } from '@/services/cloud/folderListCache'
+import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
+import { has_unsaved_writes } from '@/services/workspace/xattrs'
 
 /**
  * Opens a cloud workspace the cloud flows lead to: an accepted invite, a fork,
@@ -417,6 +421,7 @@ const cloud: CloudStore = {
 		if (this.user) {
 			// the pictures kept on this device belong to this account
 			set_pile_image_owner(this.user.id)
+			set_folder_list_owner(this.user.id)
 			void this.load_after_sign_in()
 		}
 
@@ -428,6 +433,7 @@ const cloud: CloudStore = {
 			if (session) {
 				this.user = session.user
 				set_pile_image_owner(session.user.id)
+				set_folder_list_owner(session.user.id)
 				// Defer out of the auth callback (lock + fresh JWT clock skew).
 				const user_id = session.user.id
 				setTimeout(() => {
@@ -443,8 +449,9 @@ const cloud: CloudStore = {
 			// cached user and local workspaces; cloud data retries on
 			// TOKEN_REFRESHED / SIGNED_IN and on the browser `online` event.
 			if (is_transient_empty_session(event, cached_session_user())) return
-			// Covers stay in memory between visits; the next account must not get them
+			// Covers and folder lists stay between visits; the next account must not get them
 			reset_pile_image_cache()
+			void reset_folder_list_cache()
 			this.workspaces = []
 			this.roles = {}
 			this.published_slugs = {}
@@ -525,10 +532,16 @@ const cloud: CloudStore = {
 
 	async sign_out() {
 		this.last_error = null
+		// a picture or a look still on its way to the cloud would be dropped: ask first
+		const dropping = has_unsaved_writes()
+		if (!(await may_drop_unsaved('sign_out'))) return
 		const { error } = await require_supabase().auth.signOut()
 		if (error) {
 			this.last_error = error.message
+			return
 		}
+		// the store that started it is gone: the sign-in form says it
+		if (dropping) this.last_error = t('unsaved.cancelled')
 	},
 
 	async request_password_reset(email: string) {

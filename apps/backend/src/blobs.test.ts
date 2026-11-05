@@ -50,8 +50,23 @@ describe("choose_download", () => {
 		).toMatchObject({ key: `deriv/${WS}/${BLOB}/poster.jpg`, variant: "poster", gate_file_size: false });
 	});
 
-	test("members always get the original", () => {
+	test("members get the original unless a tile asks for the preview", () => {
 		expect(choose_download(target({ is_member: true }), "serve")).toEqual(ORIGINAL);
+		expect(choose_download(target({ is_member: true }), "serve", false, true)).toEqual({
+			key: `deriv/${WS}/${BLOB}/thumb.webp`,
+			size_bytes: 204800,
+			gate_file_size: false,
+			variant: "thumb",
+		});
+	});
+
+	test("a tile's ask changes nothing without a ready preview, outside serve, or next to an original on request", () => {
+		const member = { is_member: true };
+		expect(choose_download(target({ ...member, deriv_key: null, deriv_size_bytes: null, deriv_kind: null }), "serve", false, true))
+			.toEqual(ORIGINAL);
+		expect(choose_download(target(member), "generate", false, true)).toEqual(ORIGINAL);
+		expect(choose_download(target(member), "off", false, true)).toEqual(ORIGINAL);
+		expect(choose_download(target(member), "serve", true, true)).toEqual(ORIGINAL);
 	});
 
 	test("without a preview a non-member gets the original through the size gate", () => {

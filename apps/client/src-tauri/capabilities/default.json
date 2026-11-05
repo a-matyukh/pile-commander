@@ -9,6 +9,7 @@
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-request-user-attention",
+    "core:window:allow-destroy",
     "notification:default",
     "fs:default",
     "fs:allow-watch",

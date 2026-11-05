@@ -31,3 +31,19 @@ describe('xattrs_map', () => {
 		})
 	})
 })
+
+describe('pending_entry_xattr: a look in flight seen outside a store', () => {
+	test('scoped to its workspace, removal is null, nothing pending is undefined', async () => {
+		const { pending_entry_xattr, set_pending_entry_xattr, clear_pending_entry_xattr } = await import('./xattrs')
+		set_pending_entry_xattr('/', 'view', 'gallery', 'ws-a')
+		set_pending_entry_xattr('/', 'icon', '\0', 'ws-a')
+		try {
+			expect(pending_entry_xattr('/', 'view', 'ws-a')).toBe('gallery')
+			expect(pending_entry_xattr('/', 'view', 'ws-b')).toBeUndefined()
+			expect(pending_entry_xattr('/', 'icon', 'ws-a')).toBeNull()
+		} finally {
+			clear_pending_entry_xattr('/', 'view', undefined, 'ws-a')
+			clear_pending_entry_xattr('/', 'icon', undefined, 'ws-a')
+		}
+	})
+})

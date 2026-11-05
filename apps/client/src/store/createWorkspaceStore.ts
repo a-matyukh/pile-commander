@@ -95,10 +95,13 @@ import {
 	rename_folder_canvas_connections,
 	type CanvasPersistStore,
 } from './helpers/persistCanvas'
+import { t } from '@/i18n'
+import { hold_entry } from '@/services/cloud/pendingEntries'
 import {
 	cached_folders_affected_by,
 	folder_read_ticket,
 	refresh_cached_folder,
+	reread_event,
 } from './helpers/refreshCachedFolder'
 import { is_missing_path_error } from './helpers/fsErrors'
 import {
@@ -237,20 +240,42 @@ export type WorkspaceStoreOptions = {
 	initial_root?: Promise<FolderWithChildrenXattrs>
 	/** Folder reads started before the store existed; the first open of each takes its own once */
 	prefetched?: Map<string, Promise<FolderWithChildrenXattrs>>
+	/**
+	 * What this device kept of a folder (cloud): an open shows it when it
+	 * answers before the cloud does, and the cloud's answer follows it
+	 */
+	recall_folder?: (folder_id: string) => Promise<FolderWithChildrenXattrs | null>
 }
 
 export async function createWorkspaceStore(
 	ws: WorkspacesListItem,
 	fm: FileManager,
-	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched }: WorkspaceStoreOptions = {},
+	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched, recall_folder }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
 	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => initial_root ?? fm.folder_with_children_xattrs(root_folder_id))
+	// A look still being saved in another store of this workspace (the cloud
+	// copy and its publication) shows here too from the first read
+	if (ws.type === 'cloud') apply_pending_entry_xattrs(opened_folder, ws.id, true)
 	/** A read started before the store existed, taken once by the first open of that folder */
 	const take_prefetched = (folder_id: string) => {
 		const read = prefetched?.get(folder_id)
 		prefetched?.clear()
 		return read
 	}
+	/**
+	 * A cloud folder already seen shows at once — from memory, or from this
+	 * device — and is read again behind it. Every open still goes to the
+	 * network; it only no longer waits for it. Local drives wait as before
+	 */
+	const shows_kept = ws.type === 'cloud'
+	/**
+	 * Cloud: the id a new entry will have (ids are paths), so it shows before
+	 * the cloud answers. Elsewhere creating waits as before
+	 */
+	const optimistic_child = (folder_id: string, name: string) =>
+		ws.type === 'cloud' ? (folder_id === '/' ? `/${name}` : `${folder_id}/${name}`) : undefined
+	/** Set by the Explorer: a folder opened from a view goes through its navigation (its placeholder, history, header) */
+	let open_folder_hook: ((folder_id: string) => unknown) | null = null
 
 	// Session content caches live per store instance (paths repeat across
 	// workspaces — forks share the tree — so module-level caches would leak
@@ -741,6 +766,10 @@ export async function createWorkspaceStore(
 			// spinner next to the folder title on slow (cloud) loads
 			opening_folder_id: null as string | null,
 
+			// the open folder shows what was kept (memory or this device) while
+			// the cloud is read again; the header marks it until that answer
+			refreshing_folder_id: null as string | null,
+
 			tree_loaded_folder_ids: new Set<string>([root_folder_id]),
 
 		// Normalized folder cache: single source of truth for folder data.
@@ -875,11 +904,29 @@ export async function createWorkspaceStore(
 				}
 
 				let folder_data: FolderWithChildrenXattrs
-				try {
-					folder_data = await fm.folder_with_children_xattrs(folder_id)
-				} catch (error) {
-					report_error(this, error)
-					return
+				const ticket = folder_read_ticket(this, folder_id)
+				const read = fm.folder_with_children_xattrs(folder_id)
+				const kept = shows_kept && recall_folder
+					? await Promise.race([read.then(() => null, () => null), recall_folder(folder_id)])
+					: null
+				if (this.folders[folder_id]) return
+				if (kept && ticket.is_latest()) {
+					// a preview shows what this device kept; the cloud's answer follows it
+					apply_pending_entry_xattrs(kept, this.uid, true)
+					folder_data = kept
+					this.folders[folder_id] = kept
+					void refresh_cached_folder(this, fm, folder_id, reread_event(folder_id), { read, ticket })
+				} else {
+					try {
+						folder_data = await read
+					} catch (error) {
+						report_error(this, error)
+						return
+					}
+					if (ticket.is_latest()) {
+						ticket.applied()
+						if (shows_kept) apply_pending_entry_xattrs(folder_data, this.uid, true)
+					} else if (this.folders[folder_id]) return
 				}
 
 		this.folders[folder_id] = folder_data
@@ -934,24 +981,64 @@ export async function createWorkspaceStore(
 			this.exit_selection_mode()
 
 		this.opening_folder_id = folder_id
-		const ticket = folder_read_ticket(this, folder_id)
 		let folder_data: FolderWithChildrenXattrs
+		/** Shown from what was kept: the cloud's answer still has to come in behind it */
+		let reread: Promise<'gone' | void> | null = null
 		try {
-			folder_data = await active_step('read', () => take_prefetched(folder_id) ?? fm.folder_with_children_xattrs(folder_id))
-			if (!current()) return false
-			// a refresh that started later already put a newer one in place
-			if (ticket.is_latest()) {
-				ticket.applied()
-			} else if (this.folders[folder_id]) {
-				folder_data = this.folders[folder_id]!
+			const in_memory = shows_kept && !options?.force ? this.folders[folder_id] : undefined
+			if (in_memory) {
+				folder_data = in_memory
+				reread = refresh_cached_folder(this, fm, folder_id, reread_event(folder_id))
+			} else {
+				const ticket = folder_read_ticket(this, folder_id)
+				const read = take_prefetched(folder_id) ?? fm.folder_with_children_xattrs(folder_id)
+				// the device answers in milliseconds; the cloud's read runs alongside, so a miss costs nothing
+				const kept = shows_kept && recall_folder && !options?.force
+					? await Promise.race([read.then(() => null, () => null), recall_folder(folder_id)])
+					: null
+				if (!current()) return false
+				if (kept && ticket.is_latest()) {
+					apply_pending_entry_xattrs(kept, this.uid, true)
+					folder_data = kept
+					this.folders[folder_id] = kept
+					reread = refresh_cached_folder(this, fm, folder_id, reread_event(folder_id), { read, ticket })
+				} else {
+					folder_data = await active_step('read', () => read)
+					if (!current()) return false
+					// a refresh that started later already put a newer one in place
+					if (ticket.is_latest()) {
+						ticket.applied()
+						if (shows_kept) apply_pending_entry_xattrs(folder_data, this.uid, true)
+					} else if (this.folders[folder_id]) {
+						folder_data = this.folders[folder_id]!
+					}
+				}
 			}
 			if (!options?.fromBack && !options?.skipHistory) this.folder_back_stack.push(left)
 			this.folders[folder_id] = folder_data
 			this.opened_folder_id = folder_id
+			if (reread) {
+				this.refreshing_folder_id = folder_id
+				void reread
+					.then((result) => {
+						// Deleted elsewhere while this device still had it: say so and step out to its parent
+						if (result !== 'gone' || this.opened_folder_id !== folder_id || folder_id === this.id) return
+						report_error(this, new Error(t('folder.gone')))
+						void this.open_folder(parent_folder_id_from_node_id(folder_id, this.id))
+					})
+					.catch((error: unknown) => report_error(this, error))
+					.finally(() => {
+						if (this.refreshing_folder_id === folder_id) this.refreshing_folder_id = null
+					})
+			} else if (this.refreshing_folder_id !== null) {
+				this.refreshing_folder_id = null
+			}
 		} finally {
 			if (this.opening_folder_id === folder_id && current()) this.opening_folder_id = null
 		}
-		await active_step('prefetch', () => this.prefetch_preview_folders(folder_data.children))
+		// shown from what was kept: the previews fill in behind it, the open does not wait
+		if (reread) void this.prefetch_preview_folders(folder_data.children)
+		else await active_step('prefetch', () => this.prefetch_preview_folders(folder_data.children))
 
 		if (folder_id === this.id || find_tree_node(this.tree, folder_id)) {
 			this.tree_loaded_folder_ids.add(folder_id)
@@ -1766,6 +1853,7 @@ export async function createWorkspaceStore(
 				)
 
 				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: [
 						{ name: 'is_preview', value: 'true' },
 						...(position
@@ -1804,6 +1892,7 @@ export async function createWorkspaceStore(
 					: SHAPE_SQUARE_DEFAULT_SIZE
 
 				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					content: shape_template_svg(template),
 					xattrs: [
 						{ name: 'is_preview', value: 'true' },
@@ -1855,6 +1944,7 @@ export async function createWorkspaceStore(
 				})
 
 				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					content: svg,
 					xattrs: [
 						{ name: 'is_preview', value: 'true' },
@@ -1882,8 +1972,8 @@ export async function createWorkspaceStore(
 			}
 		},
 
-			async get_media_src(id: string, filename: string) {
-				return fm.get_media_src(id, { mimeType: get_mime_type(filename) })
+			async get_media_src(id: string, filename: string, options?: { preview?: boolean }) {
+				return fm.get_media_src(id, { mimeType: get_mime_type(filename), preview: options?.preview })
 			},
 
 		async save_note_content(id: string, new_content: string) {
@@ -2036,6 +2126,7 @@ export async function createWorkspaceStore(
 				)
 
 				const node = await create_entry(this, fm, folder_id, 'folder', folder_name, {
+					optimistic_id: optimistic_child(folder_id, folder_name),
 					xattrs: [
 						{ name: 'view', value: stored_folder_view(options?.view ?? 'board') },
 						...(position
@@ -2135,6 +2226,7 @@ export async function createWorkspaceStore(
 				)
 
 				await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: position
 						? [{ name: 'position', value: JSON.stringify(position) }]
 						: [],
@@ -2150,6 +2242,7 @@ export async function createWorkspaceStore(
 				)
 
 				await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: position
 						? [{ name: 'position', value: JSON.stringify(position) }]
 						: [],
@@ -2424,17 +2517,36 @@ export async function createWorkspaceStore(
 
 				if (!tree_node && !folder_entry && !is_opened_folder) return
 
+				// Cloud: the new name (and the paths under it) shows at once; the
+				// request holds every later call that names the entry, and a refusal
+				// puts the old name back and says why
+				const expected = optimistic_child(parent_folder_id_from_node_id(id, this.id), name)
+				const old_name = folder_entry?.name ?? tree_node?.name ?? (is_opened_folder ? this.opened_folder.name : undefined)
+				const shown_early = expected !== undefined && expected !== id && old_name !== undefined
+				if (shown_early) {
+					rekey_entry_content_caches(content_caches, id, expected)
+					apply_id_changed(this, id, expected, name)
+				}
+				const request = fm.rename(id, name)
+				if (shown_early) hold_entry(fm, expected, request, { replaces: id })
 				let result
 				try {
-					result = await fm.rename(id, name)
+					result = await request
 				} catch (error) {
+					if (shown_early) {
+						rekey_entry_content_caches(content_caches, expected, id)
+						apply_id_changed(this, expected, id, old_name)
+					}
 					if (options?.report === false) throw error
 					report_error(this, error)
 					return
 				}
 
-		rekey_entry_content_caches(content_caches, id, result.id)
-		apply_id_changed(this, id, result.id, result.name)
+		const shown_id = shown_early ? expected : id
+		if (result.id !== shown_id || !shown_early) {
+			rekey_entry_content_caches(content_caches, shown_id, result.id)
+			apply_id_changed(this, shown_id, result.id, result.name)
+		}
 		note_hidden_name(this, result.name)
 		await rename_folder_canvas_connections(this, id, result.id)
 	},
@@ -2648,7 +2760,13 @@ export async function createWorkspaceStore(
 			},
 
 			open(widget: FolderContainerWidgetChild) {
-				widget.type === 'file' ? this.open_file(widget.id) : this.open_folder(widget.id)
+				if (widget.type === 'file') return void this.open_file(widget.id)
+				if (open_folder_hook) return void open_folder_hook(widget.id)
+				void this.open_folder(widget.id)
+			},
+
+			set_open_folder_hook(hook: ((folder_id: string) => unknown) | null) {
+				open_folder_hook = hook
 			},
 		})
 

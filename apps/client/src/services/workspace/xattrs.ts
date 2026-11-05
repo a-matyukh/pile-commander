@@ -185,10 +185,33 @@ export function rekey_pending_entry_xattrs(old_id: string, new_id: string) {
 	}
 }
 
-/** Re-apply in-flight local writes onto a freshly fetched folder snapshot (`scope`: its workspace). */
-export function apply_pending_entry_xattrs(folder: FolderWithChildrenXattrs, scope?: string) {
+/**
+ * The value a look write still in flight puts on this entry (`scope`: its
+ * workspace): a string, null for a removal, undefined when none is pending.
+ * For places that show a look outside a store (a closed root in the tree)
+ */
+export function pending_entry_xattr(entry_id: string, name: string, scope?: string): string | null | undefined {
+	for (const key of scope ? [pending_key(entry_id, scope), entry_id] : [entry_id]) {
+		const value = pending_entry_xattrs.get(key)?.get(name)
+		if (value !== undefined) return value === PENDING_XATTR_REMOVED ? null : value
+	}
+	return undefined
+}
+
+/**
+ * Re-apply in-flight local writes onto a freshly fetched folder snapshot
+ * (`scope`: its workspace). `only_scoped`: just the look writes keyed by this
+ * workspace — for reads of a store that did not make the older path-only
+ * writes (a new store, a folder opened from the network), where a path-only
+ * value could belong to `/` of another root
+ */
+export function apply_pending_entry_xattrs(folder: FolderWithChildrenXattrs, scope?: string, only_scoped = false) {
+	const keys = (entry_id: string) => {
+		if (!scope) return only_scoped ? [] : [entry_id]
+		return only_scoped ? [pending_key(entry_id, scope)] : [entry_id, pending_key(entry_id, scope)]
+	}
 	const apply = (entry_id: string, xattrs: FolderWithChildrenXattrs['xattrs']) => {
-		for (const key of scope ? [entry_id, pending_key(entry_id, scope)] : [entry_id]) {
+		for (const key of keys(entry_id)) {
 			const pending = pending_entry_xattrs.get(key)
 			if (!pending) continue
 			for (const [name, value] of pending) apply_pending_value(xattrs, name, value)

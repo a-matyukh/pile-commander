@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createMediaSrcCache, IDLE_REMOTE_MEDIA } from './mediaSrcCache'
+import { createMediaSrcCache, IDLE_REMOTE_MEDIA, media_cache_key } from './mediaSrcCache'
 
 describe('createMediaSrcCache', () => {
 	test('reuses blob url and tracks refCount across acquires', async () => {
@@ -228,6 +228,25 @@ describe('createMediaSrcCache.invalidate', () => {
 		expect(load).toHaveBeenCalledTimes(2)
 		expect(fresh.url).toBe('blob:new')
 		expect(revoke_old).toHaveBeenCalledTimes(1)
+	})
+
+	test('a tile preview and the original sit side by side; an edit of the file expires both', async () => {
+		let now = 1000
+		const cache = createMediaSrcCache(() => now)
+		const preview = media_cache_key('photo.jpg', true)
+		const original = media_cache_key('photo.jpg', false)
+		const load_preview = vi.fn(async () => ({ url: 'https://b2/thumb?1', revoke: () => {}, expires_at: 5000, variant: 'thumb' as const }))
+		const load_original = vi.fn(async () => ({ url: 'https://b2/photo?1', revoke: () => {}, expires_at: 5000 }))
+		expect((await cache.acquire(preview, load_preview)).url).toBe('https://b2/thumb?1')
+		expect((await cache.acquire(original, load_original)).url).toBe('https://b2/photo?1')
+		cache.release(preview)
+		cache.release(original)
+		cache.invalidate('photo.jpg')
+		now = 2000
+		await cache.acquire(preview, load_preview)
+		await cache.acquire(original, load_original)
+		expect(load_preview).toHaveBeenCalledTimes(2)
+		expect(load_original).toHaveBeenCalledTimes(2)
 	})
 
 	test('a file nobody shows only moves its version', () => {
