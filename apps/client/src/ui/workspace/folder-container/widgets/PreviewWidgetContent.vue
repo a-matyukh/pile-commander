@@ -71,7 +71,7 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 	>
 		<ImageFigure
 			v-if="kind === 'image'"
-			:mode="layout === 'board' ? 'outside' : 'stack'"
+			:mode="layout === 'board' ? 'card' : 'stack'"
 			:title="imageTitle"
 			:description="imageDescription"
 		>
@@ -95,7 +95,7 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 	overflow: hidden;
 }
 
-/* The picture clips to the card. The heading and caption hang outside it. */
+/* The picture clips to the card. The heading and caption sit inside it. */
 :deep(.image-widget) {
 	padding: 0;
 	overflow: visible;

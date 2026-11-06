@@ -1,95 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { contained_image_box } from '@/services/workspace/imageText'
+import { computed } from 'vue'
 
 const props = defineProps<{
-	/** outside: board and canvas, text hangs off the sized picture. stack: fills a cell. grow: the card grows. */
-	mode: 'outside' | 'stack' | 'grow'
+	/** card: board and canvas, the text sits inside the card above and below the picture. stack: fills a cell. grow: the card grows. */
+	mode: 'card' | 'stack' | 'grow'
 	title?: string
 	description?: string
 }>()
 
-const hanging = computed(() =>
-	props.mode === 'outside' && Boolean(props.title || props.description),
+/** A card with text lays out like a cell; without text it is the picture alone. */
+const layout = computed(() =>
+	props.mode === 'card' ? (props.title || props.description ? 'stack card' : 'bare') : props.mode,
 )
-
-const pictureEl = ref<HTMLElement | null>(null)
-/** Painted image edges inside the picture box, so the text sits on the picture, not the card. */
-const painted = ref<{ top: number; left: number; width: number; height: number } | null>(null)
-
-const titleStyle = computed(() => {
-	const box = painted.value
-	if (!box || props.mode !== 'outside') return undefined
-	return {
-		top: `${box.top}px`,
-		left: `${box.left}px`,
-		width: `${box.width}px`,
-		right: 'auto',
-	}
-})
-
-const captionStyle = computed(() => {
-	const box = painted.value
-	if (!box || props.mode !== 'outside') return undefined
-	return {
-		top: `${box.top + box.height}px`,
-		left: `${box.left}px`,
-		width: `${box.width}px`,
-		right: 'auto',
-	}
-})
-
-function layoutText() {
-	const picture = pictureEl.value
-	if (!picture || props.mode !== 'outside') return
-	const img = picture.querySelector('img')
-	if (!(img instanceof HTMLImageElement)) return
-	const imgBox = img.getBoundingClientRect()
-	const pictureBox = picture.getBoundingClientRect()
-	// The canvas zooms with a CSS transform: screen rects are scaled, styles are not.
-	const zoom = picture.offsetWidth > 0 ? pictureBox.width / picture.offsetWidth : 1
-	if (!(zoom > 0)) return
-	const fitted = contained_image_box(
-		{ width: imgBox.width / zoom, height: imgBox.height / zoom },
-		{ width: img.naturalWidth, height: img.naturalHeight },
-	)
-	if (!fitted) return
-	painted.value = {
-		top: (imgBox.top - pictureBox.top) / zoom + fitted.top,
-		left: (imgBox.left - pictureBox.left) / zoom + fitted.left,
-		width: fitted.width,
-		height: fitted.height,
-	}
-}
-
-let observer: ResizeObserver | null = null
-
-function onLoad(event: Event) {
-	if (event.target instanceof HTMLImageElement) layoutText()
-}
-
-onMounted(() => {
-	const picture = pictureEl.value
-	if (!picture) return
-	observer = new ResizeObserver(() => layoutText())
-	observer.observe(picture)
-	picture.addEventListener('load', onLoad, true)
-	layoutText()
-})
-
-onBeforeUnmount(() => {
-	observer?.disconnect()
-	pictureEl.value?.removeEventListener('load', onLoad, true)
-})
 </script>
 
 <template>
-	<div class="figure" :class="[mode, { 'image-caption': hanging }]">
-		<p v-if="title" class="title" :style="titleStyle">{{ title }}</p>
-		<div ref="pictureEl" class="picture">
+	<div class="figure" :class="layout">
+		<p v-if="title" class="title">{{ title }}</p>
+		<div class="picture">
 			<slot />
 		</div>
-		<p v-if="description" class="caption" :style="captionStyle">{{ description }}</p>
+		<p v-if="description" class="caption">{{ description }}</p>
 	</div>
 </template>
 
@@ -121,33 +52,15 @@ onBeforeUnmount(() => {
 	color: var(--text-muted);
 }
 
-.figure.outside {
-	position: relative;
+.figure.bare {
 	height: 100%;
 	border-radius: inherit;
 }
 
-.figure.outside .picture {
+.figure.bare .picture {
 	height: 100%;
 	overflow: hidden;
 	border-radius: inherit;
-}
-
-.figure.outside .title,
-.figure.outside .caption {
-	position: absolute;
-	left: 0;
-	right: 0;
-}
-
-.figure.outside .title {
-	top: 0;
-	transform: translateY(calc(-100% - 10px));
-}
-
-.figure.outside .caption {
-	top: 100%;
-	margin-top: 10px;
 }
 
 .figure.stack {
@@ -175,6 +88,23 @@ onBeforeUnmount(() => {
 
 .figure.stack .caption {
 	padding: 10px 8px 4px;
+}
+
+/* On the board and canvas the card's fill takes the text in: room from its edges. */
+.figure.card {
+	border-radius: inherit;
+}
+
+.figure.card .title {
+	padding: 12px 12px 8px;
+}
+
+.figure.card .caption {
+	padding: 8px 12px 12px;
+}
+
+.figure.card .picture {
+	overflow: hidden;
 }
 
 .figure.grow {

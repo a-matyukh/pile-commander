@@ -15,23 +15,6 @@ export function image_caption_in_view(view: FolderView | undefined): boolean {
 	return view !== undefined && IMAGE_CAPTION_VIEWS.has(view)
 }
 
-/** Where an `object-fit: contain` image is painted inside its box. */
-export function contained_image_box(
-	box: { width: number; height: number },
-	natural: { width: number; height: number },
-): { top: number; left: number; width: number; height: number } | null {
-	if (box.width <= 0 || box.height <= 0 || natural.width <= 0 || natural.height <= 0) return null
-	const scale = Math.min(box.width / natural.width, box.height / natural.height)
-	const width = natural.width * scale
-	const height = natural.height * scale
-	return {
-		top: (box.height - height) / 2,
-		left: (box.width - width) / 2,
-		width,
-		height,
-	}
-}
-
 /**
  * `parse_xattr_value` turns "2024" into a number and "true" into a boolean.
  * A caption is still that text. Objects and arrays are not captions.
