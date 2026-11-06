@@ -451,6 +451,11 @@ export const ru = {
 		open_externally: 'Открыть в программе',
 		expand: 'Открыть в редакторе',
 	},
+	shape_text: {
+		inside: 'Внутри',
+		frame: 'Рамка',
+		area: 'Где стоит текст',
+	},
 	board_menu: {
 		view: 'Вид',
 		new: 'Создать',

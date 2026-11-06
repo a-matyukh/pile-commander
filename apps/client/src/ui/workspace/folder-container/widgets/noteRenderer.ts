@@ -1,6 +1,8 @@
+import type { Align } from '@/services/text/extensions'
 import { parseNoteMarkdown } from './markdown'
 
-export type NoteRender = (markdown: string) => string
+/** `align`: the alignment the text has unless it says otherwise (a shape centres its text). */
+export type NoteRender = (markdown: string, align?: Align) => string
 
 let loaded: NoteRender | null = null
 let loading: Promise<NoteRender> | null = null
@@ -15,7 +17,7 @@ export function loadNoteRenderer(): Promise<NoteRender> {
 	if (loaded) return Promise.resolve(loaded)
 	loading ??= import('@/services/text/render')
 		.then((module) => {
-			loaded = (markdown: string) => module.render_note_html(markdown)
+			loaded = (markdown: string, align: Align = 'left') => module.render_note_html(markdown, align)
 			return loaded
 		})
 		.catch((error: unknown) => {

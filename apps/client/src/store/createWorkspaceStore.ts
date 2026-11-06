@@ -151,7 +151,7 @@ function persist_workspace_xattr(
 	)
 }
 
-type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField
+type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField | 'text' | 'text_area'
 
 /**
  * A look attribute: on screen at once (the folder, the listings that hold it,
@@ -1514,6 +1514,29 @@ export async function createWorkspaceStore(
 
 				// On screen at once, written in the background, like a folder's look.
 				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null)
+			},
+
+			/** A shape's text (markdown): on screen at once, written in the background; empty removes it. */
+			async set_shape_text(id: string, markdown: string) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+				const container = to_folder_container(this.opened_folder, this.preview_folders)
+				const entity = find_widget(container, id)
+				const current = entity?.type === 'file' ? entity.text ?? null : null
+				const next = markdown.trim() ? markdown : null
+				if (current === next) return
+				// As a JSON string: an xattr reads back through JSON.parse and Number, and
+				// a text like `[1]`, `"quoted"` or `2024` would come back as something else
+				await persist_look_xattr(this, fm, folder_data, id, 'text', next === null ? null : JSON.stringify(next))
+			},
+
+			/** Where a shape's text sits: null is inside the shape (the default), "frame" the whole frame. */
+			async set_shape_text_area(id: string, area: 'frame' | null) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+				await persist_look_xattr(this, fm, folder_data, id, 'text_area', area)
 			},
 
 			async change_shape_fill(id: string, color: Color) {

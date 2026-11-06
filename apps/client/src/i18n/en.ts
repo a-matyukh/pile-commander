@@ -454,6 +454,11 @@ export const en: typeof ru = {
 		open_externally: 'Open in app',
 		expand: 'Open in editor',
 	},
+	shape_text: {
+		inside: 'Inside',
+		frame: 'Frame',
+		area: 'Where the text sits',
+	},
 	board_menu: {
 		view: 'View',
 		new: 'New',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import WidgetShell from './WidgetShell.vue'
@@ -10,6 +10,9 @@ import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
 import { resolveWidgetBackground } from './resolveBackground'
 import { MEDIA_CHROME_FILL } from '../media/mediaChrome'
+import ShapeText from '../shape/ShapeText.vue'
+import { useLineShapeMeta } from '../shape/useLineShapeMeta'
+import { useEditingNoteId } from './useEditingNoteId'
 
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
@@ -48,7 +51,22 @@ const extraStyle = computed(() => {
 	return base
 })
 
-const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => props.widget, 'open_file')
+const { onSelectStart, onDragStart, onDblClick: openOnDblClick } = useWidgetInteraction(() => props.widget, 'open_file')
+
+// A shape (not a line or an arrow) has text: a double click edits it; the file opens from the menu
+const isShape = computed(() => props.kind === 'shape')
+const { isLine } = useLineShapeMeta(() => props.widget.id, isShape)
+const hasText = computed(() => isShape.value && !isLine.value)
+const shapeText = useTemplateRef<{ startEditing(): void }>('shapeText')
+const { editingNoteId } = useEditingNoteId({ optional: true })
+const editingText = computed(() => hasText.value && editingNoteId.value === props.widget.id)
+
+function onDblClick(event: MouseEvent) {
+	if (!hasText.value) return openOnDblClick(event)
+	event.preventDefault()
+	event.stopPropagation()
+	if (!editingText.value) shapeText.value?.startEditing()
+}
 
 const imageTitle = computed(() => props.widget.type === 'file' ? props.widget.title : undefined)
 const imageDescription = computed(() => props.widget.type === 'file' ? props.widget.description : undefined)
@@ -65,6 +83,8 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 		:root-class="rootClass"
 		:extra-style="extraStyle"
 		:min-size="minSize"
+		:interactions-enabled="!editingText"
+		:ignore-from="hasText ? '.resize-handle, .ProseMirror, .shape-area' : undefined"
 		@selectstart="onSelectStart"
 		@dragstart="onDragStart"
 		@dblclick="onDblClick"
@@ -77,11 +97,20 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 		>
 			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 		</ImageFigure>
+		<div v-else-if="hasText" class="shape-box">
+			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" />
+			<ShapeText ref="shapeText" :widget="widget" />
+		</div>
 		<PreviewContent v-else :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 	</WidgetShell>
 </template>
 
 <style scoped>
+.shape-box {
+	position: relative;
+	width: 100%;
+	height: 100%;
+}
 :deep(.video-widget),
 :deep(.audio-widget),
 :deep(.model-widget),
@@ -131,6 +160,12 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 :deep(.shape-widget),
 :deep(.dashboard-shape-widget) {
 	border-radius: 0;
+}
+
+/* A shape's text and its Inside/Frame switch may reach past the shape's box */
+:deep(.shape-widget),
+:deep(.shape-widget .board-widget-content) {
+	overflow: visible;
 }
 
 :deep(.image-widget .board-widget-content),

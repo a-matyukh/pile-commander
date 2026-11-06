@@ -57,6 +57,8 @@ function childSignature(children: FolderContainerWidgetChild[]) {
 			child.is_preview ?? '',
 			// a note drawn as a text block (and its width mode) changes what the node renders
 			child.type === 'file' ? `${child.is_text ?? ''}${child.text_width ?? ''}` : '',
+			// a shape's text and its area are drawn by the node
+			child.type === 'file' ? `${child.text_area ?? ''}\u0001${child.text ?? ''}` : '',
 		].join(':')
 	}).join('|')
 }

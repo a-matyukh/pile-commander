@@ -288,6 +288,9 @@ type WorkspaceStore = {
 	change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions): Promise<void>
 	/** Image heading (`title`) or caption (`description`). An empty value removes the xattr. */
 	set_image_text(id: string, field: 'title' | 'description', value: string): Promise<void>
+	/** A shape's text, as markdown; empty removes it. */
+	set_shape_text(id: string, markdown: string): Promise<void>
+	set_shape_text_area(id: string, area: 'frame' | null): Promise<void>
 	change_shape_fill(id: string, color: Color): Promise<void>
 	change_line_geometry(
 		id: string,

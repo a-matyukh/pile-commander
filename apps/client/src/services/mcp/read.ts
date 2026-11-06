@@ -281,6 +281,7 @@ function entry_layout(xattrs: Xattr[]): EntryLayout {
 	if (typeof map.order === 'number') layout.order = map.order
 	if (typeof map.is_preview === 'boolean') layout.is_preview = map.is_preview
 	if (typeof map.is_text === 'boolean') layout.is_text = map.is_text
+	if (typeof map.text === 'string' && map.text.trim()) layout.text = map.text
 	return layout
 }
 
