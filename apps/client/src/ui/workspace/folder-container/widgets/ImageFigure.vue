@@ -96,11 +96,11 @@ const layout = computed(() =>
 }
 
 .figure.card .title {
-	padding: 7px 10px 5px;
+	padding: 5px 10px 5px;
 }
 
 .figure.card .caption {
-	padding: 5px 10px 7px;
+	padding: 7px 0 0 0;
 }
 
 .figure.card .picture {
