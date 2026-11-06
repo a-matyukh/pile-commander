@@ -17,6 +17,7 @@ import {
 	type DroppedFolderPayload,
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
+import { listen_external_links } from '@/services/openExternal'
 import { listenBrowserDrop, type BrowserDroppedFiles } from '@/services/workspace/listenBrowserDrop'
 import { resolveExternalDropPosition } from '@/ui/workspace/folder-container/externalDropPosition'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
@@ -158,6 +159,13 @@ onUnmounted(() => {
 	window.removeEventListener('pagehide', remember_current_folder)
 	stop_close_request?.()
 })
+
+// A web link in a note or anywhere else never replaces the app in this window
+let unlistenLinks: (() => void) | null = null
+onMounted(() => {
+	unlistenLinks = listen_external_links(error => report_error(store, error))
+})
+onUnmounted(() => unlistenLinks?.())
 
 onMounted(async () => {
 	if (!is_desktop) {
