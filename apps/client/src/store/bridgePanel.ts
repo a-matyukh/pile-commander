@@ -37,6 +37,26 @@ export type BridgeFileRow = {
 	disabled: boolean
 }
 
+/** The three numbers of the measured folder. */
+export type BridgeStats = {
+	size: string
+	count: string
+	count_label: string
+	largest: string | null
+	largest_label: string | null
+}
+
+/** The cloud space bar: what is taken, what this folder adds, what is left. Fractions of the quota. */
+export type BridgeMeter = {
+	plan: string
+	used: number
+	adding: number
+	over: boolean
+	free_line: string
+	per_file: string
+	pro_line: string | null
+}
+
 /**
  * Everything the panel says for one state.
  */
@@ -50,6 +70,10 @@ export type BridgePanelView = {
 	error: string | null
 	summary: string | null
 	plan_line: string | null
+	stats: BridgeStats | null
+	meter: BridgeMeter | null
+	/** Sync goes both ways, a copy only up. */
+	direction: 'both' | 'up'
 	fit_line: string | null
 	files: BridgeFileRow[]
 	resumable_note: string | null
@@ -79,14 +103,20 @@ function wording(door: BridgeDoor): 'share' | 'publish' | 'device' | 'sync' {
 	return 'device'
 }
 
-function count_files(n: number): string {
+function plural_form(n: number): 'one' | 'few' | 'many' {
 	const mod10 = n % 10
 	const mod100 = n % 100
-	const form =
-		locale.value === 'en'
-			? n === 1 ? 'one' : 'many'
-			: mod10 === 1 && mod100 !== 11 ? 'one' : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) ? 'few' : 'many'
-	return t(`bridge.count_${form}`, { n })
+	if (locale.value === 'en') return n === 1 ? 'one' : 'many'
+	return mod10 === 1 && mod100 !== 11 ? 'one' : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) ? 'few' : 'many'
+}
+
+function count_files(n: number): string {
+	return t(`bridge.count_${plural_form(n)}`, { n })
+}
+
+function fraction(part: number, whole: number): number {
+	if (whole <= 0) return part > 0 ? 1 : 0
+	return Math.max(0, Math.min(1, part / whole))
 }
 
 export function bridge_title(door: BridgeDoor): string {
@@ -173,6 +203,9 @@ export function bridge_panel_view(input: BridgePanelInput): BridgePanelView {
 		error: null,
 		summary: null,
 		plan_line: null,
+		stats: null,
+		meter: null,
+		direction: door === 'sync' ? 'both' : 'up',
 		fit_line: null,
 		files: [],
 		resumable_note: null,
@@ -240,6 +273,28 @@ export function bridge_panel_view(input: BridgePanelInput): BridgePanelView {
 	const pro = input.pro
 		? ` · ${t('bridge.plan_pro', { quota: format_bytes(input.pro.quota_bytes), per_file: format_bytes(input.pro.max_file_bytes) })}`
 		: ''
+	const quota = preflight.limits.quota_bytes
+	const taken = Math.max(0, quota - preflight.free_bytes)
+	const stats: BridgeStats = {
+		size: format_bytes(preflight.total_bytes),
+		count: String(preflight.files.length),
+		count_label: t(`bridge.files_${plural_form(preflight.files.length)}`),
+		largest: preflight.largest ? format_bytes(preflight.largest.size_bytes) : null,
+		largest_label: preflight.largest ? t('bridge.stat_largest', { kind: kind_label(preflight.largest.kind) }) : null,
+	}
+	const meter: BridgeMeter | null = plan
+		? {
+			plan: plan_name(plan),
+			used: fraction(taken, quota),
+			adding: Math.min(fraction(selected, quota), 1 - fraction(taken, quota)),
+			over: !fits,
+			free_line: t('bridge.meter_free', { free: format_bytes(preflight.free_bytes), quota: format_bytes(quota) }),
+			per_file: t('bridge.meter_per_file', { size: format_bytes(preflight.limits.max_file_bytes) }),
+			pro_line: input.pro && plan !== 'pro'
+				? t('bridge.meter_pro', { quota: format_bytes(input.pro.quota_bytes), per_file: format_bytes(input.pro.max_file_bytes) })
+				: null,
+		}
+		: null
 	let primary = t('bridge.copy')
 	if (input.resumable) primary = t('bridge.resume')
 	else if (door === 'sync') primary = wall ? t('bridge.sync_without') : t('bridge.start_sync')
@@ -252,6 +307,8 @@ export function bridge_panel_view(input: BridgePanelInput): BridgePanelView {
 		error: input.error,
 		summary,
 		plan_line: own ? `${own}${pro}` : null,
+		stats,
+		meter,
 		fit_line: wall
 			? fits
 				? t('bridge.fits', { size: format_bytes(selected) })
