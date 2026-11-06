@@ -442,6 +442,18 @@ export const en: typeof ru = {
 		superscript: 'Superscript',
 		clear: 'Clear formatting',
 	},
+	note_editor: {
+		float: 'Window',
+		folder: 'Fill the folder',
+		window: 'Fill the window',
+		close: 'Close',
+		saving: 'Saving…',
+		saved: 'Saved',
+		read_only: 'Read only',
+		open_in_editor: 'Open in editor',
+		open_externally: 'Open in app',
+		expand: 'Open in editor',
+	},
 	board_menu: {
 		view: 'View',
 		new: 'New',

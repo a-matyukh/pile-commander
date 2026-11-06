@@ -20,6 +20,8 @@ import ImageTextDialog from './ImageTextDialog.vue'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { t } from '@/i18n'
+import { explorer_navigation } from '@/store/explorer/navigation'
+import { is_note_file, opens_in_editor } from '@/store/explorer/note_editor'
 import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const props = defineProps<{
@@ -242,6 +244,33 @@ function linePlugItems(): DropdownMenuItem[] {
 	]
 }
 
+/**
+ * A note of the open folder opens one way by default (the note editor, or a
+ * local file on the desktop in its program): the other way is here.
+ */
+function noteOpenItems(): DropdownMenuItem[] {
+	const location = explorer_navigation.location
+	const ws = requireWorkspace()
+	if (location?.kind !== 'folder' || !is_note_file(props.node.id)) return []
+	if (!ws.opened_folder.children.some(child => child.id === props.node.id)) return []
+	if (opens_in_editor(location.ref.drive_id, props.node.id)) {
+		// The demo has no file to hand to a program
+		if (location.ref.drive_id === 'demo') return []
+		return [{
+			label: t('note_editor.open_externally'),
+			onSelect() {
+				void ws.open_file_externally(props.node.id)
+			},
+		}]
+	}
+	return [{
+		label: t('note_editor.open_in_editor'),
+		onSelect() {
+			void explorer_navigation.open_file(location.ref, props.node.id)
+		},
+	}]
+}
+
 const items = computed<DropdownMenuItem[][]>(() => {
 	if (isMultiSelection.value) return selectionMenuItems.value
 
@@ -257,6 +286,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
 				},
 			}]
 			: []),
+		...noteOpenItems(),
 		...(props.showPreviewToggle && isPreviewable.value
 			? [{
 				label: previewToggleLabel.value,

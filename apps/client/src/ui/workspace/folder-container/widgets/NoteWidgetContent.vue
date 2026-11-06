@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
+import { t } from '@/i18n'
+import IconButton from '@/ui/kit/IconButton.vue'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import WidgetShell from './WidgetShell.vue'
 import NoteBody from './NoteBody.vue'
@@ -32,6 +34,7 @@ const {
 	onDragStart,
 	onDblClick,
 	onBlur,
+	openInEditor,
 } = useNoteEditor(() => props.widget.id, () => props.widget.name)
 
 const menuNode = useMenuNode(() => props.widget)
@@ -104,16 +107,37 @@ const ignoreFrom = computed(() =>
 				@blur="onBlur"
 				@toggle-task="toggleTask"
 			/>
+			<!-- ⤢: the note in the note editor. Takes no focus, so the text keeps it until then -->
+			<IconButton
+				v-if="isEditing && isMarkdown && layout === 'board'"
+				class="note-expand nodrag nopan"
+				icon="tabler:arrows-diagonal"
+				:data-tip="t('note_editor.expand')"
+				:aria-label="t('note_editor.expand')"
+				@mousedown.prevent
+				@pointerdown.stop
+				@click.stop="openInEditor"
+			/>
 		</div>
 	</WidgetShell>
 </template>
 
 <style scoped>
 .note-body-wrap {
+	position: relative;
 	width: 100%;
 	height: 100%;
 	min-width: 0;
 	min-height: 0;
+}
+.note-expand {
+	position: absolute;
+	top: -18px;
+	right: -18px;
+	z-index: 2;
+	background: var(--surface-3, #fff);
+	border: 0.5px solid var(--border-strong, rgba(0, 0, 0, 0.2)) !important;
+	border-radius: 999px;
 }
 .note-body-wrap--editing {
 	user-select: text;

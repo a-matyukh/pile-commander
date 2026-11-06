@@ -216,7 +216,10 @@ type WorkspaceStore = {
 	): Promise<boolean>
 	/** Drops the open in flight: its folder is not applied (the Explorer left for another place) */
 	cancel_open(): void
+	/** Opens a file: in the note editor when the open-file hook takes it, else in the system's program. */
 	open_file(id: string): Promise<void>
+	/** Opens a file in the system's program (or the browser), whatever the hook would do. */
+	open_file_externally(id: string): Promise<void>
 	/** Copies external filesystem paths into the currently opened folder. Local/demo only. */
 	import_external_files(paths: string[], position?: Position): Promise<void>
 	/** Imports browser File objects (picker / drag & drop) into the given folder. */
@@ -343,6 +346,8 @@ type WorkspaceStore = {
 	open(widget: FolderContainerWidgetChild): void
 	/** The Explorer opens folders from views through its navigation; null: the store opens them itself */
 	set_open_folder_hook(hook: ((folder_id: string) => unknown) | null): void
+	/** The Explorer opens notes in its editor: true when the hook took the file; null: every file opens outside */
+	set_open_file_hook(hook: ((file_id: string) => boolean) | null): void
 
 } & SelectionStore & ClipboardStore
 

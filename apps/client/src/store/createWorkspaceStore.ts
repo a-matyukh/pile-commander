@@ -259,6 +259,7 @@ export async function createWorkspaceStore(
 		ws.type === 'cloud' ? (folder_id === '/' ? `/${name}` : `${folder_id}/${name}`) : undefined
 	/** Set by the Explorer: a folder opened from a view goes through its navigation (its placeholder, history, header) */
 	let open_folder_hook: ((folder_id: string) => unknown) | null = null
+	let open_file_hook: ((file_id: string) => boolean) | null = null
 
 	// Session content caches live per store instance (paths repeat across
 	// workspaces — forks share the tree — so module-level caches would leak
@@ -2325,6 +2326,10 @@ export async function createWorkspaceStore(
 				})
 			},
 			async open_file(id: string) {
+				if (open_file_hook?.(id)) return
+				await this.open_file_externally(id)
+			},
+			async open_file_externally(id: string) {
 				try {
 					await fm.open_file(id)
 				} catch (error) {
@@ -2843,6 +2848,10 @@ export async function createWorkspaceStore(
 
 			set_open_folder_hook(hook: ((folder_id: string) => unknown) | null) {
 				open_folder_hook = hook
+			},
+
+			set_open_file_hook(hook: ((file_id: string) => boolean) | null) {
+				open_file_hook = hook
 			},
 		})
 

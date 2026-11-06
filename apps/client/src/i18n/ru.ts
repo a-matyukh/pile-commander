@@ -439,6 +439,18 @@ export const ru = {
 		superscript: 'Верхний индекс',
 		clear: 'Очистить форматирование',
 	},
+	note_editor: {
+		float: 'Окно',
+		folder: 'На всю папку',
+		window: 'На всё окно',
+		close: 'Закрыть',
+		saving: 'Сохраняю…',
+		saved: 'Сохранено',
+		read_only: 'Только чтение',
+		open_in_editor: 'Открыть в редакторе',
+		open_externally: 'Открыть в программе',
+		expand: 'Открыть в редакторе',
+	},
 	board_menu: {
 		view: 'Вид',
 		new: 'Создать',

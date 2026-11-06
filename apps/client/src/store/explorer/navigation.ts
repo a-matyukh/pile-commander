@@ -19,7 +19,13 @@ import { explain_folder_error } from './fsErrorMessage'
 export type ExplorerPage = 'hub' | 'account' | 'settings' | 'trash' | 'cloud' | 'profile'
 
 export type ExplorerLocation =
-	| { kind: 'folder'; ref: FolderRef }
+	/**
+	 * `file_id`: a file of the folder open in the note editor (stage 3 of
+	 * TEXT_EDITING_PLAN.md). Still the folder's place for everything that
+	 * reads `ref` (the tree, bookmarks, the address); in the history it is a
+	 * step of its own, so Back closes the file and Forward opens it again.
+	 */
+	| { kind: 'folder'; ref: FolderRef; file_id?: string }
 	/** `arg`: what the page shows, e.g. an author's username on "profile" */
 	| { kind: 'page'; page: ExplorerPage; arg?: string }
 
@@ -73,6 +79,10 @@ export type ExplorerNavigation = {
 	/** A navigation is opening its folder: the store's open folder may differ from `location` meanwhile */
 	readonly navigating: boolean
 	open_folder(ref: FolderRef): Promise<void>
+	/** Opens a file of a folder in the note editor: a step of the history. */
+	open_file(ref: FolderRef, file_id: string): Promise<void>
+	/** Back to the folder of the open file: its previous step when that is the folder, else a new step. */
+	close_file(): Promise<void>
 	/**
 	 * Switching to a drive: its last open folder, as it was left. A folder that
 	 * is gone opens its root; a root that cannot be opened opens `first`
@@ -131,8 +141,8 @@ function is_folder_ref(value: unknown): value is FolderRef {
 		&& typeof ref.folder_id === 'string' && ref.folder_id !== ''
 }
 
-function folder_location(ref: FolderRef): ExplorerLocation {
-	return {
+function folder_location(ref: FolderRef, file_id?: string | null): Extract<ExplorerLocation, { kind: 'folder' }> {
+	const location: Extract<ExplorerLocation, { kind: 'folder' }> = {
 		kind: 'folder',
 		ref: {
 			drive_id: ref.drive_id,
@@ -140,6 +150,8 @@ function folder_location(ref: FolderRef): ExplorerLocation {
 			folder_id: ref.folder_id,
 		},
 	}
+	if (file_id) location.file_id = file_id
+	return location
 }
 
 export function same_location(a: ExplorerLocation, b: ExplorerLocation): boolean {
@@ -149,6 +161,7 @@ export function same_location(a: ExplorerLocation, b: ExplorerLocation): boolean
 		return a.ref.drive_id === b.ref.drive_id
 			&& a.ref.root_id === b.ref.root_id
 			&& a.ref.folder_id === b.ref.folder_id
+			&& (a.file_id ?? null) === (b.file_id ?? null)
 	}
 	return false
 }
@@ -332,7 +345,9 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 			}
 			if (seen !== generation || workspace.is_disposed) return null
 
-			const preferred = left?.kind === 'folder' ? ancestor_entry(left.ref, ref) : null
+			// Back from a file to its folder: the file stays selected
+			const left_file = left?.kind === 'folder' && left.file_id && left.ref.folder_id === ref.folder_id ? left.file_id : null
+			const preferred = left_file ?? (left?.kind === 'folder' ? ancestor_entry(left.ref, ref) : null)
 			if (preferred && workspace.opened_folder.children.some(child => child.id === preferred)) {
 				apply_selection(workspace, [preferred], false)
 			} else {
@@ -347,7 +362,12 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 				deps.last_location.value = { ...ref }
 				last_by_drive.value = { ...last_by_drive.value, [ref.drive_id]: { ...ref } }
 			}
-			return folder_location(ref)
+			// A file opened in the editor, if it is still there
+			const file_id = target.file_id && ref.folder_id === target.ref.folder_id
+				&& workspace.opened_folder.children.some(child => child.id === target.file_id)
+				? target.file_id
+				: null
+			return folder_location(ref, file_id)
 		} finally {
 			if (!committed) prepared?.release()
 		}
@@ -521,6 +541,15 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		get can_go_forward() { return state.index < state.history.length - 1 },
 		get navigating() { return state.in_flight > 0 },
 		open_folder: (ref: FolderRef) => navigate(folder_location(ref), false),
+		open_file: (ref: FolderRef, file_id: string) => navigate(folder_location(ref, file_id), false),
+		close_file: async () => {
+			const current = state.location
+			if (current?.kind !== 'folder' || !current.file_id) return
+			const folder = folder_location(current.ref)
+			const previous = state.history[state.index - 1]
+			if (previous && same_location(previous, folder)) return go(state.index - 1)
+			return navigate(folder, false)
+		},
 		open_drive,
 		open_bookmark,
 		open_page: (page: ExplorerPage, arg?: string) => navigate(arg === undefined ? { kind: 'page', page } : { kind: 'page', page, arg }, false),

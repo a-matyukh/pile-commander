@@ -22,8 +22,11 @@ import FormatBubble from './FormatBubble.vue'
 const props = withDefaults(defineProps<{
 	/** Shapes centre their text (stage 4); notes and text blocks are left-aligned. */
 	defaultAlign?: Align
+	/** False: shown, selectable, not changed (a folder that cannot be written to). */
+	editable?: boolean
 }>(), {
 	defaultAlign: 'left',
+	editable: true,
 })
 
 const text = defineModel<string>({ required: true })
@@ -50,6 +53,7 @@ const editor = new Editor({
 		}),
 	],
 	content: reader.parse(original),
+	editable: props.editable,
 	editorProps: {
 		attributes: { class: 'note-editor', spellcheck: 'true' },
 	},

@@ -8,6 +8,7 @@ import {
 } from 'vue'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { toggle_task } from '@/services/text/tasks'
+import { explorer_navigation } from '@/store/explorer/navigation'
 import { armNoteKeyboardFocus } from '../noteKeyboardFocus'
 import { rememberEditPoint } from './editPoint'
 import { loadedNoteRenderer, loadNoteEditor, loadNoteRenderer, taskBoxLabel } from './noteRenderer'
@@ -120,6 +121,15 @@ export function useNoteEditor(
 		} else {
 			refreshPreview()
 		}
+	}
+
+	/** ⤢ on a note being edited: saved, then opened in the note editor of its folder. */
+	async function openInEditor() {
+		const id = toValue(widgetId)
+		const location = explorer_navigation.location
+		await save()
+		exitEdit()
+		if (location?.kind === 'folder') await explorer_navigation.open_file(location.ref, id)
 	}
 
 	function exitEdit() {
@@ -294,6 +304,7 @@ export function useNoteEditor(
 		previewHtml,
 		canToggleTasks,
 		toggleTask,
+		openInEditor,
 		ensureLoaded,
 		onPointerDown,
 		onPointerUp,

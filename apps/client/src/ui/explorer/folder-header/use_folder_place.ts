@@ -70,9 +70,21 @@ export function use_folder_place() {
 		if (!ref || !current || current.is_disposed || explorer_navigation.target) return null
 		return current.opened_folder_id === ref.folder_id ? current : null
 	})
+	/** A file of the folder open in the note editor: the folder joins the path and the file is the title */
+	const file_id = computed(() => {
+		const value = explorer_navigation.target ?? explorer_navigation.location
+		return value?.kind === 'folder' ? value.file_id ?? null : null
+	})
 	/** The parents; none when the settings show the folder name alone */
-	const crumbs = computed(() => location.value && explorer_settings.path_full ? folder_crumbs(location.value, names.value) : [])
+	const crumbs = computed(() => {
+		const ref = location.value
+		if (!ref) return []
+		const parents = explorer_settings.path_full ? folder_crumbs(ref, names.value) : []
+		if (!file_id.value) return parents
+		return [...parents, { ref, name: folder_title(ref, names.value), glyph: null }]
+	})
 	const title = computed(() => {
+		if (file_id.value) return folder_basename(file_id.value)
 		// An author's page is titled by their name
 		if (page.value === 'profile' && page_arg.value) {
 			const profile = cloud.profile_view?.profile
@@ -82,5 +94,8 @@ export function use_folder_place() {
 		return location.value ? folder_title(location.value, names.value) : ''
 	})
 
-	return { location, page, page_arg, workspace, crumbs, title }
+	/** The folder's own name, for its actions: the title is the file's while a file is open */
+	const folder_name = computed(() => location.value ? folder_title(location.value, names.value) : '')
+
+	return { location, page, page_arg, workspace, crumbs, title, folder_name, file_id }
 }
