@@ -333,7 +333,8 @@ describe('add_summary_note', () => {
 		expect(live).toMatch(/<video\b/i)
 		expect(live).toMatch(/\sposter\s*=/i)
 		expect(live).toMatch(/<source\b/i)
-		expect(live).toMatch(/\sstyle\s*=/i)
+		// A CSS image is the one the note renderer drops by itself (safeInlineStyle).
+		expect(live).not.toMatch(/url\(/i)
 
 		const summary = untrusted_markdown(strip_think(raw))
 		const summary_html = parseNoteMarkdown(summary)
