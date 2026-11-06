@@ -20,6 +20,9 @@ export const en: typeof ru = {
 		bookmark: 'Drop here to bookmark the folder',
 		open: 'Drop to open the folder',
 		open_more: 'A .pile imports; other files go into the open folder',
+		files: 'Drop to add the files to the open folder',
+		no_folders: 'The browser cannot copy folders — drag the files inside them instead',
+		open_first: 'Open a folder to add files to it',
 	},
 	source: {
 		local: 'Home folder',
