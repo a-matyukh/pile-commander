@@ -5,7 +5,8 @@ import store from '@/store'
 import { report_error } from '@/store/helpers/reportError'
 import cloud, { set_open_workspace, type PublicationView } from '@/store/cloud'
 import { explorer_navigation, type ExplorerPage } from './navigation'
-import { DEMO_ROOT, public_roots, type PublicRoot } from './public_roots'
+import { location_of_route } from './address'
+import { public_roots, type PublicRoot } from './public_roots'
 
 /**
  * Public addresses and cloud flows. A publication opens
@@ -26,8 +27,8 @@ export const explorer_mounted = ref(false)
 export type ExplorerReturn = { kind: 'page'; page: ExplorerPage; arg?: string } | { kind: 'folder'; ref: FolderRef }
 export const explorer_return = ref<ExplorerReturn | null>(null)
 
-/** The Explorer has no addresses of its own */
-function leave_public_address() {
+/** An invitation is not a place to come back to: its address goes */
+function leave_invite_address() {
 	if (window.location.pathname !== '/') history.replaceState(null, '', '/')
 }
 
@@ -59,37 +60,26 @@ export function back_to_explorer_hub(): void {
 	cloud.profile_view = null
 	cloud.profile_not_found = null
 	explorer_return.value = { kind: 'page', page: 'hub' }
-	leave_public_address()
 }
 
 /** Drops an invitation and the /invite address, so the shell opens the last folder */
 export function leave_invite(): void {
 	cloud.invite_view = null
-	leave_public_address()
+	leave_invite_address()
 }
 
 /**
- * Where a fresh Explorer starts: back from those screens, or /hub or /demo
- * opened directly. Null: the last folder, as at launch
+ * Where a fresh Explorer starts: back from those screens, or /hub, an author
+ * or /demo opened directly. Null: the last folder, as at launch. The address
+ * stays: the browser history (browserHistory) keeps it in step from here
  */
 export function take_explorer_start(): ExplorerReturn | null {
 	const back = explorer_return.value
 	explorer_return.value = null
 	if (back) return back
 	const route = resolve_public_route(window.location.pathname)
-	if (route.kind === 'hub') {
-		leave_public_address()
-		return { kind: 'page', page: 'hub' }
-	}
-	if (route.kind === 'profile') {
-		leave_public_address()
-		return { kind: 'page', page: 'profile', arg: route.username }
-	}
-	if (route.kind === 'demo') {
-		leave_public_address()
-		return { kind: 'folder', ref: { drive_id: 'demo', root_id: DEMO_ROOT, folder_id: DEMO_ROOT } }
-	}
-	return null
+	const at = location_of_route(route)
+	return at?.kind === 'page' ? { kind: 'page', page: at.page, arg: at.arg } : at ? { kind: 'folder', ref: at.ref } : null
 }
 
 /** What `cloud.fork()` reads, from a publication shown in the Explorer */
@@ -104,6 +94,13 @@ export function publication_view_of(root: PublicRoot): PublicationView {
 	}
 }
 
+/** The folder the address names inside this publication (a reload or a link to it), else its root */
+function publication_folder(username: string, slug: string): string {
+	const route = resolve_public_route(window.location.pathname)
+	if (route.kind === 'slug' && route.username === username && route.slug === slug && route.path) return route.path
+	return '/'
+}
+
 set_open_workspace(async (item, opts) => {
 	const view = cloud.publication_view
 	if (opts?.public_readonly && view?.workspace_id === item.id) {
@@ -115,13 +112,9 @@ set_open_workspace(async (item, opts) => {
 			can_fork: view.can_fork,
 			can_edit_source: view.can_edit_source,
 		})
-		const opened = await go_to({ drive_id: 'public', root_id: item.id, folder_id: '/' })
-		if (opened) leave_public_address()
-		return opened
+		return go_to({ drive_id: 'public', root_id: item.id, folder_id: publication_folder(view.username, view.slug) })
 	}
-	const opened = await go_to({ drive_id: 'cloud', root_id: item.id, folder_id: '/' })
-	if (opened) leave_public_address()
-	return opened
+	return go_to({ drive_id: 'cloud', root_id: item.id, folder_id: '/' })
 })
 
 // Owner or editor of the source: learned after the publication opened

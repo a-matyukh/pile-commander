@@ -18,6 +18,10 @@ import {
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
 import { listen_external_links } from '@/services/openExternal'
+import { public_start_opening } from '@/services/navigatePublic'
+import { sync_browser_history } from '@/store/explorer/browserHistory'
+import { public_roots } from '@/store/explorer/public_roots'
+import cloud from '@/store/cloud'
 import { listenBrowserDrop, type BrowserDroppedFiles } from '@/services/workspace/listenBrowserDrop'
 import { resolveExternalDropPosition } from '@/ui/workspace/folder-container/externalDropPosition'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
@@ -166,6 +170,25 @@ onMounted(() => {
 	unlistenLinks = listen_external_links(error => report_error(store, error))
 })
 onUnmounted(() => unlistenLinks?.())
+
+// Browser: the address bar and Back/Forward follow the Explorer's places
+let stopHistory: (() => void) | null = null
+onMounted(() => {
+	if (is_desktop) return
+	stopHistory = sync_browser_history({
+		navigation: explorer_navigation,
+		roots: public_roots,
+		open_public: (username, slug) => cloud.open_public(username, slug),
+		history: window.history,
+		pathname: () => window.location.pathname,
+		listen(on_pop) {
+			window.addEventListener('popstate', on_pop)
+			return () => window.removeEventListener('popstate', on_pop)
+		},
+		start_opening: public_start_opening,
+	})
+})
+onUnmounted(() => stopHistory?.())
 
 onMounted(async () => {
 	if (!is_desktop) {

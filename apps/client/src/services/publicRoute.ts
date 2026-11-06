@@ -1,11 +1,13 @@
 import { SLUG_PATTERN, is_reserved_slug } from '@pile-commander/file-manager'
 
 export type PublicRoute =
-	| { kind: 'demo' }
+	/** `path`: a folder inside the demo, as its id (`/demo/Use cases`) */
+	| { kind: 'demo'; path?: string }
 	| { kind: 'hub' }
 	| { kind: 'invite'; token: string }
 	| { kind: 'profile'; username: string }
-	| { kind: 'slug'; username: string; slug: string }
+	/** `path`: a folder inside the publication, as its id (`/Notes/Ideas`) */
+	| { kind: 'slug'; username: string; slug: string; path?: string }
 	| { kind: 'app' }
 
 export type ApplyPublicRouteDeps = {
@@ -27,18 +29,30 @@ type PrerenderDocument = {
 
 /**
  * Maps the URL path to the bootstrap action:
- *   /demo              → the Explorer opens it from the address
+ *   /demo[/<folders>]  → the Explorer opens it (that folder) from the address
  *   /hub               → the public gallery
  *   /invite/<token>    → a pending workspace invite
  *   /<username>        → a profile page with its publications
- *   /<username>/<slug> → a public workspace (read-only view, anon included)
+ *   /<username>/<slug>[/<folders>] → a public workspace (read-only view, anon included), at that folder
  * everything else is the regular app.
  *
  * The root segment is the username, so it must satisfy the slug pattern and
- * not be reserved; deeper paths than two segments belong to future routes.
+ * not be reserved.
  */
 export function resolve_public_route(pathname: string): PublicRoute {
 	const segments = pathname.split('/').filter(Boolean)
+
+	// Deeper segments are folder names inside the demo or a publication
+	if (segments.length > 2 || (segments.length === 2 && segments[0] === 'demo')) {
+		const folders = decode_segments(segments.slice(segments[0] === 'demo' ? 1 : 2))
+		if (!folders) return { kind: 'app' }
+		if (segments[0] === 'demo') return { kind: 'demo', path: `/demo/${folders.join('/')}` }
+		const [first, second] = segments as [string, string]
+		if (SLUG_PATTERN.test(first) && !is_reserved_slug(first) && SLUG_PATTERN.test(second)) {
+			return { kind: 'slug', username: first, slug: second, path: `/${folders.join('/')}` }
+		}
+		return { kind: 'app' }
+	}
 
 	if (segments.length === 1) {
 		const [segment] = segments
@@ -64,6 +78,15 @@ export function resolve_public_route(pathname: string): PublicRoute {
 	}
 
 	return { kind: 'app' }
+}
+
+/** Folder names from the address; null when one is not valid percent-encoding */
+function decode_segments(segments: string[]): string[] | null {
+	try {
+		return segments.map(segment => decodeURIComponent(segment))
+	} catch {
+		return null
+	}
 }
 
 /**

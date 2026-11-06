@@ -17,25 +17,30 @@ afterEach(() => {
 })
 
 describe('explorer start after public screens', () => {
-	test('"Back to Hub" starts on the Hub page once, at the plain address', () => {
+	test('"Back to Hub" starts on the Hub page once; the address is left to the browser history', () => {
 		history.replaceState(null, '', '/amatyukh/use-cases')
 		back_to_explorer_hub()
-		expect(window.location.pathname).toBe('/')
+		expect(window.location.pathname).toBe('/amatyukh/use-cases')
 		expect(take_explorer_start()).toEqual({ kind: 'page', page: 'hub' })
-		expect(take_explorer_start()).toBeNull()
 	})
 
-	test('/hub opened directly starts on the Hub page; any other address on the last folder', () => {
+	test('/hub and an author opened directly start there and keep the address', () => {
 		history.replaceState(null, '', '/hub')
 		expect(take_explorer_start()).toEqual({ kind: 'page', page: 'hub' })
-		expect(window.location.pathname).toBe('/')
+		expect(window.location.pathname).toBe('/hub')
+		history.replaceState(null, '', '/anna')
+		expect(take_explorer_start()).toEqual({ kind: 'page', page: 'profile', arg: 'anna' })
+		history.replaceState(null, '', '/')
 		expect(take_explorer_start()).toBeNull()
 	})
 
-	test('/demo opened directly starts on the demo folder', () => {
-		location.pathname = '/demo'
+	test('/demo opened directly starts on the demo folder, or the folder in the address', () => {
+		history.replaceState(null, '', '/demo')
 		expect(take_explorer_start()).toEqual({ kind: 'folder', ref: { drive_id: 'demo', root_id: '/demo', folder_id: '/demo' } })
-		expect(location.pathname).toBe('/')
+		expect(window.location.pathname).toBe('/demo')
+		history.replaceState(null, '', '/demo/Use%20cases')
+		expect(take_explorer_start()).toEqual({ kind: 'folder', ref: { drive_id: 'demo', root_id: '/demo', folder_id: '/demo/Use cases' } })
+		history.replaceState(null, '', '/')
 	})
 
 	test('an accepted invitation starts on the invited folder', () => {

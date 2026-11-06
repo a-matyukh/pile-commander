@@ -86,6 +86,14 @@ export type ExplorerNavigation = {
 	/** While a navigation is opening (`target`), going back drops it and stays where the window is */
 	go_back(): Promise<void>
 	go_forward(): Promise<void>
+	/** The step of the history on screen (the browser's history mirrors it) */
+	readonly index: number
+	/** A step of the history, null past its ends */
+	entry(index: number): ExplorerLocation | null
+	/** Back or forward to that step, as the arrows would */
+	go_to_index(index: number): Promise<void>
+	/** Opens a place as a new step: a folder that is gone opens its root, an unreachable root is reported */
+	open_location(location: ExplorerLocation): Promise<void>
 	/**
 	 * Opens the folder that was open before exit. A folder that is gone opens
 	 * the root of its drive. If that root cannot be opened, opens the default
@@ -134,7 +142,7 @@ function folder_location(ref: FolderRef): ExplorerLocation {
 	}
 }
 
-function same_location(a: ExplorerLocation, b: ExplorerLocation): boolean {
+export function same_location(a: ExplorerLocation, b: ExplorerLocation): boolean {
 	if (a.kind !== b.kind) return false
 	if (a.kind === 'page' && b.kind === 'page') return a.page === b.page && a.arg === b.arg
 	if (a.kind === 'folder' && b.kind === 'folder') {
@@ -519,6 +527,12 @@ export function create_explorer_navigation(deps: ExplorerNavigationDeps): Explor
 		open_local_path,
 		go_back: () => go(state.index - 1),
 		go_forward: () => go(state.index + 1),
+		get index() { return state.index },
+		entry: (index: number) => state.history[index] ?? null,
+		go_to_index: (index: number) => go(index),
+		open_location: (location: ExplorerLocation) => location.kind === 'page'
+			? navigate(location, false)
+			: open_bookmark(location.ref),
 		open_at_launch,
 		cancel: drop_in_flight,
 	})
