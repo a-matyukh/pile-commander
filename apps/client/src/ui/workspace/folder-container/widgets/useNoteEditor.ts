@@ -9,7 +9,8 @@ import {
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { toggle_task } from '@/services/text/tasks'
 import { armNoteKeyboardFocus } from '../noteKeyboardFocus'
-import { loadedNoteRenderer, loadNoteRenderer, taskBoxLabel } from './noteRenderer'
+import { rememberEditPoint } from './editPoint'
+import { loadedNoteRenderer, loadNoteEditor, loadNoteRenderer, taskBoxLabel } from './noteRenderer'
 import { useEditingNoteId } from './useEditingNoteId'
 
 const DOUBLE_TAP_MS = 320
@@ -30,6 +31,8 @@ export function useNoteEditor(
 	const previewHtml = ref('')
 	const isLoaded = ref(false)
 	let loadPromise: Promise<void> | null = null
+	/** The text the file holds as far as this note knows (read or written); null: not known. */
+	let persisted: string | null = null
 
 	let lastTapAt = 0
 	let lastTapX = 0
@@ -76,6 +79,7 @@ export function useNoteEditor(
 					if (!isEditing.value && !isLoaded.value) {
 						text.value = content
 					}
+					persisted = content
 					isLoaded.value = true
 					refreshPreview()
 				})
@@ -86,12 +90,15 @@ export function useNoteEditor(
 		return loadPromise
 	}
 
+	/** Writes the text, unless the file already holds it: leaving a note unchanged writes nothing. */
 	async function save() {
 		const ws = requireWorkspace()
 		if (!ws.can_write) return
 		const id = toValue(widgetId)
 		const content = text.value
+		if (content === persisted) return
 		await ws.save_note_content(id, content)
+		persisted = content
 		// Capture content before await — ensureLoaded can clobber text.value
 		// with a stale empty cache entry while save_note_content is in flight.
 		ws.content_caches.notes.set(id, content)
@@ -124,13 +131,18 @@ export function useNoteEditor(
 	async function startEdit() {
 		if (workspace.value?.can_write === false) return
 		// Content must be loaded before editing, otherwise saving would overwrite the file with empty text.
-		await ensureLoaded()
+		// A markdown note opens in the rich editor: its chunk loads alongside.
+		await Promise.all([
+			ensureLoaded(),
+			isMarkdown.value ? loadNoteEditor().catch(() => undefined) : undefined,
+		])
 		editingNoteId.value = toValue(widgetId)
 	}
 
 	/** Enter edit from a user gesture; arm soft keyboard before any await. */
-	function beginEditFromGesture() {
+	function beginEditFromGesture(point?: { x: number; y: number }) {
 		if (isEditing.value) return
+		if (point) rememberEditPoint(point.x, point.y)
 		window.getSelection()?.removeAllRanges()
 		armNoteKeyboardFocus()
 		void startEdit()
@@ -180,7 +192,7 @@ export function useNoteEditor(
 			lastTapAt = 0
 			event.preventDefault()
 			event.stopPropagation()
-			beginEditFromGesture()
+			beginEditFromGesture({ x: event.clientX, y: event.clientY })
 			return
 		}
 
@@ -214,7 +226,7 @@ export function useNoteEditor(
 		}
 		event.preventDefault()
 		event.stopPropagation()
-		beginEditFromGesture()
+		beginEditFromGesture({ x: event.clientX, y: event.clientY })
 	}
 
 	function onBlur() {

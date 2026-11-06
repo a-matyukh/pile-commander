@@ -35,6 +35,12 @@ export async function open_external(href: string): Promise<void> {
 	window.open(href, '_blank', 'noopener,noreferrer')
 }
 
+/** A plain click on a link inside an editable text (a note in editing) belongs to the editor. */
+export function is_editing_link(link: Element, event: Pick<MouseEvent, 'metaKey' | 'ctrlKey' | 'button'>): boolean {
+	if (!link.closest('[contenteditable="true"]')) return false
+	return event.button === 0 && !event.metaKey && !event.ctrlKey
+}
+
 /**
  * Catches clicks on links anywhere in the app (notes, captions, any rendered
  * markdown) so a web link never replaces the app in this window. Returns the
@@ -48,6 +54,8 @@ export function listen_external_links(on_error: (error: unknown) => void): () =>
 		const target = event.target instanceof Element ? event.target : null
 		const link = target?.closest('a[href]')
 		if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download')) return
+		// In a note being edited a click puts the caret in the link; Cmd/Ctrl+click opens it.
+		if (is_editing_link(link, event)) return
 		const href = link.getAttribute('href') ?? ''
 		if (!external_target(href, window.location.origin, is_desktop)) return
 		event.preventDefault()

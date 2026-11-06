@@ -148,3 +148,27 @@ describe('useNoteEditor: ticking a task in the preview', () => {
 		scope.stop()
 	})
 })
+
+describe('useNoteEditor: a note left unchanged is not written', () => {
+	test('open and close without an edit writes nothing; an edit writes once', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		await store.save_note_content(id, '# Kept\n\nas is')
+		store.content_caches.notes.set(id, '# Kept\n\nas is')
+		const save = vi.spyOn(store, 'save_note_content')
+
+		await editor.startEdit()
+		await nextTick()
+		editor.exitEdit()
+		await settle()
+		expect(save).not.toHaveBeenCalled()
+
+		await editor.startEdit()
+		await nextTick()
+		editor.text.value = '# Kept\n\nchanged'
+		editor.exitEdit()
+		await settle()
+		expect(save).toHaveBeenCalledOnce()
+		expect(await store.read_note_content(id)).toBe('# Kept\n\nchanged')
+		scope.stop()
+	})
+})

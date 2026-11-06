@@ -26,6 +26,20 @@ export function loadNoteRenderer(): Promise<NoteRender> {
 	return loading
 }
 
+let editorLoading: Promise<typeof import('./NoteRichEditor.vue')> | null = null
+
+/**
+ * The note editor (Tiptap's Vue binding over the same schema): its own small
+ * chunk, next to the renderer's. A failed load is tried again next time.
+ */
+export function loadNoteEditor(): Promise<typeof import('./NoteRichEditor.vue')> {
+	editorLoading ??= import('./NoteRichEditor.vue').catch((error: unknown) => {
+		editorLoading = null
+		throw error
+	})
+	return editorLoading
+}
+
 /** The renderer once loaded; null before. */
 export function loadedNoteRenderer(): NoteRender | null {
 	return loaded

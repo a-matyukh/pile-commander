@@ -58,8 +58,8 @@ const rootClass = computed(() =>
 
 const ignoreFrom = computed(() =>
 	props.layout === 'board'
-		? '.resize-handle, textarea'
-		: 'textarea',
+		? '.resize-handle, textarea, .ProseMirror'
+		: 'textarea, .ProseMirror',
 )
 </script>
 

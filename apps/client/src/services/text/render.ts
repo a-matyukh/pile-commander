@@ -19,7 +19,7 @@ const escape_html = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, 
  * Front matter shows as its source; another raw block through the old preview
  * pipeline (marked + sanitizer); a raw inline piece is HTML, sanitized.
  */
-function raw_html(raw: string, inline: boolean): string {
+export function raw_html(raw: string, inline: boolean): string {
 	if (inline) return sanitizeNoteHtml(raw)
 	if (/^---[ \t]*\n/.test(raw)) return `<pre data-front-matter="">${escape_html(raw)}</pre>`
 	return parseNoteMarkdown(raw)

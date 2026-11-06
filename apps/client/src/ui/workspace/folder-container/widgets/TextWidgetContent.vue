@@ -164,7 +164,7 @@ async function resetWidth() {
 		:root-class="rootClass"
 		:interactions-enabled="interactionsEnabled"
 		:extra-style="extraStyle"
-		:ignore-from="'.text-resize-handle, .text-reset-width, textarea'"
+		:ignore-from="'.text-resize-handle, .text-reset-width, textarea, .ProseMirror'"
 		:min-size="{ width: 40, height: 24 }"
 		@pointerdown="onPointerDown"
 		@selectstart="onSelectStart"

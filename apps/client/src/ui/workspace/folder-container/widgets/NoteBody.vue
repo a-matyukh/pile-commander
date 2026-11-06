@@ -1,12 +1,27 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useIntersectionObserver, useResizeObserver } from '@vueuse/core'
 import {
 	shouldIgnoreNoteKeyboardDismiss,
 	transferNoteKeyboardFocus,
 } from '../noteKeyboardFocus'
-import { TASK_BOX } from './noteRenderer'
-import { wrapMarkdownSelection } from './wrapMarkdownSelection'
+import { takeEditPoint } from './editPoint'
+import { loadNoteEditor, TASK_BOX } from './noteRenderer'
+
+/**
+ * `.md` is edited as rendered text; the component loads with the first edit.
+ * If it cannot load (a web build replaced by a deploy), the textarea edits
+ * the markdown as before.
+ */
+const editorFailed = ref(false)
+const NoteRichEditor = defineAsyncComponent({
+	loader: loadNoteEditor,
+	onError(error, _retry, fail) {
+		console.warn('[notes] the note editor did not load', error)
+		editorFailed.value = true
+		fail()
+	},
+})
 
 const props = withDefaults(defineProps<{
 	isEditing: boolean
@@ -50,9 +65,19 @@ const emit = defineEmits<{
 }>()
 
 const textareaRef = useTemplateRef<HTMLTextAreaElement>('textarea')
+const editorRef = useTemplateRef<{
+	element(): HTMLElement | null
+	placeCaret(point: { x: number; y: number } | null): void
+}>('editor')
 const previewRef = useTemplateRef<HTMLDivElement>('preview')
 const isClipped = ref(false)
-const { macOS } = useKbd()
+
+const richEditing = computed(() => props.isMarkdown && !editorFailed.value)
+
+/** What takes focus while editing: the rich editor for `.md`, the textarea for `.txt`. */
+function editingElement(): HTMLElement | null {
+	return richEditing.value ? editorRef.value?.element() ?? null : textareaRef.value
+}
 
 /** Soft-keyboard height usually exceeds URL-bar chrome jitter. */
 const KEYBOARD_VIEWPORT_GAP = 150
@@ -187,77 +212,47 @@ function watchKeyboardDismissWhileEditing() {
 /** A canvas node stays `visibility: hidden` until Vue Flow has measured it: this many frames at most. */
 const FOCUS_RETRY_FRAMES = 30
 
-async function focusTextarea() {
+async function focusEditing() {
 	window.getSelection()?.removeAllRanges()
 	await nextTick()
-	const textarea = textareaRef.value
-	if (!textarea) return
-	// Prefer transfer when create-note armed a touch keyboard proxy.
-	transferNoteKeyboardFocus(textarea)
-	autosizeStackTextarea()
-
-	// A block created and opened in one go (the canvas, right after a click) can
-	// be asked for focus before Vue Flow made its node visible, and a hidden
-	// element cannot take focus: the block would be open but not typeable. Keep
-	// asking, frame by frame, while it is still being edited.
-	for (let frame = 0; frame < FOCUS_RETRY_FRAMES; frame++) {
-		if (document.activeElement === textareaRef.value) return
-		await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-		const current = textareaRef.value
-		if (!props.isEditing || !current) return
+	const point = takeEditPoint()
+	let placed = false
+	// The editor may still be loading, and a block created and opened in one
+	// go (the canvas, right after a click) can be asked for focus before Vue
+	// Flow made its node visible: a hidden element cannot take focus, and the
+	// block would be open but not typeable. Keep asking, frame by frame, while
+	// it is still being edited.
+	for (let frame = 0; frame <= FOCUS_RETRY_FRAMES; frame++) {
+		if (frame > 0) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+		if (!props.isEditing) return
+		const current = editingElement()
+		if (!current) continue
+		if (!placed) {
+			placed = true
+			editorRef.value?.placeCaret(point)
+			autosizeStackTextarea()
+		}
 		const active = document.activeElement
 		if (active === current) return
 		// Focus went into another field (the user moved on): leave it there.
 		if (
-			active instanceof HTMLElement
+			frame > 0
+			&& active instanceof HTMLElement
+			&& !current.contains(active)
 			&& (active.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
 			&& !active.hasAttribute('aria-hidden')
 		) return
+		// Prefer transfer when create-note armed a touch keyboard proxy.
 		transferNoteKeyboardFocus(current)
+		if (document.activeElement === current) return
 	}
 }
 
-function isFormatModifier(event: KeyboardEvent): boolean {
-	if (event.shiftKey || event.ctrlKey) return false
-	if (macOS.value) return event.metaKey && !event.altKey
-	return event.altKey && !event.metaKey
-}
-
-function formatMarkerForKey(event: KeyboardEvent): string | null {
-	if (event.code === 'KeyB' || event.key.toLowerCase() === 'b') return '**'
-	if (event.code === 'KeyI' || event.key.toLowerCase() === 'i') return '*'
-	return null
-}
-
-/**
- * Wraps the textarea selection in a markdown marker (`**`, `*`). The one entry
- * point for format commands: the keyboard goes through it now, and a
- * formatting popup can call it through the exposed handle.
- */
-function applyFormat(marker: string): boolean {
-	const textarea = textareaRef.value
-	if (!textarea) return false
-	const result = wrapMarkdownSelection(
-		textarea.value,
-		textarea.selectionStart,
-		textarea.selectionEnd,
-		marker,
-	)
-	textarea.setRangeText(result.text, 0, textarea.value.length, 'end')
-	textarea.dispatchEvent(new Event('input', { bubbles: true }))
-	textarea.setSelectionRange(result.selectionStart, result.selectionEnd)
-	return true
-}
-
-defineExpose({ applyFormat })
-
+/** `.txt` in a textarea: Esc leaves editing, as in the rich editor. */
 function onTextareaKeydown(event: KeyboardEvent) {
-	if (!isFormatModifier(event)) return
-	const marker = formatMarkerForKey(event)
-	if (!marker) return
-	if (!textareaRef.value) return
+	if (event.key !== 'Escape') return
 	event.preventDefault()
-	applyFormat(marker)
+	emit('blur')
 }
 
 /** Stack notes grow with content up to max-height instead of staying a fixed box. */
@@ -297,15 +292,18 @@ function onTextareaSelectGestureStart(event: MouseEvent | PointerEvent) {
 }
 
 function restoreTextareaAfterSelectGesture() {
-	const textarea = textareaRef.value
-	if (!textarea || !props.isEditing) return
-	if (document.activeElement === textarea) return
-	const start = textarea.selectionStart
-	const end = textarea.selectionEnd
-	transferNoteKeyboardFocus(textarea)
-	if (start != null && end != null) {
-		textarea.setSelectionRange(start, end)
+	const current = editingElement()
+	if (!current || !props.isEditing) return
+	if (current.contains(document.activeElement)) return
+	if (current instanceof HTMLTextAreaElement) {
+		const start = current.selectionStart
+		const end = current.selectionEnd
+		transferNoteKeyboardFocus(current)
+		current.setSelectionRange(start, end)
+		return
 	}
+	// ProseMirror puts its own selection back on focus.
+	transferNoteKeyboardFocus(current)
 }
 
 function onTextareaSelectGestureEnd() {
@@ -322,13 +320,15 @@ function onTextareaSelectGestureEnd() {
 /**
  * Blur exits edit, except:
  * - transient unmount (stack/masonry re-init)
+ * - focus still inside the editor (a task box in it)
  * - focus stolen by folder chrome / dropdown (create-from-menu)
  * - drag-selecting text (WebKit blurs the field while the button is down)
  */
-function onTextareaBlur() {
+function onEditingBlur() {
 	requestAnimationFrame(() => {
-		if (!textareaRef.value || !props.isEditing) return
-		if (document.activeElement === textareaRef.value) return
+		const current = editingElement()
+		if (!current || !props.isEditing) return
+		if (current.contains(document.activeElement)) return
 		if (textareaSelectGesture) return
 
 		const active = document.activeElement
@@ -336,7 +336,7 @@ function onTextareaBlur() {
 			active instanceof Element
 			&& active.closest('.folder-chrome, [role="menu"], [data-reka-popper-content-wrapper]')
 		) {
-			transferNoteKeyboardFocus(textareaRef.value)
+			transferNoteKeyboardFocus(current)
 			return
 		}
 
@@ -357,7 +357,7 @@ watch(() => [props.previewHtml, text.value, props.isEditing], () => {
 watch(() => props.isEditing, async (editing) => {
 	if (editing) {
 		watchKeyboardDismissWhileEditing()
-		await focusTextarea()
+		await focusEditing()
 	} else {
 		clearKeyboardDismissWatch()
 	}
@@ -366,7 +366,7 @@ watch(() => props.isEditing, async (editing) => {
 onMounted(async () => {
 	if (props.isEditing) {
 		watchKeyboardDismissWhileEditing()
-		await focusTextarea()
+		await focusEditing()
 	} else {
 		await scheduleClipUpdate()
 	}
@@ -384,7 +384,7 @@ onUnmounted(() => {
 	<div
 		v-if="!isEditing && isMarkdown"
 		ref="preview"
-		class="note-preview prose prose-sm prose-gray max-w-none"
+		class="note-preview note-content prose prose-sm prose-gray max-w-none"
 		:class="{
 			'note-preview--stack': variant === 'stack',
 			'note-preview--text': isTextAppearance,
@@ -408,6 +408,24 @@ onUnmounted(() => {
 		}"
 		@scroll.passive="updateClip"
 	>{{ text }}</div>
+	<NoteRichEditor
+		v-else-if="richEditing"
+		ref="editor"
+		v-model="text"
+		class="note-editing note-content prose prose-sm prose-gray max-w-none"
+		:class="{
+			'note-editing--stack': variant === 'stack',
+			'note-editing--text': isTextAppearance,
+			'note-editing--text-auto': isTextAppearance && !fixedWidth,
+			nodrag: canvasMode,
+			nopan: canvasMode,
+		}"
+		@escape="emit('blur')"
+		@focusout="onEditingBlur"
+		@pointerdown="onTextareaSelectGestureStart"
+		@mousedown="onTextareaSelectGestureStart"
+		@dblclick.stop
+	/>
 	<!--
 		Text block: the textarea sits in one grid cell with a hidden copy of its
 		own text (::after). The copy sizes the cell, so the box grows with the
@@ -433,7 +451,7 @@ onUnmounted(() => {
 			@keydown="onTextareaKeydown"
 			@pointerdown="onTextareaSelectGestureStart"
 			@mousedown="onTextareaSelectGestureStart"
-			@blur="onTextareaBlur"
+			@blur="onEditingBlur"
 			@dblclick.stop
 		/>
 	</div>
@@ -451,19 +469,15 @@ onUnmounted(() => {
 		@keydown="onTextareaKeydown"
 		@pointerdown="onTextareaSelectGestureStart"
 		@mousedown="onTextareaSelectGestureStart"
-		@blur="onTextareaBlur"
+		@blur="onEditingBlur"
 		@dblclick.stop
 	/>
 </template>
 
 <style scoped>
-.note-preview {
-	height: 100%;
-	overflow: auto;
-	touch-action: none;
-	overscroll-behavior: none;
-	user-select: none;
-	-webkit-user-select: none;
+/* What the preview and the rich editor share: the note's typography, so
+   nothing moves when editing starts. */
+.note-content {
 	--tw-prose-body: rgb(23 23 23);
 	--tw-prose-headings: rgb(23 23 23);
 	--tw-prose-bold: rgb(23 23 23);
@@ -477,6 +491,76 @@ onUnmounted(() => {
 	--tw-prose-pre-code: rgb(23 23 23);
 	--tw-prose-pre-bg: rgb(0 0 0 / 0.06);
 	color: rgb(23 23 23);
+}
+
+.note-preview {
+	height: 100%;
+	overflow: auto;
+	touch-action: none;
+	overscroll-behavior: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+/* Editing: the same box as the preview, scrolled rather than faded. */
+.note-editing {
+	height: 100%;
+	overflow: auto;
+	cursor: text;
+	user-select: text;
+	-webkit-user-select: text;
+	touch-action: auto;
+}
+
+.note-editing :deep(.ProseMirror) {
+	min-height: 100%;
+	outline: none;
+	overflow-wrap: break-word;
+}
+
+/* prose drops the outer margins of its own first and last child; here the
+   blocks sit two levels deeper, inside Tiptap's element: same rule, or the
+   text would move down by a line's margin when editing starts. */
+.note-editing :deep(.ProseMirror > :first-child) {
+	margin-top: 0;
+}
+
+.note-editing :deep(.ProseMirror > :last-child) {
+	margin-bottom: 0;
+}
+
+.note-editing--stack {
+	height: auto;
+	min-height: 4rem;
+	max-height: 24rem;
+}
+
+/* A raw block (HTML the note keeps as written) is one piece: it shows it is selected. */
+.note-editing :deep(.ProseMirror-selectednode) {
+	outline: 2px solid rgb(37 99 235 / 0.35);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
+.note-editing--text {
+	height: auto;
+	overflow: visible;
+}
+
+/* A text block grows to the right until its width is fixed: a line breaks
+   only at Enter. */
+.note-editing--text-auto {
+	width: max-content;
+	min-width: 1.5em;
+}
+
+.note-editing--text-auto :deep(.ProseMirror) {
+	white-space: pre;
+	overflow-wrap: normal;
+}
+
+.note-editing--text:not(.note-editing--text-auto) :deep(.ProseMirror) {
+	overflow-wrap: anywhere;
 }
 
 .note-preview--fade {
@@ -527,13 +611,13 @@ onUnmounted(() => {
 	overflow-wrap: anywhere;
 }
 
-.note-preview :deep(:where(p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, aside, strong, em, code, pre)) {
+.note-content :deep(:where(p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, aside, strong, em, code, pre)) {
 	color: inherit;
 }
 
 /* Typography draws literal backticks around inline code and leaves it bare,
    so `name` looks like raw markdown. A chip instead, same fill as a code block. */
-.note-preview :deep(:not(pre) > code) {
+.note-content :deep(:not(pre) > code) {
 	background: rgb(0 0 0 / 0.08);
 	border-radius: 0.375rem;
 	padding: 0.15em 0.4em;
@@ -542,61 +626,61 @@ onUnmounted(() => {
 	font-weight: 500;
 }
 
-.note-preview :deep(:not(pre) > code)::before,
-.note-preview :deep(:not(pre) > code)::after {
+.note-content :deep(:not(pre) > code)::before,
+.note-content :deep(:not(pre) > code)::after {
 	content: none;
 }
 
 /* A callout (`> [!NOTE]`, and Notion's <aside>, which the old renderer still
    shows). Translucent so a colored note still shows through. */
-.note-preview :deep(:where(aside, div[data-callout])) {
+.note-content :deep(:where(aside, div[data-callout])) {
 	background: rgb(0 0 0 / 0.06);
 	border-radius: 0.5rem;
 	padding: 0.7rem 0.85rem;
 	margin: 0.75rem 0;
 }
 
-.note-preview :deep(:where(aside, div[data-callout]) > :first-child) {
+.note-content :deep(:where(aside, div[data-callout]) > :first-child) {
 	margin-top: 0;
 }
 
-.note-preview :deep(:where(aside, div[data-callout]) > :last-child) {
+.note-content :deep(:where(aside, div[data-callout]) > :last-child) {
 	margin-bottom: 0;
 }
 
 /* The note schema wraps a list item's and a table cell's text in <p>, which
    marked did not for a tight list: no extra space, as before. */
-.note-preview :deep(li > p),
-.note-preview :deep(:where(td, th) > p) {
+.note-content :deep(li > p),
+.note-content :deep(:where(td, th) > p) {
 	margin-top: 0;
 	margin-bottom: 0;
 }
 
-.note-preview :deep(li > p + p) {
+.note-content :deep(li > p + p) {
 	margin-top: 0.5em;
 }
 
 /* A task: its box instead of the bullet. */
-.note-preview :deep(ul[data-type="taskList"]) {
+.note-content :deep(ul[data-type="taskList"]) {
 	list-style: none;
 	padding-inline-start: 0;
 }
 
-.note-preview :deep(li[data-type="taskItem"]) {
+.note-content :deep(li[data-type="taskItem"]) {
 	display: flex;
 	gap: 0.5em;
 	align-items: flex-start;
 	padding-inline-start: 0;
 }
 
-.note-preview :deep(li[data-type="taskItem"] > label) {
+.note-content :deep(li[data-type="taskItem"] > label) {
 	flex: none;
 	display: flex;
 	align-items: center;
 	height: 1.7142857em;
 }
 
-.note-preview :deep(li[data-type="taskItem"] > label > input) {
+.note-content :deep(li[data-type="taskItem"] > label > input) {
 	width: 13px;
 	height: 13px;
 	margin: 0;
@@ -608,47 +692,47 @@ onUnmounted(() => {
 	cursor: default;
 }
 
-.note-preview :deep(li[data-type="taskItem"] > div) {
+.note-content :deep(li[data-type="taskItem"] > div) {
 	flex: 1;
 	min-width: 0;
 }
 
-.note-preview :deep(li[data-type="taskItem"] > div > :first-child) {
+.note-content :deep(li[data-type="taskItem"] > div > :first-child) {
 	margin-top: 0;
 }
 
-.note-preview :deep(li[data-type="taskItem"] > div > :last-child) {
+.note-content :deep(li[data-type="taskItem"] > div > :last-child) {
 	margin-bottom: 0;
 }
 
 /* The header row sits in <tbody> as <th> cells: padded like the body cells. */
-.note-preview :deep(tbody th) {
+.note-content :deep(tbody th) {
 	padding: 0.6666667em 1em;
 	font-weight: 600;
 	text-align: start;
 	vertical-align: bottom;
 }
 
-.note-preview :deep(tbody th:first-child) {
+.note-content :deep(tbody th:first-child) {
 	padding-inline-start: 0;
 }
 
-.note-preview :deep(tbody th:last-child) {
+.note-content :deep(tbody th:last-child) {
 	padding-inline-end: 0;
 }
 
-.note-preview :deep(mark) {
+.note-content :deep(mark) {
 	color: inherit;
 	border-radius: 3px;
 	padding: 0 0.1em;
 }
 
-.note-preview :deep(small) {
+.note-content :deep(small) {
 	font-size: 0.85em;
 }
 
 /* Front matter shows as its source, quietly. */
-.note-preview :deep(pre[data-front-matter]) {
+.note-content :deep(pre[data-front-matter]) {
 	font-size: 0.8em;
 	opacity: 0.7;
 }
