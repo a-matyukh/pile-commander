@@ -46,14 +46,17 @@ function layoutText() {
 	if (!(img instanceof HTMLImageElement)) return
 	const imgBox = img.getBoundingClientRect()
 	const pictureBox = picture.getBoundingClientRect()
+	// The canvas zooms with a CSS transform: screen rects are scaled, styles are not.
+	const zoom = picture.offsetWidth > 0 ? pictureBox.width / picture.offsetWidth : 1
+	if (!(zoom > 0)) return
 	const fitted = contained_image_box(
-		{ width: imgBox.width, height: imgBox.height },
+		{ width: imgBox.width / zoom, height: imgBox.height / zoom },
 		{ width: img.naturalWidth, height: img.naturalHeight },
 	)
 	if (!fitted) return
 	painted.value = {
-		top: imgBox.top - pictureBox.top + fitted.top,
-		left: imgBox.left - pictureBox.left + fitted.left,
+		top: (imgBox.top - pictureBox.top) / zoom + fitted.top,
+		left: (imgBox.left - pictureBox.left) / zoom + fitted.left,
 		width: fitted.width,
 		height: fitted.height,
 	}
