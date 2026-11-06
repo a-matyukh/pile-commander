@@ -1,7 +1,7 @@
 # Работа с текстом: план
 
-**Статус (2026-11-06):** план одобрен; шаг 0 сделан (не закоммичен); прототипы П1 и П2 приняты. Дальше —
-П3 (текст на фигурах), потом этапы 1–4.
+**Статус (2026-11-06):** план одобрен; шаг 0 сделан; прототипы П1–П3 приняты. Этап 1 расписан по шагам
+1.1–1.4 (ниже) — дальше код.
 
 ## Контекст
 
@@ -174,33 +174,105 @@ SVG правят в Inkscape, а смена цвета (`apply_shape_color`) е�
 
 ### Этап 1. Движок
 
-- **Зависимости** (`apps/client/package.json`): `@tiptap/core`, `@tiptap/pm`, `@tiptap/vue-3`,
-  `@tiptap/starter-kit`, `@tiptap/markdown`, `@tiptap/extension-list`, `-text-style`, `-highlight`,
-  `-text-align`, `-subscript`, `-superscript`, `-table`, `-bubble-menu`, `@tiptap/static-renderer`;
-  dev — `jsdom` (уже добавлен на шаге 0: тестам разбора HTML нужен DOM, а vitest клиента идёт в
-  `node`; в `happy-dom` DOMPurify не работает).
-- **Новый модуль `apps/client/src/services/text/`:** набор расширений (один для правки и просмотра);
-  `MarkdownManager` со своим `marked`, `breaks: true`, переносом `\n`, скромным экранированием, своими
-  разбором и записью для цвета, фона, `<small>`, `<u>`, выравнивания, выноски (`> [!NOTE]` и
-  `<aside>`), таблиц, Tab и сырых блоков; рендер markdown → HTML для просмотра.
-- **`widgets/NoteBody.vue`:** textarea → редактор, превью → новый рендер. Сохранить, что там уже
-  решено: рост текстового блока по тексту и фиксированная ширина (трюк `.note-grow` больше не нужен —
-  contenteditable растёт сам), стек-вариант, затухание длинной заметки, повторы фокуса на холсте.
+Цель: заметка и текстовый блок (`.md`) правятся «как видно», без сырого markdown, и выглядят одинаково в
+просмотре и в правке. Файл остаётся `.md`; открыть и закрыть заметку — файл не меняется. Попапа ещё нет
+(этап 2), форматирование — горячими клавишами и markdown-вводом (`# `, `- `, `1. `, `[ ] `, `---`). `.txt`
+не меняется: textarea и простой текст. Четыре шага, после каждого — тесты, `vue-tsc` и коммит в
+`text-behaviour`.
+
+#### 1.1. Модуль текста — без изменений в интерфейсе
+
+- **Зависимости** (`apps/client/package.json`, одна точная версия 3.33.0): `@tiptap/core`, `@tiptap/pm`,
+  `@tiptap/vue-3`, `@tiptap/starter-kit`, `@tiptap/markdown`, `@tiptap/extension-list`,
+  `@tiptap/extension-table`, `@tiptap/extension-image`, `@tiptap/extension-subscript`,
+  `@tiptap/extension-superscript`, а также `@tiptap/extension-paragraph`, `-heading`, `-hard-break`: мы их
+  расширяем и импортируем напрямую, а `linker = "isolated"` не даёт брать их транзитом через StarterKit.
+  `text-style`, `highlight`, `text-align` не нужны — свои метки из прототипов; `bubble-menu` — на этапе 2.
+- **`apps/client/src/services/text/`** (функции в snake_case, как в `services/`):
+  - `palette.ts` — 9 цветов текста и 9 фонов из П1 (их же возьмёт попап на этапе 2);
+  - `escape.ts` — `minimal_escape` и `protect_line_starts` (Tab в начале строки → `&#9;`, строка, похожая
+    на блок, получает `\`);
+  - `extensions.ts` — `note_extensions({ default_align })`: StarterKit без `paragraph`, `heading`,
+    `hardBreak` (ссылки: `openOnClick: false`, `autolink`); свои Paragraph / Heading / HardBreak с записью в
+    markdown; TaskList / TaskItem; TableKit; Image (`![alt](src)`, только http/https); метки TextColor,
+    BgColor, Small, Sub, Sup; глобальный атрибут Align (`default_align`: `left` для заметок, `center` для
+    фигур на этапе 4); узел Callout (`> [!NOTE]` и `<aside>`); узел RawBlock; клавиши Tab / Shift+Tab и
+    Esc (колбэк);
+  - `markdown.ts` — `create_note_markdown()`: `MarkdownManager` со своим `new Marked()` (общий `marked` у
+    `parseNoteMarkdown` не трогаем), `gfm`, `breaks: true`, подмена `encodeTextForMarkdown`;
+    `parse_note(md)` → документ, `serialize_note(doc)` → md;
+  - `render.ts` — `render_note_html(md)`: разбор и HTML по схеме (`getHTMLFromFragment`), кэш по строке;
+  - `tasks.ts` — `toggle_task(md, index, checked)`: точечная правка N-й задачи `- [ ]` / `- [x]` в исходнике
+    (вне блоков кода), остальной файл байт в байт.
+- **RawBlock — «неизвестное не теряется».** Блочный HTML, который схема не знает целиком (`<details>`,
+  `<video>`, `<iframe>`, сложные `<table>` …), становится атомом с исходным текстом. Показывается через
+  `parseNoteMarkdown` (DOMPurify с правилами шага 0), не редактируется, пишется обратно байт в байт.
+  Свои HTML-блоки схемы (`<p align>`, `<h1-3 align>`, `<aside>`) разбираются как обычно.
+- **Тесты** (`// @vitest-environment jsdom` там, где нужен DOM):
+  - `escape.test.ts` — экранирование и начало строки;
+  - `markdown.dom.test.ts` — каждая строка таблицы формата: запись → разбор → тот же документ; белый
+    список (`<style>`, чужой `style`, цвет вне палитры, `javascript:`-ссылки и картинки, скрипты не проходят);
+    `breaks`; Tab; выноски обоих видов; таблицы; картинки; RawBlock байт в байт;
+  - `corpus.dom.test.ts` — все 334 `.md` из закоммиченного `public/demo-pack/manifest.json`: после
+    разбора и записи документ при повторном разборе тот же, текст не потерян, одиночные переносы на месте,
+    новых `\` перед `_ * [ ] ~` нет;
+  - `tasks.test.ts` — точечное переключение задач.
+- Коммит: «feat(text): notes read and write markdown through a Tiptap schema».
+
+#### 1.2. Просмотр — тем же разбором
+
+- `useNoteEditor.refreshPreview` и `SummaryDialog.vue` берут `render_note_html`. Модуль текста грузится
+  отдельным чанком (`import()`) вместе с первой заметкой — содержимое и так приходит асинхронно.
+- `NoteBody.vue`, превью: тот же контейнер `prose prose-sm`, затухание длинной заметки как сейчас; стили
+  для выноски, цветов, фона, `<small>`, sub/sup, выравнивания, RawBlock, таблиц.
+- **Чекбоксы в просмотре:** при `can_write` клик переключает задачу через `toggle_task` и сохраняет файл
+  (`useNoteEditor.toggleTask(index, checked)`); в папке только для чтения — не кликаются.
+- Проверка: заметки выглядят как раньше во всех видах (доска, холст, дашборд, стек, мозаика, слайды,
+  вложенные превью папок) и в диалоге AI-сводки.
+- Коммит: «feat(notes): preview through the note schema, task boxes toggle in place».
+
+#### 1.3. Правка — Tiptap вместо textarea
+
+- **`widgets/NoteRichEditor.vue`** (грузится лениво, `defineAsyncComponent`): `@tiptap/vue-3`
+  `EditorContent`; класс ProseMirror — `note-editor prose prose-sm …`, те же стили, что у превью. Текст
+  из `text`; на изменение документа — `text = serialize_note(…)`. Без изменений `text` не трогается, поэтому
+  открыть и закрыть заметку — файл тот же.
+- **`NoteBody.vue`:** для `.md` в правке — `NoteRichEditor`; `.txt` — textarea, как сейчас. Сохранить: рост
+  текстового блока по тексту (`width: max-content` у ProseMirror, пока ширина не зафиксирована) и
+  фиксированную ширину; стек и мозаику (рост до 24rem и прокрутка); повторы фокуса на холсте
+  (`FOCUS_RETRY_FRAMES`); слежение за закрытием мягкой клавиатуры.
+- **Выход из правки:** blur — с теми же исключениями (меню, Reka-поповеры; на этапе 2 добавится попап);
+  клик мимо — как сейчас; новый — Esc.
+- **`useNoteEditor.save()`** пишет, только если `text` отличается от последнего прочитанного или
+  записанного. Это касается и `.txt`: сейчас файл пишется при каждом выходе и гоняет синхронизацию по mtime.
 - **Места, завязанные на textarea:**
-  - мягкая клавиатура — `noteKeyboardFocus.ts` (проверка класса `.note-textarea`, тип
-    `HTMLTextAreaElement`);
-  - исключения blur в `NoteBody.vue` (+ попап на этапе 2);
-  - `ignoreFrom` / `drag-ignore-from` с `textarea` (`NoteWidgetContent.vue`, `TextWidgetContent.vue`,
-    `Dashboard.vue`);
-  - глобальный перехват ссылок `listen_external_links` (`services/openExternal.ts`): в правке клик
-    ставит курсор, Cmd+клик открывает.
-- **`widgets/useNoteEditor.ts`:** `text` остаётся строкой markdown; запись только при изменении;
-  пустой текстовый блок удаляется, как сейчас; Esc выходит из правки.
-- **Чекбоксы задач** кликаются и без правки, если папка доступна на запись.
-- **Рендер вместо `parseNoteMarkdown`** везде, где заметка показывается: доска, холст, дашборд,
-  стек (`StackNoteRow`), мозаика (`MasonryCard`), слайды (`SlidesNote`), вложенные превью папок,
-  диалог AI-сводки. `wrapMarkdownSelection.ts` уходит (команды Tiptap).
-- Горячие клавиши: Cmd+B / I / U, Cmd+Shift+X (зачёркнутый), Cmd+K (ссылка), Cmd+Alt+1…3.
+  - `noteKeyboardFocus.ts` — `transferNoteKeyboardFocus(target: HTMLElement)`, целью считается и
+    `.note-editor`;
+  - `ignore-from` с `textarea` → плюс `.ProseMirror` (`NoteWidgetContent.vue`, `TextWidgetContent.vue`),
+    `drag-ignore-from` / `resize-ignore-from` в `Dashboard.vue` → плюс `[contenteditable]`;
+  - `listen_external_links` (`services/openExternal.ts`): внутри `[contenteditable="true"]` обычный клик
+    отдаётся редактору, Cmd/Ctrl+клик открывает ссылку.
+- **Клавиши:** Cmd+B / I / U, Cmd+Shift+S (зачёркнутый), Cmd+E (код), Cmd+Alt+0…3 (абзац и заголовки),
+  Cmd+Shift+7 / 8 / 9 (списки, задачи); `---` → линия; Tab / Shift+Tab — вложенность в списке, табуляция в
+  тексте. Cmd+K — на этапе 2 вместе с полем ссылки.
+- `wrapMarkdownSelection.ts` с тестом и `applyFormat` уходят.
+- Тесты: `useNoteEditor.test.ts` — без изменений нет записи, с изменением есть, пустой текстовый блок
+  удаляется; `openExternal` — клик по ссылке в contenteditable не перехватывается, Cmd+клик — да.
+- Коммит: «feat(notes): edit notes and text blocks as rendered text».
+
+#### 1.4. Проверка в аппе (пользователь, десктоп и веб) и доводка
+
+1. Доска с заметками: выглядит как раньше (заголовки, списки, таблицы, задачи, линии, код).
+2. Двойной клик: текст не прыгает; Cmd+B / I / U; `---` → линия; Tab в списке и в тексте; Esc и клик мимо
+   выходят.
+3. Открыть и закрыть без правок — файл не изменился (дата изменения в Finder та же).
+4. После правки файл во внешнем редакторе читается: нет `\_`, `&lt;`, `&gt;`.
+5. Текстовый блок: растёт вправо, после фиксации ширины переносит строки; пустой удаляется.
+6. Чекбокс в просмотре переключается и сохраняется; в публичной папке — нет.
+7. Стек, мозаика, слайды, дашборд, холст: правка работает, на холсте узел не тащится, пока правишь.
+8. Тач (iPad или телефон, веб): двойной тап открывает правку с клавиатурой.
+9. Ссылка: в просмотре открывается снаружи; в правке клик ставит курсор, Cmd+клик открывает.
+10. `.txt` — как раньше; диалог AI-сводки — как раньше.
 
 ### Этап 2. Попап форматирования
 
