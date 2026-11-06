@@ -9,13 +9,15 @@
  * to what it was opened with hands back the original text, byte for byte,
  * so opening and closing a note never rewrites its file.
  */
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, useTemplateRef } from 'vue'
 import { Editor, EditorContent } from '@tiptap/vue-3'
-import { Selection, TextSelection } from '@tiptap/pm/state'
+import { BubbleMenu } from '@tiptap/vue-3/menus'
+import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state'
 import { NoteEditing } from '@/services/text/editing'
 import { note_extensions, type Align } from '@/services/text/extensions'
 import { note_markdown } from '@/services/text/markdown'
 import { raw_html } from '@/services/text/render'
+import FormatBubble from './FormatBubble.vue'
 
 const props = withDefaults(defineProps<{
 	/** Shapes centre their text (stage 4); notes and text blocks are left-aligned. */
@@ -28,7 +30,11 @@ const text = defineModel<string>({ required: true })
 
 const emit = defineEmits<{
 	escape: []
+	/** Focus left the formatting popup for something outside the note. */
+	leave: []
 }>()
+
+const bubble = useTemplateRef<InstanceType<typeof FormatBubble>>('bubble')
 
 const reader = note_markdown(props.defaultAlign)
 const original = text.value
@@ -38,7 +44,10 @@ let baseline: string | null = null
 const editor = new Editor({
 	extensions: [
 		...note_extensions({ default_align: props.defaultAlign, raw_html }),
-		NoteEditing.configure({ on_escape: () => emit('escape') }),
+		NoteEditing.configure({
+			on_escape: () => emit('escape'),
+			on_link: () => void bubble.value?.openLink(),
+		}),
 	],
 	content: reader.parse(original),
 	editorProps: {
@@ -78,8 +87,44 @@ function placeCaret(point: { x: number; y: number } | null) {
 }
 
 defineExpose({ element, placeCaret })
+
+/**
+ * The popup lives in the Explorer's root, not in the note: a note clips what
+ * leaves its box, and the canvas would scale it with the zoom. On a touch
+ * screen it sits under the selection, out of the system's own menu.
+ */
+const bubbleTarget = () => document.querySelector<HTMLElement>('.explorer') ?? document.body
+const touch = typeof window !== 'undefined'
+	&& (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches)
+const bubbleOptions = {
+	strategy: 'fixed' as const,
+	placement: touch ? 'bottom' as const : 'top' as const,
+	offset: 8,
+	flip: { padding: 8 },
+	shift: { padding: 8 },
+}
+
+/** Text is selected: a selected raw block or line has nothing to format. */
+function bubbleShouldShow({ editor: current, state, from, to }: { editor: { isEditable: boolean; view: { hasFocus(): boolean } }; state: typeof editor.state; from: number; to: number }) {
+	if (!current.isEditable || from === to || state.selection instanceof NodeSelection) return false
+	if (!state.doc.textBetween(from, to).length) return false
+	const popup = bubble.value?.$el as HTMLElement | undefined
+	return current.view.hasFocus() || !!popup?.contains(document.activeElement)
+}
 </script>
 
 <template>
-	<EditorContent :editor="editor" />
+	<div>
+		<!-- One root, so NoteBody's classes, scoped styles and listeners reach the text. -->
+		<EditorContent class="note-editor-content" :editor="editor" />
+		<BubbleMenu
+			:editor="editor"
+			:append-to="bubbleTarget"
+			:options="bubbleOptions"
+			:should-show="bubbleShouldShow"
+			:update-delay="120"
+		>
+			<FormatBubble ref="bubble" :editor="editor" :default-align="defaultAlign" @leave="emit('leave')" />
+		</BubbleMenu>
+	</div>
 </template>

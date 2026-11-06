@@ -332,6 +332,8 @@ function onEditingBlur() {
 		if (textareaSelectGesture) return
 
 		const active = document.activeElement
+		// The formatting popup's link field: the note is still being edited.
+		if (active instanceof Element && active.closest('.note-format')) return
 		if (
 			active instanceof Element
 			&& active.closest('.folder-chrome, [role="menu"], [data-reka-popper-content-wrapper]')
@@ -421,6 +423,7 @@ onUnmounted(() => {
 			nopan: canvasMode,
 		}"
 		@escape="emit('blur')"
+		@leave="onEditingBlur"
 		@focusout="onEditingBlur"
 		@pointerdown="onTextareaSelectGestureStart"
 		@mousedown="onTextareaSelectGestureStart"
@@ -510,6 +513,10 @@ onUnmounted(() => {
 	user-select: text;
 	-webkit-user-select: text;
 	touch-action: auto;
+}
+
+.note-editing :deep(.note-editor-content) {
+	min-height: 100%;
 }
 
 .note-editing :deep(.ProseMirror) {

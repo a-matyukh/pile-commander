@@ -17,6 +17,8 @@ type ViewLike = { state: EditorState; dispatch: (tr: Transaction) => void }
 export type NoteEditingOptions = {
 	/** Esc: the note leaves editing. */
 	on_escape: (() => void) | null
+	/** Cmd/Ctrl+K: the link field of the formatting popup, given a selection to link. */
+	on_link: (() => void) | null
 }
 
 const LIST_ITEMS = ['taskItem', 'listItem'] as const
@@ -123,7 +125,7 @@ export const NoteEditing = Extension.create<NoteEditingOptions>({
 	priority: 1000,
 
 	addOptions() {
-		return { on_escape: null }
+		return { on_escape: null, on_link: null }
 	},
 
 	addKeyboardShortcuts() {
@@ -153,6 +155,16 @@ export const NoteEditing = Extension.create<NoteEditingOptions>({
 			},
 			'Escape': () => {
 				this.options.on_escape?.()
+				return true
+			},
+			// A link needs text to sit on: the selection, or the link the cursor is in.
+			'Mod-k': () => {
+				const editor = this.editor
+				if (editor.state.selection.empty) {
+					if (!editor.isActive('link')) return true
+					editor.commands.extendMarkRange('link')
+				}
+				this.options.on_link?.()
 				return true
 			},
 		}

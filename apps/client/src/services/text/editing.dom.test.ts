@@ -128,3 +128,38 @@ describe('Tab and Esc', () => {
 		expect(on_escape).toHaveBeenCalledOnce()
 	})
 })
+
+describe('what the formatting popup runs writes the plan’s format', () => {
+	const select_all = (editor: Editor) => editor.commands.setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 })
+
+	test('colour, highlight, small, sub and sup', () => {
+		const color = open('word')
+		select_all(color)
+		color.chain().setMark('textColor', { color: '#1f6fc0' }).toggleBold().run()
+		expect(markdown(color)).toBe('<span style="color: #1f6fc0">**word**</span>')
+
+		const highlight = open('word')
+		select_all(highlight)
+		highlight.chain().setMark('bgColor', { color: '#dff1d4' }).run()
+		expect(markdown(highlight)).toBe('<mark style="background-color: #dff1d4">word</mark>')
+
+		const small = open('H2O')
+		small.chain().setTextSelection({ from: 2, to: 3 }).toggleSubscript().run()
+		expect(markdown(small)).toBe('H<sub>2</sub>O')
+	})
+
+	test('alignment, a callout, a link', () => {
+		const align = open('centred')
+		align.chain().updateAttributes('paragraph', { textAlign: 'center' }).run()
+		expect(markdown(align)).toBe('<p align="center">centred</p>')
+
+		const callout = open('remember')
+		callout.chain().toggleWrap('callout').run()
+		expect(markdown(callout)).toBe('> [!NOTE]\n> remember')
+
+		const link = open('site')
+		select_all(link)
+		link.chain().setLink({ href: 'https://example.com' }).run()
+		expect(markdown(link)).toBe('[site](https://example.com)')
+	})
+})
