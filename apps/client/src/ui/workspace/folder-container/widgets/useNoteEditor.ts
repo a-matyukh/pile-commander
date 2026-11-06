@@ -7,8 +7,9 @@ import {
 	type MaybeRefOrGetter,
 } from 'vue'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { toggle_task } from '@/services/text/tasks'
 import { armNoteKeyboardFocus } from '../noteKeyboardFocus'
-import { parseNoteMarkdown } from './markdown'
+import { loadedNoteRenderer, loadNoteRenderer, taskBoxLabel } from './noteRenderer'
 import { useEditingNoteId } from './useEditingNoteId'
 
 const DOUBLE_TAP_MS = 320
@@ -39,16 +40,32 @@ export function useNoteEditor(
 
 	const isEditing = computed(() => editingNoteId.value === toValue(widgetId))
 	const isMarkdown = computed(() => (toValue(fileName) ?? '').endsWith('.md'))
+	/** A task box in the preview ticks the task, where the folder can be written to. */
+	const canToggleTasks = computed(() => workspace.value?.can_write !== false)
 
+	// The renderer may still be loading: only the latest refresh lands.
+	let previewRun = 0
 	function refreshPreview() {
-		previewHtml.value = isMarkdown.value
-			? parseNoteMarkdown(text.value)
-			: ''
+		const run = ++previewRun
+		if (!isMarkdown.value) {
+			previewHtml.value = ''
+			return
+		}
+		const render = loadedNoteRenderer()
+		if (render) {
+			previewHtml.value = render(text.value)
+			return
+		}
+		void loadNoteRenderer().then((loaded) => {
+			if (run === previewRun) previewHtml.value = loaded(text.value)
+		})
 	}
 
 	/** Loads note content on first demand (visibility or edit), deduped via the session cache. */
 	function ensureLoaded(): Promise<void> {
 		if (isLoaded.value) return Promise.resolve()
+		// The renderer's chunk loads alongside the first note's content.
+		if (isMarkdown.value) void loadNoteRenderer()
 		if (!loadPromise) {
 			const id = toValue(widgetId)
 			loadPromise = requireWorkspace().content_caches.notes
@@ -79,6 +96,23 @@ export function useNoteEditor(
 		// with a stale empty cache entry while save_note_content is in flight.
 		ws.content_caches.notes.set(id, content)
 		text.value = content
+	}
+
+	/**
+	 * Ticks or unticks a task from the preview: one character of the file
+	 * changes (toggle_task), the rest stays byte for byte.
+	 */
+	async function toggleTask(index: number, checked: boolean) {
+		if (!canToggleTasks.value || isEditing.value) return
+		await ensureLoaded()
+		const next = toggle_task(text.value, index, checked)
+		if (next !== null && next !== text.value) {
+			text.value = next
+			refreshPreview()
+			await save()
+		} else {
+			refreshPreview()
+		}
 	}
 
 	function exitEdit() {
@@ -122,6 +156,11 @@ export function useNoteEditor(
 		if (event.pointerType === 'mouse') return
 		if (tapPointerId !== event.pointerId) return
 		tapPointerId = null
+		// Two quick taps on task boxes tick tasks; they do not open the note.
+		if (taskBoxLabel(event.target)) {
+			lastTapAt = 0
+			return
+		}
 
 		const movedX = event.clientX - tapStartX
 		const movedY = event.clientY - tapStartY
@@ -169,6 +208,10 @@ export function useNoteEditor(
 
 	function onDblClick(event: MouseEvent) {
 		if (isEditing.value) return
+		if (taskBoxLabel(event.target)) {
+			event.stopPropagation()
+			return
+		}
 		event.preventDefault()
 		event.stopPropagation()
 		beginEditFromGesture()
@@ -237,6 +280,8 @@ export function useNoteEditor(
 		isEditing,
 		isMarkdown,
 		previewHtml,
+		canToggleTasks,
+		toggleTask,
 		ensureLoaded,
 		onPointerDown,
 		onPointerUp,

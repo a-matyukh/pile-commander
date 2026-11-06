@@ -38,6 +38,8 @@ const {
 	isEditing,
 	isMarkdown,
 	previewHtml,
+	canToggleTasks,
+	toggleTask,
 	ensureLoaded,
 	onPointerDown,
 	onPointerUp,
@@ -185,9 +187,11 @@ async function resetWidth() {
 				:is-editing="isEditing"
 				:is-markdown="isMarkdown"
 				:preview-html="previewHtml"
+				:can-toggle-tasks="canToggleTasks"
 				:canvas-mode="isCanvas"
 				@visible="ensureLoaded"
 				@blur="onBlur"
+				@toggle-task="toggleTask"
 			/>
 		</div>
 		<template v-if="showBoardHandles">

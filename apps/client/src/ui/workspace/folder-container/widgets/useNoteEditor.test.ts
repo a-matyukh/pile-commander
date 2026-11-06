@@ -118,3 +118,33 @@ describe('useNoteEditor: leaving a text block empty', () => {
 		scope.stop()
 	})
 })
+describe('useNoteEditor: ticking a task in the preview', () => {
+	const NOTE = '**Packing**\n- [ ] Passports\n- [x] Tickets  \n\n- [ ] Sunscreen'
+
+	test('changes one box and saves, the rest of the file byte for byte', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		await store.save_note_content(id, NOTE)
+		store.content_caches.notes.set(id, NOTE)
+
+		await editor.toggleTask(2, true)
+		await settle()
+
+		expect(await store.read_note_content(id)).toBe('**Packing**\n- [ ] Passports\n- [x] Tickets  \n\n- [x] Sunscreen')
+		expect(editor.text.value).toBe('**Packing**\n- [ ] Passports\n- [x] Tickets  \n\n- [x] Sunscreen')
+		scope.stop()
+	})
+
+	test('a read-only folder keeps the file as it is', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		await store.save_note_content(id, NOTE)
+		store.content_caches.notes.set(id, NOTE)
+		Object.defineProperty(store, 'can_write', { value: false, configurable: true })
+
+		expect(editor.canToggleTasks.value).toBe(false)
+		await editor.toggleTask(0, true)
+		await settle()
+
+		expect(await store.read_note_content(id)).toBe(NOTE)
+		scope.stop()
+	})
+})

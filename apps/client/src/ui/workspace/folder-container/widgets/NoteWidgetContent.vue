@@ -22,6 +22,8 @@ const {
 	isEditing,
 	isMarkdown,
 	previewHtml,
+	canToggleTasks,
+	toggleTask,
 	ensureLoaded,
 	onPointerDown,
 	onPointerUp,
@@ -96,9 +98,11 @@ const ignoreFrom = computed(() =>
 				:is-editing="isEditing"
 				:is-markdown="isMarkdown"
 				:preview-html="previewHtml"
+				:can-toggle-tasks="canToggleTasks"
 				:canvas-mode="isCanvas"
 				@visible="ensureLoaded"
 				@blur="onBlur"
+				@toggle-task="toggleTask"
 			/>
 		</div>
 	</WidgetShell>

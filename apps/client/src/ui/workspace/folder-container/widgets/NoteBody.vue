@@ -5,6 +5,7 @@ import {
 	shouldIgnoreNoteKeyboardDismiss,
 	transferNoteKeyboardFocus,
 } from '../noteKeyboardFocus'
+import { TASK_BOX } from './noteRenderer'
 import { wrapMarkdownSelection } from './wrapMarkdownSelection'
 
 const props = withDefaults(defineProps<{
@@ -25,7 +26,10 @@ const props = withDefaults(defineProps<{
 	 * text wraps inside it.
 	 */
 	fixedWidth?: boolean
+	/** Task boxes in the preview tick tasks (the folder can be written to). */
+	canToggleTasks?: boolean
 }>(), {
+	canToggleTasks: false,
 	isMarkdown: true,
 	canvasMode: false,
 	variant: 'fill',
@@ -42,6 +46,7 @@ const text = defineModel<string>({ required: true })
 const emit = defineEmits<{
 	blur: []
 	visible: []
+	toggleTask: [index: number, checked: boolean]
 }>()
 
 const textareaRef = useTemplateRef<HTMLTextAreaElement>('textarea')
@@ -63,6 +68,22 @@ const { stop: stopObserver } = useIntersectionObserver(
 		}
 	},
 )
+
+/**
+ * A click on a task box: by the time it arrives the box shows its new state.
+ * Where tasks cannot be ticked, the click is undone.
+ */
+function onPreviewClick(event: MouseEvent) {
+	const preview = previewRef.value
+	const target = event.target
+	if (!preview || !(target instanceof HTMLInputElement) || !target.matches(TASK_BOX)) return
+	if (!props.canToggleTasks) {
+		event.preventDefault()
+		return
+	}
+	const index = [...preview.querySelectorAll(TASK_BOX)].indexOf(target)
+	if (index >= 0) emit('toggleTask', index, target.checked)
+}
 
 /** Fade the last line when preview content is taller than the widget. */
 function updateClip() {
@@ -369,8 +390,10 @@ onUnmounted(() => {
 			'note-preview--text': isTextAppearance,
 			'note-preview--text-auto': isTextAppearance && !fixedWidth,
 			'note-preview--fade': isClipped && !isTextAppearance,
+			'note-preview--tasks-locked': !canToggleTasks,
 		}"
 		v-html="previewHtml"
+		@click="onPreviewClick"
 		@scroll.passive="updateClip"
 	/>
 	<div
@@ -524,20 +547,110 @@ onUnmounted(() => {
 	content: none;
 }
 
-/* Notion callouts arrive as <aside>. Translucent so a colored note still shows through. */
-.note-preview :deep(aside) {
+/* A callout (`> [!NOTE]`, and Notion's <aside>, which the old renderer still
+   shows). Translucent so a colored note still shows through. */
+.note-preview :deep(:where(aside, div[data-callout])) {
 	background: rgb(0 0 0 / 0.06);
 	border-radius: 0.5rem;
 	padding: 0.7rem 0.85rem;
 	margin: 0.75rem 0;
 }
 
-.note-preview :deep(aside > :first-child) {
+.note-preview :deep(:where(aside, div[data-callout]) > :first-child) {
 	margin-top: 0;
 }
 
-.note-preview :deep(aside > :last-child) {
+.note-preview :deep(:where(aside, div[data-callout]) > :last-child) {
 	margin-bottom: 0;
+}
+
+/* The note schema wraps a list item's and a table cell's text in <p>, which
+   marked did not for a tight list: no extra space, as before. */
+.note-preview :deep(li > p),
+.note-preview :deep(:where(td, th) > p) {
+	margin-top: 0;
+	margin-bottom: 0;
+}
+
+.note-preview :deep(li > p + p) {
+	margin-top: 0.5em;
+}
+
+/* A task: its box instead of the bullet. */
+.note-preview :deep(ul[data-type="taskList"]) {
+	list-style: none;
+	padding-inline-start: 0;
+}
+
+.note-preview :deep(li[data-type="taskItem"]) {
+	display: flex;
+	gap: 0.5em;
+	align-items: flex-start;
+	padding-inline-start: 0;
+}
+
+.note-preview :deep(li[data-type="taskItem"] > label) {
+	flex: none;
+	display: flex;
+	align-items: center;
+	height: 1.7142857em;
+}
+
+.note-preview :deep(li[data-type="taskItem"] > label > input) {
+	width: 13px;
+	height: 13px;
+	margin: 0;
+	accent-color: rgb(82 82 82);
+	cursor: pointer;
+}
+
+.note-preview--tasks-locked :deep(li[data-type="taskItem"] > label > input) {
+	cursor: default;
+}
+
+.note-preview :deep(li[data-type="taskItem"] > div) {
+	flex: 1;
+	min-width: 0;
+}
+
+.note-preview :deep(li[data-type="taskItem"] > div > :first-child) {
+	margin-top: 0;
+}
+
+.note-preview :deep(li[data-type="taskItem"] > div > :last-child) {
+	margin-bottom: 0;
+}
+
+/* The header row sits in <tbody> as <th> cells: padded like the body cells. */
+.note-preview :deep(tbody th) {
+	padding: 0.6666667em 1em;
+	font-weight: 600;
+	text-align: start;
+	vertical-align: bottom;
+}
+
+.note-preview :deep(tbody th:first-child) {
+	padding-inline-start: 0;
+}
+
+.note-preview :deep(tbody th:last-child) {
+	padding-inline-end: 0;
+}
+
+.note-preview :deep(mark) {
+	color: inherit;
+	border-radius: 3px;
+	padding: 0 0.1em;
+}
+
+.note-preview :deep(small) {
+	font-size: 0.85em;
+}
+
+/* Front matter shows as its source, quietly. */
+.note-preview :deep(pre[data-front-matter]) {
+	font-size: 0.8em;
+	opacity: 0.7;
 }
 
 .note-preview::selection {
