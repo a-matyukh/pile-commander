@@ -92,6 +92,14 @@ function liftAsides(text: string): { source: string; blocks: string[] } {
 	return { source, blocks }
 }
 
+/** A note's HTML made safe for the app's document, whoever built it. */
+export function sanitizeNoteHtml(html: string): string {
+	if (!html) return ''
+	return notePurify
+		? notePurify.sanitize(html, { FORBID_TAGS: NOTE_FORBID_TAGS, FORBID_ATTR: NOTE_FORBID_ATTR })
+		: fallbackSanitize(html)
+}
+
 export function parseNoteMarkdown(text: string): string {
 	if (!text) return ''
 	const { source, blocks } = liftAsides(text)
@@ -101,7 +109,5 @@ export function parseNoteMarkdown(text: string): string {
 			return blocks[Number(index)] ?? ''
 		})
 	}
-	return notePurify
-		? notePurify.sanitize(html, { FORBID_TAGS: NOTE_FORBID_TAGS, FORBID_ATTR: NOTE_FORBID_ATTR })
-		: fallbackSanitize(html)
+	return sanitizeNoteHtml(html)
 }
