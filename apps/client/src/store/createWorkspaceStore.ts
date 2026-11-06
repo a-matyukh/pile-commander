@@ -48,7 +48,7 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, persist_xattr_now, show_xattr_locally, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, persist_xattr_now, show_xattr_locally, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -151,26 +151,7 @@ function persist_workspace_xattr(
 	)
 }
 
-function clear_workspace_xattr(
-	store: PersistXattrStore,
-	fm: Pick<FileManager, 'remove_xattr'>,
-	folder_data: FolderWithChildrenXattrs,
-	id: string,
-	name: string,
-) {
-	const owner_id = folder_data.id
-	return clear_xattr(
-		fm,
-		folder_data,
-		id,
-		name,
-		store.preview_folders,
-		(error) => report_error(store, error),
-		xattr_hooks(store, owner_id),
-	)
-}
-
-type LookName = 'view' | 'cover' | 'icon' | 'background'
+type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField
 
 /**
  * A look attribute: on screen at once (the folder, the listings that hold it,
@@ -183,7 +164,8 @@ function persist_look_xattr(
 	owner: FolderWithChildrenXattrs,
 	id: string,
 	name: LookName,
-	value: string,
+	/** null clears the attribute */
+	value: string | null,
 	after?: Promise<boolean>,
 ): Promise<void> {
 	const holder = owner.id === id ? owner : owner.children?.find(child => child.id === id)
@@ -197,7 +179,7 @@ function persist_look_xattr(
 			show_xattr_locally(owner, id, name, shown, store.preview_folders, hooks)
 			const listed = shown ?? 'none'
 			if (name === 'cover' || name === 'icon') mirror_to_listings(store, id, name, listed)
-			if (name !== 'background' && store.type === 'cloud' && id === '/') note_cloud_root_look(store.uid, name, listed)
+			if ((name === 'view' || name === 'cover' || name === 'icon') && store.type === 'cloud' && id === '/') note_cloud_root_look(store.uid, name, listed)
 		},
 		reread: () => fm.get_xattr(id, name),
 		on_error: error => report_error(store, error),
@@ -1529,11 +1511,8 @@ export async function createWorkspaceStore(
 				const next = image_text_from_stored(value)
 				if (current === next) return
 
-				if (next === undefined) {
-					await clear_workspace_xattr(this, fm, folder_data, id, field)
-					return
-				}
-				await persist_workspace_xattr(this, fm, folder_data, id, field, next)
+				// On screen at once, written in the background, like a folder's look.
+				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null)
 			},
 
 			async change_shape_fill(id: string, color: Color) {
