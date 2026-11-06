@@ -13,6 +13,7 @@ import { t } from '@/i18n'
 import { read_shape_color } from '@/services/board/shapes'
 import { has_text_area_switch, SHAPE_TEXT_INSETS, shape_text_color, shape_text_kind } from '@/services/board/shape_text'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { armNoteKeyboardFocus, transferNoteKeyboardFocus } from '../noteKeyboardFocus'
 import { useEditingNoteId } from '../widgets/useEditingNoteId'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
 import { loadedNoteRenderer, loadNoteEditor, loadNoteRenderer } from '../widgets/noteRenderer'
@@ -20,6 +21,8 @@ import { useShapeContent } from './useShapeContent'
 
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
+	/** The shape's height follows a text that does not fit (a board or a canvas; not a dashboard cell). */
+	grows?: boolean
 }>()
 
 const NoteRichEditor = defineAsyncComponent(loadNoteEditor)
@@ -81,7 +84,8 @@ watch(editing, async (now) => {
 		const element = editor.value?.element()
 		if (element) {
 			editor.value?.placeCaret(null)
-			element.focus({ preventScroll: true })
+			// A double tap armed the soft keyboard: it moves onto the text
+			transferNoteKeyboardFocus(element)
 			return
 		}
 		await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
@@ -113,9 +117,50 @@ function onFocusOut() {
 /** Double click on the shape: its text is edited (a line has none: the shell does not ask). */
 function startEditing() {
 	if (!canWrite.value) return
+	// Inside the gesture, before anything waits: a phone opens its keyboard only then
+	armNoteKeyboardFocus()
 	void loadNoteEditor()
 	editingNoteId.value = props.widget.id
 }
+
+// ─── Growing ───────────────────────────────────────────────────────────────
+
+const box = useTemplateRef<HTMLElement>('box')
+let growTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * A text taller than its area makes the shape taller, its width as it is:
+ * as the text is typed, and after a resize that left it too short. It never
+ * shrinks by itself.
+ */
+async function grow() {
+	growTimer = null
+	if (!props.grows || !canWrite.value) return
+	const textBox = box.value
+	const body = textBox?.querySelector<HTMLElement>('.shape-text-body')
+	const shape = textBox?.parentElement
+	if (!textBox || !body || !shape) return
+	const needed = body.scrollHeight
+	if (needed <= textBox.clientHeight + 1) return
+	const [top, , bottom] = SHAPE_TEXT_INSETS[area.value][kind.value]
+	const height = Math.ceil(needed / (1 - top - bottom)) + 2
+	if (height <= shape.offsetHeight) return
+	await requireWorkspace().change_size(props.widget.id, { width: Math.round(shape.offsetWidth), height })
+}
+
+function scheduleGrow() {
+	if (growTimer) clearTimeout(growTimer)
+	growTimer = setTimeout(() => void grow(), 120)
+}
+
+watch(
+	() => [html.value, draft.value, editing.value, area.value, kind.value, props.widget.size?.width, props.widget.size?.height],
+	() => void nextTick(scheduleGrow),
+)
+
+onBeforeUnmount(() => {
+	if (growTimer) clearTimeout(growTimer)
+})
 
 function setArea(next: 'inset' | 'frame') {
 	if (!canWrite.value || next === area.value) return
@@ -127,6 +172,7 @@ defineExpose({ startEditing })
 
 <template>
 	<div
+		ref="box"
 		class="shape-text"
 		:class="{ 'shape-text--editing': editing }"
 		:style="boxStyle"

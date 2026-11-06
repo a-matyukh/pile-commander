@@ -22,6 +22,7 @@ import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { t } from '@/i18n'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { is_note_file, opens_in_editor } from '@/store/explorer/note_editor'
+import { has_text_area_switch, shape_text_kind, type ShapeTextKind } from '@/services/board/shape_text'
 import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const props = defineProps<{
@@ -140,6 +141,7 @@ function commit_image_text(payload: { id: string; field: ImageTextField; value: 
 
 const shapeFillColor = ref<string | undefined>()
 const isLineShape = ref(false)
+const shapeTextKind = ref<ShapeTextKind>('rect')
 const startPlug = ref<LinePlug>('none')
 const endPlug = ref<LinePlug>('none')
 
@@ -157,6 +159,7 @@ watch(
 		const content = await requireWorkspace().read_note_content(id)
 		shapeFillColor.value = read_shape_color(content)
 		isLineShape.value = is_line_shape(content)
+		shapeTextKind.value = shape_text_kind(content)
 		const meta = parse_line_meta(content)
 		startPlug.value = meta?.startPlug ?? 'none'
 		endPlug.value = meta?.endPlug ?? 'none'
@@ -271,6 +274,20 @@ function noteOpenItems(): DropdownMenuItem[] {
 	}]
 }
 
+/** Where a shape's text sits, as on the shape's own switch: a rectangle's two areas are one. */
+function shapeTextItems(): DropdownMenuItem[] {
+	const child = openedChild.value
+	if (!isShapePreview.value || isLineShape.value || readonly.value) return []
+	if (!child || child.type !== 'file' || !has_text_area_switch(shapeTextKind.value)) return []
+	const frame = child.text_area === 'frame'
+	return [{
+		label: t(frame ? 'shape_text.menu_inside' : 'shape_text.menu_frame'),
+		onSelect() {
+			void requireWorkspace().set_shape_text_area(child.id, frame ? null : 'frame')
+		},
+	}]
+}
+
 const items = computed<DropdownMenuItem[][]>(() => {
 	if (isMultiSelection.value) return selectionMenuItems.value
 
@@ -287,6 +304,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
 			}]
 			: []),
 		...noteOpenItems(),
+		...shapeTextItems(),
 		...(props.showPreviewToggle && isPreviewable.value
 			? [{
 				label: previewToggleLabel.value,

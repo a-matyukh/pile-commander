@@ -455,6 +455,8 @@ export const en: typeof ru = {
 		expand: 'Open in editor',
 	},
 	shape_text: {
+		menu_inside: 'Text inside the shape',
+		menu_frame: 'Text across the frame',
 		inside: 'Inside',
 		frame: 'Frame',
 		area: 'Where the text sits',

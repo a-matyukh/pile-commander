@@ -12,6 +12,7 @@ import { resolveWidgetBackground } from './resolveBackground'
 import { MEDIA_CHROME_FILL } from '../media/mediaChrome'
 import ShapeText from '../shape/ShapeText.vue'
 import { useLineShapeMeta } from '../shape/useLineShapeMeta'
+import { useDoubleTap } from './useDoubleTap'
 import { useEditingNoteId } from './useEditingNoteId'
 
 const props = defineProps<{
@@ -68,6 +69,11 @@ function onDblClick(event: MouseEvent) {
 	if (!editingText.value) shapeText.value?.startEditing()
 }
 
+/** A touch screen: two taps on the shape edit its text, as on a note. */
+const doubleTap = useDoubleTap(() => {
+	if (!editingText.value) shapeText.value?.startEditing()
+})
+
 const imageTitle = computed(() => props.widget.type === 'file' ? props.widget.title : undefined)
 const imageDescription = computed(() => props.widget.type === 'file' ? props.widget.description : undefined)
 </script>
@@ -97,9 +103,15 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 		>
 			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 		</ImageFigure>
-		<div v-else-if="hasText" class="shape-box">
+		<div
+			v-else-if="hasText"
+			class="shape-box"
+			@pointerdown="doubleTap.onPointerDown"
+			@pointerup="doubleTap.onPointerUp"
+			@pointercancel="doubleTap.onPointerCancel"
+		>
 			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" />
-			<ShapeText ref="shapeText" :widget="widget" />
+			<ShapeText ref="shapeText" :widget="widget" :grows="layout === 'board'" />
 		</div>
 		<PreviewContent v-else :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 	</WidgetShell>

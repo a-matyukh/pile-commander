@@ -452,6 +452,8 @@ export const ru = {
 		expand: 'Открыть в редакторе',
 	},
 	shape_text: {
+		menu_inside: 'Текст внутри фигуры',
+		menu_frame: 'Текст по всей рамке',
 		inside: 'Внутри',
 		frame: 'Рамка',
 		area: 'Где стоит текст',
