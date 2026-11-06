@@ -1,11 +1,12 @@
-import { ref, watch, type ComputedRef, type Ref } from 'vue'
+import { nextTick, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { NodeDragEvent } from '@vue-flow/core'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import type { FolderContainerWidget, FolderContainerWidgetChild, Position, Size } from '@/domain/Widget'
-import { board_position, board_size } from '@/services/board/layout'
+import { board_position, board_size, is_text_widget, text_box_css } from '@/services/board/layout'
 import { applyGroupResizeDelta } from '../board/boardGroupResize'
 import { relativePositionsForFolderDrop } from '../board/boardGroupDrag'
 import { tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
+import { clear_live_text_width, set_live_text_width } from '../liveTextWidth'
 import {
 	persistDragPositionSnapshots,
 	type CanvasDragPositionSnapshot,
@@ -28,6 +29,9 @@ export type CanvasFlowNode = {
 }
 
 function nodeStyle(widget: FolderContainerWidgetChild) {
+	// A text block's box follows its text: Vue Flow measures it, the style only
+	// pins the width once the user fixed it.
+	if (is_text_widget(widget)) return text_box_css(widget)
 	const size = board_size(widget)
 	return {
 		width: `${size.width}px`,
@@ -51,6 +55,8 @@ function childSignature(children: FolderContainerWidgetChild[]) {
 			// a folder's or a file's cover fills its card
 			'cover' in child ? child.cover ?? '' : '',
 			child.is_preview ?? '',
+			// a note drawn as a text block (and its width mode) changes what the node renders
+			child.type === 'file' ? `${child.is_text ?? ''}${child.text_width ?? ''}` : '',
 		].join(':')
 	}).join('|')
 }
@@ -74,6 +80,10 @@ export function useCanvasNodes(
 		return !!resizeGroup && (resizeGroup.primaryId === id || id in resizeGroup.memberStarts)
 	}
 
+	// Text blocks whose side handle was just dragged: they keep the live width and
+	// position until the stored values catch up, or the node jumps between writes.
+	const textResizing = new Set<string>()
+
 	function getNodePosition(id: string) {
 		const node = nodes.value.find(n => n.id === id)
 		return node?.position
@@ -90,7 +100,9 @@ export function useCanvasNodes(
 			return {
 				id: widget.id,
 				type: 'folderWidget' as const,
-				position: board_position(widget, index),
+				position: prev && textResizing.has(widget.id)
+					? prev.position
+					: board_position(widget, index),
 				draggable: editingNoteId.value !== widget.id,
 				// Vue Flow NodeProps.selected is Boolean — undefined triggers prop warnings.
 				selected: prev?.selected ?? false,
@@ -98,7 +110,9 @@ export function useCanvasNodes(
 				// the stored size, so a size set elsewhere (another tab, a
 				// collaborator, folder sync) shows at once; a node under the
 				// person's resize handle keeps its live size
-				style: prev && isBeingResized(widget.id) ? prev.style : nodeStyle(widget),
+				style: prev && (isBeingResized(widget.id) || textResizing.has(widget.id))
+					? prev.style
+					: nodeStyle(widget),
 			}
 		})
 	}
@@ -264,6 +278,60 @@ export function useCanvasNodes(
 		}
 	}
 
+	/** A text block's side handle: only the width (and, from the left handle, x) changes. */
+	function onTextResizeLive(nodeId: string, geometry: { x: number; width: number }) {
+		const index = nodes.value.findIndex(n => n.id === nodeId)
+		if (index === -1) return
+		textResizing.add(nodeId)
+		// the text wraps to this width now, not after the release
+		set_live_text_width(nodeId, geometry.width)
+		const node = nodes.value[index]!
+		const next = [...nodes.value]
+		next[index] = {
+			...node,
+			position: { x: geometry.x, y: node.position.y },
+			style: { width: `${geometry.width}px`, height: 'auto' },
+		}
+		nodes.value = next
+	}
+
+	/**
+	 * Drag of a side handle ends: the block's width is now fixed. Its height
+	 * is whatever the text needs at that width, so it is measured, not dragged.
+	 */
+	async function onTextResizeEnd(nodeId: string, geometry: { x: number; width: number }) {
+		onTextResizeLive(nodeId, geometry)
+		try {
+			const ws = requireWorkspace()
+			const children = container.value?.children ?? []
+			const index = children.findIndex(child => child.id === nodeId)
+			const child = children[index]
+			if (!child) return
+
+			// the node is laid out at the final width now
+			await nextTick()
+			const box = document.querySelector<HTMLElement>(
+				`.vue-flow__node[data-id="${CSS.escape(nodeId)}"] .board-widget`,
+			)
+			const width = Math.round(geometry.width)
+			const height = Math.round(box?.offsetHeight ?? board_size(child).height)
+			const start = board_position(child, index)
+
+			await ws.change_text_width(nodeId, 'fixed')
+			await ws.change_size(nodeId, { width, height })
+			if (Math.round(geometry.x) !== Math.round(start.x)) {
+				await ws.change_position(nodeId, {
+					x: Math.round(geometry.x),
+					y: start.y,
+				})
+			}
+		} finally {
+			textResizing.delete(nodeId)
+			clear_live_text_width(nodeId)
+			syncNodes()
+		}
+	}
+
 	function applyLineGeometryLive(
 		nodeId: string,
 		geometry: { position: Position; size: Size },
@@ -289,6 +357,8 @@ export function useCanvasNodes(
 		onNodeResizeStart,
 		onNodeResizeLive,
 		onNodeResizeEnd,
+		onTextResizeLive,
+		onTextResizeEnd,
 		applyLineGeometryLive,
 	}
 }

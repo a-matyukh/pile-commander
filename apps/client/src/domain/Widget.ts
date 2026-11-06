@@ -54,6 +54,14 @@ export type ModelCameraState = {
 }
 
 type FileXattrs = CommonXattrs & Partial<{
+	/** A `.md` / `.txt` preview drawn as a text block (no card) instead of a note. Kept while the preview is off. */
+	is_text: boolean
+	/**
+	 * A text block's width. Absent or "auto": the box grows to the right with the
+	 * text and breaks lines only at Enter. "fixed": the user dragged a side
+	 * handle, `size.width` is the width and the text wraps inside it.
+	 */
+	text_width: 'auto' | 'fixed'
 	padding: number
 	cover: ImageBase64 | Color
 	model_camera: ModelCameraState

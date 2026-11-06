@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useIntersectionObserver, useResizeObserver } from '@vueuse/core'
 import {
 	shouldIgnoreNoteKeyboardDismiss,
@@ -13,11 +13,29 @@ const props = withDefaults(defineProps<{
 	isMarkdown?: boolean
 	canvasMode?: boolean
 	variant?: 'fill' | 'stack'
+	/**
+	 * `text`: a bare text block. Same markdown editing and preview as a note;
+	 * the box is not fixed: it follows the text, in height always and in width
+	 * until `fixedWidth`. No fade, nothing is cut or scrolled.
+	 */
+	appearance?: 'note' | 'text'
+	/**
+	 * Text block only. false: the box grows to the right with the text and a
+	 * line breaks only at Enter. true: the width is set from outside and the
+	 * text wraps inside it.
+	 */
+	fixedWidth?: boolean
 }>(), {
 	isMarkdown: true,
 	canvasMode: false,
 	variant: 'fill',
+	appearance: 'note',
+	fixedWidth: false,
 })
+
+const isTextAppearance = computed(() => props.appearance === 'text')
+/** Stack notes grow with the text (up to a max height) instead of keeping a fixed, scrolling box. */
+const growsWithText = computed(() => props.variant === 'stack')
 
 const text = defineModel<string>({ required: true })
 
@@ -145,6 +163,9 @@ function watchKeyboardDismissWhileEditing() {
 	}
 }
 
+/** A canvas node stays `visibility: hidden` until Vue Flow has measured it: this many frames at most. */
+const FOCUS_RETRY_FRAMES = 30
+
 async function focusTextarea() {
 	window.getSelection()?.removeAllRanges()
 	await nextTick()
@@ -153,6 +174,26 @@ async function focusTextarea() {
 	// Prefer transfer when create-note armed a touch keyboard proxy.
 	transferNoteKeyboardFocus(textarea)
 	autosizeStackTextarea()
+
+	// A block created and opened in one go (the canvas, right after a click) can
+	// be asked for focus before Vue Flow made its node visible, and a hidden
+	// element cannot take focus: the block would be open but not typeable. Keep
+	// asking, frame by frame, while it is still being edited.
+	for (let frame = 0; frame < FOCUS_RETRY_FRAMES; frame++) {
+		if (document.activeElement === textareaRef.value) return
+		await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+		const current = textareaRef.value
+		if (!props.isEditing || !current) return
+		const active = document.activeElement
+		if (active === current) return
+		// Focus went into another field (the user moved on): leave it there.
+		if (
+			active instanceof HTMLElement
+			&& (active.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
+			&& !active.hasAttribute('aria-hidden')
+		) return
+		transferNoteKeyboardFocus(current)
+	}
 }
 
 function isFormatModifier(event: KeyboardEvent): boolean {
@@ -167,13 +208,14 @@ function formatMarkerForKey(event: KeyboardEvent): string | null {
 	return null
 }
 
-function onTextareaKeydown(event: KeyboardEvent) {
-	if (!isFormatModifier(event)) return
-	const marker = formatMarkerForKey(event)
-	if (!marker) return
+/**
+ * Wraps the textarea selection in a markdown marker (`**`, `*`). The one entry
+ * point for format commands: the keyboard goes through it now, and a
+ * formatting popup can call it through the exposed handle.
+ */
+function applyFormat(marker: string): boolean {
 	const textarea = textareaRef.value
-	if (!textarea) return
-	event.preventDefault()
+	if (!textarea) return false
 	const result = wrapMarkdownSelection(
 		textarea.value,
 		textarea.selectionStart,
@@ -183,11 +225,23 @@ function onTextareaKeydown(event: KeyboardEvent) {
 	textarea.setRangeText(result.text, 0, textarea.value.length, 'end')
 	textarea.dispatchEvent(new Event('input', { bubbles: true }))
 	textarea.setSelectionRange(result.selectionStart, result.selectionEnd)
+	return true
+}
+
+defineExpose({ applyFormat })
+
+function onTextareaKeydown(event: KeyboardEvent) {
+	if (!isFormatModifier(event)) return
+	const marker = formatMarkerForKey(event)
+	if (!marker) return
+	if (!textareaRef.value) return
+	event.preventDefault()
+	applyFormat(marker)
 }
 
 /** Stack notes grow with content up to max-height instead of staying a fixed box. */
 function autosizeStackTextarea() {
-	if (props.variant !== 'stack') return
+	if (!growsWithText.value) return
 	const textarea = textareaRef.value
 	if (!textarea) return
 	textarea.style.height = 'auto'
@@ -270,7 +324,7 @@ function onTextareaBlur() {
 }
 
 watch(text, async () => {
-	if (!props.isEditing || props.variant !== 'stack') return
+	if (!props.isEditing || !growsWithText.value) return
 	await nextTick()
 	autosizeStackTextarea()
 })
@@ -312,7 +366,9 @@ onUnmounted(() => {
 		class="note-preview prose prose-sm prose-gray max-w-none"
 		:class="{
 			'note-preview--stack': variant === 'stack',
-			'note-preview--fade': isClipped,
+			'note-preview--text': isTextAppearance,
+			'note-preview--text-auto': isTextAppearance && !fixedWidth,
+			'note-preview--fade': isClipped && !isTextAppearance,
 		}"
 		v-html="previewHtml"
 		@scroll.passive="updateClip"
@@ -323,10 +379,41 @@ onUnmounted(() => {
 		class="note-preview note-preview--plain"
 		:class="{
 			'note-preview--stack': variant === 'stack',
-			'note-preview--fade': isClipped,
+			'note-preview--text': isTextAppearance,
+			'note-preview--text-auto': isTextAppearance && !fixedWidth,
+			'note-preview--fade': isClipped && !isTextAppearance,
 		}"
 		@scroll.passive="updateClip"
 	>{{ text }}</div>
+	<!--
+		Text block: the textarea sits in one grid cell with a hidden copy of its
+		own text (::after). The copy sizes the cell, so the box grows with the
+		text in height, and in width too until the width is fixed. No script.
+		The trailing space makes a final line break take a line.
+	-->
+	<div
+		v-else-if="isTextAppearance"
+		class="note-grow"
+		:class="{ 'note-grow--auto': !fixedWidth }"
+		:data-replicated="`${text} `"
+	>
+		<textarea
+			ref="textarea"
+			v-model="text"
+			class="note-textarea note-textarea--text"
+			:class="{
+				nodrag: canvasMode,
+				nopan: canvasMode,
+			}"
+			rows="1"
+			:wrap="fixedWidth ? 'soft' : 'off'"
+			@keydown="onTextareaKeydown"
+			@pointerdown="onTextareaSelectGestureStart"
+			@mousedown="onTextareaSelectGestureStart"
+			@blur="onTextareaBlur"
+			@dblclick.stop
+		/>
+	</div>
 	<textarea
 		v-else
 		ref="textarea"
@@ -395,6 +482,28 @@ onUnmounted(() => {
 	height: auto;
 }
 
+/* A text block's box follows its text, so the preview is never cut or
+   scrolled. (`prose` already drops the top margin of the first child and the
+   bottom margin of the last, so a heading starts on the box's top edge like
+   the raw text did in the textarea.) */
+.note-preview--text {
+	height: auto;
+	overflow: visible;
+}
+
+/* Until the width is fixed a line breaks only where the text does (Enter,
+   or <br> in the rendered text), and the box is as wide as its longest line. */
+.note-preview--text-auto {
+	width: max-content;
+	white-space: nowrap;
+}
+.note-preview--text-auto.note-preview--plain {
+	white-space: pre;
+}
+.note-preview--text:not(.note-preview--text-auto) {
+	overflow-wrap: anywhere;
+}
+
 .note-preview :deep(:where(p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, aside, strong, em, code, pre)) {
 	color: inherit;
 }
@@ -458,5 +567,54 @@ onUnmounted(() => {
 	max-height: 24rem;
 	overflow-y: auto;
 	field-sizing: content;
+}
+
+/* Text block, editing: textarea and a hidden copy of its text share one grid
+   cell. Both must lay the text out the same way, so the font, the line height
+   and the wrapping are set once for the pair. */
+.note-grow {
+	display: grid;
+	min-width: 0;
+	--note-grow-wrap: pre-wrap;
+}
+.note-grow--auto {
+	/* the box is as wide as the longest line; an empty text still has a caret's width */
+	width: max-content;
+	min-width: 1.5em;
+	--note-grow-wrap: pre;
+}
+.note-grow::after,
+.note-grow > textarea {
+	grid-area: 1 / 1 / 2 / 2;
+	font-size: 14px;
+	font-family: inherit;
+	line-height: 1.5;
+	letter-spacing: normal;
+	white-space: var(--note-grow-wrap);
+	overflow-wrap: anywhere;
+	padding: 0;
+	margin: 0;
+	border: none;
+	box-sizing: border-box;
+}
+.note-grow--auto::after,
+.note-grow--auto > textarea {
+	overflow-wrap: normal;
+}
+.note-grow::after {
+	content: attr(data-replicated);
+	visibility: hidden;
+	pointer-events: none;
+}
+/* width 0 + min-width 100%: the textarea's own default width (20 columns) must
+   not size the cell, only the hidden copy of the text does. */
+.note-grow > textarea {
+	width: 0;
+	min-width: 100%;
+	height: 100%;
+	min-height: 0;
+	align-self: stretch;
+	justify-self: stretch;
+	overflow: hidden;
 }
 </style>

@@ -4,6 +4,7 @@ import {
 	resolve_markdown_file_name,
 	resolve_note_filename,
 	resolve_shape_filename,
+	resolve_text_block_filename,
 	resolve_text_file_name,
 	resolve_unique_filename,
 } from './uniqueName'
@@ -13,6 +14,19 @@ describe('uniqueName', () => {
 		expect(resolve_note_filename([])).toBe('Note 1.md')
 		expect(resolve_note_filename(['Note 1.md', 'Note 2.md'])).toBe('Note 3.md')
 		expect(resolve_shape_filename(['Shape 1.svg'])).toBe('Shape 2.svg')
+	})
+
+	test('resolve_text_block_filename numbers apart from notes', () => {
+		expect(resolve_text_block_filename([])).toBe('Text 1.md')
+		expect(resolve_text_block_filename(['Text 1.md', 'Text 3.md'])).toBe('Text 2.md')
+		expect(resolve_text_block_filename(['Note 1.md', 'Note 2.md'])).toBe('Text 1.md')
+		expect(resolve_note_filename(['Text 1.md'])).toBe('Note 1.md')
+	})
+
+	test('resolve_unique_filename keeps the Text prefix when a Text N.md collides', () => {
+		expect(resolve_unique_filename('Text 1.md', ['Text 1.md'])).toBe('Text 2.md')
+		expect(resolve_unique_filename('Text 1.md', ['Text 1.md', 'Note 2.md'])).toBe('Text 2.md')
+		expect(resolve_unique_filename('Text 1.md', ['text 1.md'], { ignore_case: true })).toBe('Text 2.md')
 	})
 
 	test('resolve_folder_name skips taken numbers', () => {

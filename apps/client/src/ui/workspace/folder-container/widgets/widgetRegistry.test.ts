@@ -36,6 +36,18 @@ describe('resolveWidgetRole', () => {
 		expect(resolveWidgetRole(file('a.txt', { is_preview: false }))).toBe('default')
 	})
 
+	test('a preview note marked is_text is a text block, other files are not', () => {
+		expect(resolveWidgetRole(file('Text 1.md', { is_text: true }))).toBe('text')
+		expect(resolveWidgetRole(file('a.txt', { is_text: true }))).toBe('text')
+		expect(resolveWidgetRole(file('Note 1.md', { is_text: false }))).toBe('note')
+		// is_text is kept while the preview is off: the cover wins
+		expect(resolveWidgetRole(file('Text 1.md', { is_text: true, is_preview: false }))).toBe('default')
+		// only .md / .txt can be a text block
+		expect(resolveWidgetRole(file('shape.svg', { is_text: true }))).toBe('shape')
+		expect(resolveWidgetRole(file('pic.png', { is_text: true }))).toBe('image')
+		expect(resolvePreviewKind(file('Text 1.md', { is_text: true }))).toBeNull()
+	})
+
 	test('non-preview media files fall back to default', () => {
 		expect(resolveWidgetRole(file('pic.png', { is_preview: false }))).toBe('default')
 		expect(resolveWidgetRole(file('mesh.glb', { is_preview: false }))).toBe('default')

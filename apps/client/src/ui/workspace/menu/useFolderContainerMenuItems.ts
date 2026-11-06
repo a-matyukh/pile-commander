@@ -13,7 +13,11 @@ import {
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useEditingNoteId } from '@/ui/workspace/folder-container/widgets/useEditingNoteId'
 import { useBoardPlacement } from '@/ui/workspace/folder-container/board/boardShapePlacement'
-import { armNoteCreateFromMenu, setRegisteredEditingNoteId } from '../folder-container/panePosition'
+import {
+	armNoteCreateFromMenu,
+	resolvePaneCenterPosition,
+	setRegisteredEditingNoteId,
+} from '../folder-container/panePosition'
 import { useCanvasToolbarPrefs } from '@/ui/workspace/folder-container/canvas/useCanvasToolbarPrefs'
 import { useColorSubmenu } from './useColorSubmenu'
 import { useCreateChildItems } from './useCreateChildItems'
@@ -69,6 +73,21 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 			// Prefer the pane registry (chrome menus sit outside provideEditingNoteId).
 			setRegisteredEditingNoteId(scope.folderId.value, note_id)
 			editingNoteId.value = note_id
+		}
+	}
+
+	async function createText() {
+		// Where the menu was opened, or the center of what the pane shows: a
+		// text block has no fill, so it must start where the user is looking.
+		const position = toValue(options?.position)
+			?? resolvePaneCenterPosition(scope.folderId.value)
+			?? undefined
+		// Same as a note: arm before the await, then open it for typing.
+		armNoteCreateFromMenu()
+		const text_id = await requireWorkspace().create_text(scope.folderId.value, position)
+		if (text_id) {
+			setRegisteredEditingNoteId(scope.folderId.value, text_id)
+			editingNoteId.value = text_id
 		}
 	}
 
@@ -165,6 +184,14 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 							kbds: kbdHint('dblclick'),
 							onSelect() {
 								void createNote()
+							},
+						},
+						{
+							label: 'Text',
+							disabled: mutations_disabled,
+							kbds: kbdHint('T'),
+							onSelect() {
+								void createText()
 							},
 						},
 						{

@@ -32,6 +32,17 @@ export function add_note(workspace: WorkspaceStore, folder_id: string): Promise<
 	return workspace.create_note(folder_id)
 }
 
+/**
+ * The pane menu's "Text": a bare text block. The menu has no click point, so
+ * the caller passes where the pane is looking (its center); without it the
+ * store places the block like a note.
+ */
+export function add_text(workspace: WorkspaceStore, folder_id: string, position?: Position): Promise<string> {
+	return position === undefined
+		? workspace.create_text(folder_id)
+		: workspace.create_text(folder_id, position)
+}
+
 /** The pane menu's "Shape ›" items, through the same store calls */
 export function add_shape(workspace: WorkspaceStore, folder_id: string, shape: AddShape): Promise<string> {
 	if (shape === 'line' || shape === 'arrow') {

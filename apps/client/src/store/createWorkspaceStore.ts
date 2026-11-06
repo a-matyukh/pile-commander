@@ -63,6 +63,7 @@ import {
 	resolve_markdown_file_name,
 	resolve_note_filename,
 	resolve_shape_filename,
+	resolve_text_block_filename,
 	resolve_text_file_name,
 	resolve_unique_filename,
 } from '../services/naming/uniqueName'
@@ -80,7 +81,7 @@ import {
 	StrokeNode,
 	stored_folder_view,
 } from '@/domain/Widget'
-import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE } from '@/services/board/layout'
+import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE, TEXT_DEFAULT_SIZE } from '@/services/board/layout'
 import { get_mime_type } from '@/services/board/media'
 import { basename } from '@tauri-apps/api/path'
 import { report_error } from './helpers/reportError'
@@ -1779,6 +1780,69 @@ export async function createWorkspaceStore(
 				}
 			},
 
+			async change_is_text(id: string, is_text: boolean) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const entity = find_widget(this.folder_container, id)
+				if (entity?.type !== 'file') return
+				if ((entity.is_text === true) === is_text) return
+
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					id,
+					'is_text',
+					String(is_text),
+				)
+			},
+
+			async change_text_width(id: string, mode: 'auto' | 'fixed') {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const entity = find_widget(this.folder_container, id)
+				if (entity?.type !== 'file') return
+				if ((entity.text_width ?? 'auto') === mode) return
+
+				await persist_workspace_xattr(this, fm, folder_data, id, 'text_width', mode)
+			},
+
+			async show_as_text(id: string) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const before = find_widget(this.folder_container, id)
+				if (before?.type !== 'file') return
+
+				// Text first: the cover stays a cover until preview goes on, so the
+				// file never shows as a note for the moment between the two writes.
+				if (before.is_text !== true) {
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_text', 'true')
+				}
+				if (before.is_preview !== true) {
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_preview', 'true')
+				}
+
+				const parent_container = this.folder_container
+				const index = parent_container.children.findIndex(c => c.id === id)
+				const child = index >= 0 ? parent_container.children[index] : undefined
+
+				if (child && !child.position && parent_container.view === 'board') {
+					await this.change_position(id, board_position(child, index))
+				}
+				// The text size is written whatever the view is: change_is_preview only
+				// fills a missing size on a board, and it would ask board_size about
+				// the widget before is_text reached the model.
+				if (!before.size) {
+					await this.change_size(id, TEXT_DEFAULT_SIZE)
+				}
+			},
+
 			touch_folder(folder_id: string) {
 				const live = this.folders[folder_id]
 				if (!live) return
@@ -1869,6 +1933,39 @@ export async function createWorkspaceStore(
 			// recycled path (e.g. Note 1.md after delete) cannot show
 			// stale markdown from a previous file at the same id.
 			content_caches.notes.set(node.id, '')
+				return node.id
+			},
+
+			async create_text(folder_id: string, position?: Position): Promise<string> {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) {
+					return ''
+				}
+
+				const filename = resolve_text_block_filename(
+					(folder_data.children ?? []).map(c => c.name),
+				)
+
+				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
+					xattrs: [
+						{ name: 'is_preview', value: 'true' },
+						{ name: 'is_text', value: 'true' },
+						{ name: 'size', value: JSON.stringify(TEXT_DEFAULT_SIZE) },
+						...(position
+							? [{ name: 'position', value: JSON.stringify(position) }]
+							: []),
+					],
+				})
+				if (!node) {
+					return ''
+				}
+
+				// Same as a note: a recycled path must not show the old file's text.
+				content_caches.notes.set(node.id, '')
+				// Born selected, so the user sees where it is while typing.
+				this.set_selection([node.id])
 				return node.id
 			},
 

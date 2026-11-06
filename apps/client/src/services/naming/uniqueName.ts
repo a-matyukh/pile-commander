@@ -1,4 +1,4 @@
-const NOTE_FILENAME_PATTERN = /^Note \d+\.md$/
+const NOTE_FILENAME_PATTERN = /^(Note|Text) \d+\.md$/
 
 export function resolve_numbered_filename(
 	prefix: string,
@@ -17,6 +17,11 @@ export function resolve_numbered_filename(
 
 export function resolve_note_filename(existing_names: Iterable<string>): string {
 	return resolve_numbered_filename('Note', '.md', existing_names)
+}
+
+/** A text block is a note file under another prefix. */
+export function resolve_text_block_filename(existing_names: Iterable<string>): string {
+	return resolve_numbered_filename('Text', '.md', existing_names)
 }
 
 export function resolve_shape_filename(existing_names: Iterable<string>): string {
@@ -51,9 +56,10 @@ export function resolve_unique_filename(
 	const is_free = (candidate: string) => !taken.has(key(candidate))
 	if (is_free(name)) return name
 
-	if (NOTE_FILENAME_PATTERN.test(name)) {
+	const numbered = NOTE_FILENAME_PATTERN.exec(name)
+	if (numbered) {
 		for (let n = 1; ; n++) {
-			const candidate = `Note ${n}.md`
+			const candidate = `${numbered[1]} ${n}.md`
 			if (is_free(candidate)) return candidate
 		}
 	}

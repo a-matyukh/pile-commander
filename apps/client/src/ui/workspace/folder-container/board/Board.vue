@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import type { Position, Size } from '@/domain/Widget'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { useBoardSnapSettings } from '../useBoardSnapSettings'
@@ -19,6 +19,7 @@ import { useMoveSelectedWidgets } from '../useMoveSelectedWidgets'
 import BoardMarqueeOverlay from './BoardMarqueeOverlay.vue'
 import EmptyPaneHint from '../EmptyPaneHint.vue'
 import { useLineDrawMode } from '../useLineDrawMode'
+import { useTextPlaceMode } from '../useTextPlaceMode'
 import { LINE_ARROW_SIZE } from '@/services/board/shapes'
 import { setExternalDropPositionResolver } from '../externalDropPosition'
 import {
@@ -88,6 +89,7 @@ const {
 	contextMenuPosition,
 	rememberContextMenuPosition,
 	createNoteAt,
+	createTextAt,
 	createFolderAt,
 	onPaneClick,
 	onPaneContextMenu,
@@ -104,6 +106,20 @@ const lineDraw = useLineDrawMode({
 	isEmptyTarget: (target) => isEmptyBoardPointerTarget(target, boardRef.value),
 })
 
+// T arms one text block for the next click on empty pane.
+const textPlace = useTextPlaceMode({ isEmbedded })
+
+// One placement tool at a time: arming a line or picking a shape drops the text one.
+watch(() => lineDraw.armed.value, (kind) => {
+	if (kind) textPlace.disarm()
+})
+watch(textPlace.armed, (armed) => {
+	if (armed) lineDraw.disarm()
+})
+watch(boardPlacementTemplate, (template) => {
+	if (template) textPlace.disarm()
+})
+
 const {
 	marqueeStyle,
 	onPointerDown,
@@ -117,7 +133,9 @@ const {
 	dragPositions,
 	dragSizes,
 	placementActive: computed(() =>
-		Boolean(boardPlacementTemplate.value) || Boolean(lineDraw.armed.value),
+		Boolean(boardPlacementTemplate.value)
+		|| Boolean(lineDraw.armed.value)
+		|| textPlace.armed.value,
 	),
 })
 
@@ -142,6 +160,11 @@ function onBoardContextMenu(event: MouseEvent) {
 
 function onBoardPaneClick(event: MouseEvent) {
 	if (consumeSuppressedPaneClick()) return
+	if (textPlace.armed.value) {
+		textPlace.disarm()
+		void createTextAt(event)
+		return
+	}
 	void onPaneClick(event)
 }
 
@@ -149,7 +172,8 @@ const paneFill = useResolvedFill(folderId, () => container.value?.background)
 const boardChromeStyle = computed(() => ({
 	...backgroundStyle(paneFill.value, defaultViewBackground),
 	cursor: lineDraw.cursor.value
-		?? (boardPlacementTemplate.value ? 'crosshair' : undefined),
+		?? (boardPlacementTemplate.value ? 'crosshair' : undefined)
+		?? (textPlace.armed.value ? 'text' : undefined),
 }))
 
 /** Arrowhead triangle for the live line preview (arrow mode only). */

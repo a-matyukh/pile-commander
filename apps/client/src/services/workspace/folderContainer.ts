@@ -92,7 +92,7 @@ function child_from_entry(
 		return {
 			...base,
 			type: 'file',
-			...pick(attrs, ['padding', 'cover', 'model_camera']),
+			...pick(attrs, ['padding', 'cover', 'model_camera', 'is_text', 'text_width']),
 			...image_text_fields(attrs),
 		}
 	}

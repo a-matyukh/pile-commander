@@ -17,6 +17,10 @@ const DOUBLE_TAP_SLOP_PX = 28
 export function useNoteEditor(
 	widgetId: MaybeRefOrGetter<string>,
 	fileName?: MaybeRefOrGetter<string>,
+	options?: {
+		/** A text block: leaving it empty removes the file (a note stays, empty). */
+		isText?: MaybeRefOrGetter<boolean>
+	},
 ) {
 	const { editingNoteId, onNoteEditExit } = useEditingNoteId()
 	const requireWorkspace = useRequireWorkspace()
@@ -180,8 +184,17 @@ export function useNoteEditor(
 	let unsubscribeCache: (() => void) | null = null
 	watch(() => toValue(widgetId), (id) => {
 		unregisterExit?.()
+		// One handler per id (a second onNoteEditExit would replace this one),
+		// so the empty-text check lives here, after the save.
 		unregisterExit = onNoteEditExit(id, async () => {
 			await save()
+			if (toValue(options?.isText) === true && text.value.trim() === '') {
+				const ws = requireWorkspace()
+				if (ws.can_write) {
+					await ws.remove(id)
+					return
+				}
+			}
 			refreshPreview()
 		})
 		// External edits (another device/instance) invalidate the session

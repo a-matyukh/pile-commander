@@ -59,7 +59,8 @@ const widget = computed<FolderContainerWidgetChild | undefined>(
 const widgetRole = computed<WidgetRole | null>(
 	() => widget.value !== undefined ? resolveWidgetRole(widget.value) : null,
 )
-const isNote = computed(() => widgetRole.value === 'note')
+/** A text block is a note here: slides draw only the note look. */
+const isNote = computed(() => widgetRole.value === 'note' || widgetRole.value === 'text')
 const isFolderPreview = computed(() => widgetRole.value === 'folder_preview')
 const previewKind = computed(
 	() => widget.value !== undefined ? resolvePreviewKind(widget.value) : null,

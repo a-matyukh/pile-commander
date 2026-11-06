@@ -64,8 +64,12 @@ const isMediaChromeWidget = computed(() => {
 })
 
 const { isLine } = useLineShapeMeta(() => props.widget.id, isShapeWidget)
+// A text block resizes by its side handles (TextWidgetContent), not by this corner.
 const showBoardResize = computed(
-	() => !isCanvas.value && !(isShapeWidget.value && isLine.value) && ws.can_write,
+	() => !isCanvas.value
+		&& !(isShapeWidget.value && isLine.value)
+		&& !isTextWidget.value
+		&& ws.can_write,
 )
 
 const isNoteWidget = computed(() => {
@@ -75,6 +79,18 @@ const isNoteWidget = computed(() => {
 	}
 	if (rootClass && typeof rootClass === 'object') {
 		return 'note-widget' in rootClass || 'dashboard-note-widget' in rootClass
+	}
+	return false
+})
+
+/** A bare text block: a note file with no card of its own (see TextWidgetContent). */
+const isTextWidget = computed(() => {
+	const rootClass = props.rootClass
+	if (typeof rootClass === 'string') {
+		return rootClass.split(/\s+/).includes('text-widget')
+	}
+	if (rootClass && typeof rootClass === 'object') {
+		return Boolean((rootClass as Record<string, unknown>)['text-widget'])
 	}
 	return false
 })
@@ -224,6 +240,17 @@ const { setRootRef, style } = useBoardWidget({
 				...props.extraStyle,
 				// Border is owned by PreviewWidgetContent hover CSS.
 				border: '2px solid transparent',
+			} as Record<string, string>
+		}
+
+		// Without this branch the shell paints white and a 1px border, and the
+		// border below is written after extraStyle, so nothing else can undo it.
+		if (isTextWidget.value) {
+			const fill = resolvedFill.value
+			return {
+				...(fill ? backgroundStyle(fill) : { backgroundColor: 'transparent' }),
+				...props.extraStyle,
+				border: 'none',
 			} as Record<string, string>
 		}
 
@@ -383,6 +410,17 @@ const { setRootRef, style } = useBoardWidget({
 }
 .board-widget.note-widget.is_edit:active {
 	cursor: text;
+}
+/* A text block: the frame stays, the text runs past it instead of being cut.
+   A small inset keeps the selection ring and the caret off the glyphs. */
+.board-widget.text-widget {
+	padding: 4px;
+	overflow: visible;
+}
+/* While typing, the frame is the selection ring, not the note's lifted shadow:
+   an empty block has no text to show where it is, so the frame must. */
+.board-widget.text-widget.is_edit {
+	box-shadow: inset 0 0 0 2px var(--pc-selection-ring);
 }
 .board-widget.is_edit > .resize-handle {
 	pointer-events: none;

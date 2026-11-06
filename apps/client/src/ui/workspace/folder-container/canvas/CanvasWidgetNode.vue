@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Handle, Position } from '@vue-flow/core'
-import { NodeResizer } from '@vue-flow/node-resizer'
+import { NodeResizeControl, NodeResizer } from '@vue-flow/node-resizer'
 import type { NodeProps } from '@vue-flow/core'
 import type { OnResize, OnResizeEnd, OnResizeStart } from '@vue-flow/node-resizer'
 import { computed, inject } from 'vue'
@@ -17,7 +17,7 @@ import {
 import type { CanvasNodeData } from './useCanvasNodes'
 import type { LineEndpointLiveLayout } from '../shape/useLineEndpointDrag'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
-import { is_shape_widget } from '@/services/board/layout'
+import { is_shape_widget, is_text_widget } from '@/services/board/layout'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { useEditingNoteId } from '../widgets/useEditingNoteId'
 
@@ -32,8 +32,13 @@ const nodeResizeApi = inject(canvasNodeResizeKey)
 if (!nodeResizeApi) {
 	throw new Error('CanvasWidgetNode requires canvasNodeResize provided by Canvas view')
 }
-const { onStart: onNodeResizeStart, onLive: onNodeResizeLive, onEnd: onNodeResizeEnd } =
-	nodeResizeApi
+const {
+	onStart: onNodeResizeStart,
+	onLive: onNodeResizeLive,
+	onEnd: onNodeResizeEnd,
+	onTextLive: onTextResizeLive,
+	onTextEnd: onTextResizeEnd,
+} = nodeResizeApi
 
 const applyLineGeometry = inject(canvasLineGeometryKey, null)
 const getCanvasZoom = inject(canvasZoomKey, () => 1)
@@ -53,9 +58,30 @@ const showConnectHandles = computed(() => tool.value === 'connect')
 const showLineEndpoints = computed(
 	() => isLine.value && isSelected.value && workspace.value?.can_write !== false,
 )
+const isText = computed(() => is_text_widget(props.data.widget))
+// A text block's height follows its text, so it has no corner and no vertical
+// handle: the left and right handles change the width, once it is selected.
 const showResize = computed(
-	() => !isLine.value && !isEditingThis.value && workspace.value?.can_write !== false,
+	() => !isLine.value && !isText.value && !isEditingThis.value && workspace.value?.can_write !== false,
 )
+const showTextResize = computed(
+	() => isText.value
+		&& isSelected.value
+		&& !isEditingThis.value
+		&& workspace.value?.can_write !== false,
+)
+const TEXT_MIN_WIDTH = 40
+const TEXT_RESIZE_SIDES = ['left', 'right'] as const
+
+function handleTextResize({ params }: OnResize) {
+	onTextResizeLive(props.id, { x: params.x, width: params.width })
+}
+
+function handleTextResizeEnd({ params }: OnResizeEnd) {
+	void onTextResizeEnd(props.id, { x: params.x, width: params.width }).then(() => {
+		emit('updateNodeInternals')
+	})
+}
 
 function handleResizeStart({ params }: OnResizeStart) {
 	onNodeResizeStart(props.id, {
@@ -173,6 +199,22 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 			@resize="handleResize"
 			@resize-end="handleResizeEnd"
 		/>
+		<template v-if="showTextResize">
+			<NodeResizeControl
+				v-for="side in TEXT_RESIZE_SIDES"
+				:key="side"
+				class="text-resize-control"
+				:node-id="id"
+				:position="side"
+				:min-width="TEXT_MIN_WIDTH"
+				:min-height="1"
+				:auto-scale="false"
+				@resize="handleTextResize"
+				@resize-end="handleTextResizeEnd"
+			>
+				<span class="text-resize-pill" aria-hidden="true" />
+			</NodeResizeControl>
+		</template>
 		<WidgetTypeSwitch
 			layout="board"
 			:widget="data.widget"
@@ -293,6 +335,28 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 .canvas-widget-node :deep(.vue-flow__resize-control.handle.bottom.right) {
 	width: 50px;
 	height: 50px;
+}
+
+/* A text block's side handles: a visible pill on the edge, in the middle. */
+.canvas-widget-node :deep(.vue-flow__resize-control.handle.text-resize-control) {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 36px;
+	opacity: 1;
+	z-index: 6;
+	touch-action: none;
+}
+
+.text-resize-pill {
+	width: 7px;
+	height: 20px;
+	border-radius: 4px;
+	border: 1.5px solid var(--pc-selection-ring, #6d6ad6);
+	background: #fff;
+	box-sizing: border-box;
+	pointer-events: none;
 }
 
 .canvas-resize-affordance {

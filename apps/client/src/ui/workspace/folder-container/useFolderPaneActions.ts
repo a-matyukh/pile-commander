@@ -19,7 +19,8 @@ type UseFolderPaneActionsOptions = {
 
 /**
  * Pane-level interactions shared by Board and Canvas:
- * note creation on dblclick, folder creation on Shift+dblclick,
+ * note creation on dblclick, text creation on a click after T (board),
+ * folder creation on Shift+dblclick,
  * shape placement on click, click-outside note editing exit,
  * and context menu positioning.
  */
@@ -50,6 +51,21 @@ export function useFolderPaneActions(options: UseFolderPaneActionsOptions) {
 		const note_id = await ws.create_note(options.folderId.value, position)
 		if (note_id) {
 			options.editingNoteId.value = note_id
+		}
+	}
+
+	/** A bare text block at the click, open for typing. */
+	async function createTextAt(event: MouseEvent) {
+		const ws = workspace.value
+		if (!ws || !ws.can_write) return
+
+		const position = options.resolvePosition(event)
+		if (!position) return
+
+		armNoteKeyboardFocus()
+		const text_id = await ws.create_text(options.folderId.value, position)
+		if (text_id) {
+			options.editingNoteId.value = text_id
 		}
 	}
 
@@ -96,6 +112,7 @@ export function useFolderPaneActions(options: UseFolderPaneActionsOptions) {
 		contextMenuPosition,
 		rememberContextMenuPosition,
 		createNoteAt,
+		createTextAt,
 		createFolderAt,
 		onPaneClick,
 		onPaneContextMenu,

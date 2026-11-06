@@ -6,7 +6,7 @@ import NodeMenuShell from './NodeMenuShell.vue'
 import { useNodeMenu } from './useNodeMenu'
 import { useColorSubmenu } from './useColorSubmenu'
 import { image_shows_preview } from '@/services/board/layout'
-import { get_preview_toggle_label, is_previewable_file } from '@/services/board/media'
+import { get_preview_toggle_label, is_note_file_name, is_previewable_file } from '@/services/board/media'
 import { image_caption_in_view, type ImageTextField } from '@/services/workspace/imageText'
 import {
 	is_line_shape,
@@ -50,9 +50,54 @@ const {
 
 const isPreviewable = computed(() => is_previewable_file(props.node.name))
 
+const isNoteFile = computed(() => is_note_file_name(props.node.name))
+
+/** The file carries `is_text`: a text block, or a cover that comes back as one. */
+const isTextMarked = computed(() => {
+	const child = openedChild.value
+	return child?.type === 'file' && child.is_text === true
+})
+
 const previewToggleLabel = computed(() =>
-	get_preview_toggle_label(props.node.name, props.isPreview ?? false),
+	get_preview_toggle_label(props.node.name, props.isPreview ?? false, isTextMarked.value),
 )
+
+function togglePreview() {
+	const ws = requireWorkspace()
+	// A cover that was a text block returns as one, with a size if it has none.
+	if (isNoteFile.value && isTextMarked.value && !props.isPreview) {
+		void ws.show_as_text(props.node.id)
+		return
+	}
+	void ws.change_is_preview(props.node.id, !props.isPreview)
+}
+
+/**
+ * Note <-> text for a shown note file, and "Show as text" for a plain cover.
+ * The flag changes; the fill and the size stay.
+ */
+const textItems = computed<DropdownMenuItem[]>(() => {
+	if (!props.showPreviewToggle || !isNoteFile.value) return []
+	const id = props.node.id
+	if (props.isPreview) {
+		return [{
+			label: isTextMarked.value ? 'Convert to note' : 'Convert to text',
+			disabled: readonly.value,
+			onSelect() {
+				void requireWorkspace().change_is_text(id, !isTextMarked.value)
+			},
+		}]
+	}
+	// A cover already marked as text has "Show as text" as its toggle above.
+	if (isTextMarked.value) return []
+	return [{
+		label: 'Show as text',
+		disabled: readonly.value,
+		onSelect() {
+			void requireWorkspace().show_as_text(id)
+		},
+	}]
+})
 
 const isShapePreview = computed(
 	() => props.isPreview === true && props.node.name.endsWith('.svg'),
@@ -216,11 +261,10 @@ const items = computed<DropdownMenuItem[][]>(() => {
 			? [{
 				label: previewToggleLabel.value,
 				disabled: readonly.value,
-				onSelect() {
-					void requireWorkspace().change_is_preview(props.node.id, !props.isPreview)
-				},
+				onSelect: togglePreview,
 			}]
 			: []),
+		...textItems.value,
 		...(showImageText.value
 			? [
 				{

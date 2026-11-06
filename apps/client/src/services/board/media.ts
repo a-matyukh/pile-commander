@@ -80,11 +80,21 @@ export function is_previewable_file(name: string): boolean {
 	return get_media_kind(name) !== null
 }
 
-export function get_preview_toggle_label(name: string, is_preview: boolean): string {
+/** A `.md` / `.txt` file: the only kind a note or a text block can be. */
+export function is_note_file_name(name: string): boolean {
+	return name.endsWith('.txt') || name.endsWith('.md')
+}
+
+/**
+ * `is_text`: the file is marked as a text block (kept while its preview is
+ * off), so the toggle is a round trip between the block and the file card.
+ */
+export function get_preview_toggle_label(name: string, is_preview: boolean, is_text = false): string {
 	if (name.endsWith('.svg')) {
 		return is_preview ? 'Show as file' : 'Show as shape'
 	}
-	if (name.endsWith('.txt') || name.endsWith('.md')) {
+	if (is_note_file_name(name)) {
+		if (is_text) return is_preview ? 'Show as file' : 'Show as text'
 		return is_preview ? 'Hide preview' : 'Preview'
 	}
 	if (get_media_kind(name)) {

@@ -12,8 +12,12 @@ import {
 	is_model_widget,
 	is_note_widget,
 	is_shape_widget,
+	is_fixed_width_text,
+	is_text_widget,
 	is_video_widget,
+	text_box_css,
 	NOTE_DEFAULT_SIZE,
+	TEXT_DEFAULT_SIZE,
 	IMAGE_DEFAULT_SIZE,
 	MODEL_DEFAULT_SIZE,
 	SHAPE_SQUARE_DEFAULT_SIZE,
@@ -75,6 +79,12 @@ describe('media', () => {
 		expect(get_preview_toggle_label('a.svg', true)).toBe('Show as file')
 		expect(get_preview_toggle_label('a.txt', false)).toBe('Preview')
 		expect(get_preview_toggle_label('a.md', true)).toBe('Hide preview')
+		expect(get_preview_toggle_label('a.md', true, true)).toBe('Show as file')
+		expect(get_preview_toggle_label('a.md', false, true)).toBe('Show as text')
+		expect(get_preview_toggle_label('a.md', false, false)).toBe('Preview')
+		// is_text means nothing outside .md / .txt
+		expect(get_preview_toggle_label('a.svg', true, true)).toBe('Show as file')
+		expect(get_preview_toggle_label('a.png', false, true)).toBe('Preview')
 	})
 })
 
@@ -99,6 +109,44 @@ describe('board layout', () => {
 			view: 'list',
 			children: [],
 		})).toBe(true)
+	})
+
+	test('is_text_widget needs the preview, is_text and a text file name', () => {
+		expect(is_text_widget(file('Text 1.md', { is_text: true }))).toBe(true)
+		expect(is_text_widget(file('a.txt', { is_text: true }))).toBe(true)
+		expect(is_text_widget(file('Note 1.md'))).toBe(false)
+		expect(is_text_widget(file('Note 1.md', { is_text: false }))).toBe(false)
+		expect(is_text_widget(file('Text 1.md', { is_text: true, is_preview: false }))).toBe(false)
+		expect(is_text_widget(file('a.svg', { is_text: true }))).toBe(false)
+		// a text block is still a note for the views that do not draw it
+		expect(is_note_widget(file('Text 1.md', { is_text: true }))).toBe(true)
+	})
+
+	test('a text block grows with its text until the user fixes its width', () => {
+		const auto = file('Text 1.md', { is_text: true, size: { width: 300, height: 90 } })
+		const fixed = file('Text 1.md', { is_text: true, text_width: 'fixed', size: { width: 300, height: 90 } })
+		const marked_auto = file('Text 1.md', { is_text: true, text_width: 'auto', size: { width: 300, height: 90 } })
+		const note = file('Note 1.md', { text_width: 'fixed', size: { width: 300, height: 90 } })
+
+		expect(is_fixed_width_text(auto)).toBe(false)
+		expect(is_fixed_width_text(marked_auto)).toBe(false)
+		expect(is_fixed_width_text(fixed)).toBe(true)
+		// a note has no text width
+		expect(is_fixed_width_text(note)).toBe(false)
+
+		// the height is never stored: it follows the text
+		expect(text_box_css(auto)).toEqual({ width: 'max-content', height: 'auto' })
+		expect(text_box_css(marked_auto)).toEqual({ width: 'max-content', height: 'auto' })
+		expect(text_box_css(fixed)).toEqual({ width: '300px', height: 'auto' })
+		// while a side handle is dragged the live width wins in both modes
+		expect(text_box_css(auto, 123)).toEqual({ width: '123px', height: 'auto' })
+		expect(text_box_css(fixed, 123)).toEqual({ width: '123px', height: 'auto' })
+	})
+
+	test('board_size gives a text block its own default, a stored size wins', () => {
+		expect(board_size(file('Text 1.md', { is_text: true }))).toEqual(TEXT_DEFAULT_SIZE)
+		expect(board_size(file('Text 1.md', { is_text: true, size: { width: 9, height: 8 } })))
+			.toEqual({ width: 9, height: 8 })
 	})
 
 	test('board_position and board_size use defaults when unset', () => {

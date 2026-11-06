@@ -6,13 +6,20 @@ import {
 	is_model_widget,
 	is_note_widget,
 	is_shape_widget,
+	is_text_widget,
 	is_video_widget,
 } from '@/services/board/layout'
 import type { PreviewKind } from './previewKinds'
 
-export type WidgetRole = 'note' | PreviewKind | 'folder_preview' | 'default'
+/**
+ * `text` is a note file drawn as a bare text block on the board and canvas.
+ * Views that do not draw it (stack, slides, dashboard, masonry) treat it as a
+ * `note`, so a check for notes there must accept both roles.
+ */
+export type WidgetRole = 'text' | 'note' | PreviewKind | 'folder_preview' | 'default'
 
 export function resolveWidgetRole(widget: FolderContainerWidgetChild): WidgetRole {
+	if (is_text_widget(widget)) return 'text'
 	if (is_note_widget(widget)) return 'note'
 	if (is_image_widget(widget)) return 'image'
 	if (is_video_widget(widget)) return 'video'

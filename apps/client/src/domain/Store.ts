@@ -310,6 +310,15 @@ type WorkspaceStore = {
 	change_size(id: string, new_size: Size): Promise<void>
 	change_model_camera(id: string, state: ModelCameraState): Promise<void>
 	change_is_preview(id: string, is_preview: boolean): Promise<void>
+	/** Draws a note file as a bare text block (or back as a note). The preview, fill and size stay as they are. */
+	change_is_text(id: string, is_text: boolean): Promise<void>
+	/** A text block's width mode: "fixed" after a side handle drag, "auto" to grow with the text again. */
+	change_text_width(id: string, mode: 'auto' | 'fixed'): Promise<void>
+	/**
+	 * A file cover becomes a text block in one write: preview on, text on, and
+	 * the default text size when the entry has none.
+	 */
+	show_as_text(id: string): Promise<void>
 	/** Re-read a folder from disk and refresh cache + sidebar tree projection. */
 	reload_folder_cache(folder_id: string): Promise<void>
 	/**
@@ -321,6 +330,8 @@ type WorkspaceStore = {
 	touch_folder(folder_id: string): void
 	reorder_children(folder_id: string, ordered_ids: string[]): Promise<void>
 	create_note(folder_id: string, position?: Position): Promise<string>
+	/** A `Text N.md` note file drawn as a bare text block. It comes back selected. */
+	create_text(folder_id: string, position?: Position): Promise<string>
 	create_shape(folder_id: string, template: ShapeTemplate, position?: Position): Promise<string>
 	/** Creates a line/arrow shape spanning two absolute pane points. */
 	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug): Promise<string>

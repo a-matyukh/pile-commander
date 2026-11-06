@@ -34,7 +34,8 @@ No database change: xattrs are a `jsonb` column with no whitelist
 In:
 
 - a text block on **board and canvas**;
-- plain text (no markdown render), a fixed box with `overflow: visible`;
+- the same markdown editing and preview as a note (bold, italic, lists,
+  headings, links), in a fixed box with `overflow: visible`;
 - create from the menu and with the `T` hotkey (board); remove when left empty;
 - convert note <-> text, and text <-> file cover.
 
@@ -43,10 +44,12 @@ Out (follow-ups, see the end):
 - **Dashboard** text look. The dashboard shows a text block as a note, like
   stack, masonry and slides. Its cell is fixed, and an auto-height block is the
   only reason to give it a different look.
-- **Markdown preview** in a text block. Notes keep it.
 - **Auto height** (the block growing with its text), width-only resize, hugging
   the glyphs.
-- Font size, text color.
+- **The formatting popup** (Figma-style: text color, size, bold, italic,
+  strikethrough, link, list, align), acting on a **selected range** of text.
+  The first version only has to leave room for it (see item 4, "Formatting
+  stays"). How the range style is stored is not decided yet.
 
 ## Where it shows
 
@@ -116,8 +119,9 @@ changes the fill from the Background menu. There is no re-measure on convert.
   - dashboard branch (`layout === 'dashboard'`): role `text` or `note` -> `NoteWidgetContent`.
 - [Slides.vue](apps/client/src/ui/workspace/folder-container/slides/Slides.vue) (line ~62): `isNote` must accept role `text` too. [MasonryCard.vue](apps/client/src/ui/workspace/folder-container/masonry/MasonryCard.vue) needs no change (`is_note_widget`).
 - New `TextWidgetContent.vue`, next to `NoteWidgetContent.vue`. It reuses `useNoteEditor` and `NoteBody`, so editing, blur, the soft keyboard and the exit handler stay the same. Differences:
-  - **Plain text, no markdown.** `NoteBody` already has the plain branch (`isMarkdown=false`, `note-preview--plain`). `useNoteEditor` computes `isMarkdown` from the file name (`endsWith('.md')`, line 37); give it an `isText` input and make `isMarkdown = endsWith('.md') && !isText`. The preview and the textarea then use the same font and the same line breaks, so the box does not jump between editing and not editing.
-  - **No Cmd+B / Cmd+I** in a text block: `onTextareaKeydown` in `NoteBody.vue` would write `**` into plain text. `NoteBody` gets an `appearance: 'note' | 'text'` prop; for `text` it skips the format keys.
+  - **Formatting stays.** A text block is edited and rendered exactly like a note: `isMarkdown` is unchanged (`endsWith('.md')`, `useNoteEditor.ts` line 37), the preview is the markdown HTML, and Cmd+B / Cmd+I keep working through `wrapMarkdownSelection` in `NoteBody.vue`. `NoteBody` gets an `appearance: 'note' | 'text'` prop only for the look (no fade, theme color, no padding), not for behavior.
+  - **Keep one entry point for format commands.** Bold / italic go through `wrapMarkdownSelection` today, called from `onTextareaKeydown`. Pull that call into one function (`applyFormat(marker)`) that the keyboard handler and, later, the popup both call. That is the only preparation for the popup in this version.
+  - **Raw text while editing, rendered text after blur.** The textarea shows `# title` and `**bold**`; the preview shows a large heading and bold. In a fixed box the frame does not move, only the glyphs change size. To keep the first line from jumping, the text preview drops the top margin of its first child and the bottom margin of its last (the note preview keeps them). Accepted for this version.
   - No padding, no shadow, no `note-preview--fade`, and `overflow: visible` (the note root has `overflow: hidden`). Text longer than the box spills out of it; auto height is a follow-up.
   - Text color from the theme, not the hard-coded `rgb(23 23 23)` in `NoteBody.vue` (check [main.css](apps/client/src/main.css) tokens), through the same `appearance` prop.
   - The "Background" menu stays: a text block can still get a fill if the user sets one.
@@ -148,10 +152,44 @@ changes the fill from the Background menu. There is no re-measure on convert.
 ### 7. Later (not in the first version)
 
 - Dashboard: a text look, once there is auto height or another answer for a fixed cell.
-- Markdown preview in a text block.
-- Auto height: the block grows with its text and writes `size`. On the canvas the node size is the stored `size` (`useCanvasNodes`) and the resize is `NodeResizer` (min 100x50), so this needs a decision per view; a width-only handle on `BoardWidgetShell` does not touch the canvas. Also hugging the glyphs and a smaller minimum for text.
-- Font size presets (S / M / L / XL) as a `font_size` xattr, a text color xattr, and a corner handle that scales the font like Excalidraw.
+- **The formatting popup** (selection-driven, like Figma's). It styles **a range the user selects, down to two letters**, in a note or in a text block, not the whole block. What each control writes:
+  - bold, italic, strikethrough, link, list: markdown marks in the file, through `applyFormat` (item 4);
+  - color, size and the like for a range: markdown has no form for them, so the plan is **inline `style`** on the range (`<span style="color: ...">text</span>` inside the `.md`). The exact form is decided when the popup is designed; the first version does not write it;
+  - this is not stored as block xattrs (`text_color`, `font_size`, `text_align`): those would color the whole block. Block-level props, if wanted at all, are a separate later question.
+  - What the inline-style route needs, to keep in mind and not to build now:
+    - `parseNoteMarkdown` ([markdown.ts](apps/client/src/ui/workspace/folder-container/widgets/markdown.ts)) passes marked's HTML through `DOMPurify.sanitize(html)` with the default config. Check whether a `<span style>` already survives it. Notes come from shared and public boards, so a style must be limited to a short list of properties (color, background color, font size, ...) with safe values, not any CSS (`position`, `url(...)`, huge sizes); the same care as `strip_dangerous_styles` in `services/board/shapes.ts`;
+    - the file stays valid markdown but has HTML in it: another editor shows the `<span>` tags raw or ignores the style;
+    - `wrapMarkdownSelection` handles symmetric markers (`**`, `*`); a span needs an opening and a closing tag of different text, plus merging, nesting and un-styling a part of an already styled range. A rich-text editor (next item) does this better than editing the string by hand;
+    - the AI summary and the MCP read return the raw file text, with the tags in it. Decide whether to strip them there.
+- **An editor that shows formatting while typing** (contenteditable or a small rich-text editor over the same markdown). It removes the raw-vs-rendered difference and is what auto height needs; it also fits a selection popup better than a textarea (the popup needs selection rectangles and live marks). It replaces the textarea in `NoteBody` for `appearance: 'text'`, so the file format does not change.
+- Auto height: the block grows with its text and writes `size`. Blocked on the point above: with raw text in the textarea and HTML in the preview the height differs on every enter and exit. On the canvas the node size is the stored `size` (`useCanvasNodes`) and the resize is `NodeResizer` (min 100x50), so this needs a decision per view; a width-only handle on `BoardWidgetShell` does not touch the canvas. Also hugging the glyphs and a smaller minimum for text.
+- Font size presets (S / M / L / XL) and a corner handle that scales the font like Excalidraw. Whether the size is a range style, a block prop, or both is part of the popup decision.
 - `useCombineSelectedWidgets.ts` creates a note; decide whether a selection of text blocks combines into a text block.
+
+## Implementation notes
+
+First version is in. Where it differs from the items above:
+
+- The frame has a `4px` inset (`.board-widget.text-widget` in `BoardWidgetShell.vue`), not none: the selection ring and the caret would sit on the glyphs.
+- Text color stays `rgb(23 23 23)`: the app has no dark theme tokens to read, and the pane is white or light gray.
+- No extra margin rule for the first and last child in the preview: `prose` already drops them.
+- A text block's textarea grows with its text (the stack note's autosize, `growsWithText` in `NoteBody.vue`), so typing past the frame looks like the preview does.
+- `T` is `useTextPlaceMode.ts`, on the board and on the canvas; the click on empty pane is handled in `Board.vue` and `Canvas.vue` through `createTextAt` in `useFolderPaneActions.ts`. It is exclusive with the line hotkeys and shape placement. On the canvas it arms only with the hand or select tool (with the pen or the lasso a click is a stroke) and drops when the tool changes; the text cursor is forced on the Vue Flow pane (`.canvas-flow--text-place`), because the pane has its own grab cursor.
+- The text block's root class keeps `note-widget` next to `text-widget`, so the pane's click-outside exit and the edit shadow need no change.
+- "Text" is in the pane "New" menu, the Explorer's Add menu, and `FolderChrome` ("New text").
+- Empty-text removal test: `useNoteEditor.test.ts` (run through an effect scope, no DOM).
+
+### Second pass: the box follows the text (as in Excalidraw and FigJam)
+
+The first version was a note without a fill. This pass is what makes it a text block:
+
+- **Auto width, auto height.** A new block grows to the right while typing and breaks a line only at Enter; the height always follows the lines. Editing: the textarea shares one grid cell with a hidden copy of its text (`.note-grow` in `NoteBody.vue`), no script. Preview: `max-content` with no wrapping.
+- **Fixed width.** Dragging the left or right handle sets xattr `text_width: 'fixed'`; `size.width` is then the width and the text wraps inside it. The height is still the text's. A small button right of a selected fixed block (`.text-reset-width`) writes `text_width: 'auto'` again.
+- **Model.** `size` stays stored (the measured box, written after a typing session and at the end of a resize) so the board extent and the other views keep working; it is never what lays the block out. `text_box_css` in `layout.ts` is the one place that turns a block into a CSS width and `auto` height, for the board (`useBoardWidget.ts`) and the canvas (`nodeStyle`).
+- **Handles.** Board: `boardTextResize.ts` (interactjs, left and right edge selectors; the left edge also moves `x`). Canvas: two `NodeResizeControl`s in `CanvasWidgetNode.vue` and `onTextResizeLive/End` in `useCanvasNodes.ts`. No corner resize on a text block. Handles show on a selected block that is not being typed in.
+- **Born selected and open.** `create_text` selects the block; every entry point also opens it for typing. Without a click point (pane menu, `FolderChrome`, the Explorer's Add menu) it starts at the pane's center (`resolvePaneCenterPosition`). While typing, the frame is the selection ring (not the note's shadow), so an empty block is visible.
+- `childSignature` in `useCanvasNodes.ts` now includes `is_text` and `text_width`: before, a Note -> Text conversion did not reach a canvas node.
+- Not done on purpose: a handle during typing, grid snap for the side handles, reading `size` back for stale extents between sessions.
 
 ## Checks
 
@@ -167,5 +205,7 @@ Per the repo rules, no dev server or clicking through the UI; the user checks it
 - Role order: `text` must win over `note` in `resolveWidgetRole`, and the stack branch of `WidgetTypeSwitch` and `Slides.vue` must still match it. A missed spot shows a text block as a file card.
 - Note-only styling is keyed on class names in the shells; a text block must not pick up the note outline or white card by accident (the shell branch in item 4).
 - A fixed box with `overflow: visible` lets long text cover its neighbours and hit-test as the box, not as the glyphs. Accepted for the first version.
+- Raw markdown in the editor and rendered HTML after blur differ in height and in glyph size (a `# title` is one small line while typing and a large one after). A fixed box hides the frame jump but not the glyph jump; auto height and the popup are what remove it (see "Later").
+- Range color and size are not in this version. When they come, they are inline `style` in the `.md`, which needs a restricted style whitelist in the sanitizer (notes can come from other users) and an editor that can apply and remove a span cleanly.
 - The exit handler is shared: the empty-text check and the save live in one function. Keep the order save -> check -> remove.
 - `Text N.md` shows in the Explorer list next to notes. Fine for v1; a group or a badge can come later.

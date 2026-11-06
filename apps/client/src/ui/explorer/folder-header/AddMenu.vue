@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
-import { ADD_SHAPES, ADD_SHAPE_META, add_menu_has_pane_items, add_note, add_shape, type AddShape } from '@/store/explorer/add_menu'
+import { ADD_SHAPES, ADD_SHAPE_META, add_menu_has_pane_items, add_note, add_shape, add_text, type AddShape } from '@/store/explorer/add_menu'
 import { create_child_folder } from '@/store/explorer/folder_menu'
 import { entry_view } from '@/store/explorer/tree_view'
 import { explorer_tree } from '@/store/explorer/tree'
@@ -14,6 +14,7 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import MenuSub from '@/ui/kit/MenuSub.vue'
 import { useCreateChildItems } from '@/ui/workspace/menu/useCreateChildItems'
+import { armNoteCreateFromMenu, beginRegisteredNoteEditing, resolvePaneCenterPosition } from '@/ui/workspace/folder-container/panePosition'
 import { tree_item_for } from '@/store/explorer/tree_item'
 
 /**
@@ -34,6 +35,15 @@ const pane_items = computed(() =>
 
 function run(task: () => Promise<unknown>) {
 	task().catch(error => report_error(props.workspace, error))
+}
+
+/** At the pane's center, selected and open for typing, so the user sees where it is. */
+async function new_text() {
+	const folder_id = props.folder.folder_id
+	// Arm before the await: the menu's closing click must not clear the new selection.
+	armNoteCreateFromMenu()
+	const id = await add_text(props.workspace, folder_id, resolvePaneCenterPosition(folder_id) ?? undefined)
+	if (id) beginRegisteredNoteEditing(folder_id, id)
 }
 
 function new_shape(shape: AddShape) {
@@ -58,6 +68,7 @@ function new_shape(shape: AddShape) {
 		<MenuItem icon="tabler:markdown" :label="t('add.markdown_file')" @select="run(() => create('markdown'))" />
 		<template v-if="pane_items">
 			<MenuItem icon="tabler:note" :label="t('add.note')" @select="run(() => add_note(workspace, folder.folder_id))" />
+			<MenuItem icon="tabler:text-size" :label="t('add.text')" @select="run(new_text)" />
 			<MenuSub icon="tabler:shape" :label="t('add.shape')">
 				<MenuItem
 					v-for="shape in ADD_SHAPES"

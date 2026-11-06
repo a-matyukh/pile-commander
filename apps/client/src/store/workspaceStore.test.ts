@@ -5,6 +5,7 @@ import { show_hidden_files } from './showHiddenFiles'
 import { createFakeFileManager } from '@pile-commander/file-manager'
 import { refresh_cached_folder } from './helpers/refreshCachedFolder'
 import { shape_template_svg, prepare_svg_for_preview } from '@/services/board/shapes'
+import { TEXT_DEFAULT_SIZE } from '@/services/board/layout'
 import { LIVE_UPDATES_UNAVAILABLE } from './helpers/watchSubscribeError'
 
 vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -365,6 +366,114 @@ describe('createWorkspaceStore: creation', () => {
 		expect(recreated).toBe(id)
 		expect(await store.read_note_content(recreated)).toBe('')
 		expect(await store.content_caches.notes.get(recreated, async () => 'should-not-load')).toBe('')
+	})
+
+	test('create_text creates Text N.md as a preview note marked is_text, with the default size', async () => {
+		const { fake, store } = await makeStore()
+		fake.calls.length = 0
+
+		const id = await store.create_text('/ws', { x: 10, y: 20 })
+
+		expect(id).toBe('/ws/Text 1.md')
+		expect(fake.get_xattr(id, 'is_preview')).toBe('true')
+		expect(fake.get_xattr(id, 'is_text')).toBe('true')
+		expect(JSON.parse(fake.get_xattr(id, 'size')!)).toEqual(TEXT_DEFAULT_SIZE)
+		expect(JSON.parse(fake.get_xattr(id, 'position')!)).toEqual({ x: 10, y: 20 })
+		expect(fake.calls.map(c => c.method)).toEqual(['create_text_file'])
+		expect(store.opened_folder.children.some(c => c.id === id)).toBe(true)
+		// born selected (a note is not), so it shows where it is while the user types
+		expect(store.is_selected(id)).toBe(true)
+		expect(await store.read_note_content(id)).toBe('')
+	})
+
+	test('create_text selects only the new block', async () => {
+		const { store } = await makeStore()
+		store.set_selection(['/ws/note.txt'])
+
+		const id = await store.create_text('/ws')
+
+		expect(store.selection).toEqual([id])
+	})
+
+	test('change_text_width writes fixed and auto, and skips a write that changes nothing', async () => {
+		const { fake, store } = await makeStore()
+		const id = await store.create_text('/ws')
+		expect(fake.get_xattr(id, 'text_width')).toBeNull()
+
+		await store.change_text_width(id, 'auto')
+		expect(fake.get_xattr(id, 'text_width')).toBeNull()
+
+		await store.change_text_width(id, 'fixed')
+		expect(fake.get_xattr(id, 'text_width')).toBe('fixed')
+
+		await store.change_text_width(id, 'auto')
+		expect(fake.get_xattr(id, 'text_width')).toBe('auto')
+	})
+
+	test('create_text numbers apart from notes', async () => {
+		const { store } = await makeStore()
+
+		const note = await store.create_note('/ws')
+		const first = await store.create_text('/ws')
+		const second = await store.create_text('/ws')
+
+		expect(note).toBe('/ws/Note 1.md')
+		expect(first).toBe('/ws/Text 1.md')
+		expect(second).toBe('/ws/Text 2.md')
+	})
+
+	test('change_is_text flips only the flag and leaves the preview, fill and size', async () => {
+		const { fake, store } = await makeStore()
+		const id = await store.create_note('/ws', { x: 1, y: 2 })
+		await store.change_size(id, { width: 220, height: 80 })
+		await store.change_background(id, '#fde047')
+
+		await store.change_is_text(id, true)
+		expect(fake.get_xattr(id, 'is_text')).toBe('true')
+		expect(fake.get_xattr(id, 'is_preview')).toBe('true')
+		expect(JSON.parse(fake.get_xattr(id, 'size')!)).toEqual({ width: 220, height: 80 })
+		expect(fake.get_xattr(id, 'background')).toBe('#fde047')
+
+		await store.change_is_text(id, false)
+		expect(fake.get_xattr(id, 'is_text')).toBe('false')
+		expect(fake.get_xattr(id, 'is_preview')).toBe('true')
+	})
+
+	test('is_text survives turning the preview off and on again', async () => {
+		const { fake, store } = await makeStore()
+		const id = await store.create_text('/ws')
+
+		await store.change_is_preview(id, false)
+		expect(fake.get_xattr(id, 'is_preview')).toBe('false')
+		expect(fake.get_xattr(id, 'is_text')).toBe('true')
+
+		await store.change_is_preview(id, true)
+		expect(fake.get_xattr(id, 'is_preview')).toBe('true')
+		expect(fake.get_xattr(id, 'is_text')).toBe('true')
+	})
+
+	test('show_as_text on a cover without a size writes the text size, not the note size', async () => {
+		const { fake, store } = await makeStore()
+
+		await store.show_as_text('/ws/note.txt')
+
+		expect(fake.get_xattr('/ws/note.txt', 'is_preview')).toBe('true')
+		expect(fake.get_xattr('/ws/note.txt', 'is_text')).toBe('true')
+		expect(JSON.parse(fake.get_xattr('/ws/note.txt', 'size')!)).toEqual(TEXT_DEFAULT_SIZE)
+	})
+
+	test('show_as_text keeps a size the entry already has', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/ws')
+		fake.seed_file('/ws/note.txt')
+		fake.set_xattr('/ws/note.txt', 'size', JSON.stringify({ width: 300, height: 120 }))
+		const store = await createWorkspaceStore({ id: '/ws', type: 'local', name: 'ws' }, fake.fm)
+		if (!store) throw new Error('createWorkspaceStore returned null')
+
+		await store.show_as_text('/ws/note.txt')
+
+		expect(fake.get_xattr('/ws/note.txt', 'is_text')).toBe('true')
+		expect(JSON.parse(fake.get_xattr('/ws/note.txt', 'size')!)).toEqual({ width: 300, height: 120 })
 	})
 
 	test('content caches are per store: identical paths across workspaces stay independent', async () => {
