@@ -152,3 +152,104 @@ describe('undo through the workspace store', () => {
 		expect(h.can_undo).toBe(false)
 	})
 })
+
+describe('undo of file operations within one store', () => {
+	test('a new note goes away for good and comes back with its place', async () => {
+		const { fake, ws, h, act } = await setup()
+		const id = await act(tx => ws.create_note('/ws', { x: 7, y: 8 }, { tx })) as string
+		expect(fake.has(id)).toBe(true)
+
+		await h.undo()
+		expect(fake.has(id)).toBe(false)
+		expect(ws.folders['/ws']?.children.some(child => child.id === id)).toBe(false)
+
+		await h.redo()
+		expect(fake.has(id)).toBe(true)
+		expect(fake.get_xattr(id, 'position')).toBe(at(7, 8))
+	})
+
+	test('a new note someone wrote into is left where it is', async () => {
+		const { fake, ws, h, act } = await setup()
+		const id = await act(tx => ws.create_note('/ws', undefined, { tx })) as string
+		await fake.fm.save_text_file(id, 'their text')
+		await h.undo()
+		expect(fake.has(id)).toBe(true)
+		expect(await fake.fm.read_text_file(id)).toBe('their text')
+	})
+
+	test('a renamed file gets its name back, and the new one again on redo', async () => {
+		const { fake, ws, h, act } = await setup()
+		const renamed = await act(tx => ws.rename('/ws/b.md', 'c.md', { tx }))
+		expect(renamed).toBe('/ws/c.md')
+		await h.undo()
+		expect(fake.has('/ws/b.md')).toBe(true)
+		expect(fake.has('/ws/c.md')).toBe(false)
+		await h.redo()
+		expect(fake.has('/ws/c.md')).toBe(true)
+	})
+
+	test('a file moved into a folder comes back out, with its place', async () => {
+		const { fake, ws, h, act } = await setup()
+		// a file of its own: pending overlays of other tests' writes are module-wide for 2 s
+		fake.seed_folder('/ws/box')
+		fake.seed_file('/ws/m.md', 'moving')
+		fake.set_xattr('/ws/m.md', 'position', at(20, 20))
+		await ws.reload_folder_cache('/ws')
+		await act(async (tx) => {
+			const moved = await ws.move('/ws/m.md', '/ws/box', 0, '/ws', undefined, { tx })
+			expect(moved).toBe('/ws/box/m.md')
+			await ws.show_folder_children('/ws/box')
+			await ws.change_position('/ws/box/m.md', { x: 1, y: 1 }, { tx })
+		})
+		await h.undo()
+		expect(fake.has('/ws/m.md')).toBe(true)
+		expect(fake.has('/ws/box/m.md')).toBe(false)
+		expect(fake.get_xattr('/ws/m.md', 'position')).toBe(at(20, 20))
+	})
+
+	test('a duplicate goes away; the original stays', async () => {
+		const { fake, ws, h, act } = await setup()
+		const copies = await act(tx => ws.duplicate_entries(['/ws/a.md'], { tx })) as string[]
+		expect(copies).toHaveLength(1)
+		await h.undo()
+		expect(fake.has(copies[0]!)).toBe(false)
+		expect(fake.has('/ws/a.md')).toBe(true)
+	})
+
+	test('a new folder with entries moved into it is one undo: they come back and the folder goes', async () => {
+		const { fake, ws, h, act } = await setup()
+		await act(async (tx) => {
+			const folder = await ws.create_folder('/ws', { x: 0, y: 0 }, { tx })
+			await ws.move('/ws/a.md', folder, 0, '/ws', undefined, { tx })
+			await ws.move('/ws/b.md', folder, 1, '/ws', undefined, { tx })
+		})
+		expect(h.snapshot().undo).toHaveLength(1)
+		await h.undo()
+		expect(fake.has('/ws/a.md')).toBe(true)
+		expect(fake.has('/ws/b.md')).toBe(true)
+		expect(fake.has('/ws/New folder 1')).toBe(false)
+	})
+
+	test('an added file goes away and is uploaded again from the same File on redo', async () => {
+		const { fake, ws, h, act } = await setup()
+		const file = new File(['png bytes'], 'photo.png', { type: 'image/png' })
+		await act(tx => ws.import_files('/ws', [file], undefined, { tx }))
+		expect(fake.has('/ws/photo.png')).toBe(true)
+		await h.undo()
+		expect(fake.has('/ws/photo.png')).toBe(false)
+		await h.redo()
+		expect(fake.has('/ws/photo.png')).toBe(true)
+	})
+
+	test('a text block made and left empty leaves no undo and no file', async () => {
+		const { fake, ws } = await setup()
+		const { history } = await import('./index')
+		history.clear()
+		const id = await ws.create_text('/ws')
+		expect(history.can_undo).toBe(true)
+		expect(history.drop_created(ws.history_ref, id)).toBe(true)
+		expect(await ws.history_remove_created(id, { text: '' })).toBe('removed')
+		expect(history.can_undo).toBe(false)
+		expect(fake.has(id)).toBe(false)
+	})
+})

@@ -2,6 +2,7 @@ import type { WorkspaceStore } from '@/domain/Store'
 import { count_items, t } from '@/i18n'
 import { find_entry_owner_folder } from '@/services/workspace/xattrs'
 import { create_history, type TransactMeta } from './history'
+import { rebase_path } from './steps'
 import type { HistoryStep, HistoryTx } from './types'
 
 export type { HistoryStep, HistoryTx, HistoryRecord, HistoryStoreRef } from './types'
@@ -18,6 +19,23 @@ export const history = create_history<WorkspaceStore>({
 		const { explorer_drives } = await import('@/store/explorer/drives')
 		const prepared = await explorer_drives.prepare(ref.drive_id, ref.root_id)
 		return { store: prepared.store, release: () => prepared.release() }
+	},
+	// Bookmarks follow a folder an undo moved back, and so does the place on
+	// screen when it was inside it, as the tree's own moves do
+	on_moved(ref, from, to) {
+		void (async () => {
+			const [{ retarget_bookmarks }, { explorer_navigation }] = await Promise.all([
+				import('@/store/explorer/bookmarks'),
+				import('@/store/explorer/navigation'),
+			])
+			retarget_bookmarks({ ...ref, folder_id: from }, { ...ref, folder_id: to })
+			const location = explorer_navigation.location
+			if (location?.kind !== 'folder') return
+			const here = location.ref
+			if (here.drive_id !== ref.drive_id || here.root_id !== ref.root_id) return
+			const next = rebase_path(here.folder_id, from, to)
+			if (next !== here.folder_id) await explorer_navigation.open_folder({ ...here, folder_id: next })
+		})()
 	},
 })
 
@@ -46,7 +64,7 @@ function action_meta(
 	ws: WorkspaceStore,
 	where: { folder_id?: string; entry_id?: string },
 	label: string,
-	merge_key?: string,
+	options?: { merge_key?: string; notice?: string },
 ): TransactMeta | null {
 	const ref = ws.history_ref
 	if (!ref || !ws.can_write) return null
@@ -55,7 +73,7 @@ function action_meta(
 		: undefined
 	const folder_id = where.folder_id ?? owner ?? ws.opened_folder_id
 	const folder_name = folder_id === ws.id ? ws.name : (ws.resolve_folder_data(folder_id)?.name ?? ws.name)
-	return { label, folder: { ...ref, folder_id }, folder_name, merge_key }
+	return { label, folder: { ...ref, folder_id }, folder_name, merge_key: options?.merge_key, notice: options?.notice }
 }
 
 /**
@@ -69,9 +87,25 @@ export function record_action<T>(
 	where: { folder_id?: string; entry_id?: string },
 	label: string,
 	fn: (tx: HistoryTx | undefined) => Promise<T>,
-	options?: { merge_key?: string },
+	options?: { merge_key?: string; notice?: string },
 ): Promise<T> {
-	return history.transact(action_meta(ws, where, label, options?.merge_key), fn)
+	return history.transact(action_meta(ws, where, label, options), fn)
+}
+
+/**
+ * A file operation of the store: part of the action that passed `tx`, or one
+ * action of its own. While an undo writes its steps, it records nothing
+ */
+export function own_action<T>(
+	ws: WorkspaceStore,
+	tx: HistoryTx | undefined,
+	where: { folder_id?: string; entry_id?: string },
+	label: () => string,
+	fn: (tx: HistoryTx | undefined) => Promise<T>,
+	options?: { notice?: () => string },
+): Promise<T> {
+	if (tx || history.replaying) return fn(tx)
+	return record_action(ws, where, label(), fn, { notice: options?.notice?.() })
 }
 
 /**

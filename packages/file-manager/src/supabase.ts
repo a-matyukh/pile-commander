@@ -22,6 +22,7 @@ import type {
 	UploadProgressCallback,
 	WatchEvent,
 	Xattr,
+	UntouchedExpect,
 } from "./types"
 
 /**
@@ -1517,6 +1518,46 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 				p_client_id: client_instance_id(),
 			})
 			if (error) throw new Error(`remove failed: ${error.message}`)
+		},
+
+		// For good, not to the trash: what the person made a moment ago (undo).
+		// The fingerprint is taken first and every check reads after it, so a
+		// change landing meanwhile makes delete_moved_entry refuse under its lock
+		async remove_untouched(id: string, expect: UntouchedExpect) {
+			let stamped: { entry_id: string; stamp: string }
+			try {
+				stamped = await entry_subtree_stamp_at(client, workspace_id, id)
+			} catch (error) {
+				if (error instanceof Error && error.message.includes("no entry at")) return "gone"
+				throw error
+			}
+			const { data, error } = await client
+				.from("entries")
+				.select(ENTRY_COLUMNS)
+				.eq("id", stamped.entry_id)
+				.is("deleted_at", null)
+				.maybeSingle()
+			if (error) throw new Error(`remove_untouched failed: ${error.message}`)
+			if (!data) return "gone"
+			const row = data as EntryRow
+			if (row.kind === "folder") {
+				const { data: kids, error: kids_error } = await client
+					.from("entries")
+					.select("name")
+					.eq("parent_id", row.id)
+					.is("deleted_at", null)
+				if (kids_error) throw new Error(`remove_untouched failed: ${kids_error.message}`)
+				const names = ((kids ?? []) as { name: string }[]).map(kid => kid.name).filter(name => name !== PILE_DIR_NAME).sort()
+				const wanted = [...(expect.children ?? [])].sort()
+				if (names.length !== wanted.length || names.some((name, i) => name !== wanted[i])) return "changed"
+			} else if (expect.text !== undefined) {
+				if (((await read_content(row.id)) ?? "") !== expect.text) return "changed"
+			} else if (expect.size !== undefined && (row.size_bytes ?? 0) !== expect.size) {
+				return "changed"
+			}
+			mark_write(row.id)
+			const outcome = await delete_moved_entry(client, row.id, stamped.stamp, id)
+			return outcome === "changed" ? "changed" : outcome === "gone" ? "gone" : "removed"
 		},
 
 		// a server-side jsonb merge (rpc.sql merge_entry_xattrs): two clients

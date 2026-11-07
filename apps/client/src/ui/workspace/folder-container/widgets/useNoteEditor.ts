@@ -10,7 +10,7 @@ import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { toggle_task } from '@/services/text/tasks'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { t } from '@/i18n'
-import { entry_name, record_action } from '@/store/history'
+import { entry_name, history, record_action } from '@/store/history'
 import { armNoteKeyboardFocus } from '../noteKeyboardFocus'
 import { rememberEditPoint } from './editPoint'
 import { loadedNoteRenderer, loadNoteEditor, loadNoteRenderer, taskBoxLabel } from './noteRenderer'
@@ -268,7 +268,10 @@ export function useNoteEditor(
 			if (toValue(options?.isText) === true && text.value.trim() === '') {
 				const ws = requireWorkspace()
 				if (ws.can_write) {
-					await ws.remove(id)
+					// Made a moment ago and left empty: nothing happened, so it leaves no
+					// undo and no trash. An older block emptied by hand is a removal
+					if (history.drop_created(ws.history_ref, id)) await ws.history_remove_created(id, { text: '' })
+					else await ws.remove(id)
 					return
 				}
 			}

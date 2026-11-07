@@ -27,6 +27,15 @@ export type UndoToaster = {
 		icon?: string
 		actions?: { label: string; onClick: () => void }[]
 	}): unknown
+	remove?(id: string | number): void
+}
+
+/** The toast that offers to undo the last action: it goes once anything newer happens */
+let notice_toast: string | number | null = null
+
+function drop_notice(toast: UndoToaster) {
+	if (notice_toast !== null) toast.remove?.(notice_toast)
+	notice_toast = null
 }
 
 function parent_of(folder_id: string): string {
@@ -45,7 +54,23 @@ export function on_screen(folder: FolderRef): boolean {
 
 /** What a toast says after an undo, a redo, or an undo that cannot go further */
 export function show_history_event(event: HistoryEvent<WorkspaceStore>, toast: UndoToaster) {
-	if (event.type === 'recorded') return
+	drop_notice(toast)
+	if (event.type === 'recorded') {
+		const { record } = event
+		if (!record.notice) return
+		// "Перенесено: «Note»" · Отменить — while it is still the last action
+		const shown = toast.add({
+			title: record.notice,
+			actions: [{
+				label: t('undo.undo_action'),
+				onClick: () => {
+					if (history.top_id === record.id) void history.undo()
+				},
+			}],
+		}) as { id?: string | number } | undefined
+		notice_toast = shown?.id ?? null
+		return
+	}
 	if (event.type === 'blocked') {
 		toast.add({ title: t('undo.blocked', { label: event.label }), icon: 'i-lucide:undo-2' })
 		return
@@ -77,7 +102,12 @@ export function show_history_event(event: HistoryEvent<WorkspaceStore>, toast: U
 		toast.add({ title: t(`undo.skipped.${plural_form(event.skipped)}`, { n: event.skipped }), color: 'warning' })
 	}
 	if (event.failed > 0) {
-		toast.add({ title: t(undo ? 'undo.failed' : 'undo.redo_failed', { label: record.label }), color: 'error' })
+		// a step that knows why ("Исходный файл изменился") says it; the rest, in general
+		const said = new Set(event.messages)
+		for (const message of said) toast.add({ title: message, color: 'error' })
+		if (said.size < event.failed) {
+			toast.add({ title: t(undo ? 'undo.failed' : 'undo.redo_failed', { label: record.label }), color: 'error' })
+		}
 	}
 }
 

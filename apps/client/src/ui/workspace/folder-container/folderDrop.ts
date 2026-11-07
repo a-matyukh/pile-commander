@@ -4,6 +4,7 @@ import type { WorkspaceStore } from '@/domain/Store'
 import { board_drop_positions, read_position_attr } from '@/services/board/layout'
 import { path_separator } from '@/services/workspace/paths'
 import { xattrs_map } from '@/services/workspace/xattrs'
+import { entries_label, record_action, type HistoryTx } from '@/store/history'
 
 export type FolderDropOptions = {
 	/** Window-scoped workspace getter, captured at setup (handlers can't inject). */
@@ -14,6 +15,8 @@ export type FolderDropOptions = {
 		widgetId: string,
 	) => Position | null
 	onDropSuccess?: (widgetId: string) => void
+	/** The gesture's undo record (a canvas drag with ink); without it the drop is one undo of its own */
+	tx?: HistoryTx
 }
 
 /** Duck-typed so the helper can be unit-tested in node without a DOM. */
@@ -173,7 +176,7 @@ export async function tryDropOnFolder(
 		return { widgetId: draft.widgetId, position: next }
 	})
 
-	const applyPlans = async (): Promise<boolean> => {
+	const applyPlans = async (tx: HistoryTx | undefined): Promise<boolean> => {
 		let movedAny = false
 		for (const plan of plans) {
 			const newWidgetId = await ws.move(
@@ -181,11 +184,13 @@ export async function tryDropOnFolder(
 				targetFolderId,
 				0,
 				sourceFolderId,
+				undefined,
+				{ tx },
 			)
 			if (!newWidgetId) continue
 
 			if (plan.position) {
-				await ws.change_position(newWidgetId, plan.position)
+				await ws.change_position(newWidgetId, plan.position, { tx })
 			}
 			options.onDropSuccess?.(plan.widgetId)
 			movedAny = true
@@ -196,16 +201,23 @@ export async function tryDropOnFolder(
 	// Multi-entry drops that rewrite position need watch suppression so a
 	// mid-loop refresh cannot reload the old xattrs over the rewrite.
 	const writesPosition = plans.some(plan => plan.position !== null)
-	const movedAny = plans.length > 1 && writesPosition
-		? await ws.run_batch_fs_update(async () => {
-			const moved = await applyPlans()
+	const drop = (tx: HistoryTx | undefined) => plans.length > 1 && writesPosition
+		? ws.run_batch_fs_update(async () => {
+			const moved = await applyPlans(tx)
 			if (moved) {
 				await ws.reload_folder_cache(targetFolderId)
 				await ws.reload_folder_cache(sourceFolderId)
 			}
 			return moved
 		})
-		: await applyPlans()
+		: applyPlans(tx)
+	// The entries dropped together (and their new places inside) are one undo
+	const dropped = plans.map(plan => plan.widgetId)
+	const movedAny = options.tx
+		? await drop(options.tx)
+		: await record_action(ws, { folder_id: sourceFolderId }, entries_label(ws, dropped, 'undo.move_entry', 'undo.move_entries'), drop, {
+			notice: entries_label(ws, dropped, 'undo.moved', 'undo.moved_many'),
+		})
 
 	if (movedAny) {
 		if (ws.selection_mode) {

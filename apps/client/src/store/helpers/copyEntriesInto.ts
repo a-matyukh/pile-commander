@@ -11,6 +11,7 @@ import { resolve_unique_filename } from '@/services/naming/uniqueName'
 import { persist_children_order } from './persistChildrenOrder'
 import { copy_folder_canvas_connections, type CanvasPersistStore } from './persistCanvas'
 import { report_error } from './reportError'
+import type { HistoryTx } from '@/store/history/types'
 
 /** Diagonal nudge so a same-folder duplicate is not stacked on the original. */
 export const COPY_POSITION_OFFSET = 24
@@ -54,6 +55,8 @@ export async function copy_entries_into(
 	fm: FileManager,
 	target_folder_id: string,
 	entry_ids: string[],
+	/** The paste's undo record: each copy is a step, undone by removing the copy while untouched */
+	tx?: HistoryTx,
 ): Promise<string[]> {
 	const folder_data = store.resolve_folder_data(target_folder_id)
 	if (!folder_data) {
@@ -121,6 +124,20 @@ export async function copy_entries_into(
 			created_names.push(copied.name)
 			created_entries.push(entry)
 			id_map.set(id, copied.id)
+			if (tx) {
+				// Untouched: a copied folder still holds what was copied, a file its size
+				const expect = copied.type === 'folder'
+					? { children: (await fm.FolderChildren(copied.id)).map(child => child.name) }
+					: { size: await fm.entry_size(copied.id) }
+				tx.record({
+					kind: 'entry_create',
+					id: copied.id,
+					entry_type: copied.type,
+					expect,
+					xattrs: Object.fromEntries(xattrs.map(xattr => [xattr.name, xattr.value])),
+					recipe: { via: 'copy', source: id, external: false },
+				})
+			}
 		}
 
 		if (created_ids.length === 0) return created_ids

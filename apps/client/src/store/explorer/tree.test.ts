@@ -431,6 +431,7 @@ describe('explorer tree', () => {
 		const workspace = fake_store()
 		vi.mocked(workspace.rename).mockImplementation(async () => {
 			workspace.opened_folder_id = `${ROOT.id}/workspace/new`
+			return workspace.opened_folder_id
 		})
 		const { tree, drive, open_folder } = fixture({
 			workspace,

@@ -2,6 +2,7 @@ export type {
 	FileManager,
 	CreateFolderOptions,
 	CreateTextFileOptions,
+	UntouchedExpect,
 	FolderChild,
 	EntryWithXattrs,
 	FolderWithChildrenXattrs,

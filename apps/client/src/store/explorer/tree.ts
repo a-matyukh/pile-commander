@@ -10,7 +10,7 @@ import cloud from '@/store/cloud'
 import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pile-commander/file-manager'
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
-import { record_action } from '@/store/history'
+import { history, record_action } from '@/store/history'
 import { forget_bookmarks, retarget_bookmarks } from './bookmarks'
 import { find_tree_node } from '@/services/workspace/tree'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
@@ -414,7 +414,8 @@ export function create_explorer_tree(
 		}
 	}
 
-	async function create_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode | null) {
+	/** The new folder's id ('' when it failed). One undo, as every creation */
+	async function create_folder(item: ExplorerTreeRoot, node: WorkspaceTreeNode | null): Promise<string> {
 		try {
 			const workspace = await ensure_workspace(item)
 			const folder_id = node?.id ?? tree_root_folder_id(item)
@@ -423,9 +424,10 @@ export function create_explorer_tree(
 				state.expanded_root_ids.add(item.root.id)
 				sync_expanded()
 			}
-			await workspace.create_folder(folder_id)
+			return await workspace.create_folder(folder_id)
 		} catch (error) {
 			deps.on_error(error)
+			return ''
 		}
 	}
 
@@ -452,9 +454,12 @@ export function create_explorer_tree(
 			// only the owner may change it. The tree, the header and bookmarks
 			// read that name; the root entry stays '/'.
 			if (item.drive.kind === 'cloud' && node.id === tree_root_folder_id(item)) {
+				const old_name = item.root.name
 				await cloud.rename(item.root.id, name)
 				if (cloud.last_error) throw new Error(cloud.last_error)
 				item.root.name = name
+				// Not undoable yet: undo stops here instead of undoing something older
+				history.barrier(t('undo.op.rename', { name: old_name }))
 				return
 			}
 			const workspace = await ensure_workspace(item)

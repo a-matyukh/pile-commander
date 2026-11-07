@@ -6,7 +6,7 @@ import type { EntryContentCaches } from '@/ui/workspace/folder-container/textCon
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
 import { Color, Connection, DashboardCell, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
-import type { HistoryStoreRef, HistoryTx } from '@/store/history/types'
+import type { CreateStep, HistoryStoreRef, HistoryTx } from '@/store/history/types'
 
 /**
  * A write that is part of one of the person's actions: the method writes its
@@ -233,32 +233,42 @@ type WorkspaceStore = {
 	open_file(id: string): Promise<void>
 	/** Opens a file in the system's program (or the browser), whatever the hook would do. */
 	open_file_externally(id: string): Promise<void>
-	/** Copies external filesystem paths into the currently opened folder. Local/demo only. */
-	import_external_files(paths: string[], position?: Position): Promise<void>
-	/** Imports browser File objects (picker / drag & drop) into the given folder. */
-	import_files(folder_id: string, files: File[], position?: Position): Promise<void>
+	/** Copies external filesystem paths into the currently opened folder. Local/demo only. One undo */
+	import_external_files(paths: string[], position?: Position, options?: HistoryOptions): Promise<void>
+	/**
+	 * Imports browser File objects (picker / drag & drop) into the given folder.
+	 * One undo; `paths`: where the files were read from, so redo reads them again
+	 */
+	import_files(folder_id: string, files: File[], position?: Position, options?: HistoryOptions & { paths?: string[] }): Promise<void>
 	/** Byte-level progress of the running `import_files`, null when idle. */
 	import_progress: ImportProgress | null
+	/** The new folder's id ('' when it failed). Like every file operation, one undo unless part of `tx` */
 	create_folder(
 		folder_id: string,
 		position?: Position,
-		options?: { view?: FolderView },
+		options?: { view?: FolderView } & HistoryOptions,
 	): Promise<string>
 	/**
 	 * Moves all children of `folder_id` into its parent, then removes the folder.
 	 * No-op for the workspace root.
 	 */
 	uncombine_folder(folder_id: string): Promise<void>
-	create_text_file(folder_id: string, position?: Position): Promise<void>
-	create_markdown_file(folder_id: string, position?: Position): Promise<void>
+	create_text_file(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
+	create_markdown_file(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
 	/**
 	 * `report: false` throws a failed rename to the caller instead of
 	 * setting `last_error` (which the window shows as a toast): a batch
-	 * reports its failures itself.
+	 * reports its failures itself. The entry's new id
 	 */
-	rename(id: string, new_name: string, options?: { report?: boolean }): Promise<void>
-	move(id: string, target_folder_id: string, new_index: number, source_folder_id?: string, source_index?: number): Promise<string | undefined>
+	rename(id: string, new_name: string, options?: { report?: boolean } & HistoryOptions): Promise<string | undefined>
+	move(id: string, target_folder_id: string, new_index: number, source_folder_id?: string, source_index?: number, options?: HistoryOptions): Promise<string | undefined>
 	remove(id: string): Promise<void>
+	/** Undo of a creation: removes it for good while untouched (see FileManager.remove_untouched) */
+	history_remove_created(id: string, expect: CreateStep['expect']): Promise<'removed' | 'changed' | 'gone' | false>
+	/** Redo of a creation: makes it again by its recipe; a message when its source changed */
+	history_create_again(step: CreateStep): Promise<{ id: string } | { message: string } | false>
+	/** Undo and redo of a rename or move within the store: the path it ended at */
+	history_move_entry(from: string, to: string): Promise<string | false>
 
 	// opened folder
 	// A look change (view, cover, icon, background) shows at once and is written
@@ -362,12 +372,12 @@ type WorkspaceStore = {
 	touch_folder(folder_id: string): void
 	/** True once the order is saved (or already was) */
 	reorder_children(folder_id: string, ordered_ids: string[], options?: HistoryOptions): Promise<boolean>
-	create_note(folder_id: string, position?: Position): Promise<string>
+	create_note(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
 	/** A `Text N.md` note file drawn as a bare text block. It comes back selected. */
-	create_text(folder_id: string, position?: Position): Promise<string>
-	create_shape(folder_id: string, template: ShapeTemplate, position?: Position): Promise<string>
+	create_text(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
+	create_shape(folder_id: string, template: ShapeTemplate, position?: Position, options?: HistoryOptions): Promise<string>
 	/** Creates a line/arrow shape spanning two absolute pane points. */
-	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug): Promise<string>
+	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug, options?: HistoryOptions): Promise<string>
 	read_note_content(id: string): Promise<string>
 	/** `preview`: a tile asks for the image's ready preview instead of the original */
 	get_media_src(id: string, filename: string, options?: { preview?: boolean }): Promise<MediaSrc>
@@ -418,7 +428,7 @@ export interface ClipboardStore {
 	 * Copy may paste into the source folder (unique names).
 	 * Cut is a no-op in the source folder.
 	 */
-	paste(): Promise<void>
-	/** Duplicates entries into `opened_folder_id` with unique names (no clipboard). */
-	duplicate_entries(ids: string[]): Promise<void>
+	paste(options?: HistoryOptions): Promise<void>
+	/** Duplicates entries into `opened_folder_id` with unique names (no clipboard). The copies' ids */
+	duplicate_entries(ids: string[], options?: HistoryOptions): Promise<string[]>
 }

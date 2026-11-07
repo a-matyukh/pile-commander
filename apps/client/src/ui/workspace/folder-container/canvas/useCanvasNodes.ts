@@ -172,6 +172,8 @@ export function useCanvasNodes(
 
 			const dropOptions: FolderDropOptions = {
 				getWorkspace: requireWorkspace,
+				// a drop during a canvas drag belongs to the drag's undo
+				tx,
 				resolveRelativePosition(_dragged, folder, widgetId) {
 					if (!cachedRelativeById) {
 						const folderPos = getNodePosition(folder.dataset.id ?? '')

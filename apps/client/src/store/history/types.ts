@@ -57,7 +57,41 @@ export type OrderStep = {
 	after: string[]
 }
 
-export type HistoryStep = AttrStep | ContentStep | EdgesStep | StrokesStep | OrderStep
+/**
+ * How to make a created entry again (redo): its text, an empty folder, a copy
+ * of another entry or of a file outside the store (an import on the desktop),
+ * or an upload (a file from the browser, or one read from a path)
+ */
+export type CreateRecipe =
+	| { via: 'text'; content: string; format: 'note' | 'svg' | 'plain' }
+	| { via: 'folder' }
+	| { via: 'copy'; source: string; external: boolean; size?: number }
+	| { via: 'upload'; file?: File; path?: string; mime?: string; size: number }
+
+/**
+ * An entry the action made. Undo removes it for good while it is untouched
+ * (`expect`: the text it holds, its size, or a folder's children by name),
+ * otherwise leaves it; redo makes it again by `recipe`, with `xattrs` as it
+ * was born
+ */
+export type CreateStep = {
+	kind: 'entry_create'
+	id: string
+	entry_type: 'file' | 'folder'
+	expect: { text?: string; size?: number; children?: string[] }
+	xattrs: Record<string, string>
+	recipe: CreateRecipe
+}
+
+/** An entry renamed or moved within its store: its path before and after */
+export type MoveStep = {
+	kind: 'entry_move'
+	from: string
+	to: string
+	entry_type: 'file' | 'folder'
+}
+
+export type HistoryStep = AttrStep | ContentStep | EdgesStep | StrokesStep | OrderStep | CreateStep | MoveStep
 
 /**
  * What a store method writes its step into. It is passed explicitly: there is
@@ -78,5 +112,7 @@ export type HistoryRecord = {
 	steps: HistoryStep[]
 	/** Records with the same key merge while they follow each other quickly (arrow-key nudges) */
 	merge_key?: string
+	/** Said in a toast with "Отменить" once the action is done: "Перенесено: «Note»" */
+	notice?: string
 	updated_at: number
 }

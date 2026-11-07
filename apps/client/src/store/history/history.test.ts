@@ -10,7 +10,11 @@ function make_target() {
 	const attrs = new Map<string, string | null>()
 	const texts = new Map<string, string>()
 	const edges = new Map<string, Connection>()
+	const paths = new Set<string>()
 	const writes: string[] = []
+	/** Where the next move lands instead of where it was asked to (a clashing name) */
+	let land_at: string | null = null
+	const parent = (path: string) => path.slice(0, path.lastIndexOf('/')) || '/'
 	const key = (id: string, name: string) => `${id}\0${name}`
 	const fm = {
 		get_xattr: async (id: string, name: string) => attrs.get(key(id, name)) ?? null,
@@ -18,6 +22,9 @@ function make_target() {
 		connections: { list_connections: async () => [...edges.values()] as FolderConnection[] },
 		strokes: { list_strokes: async () => [] },
 		folder_with_children_xattrs: async (id: string) => ({ id, name: 'f', type: 'folder', xattrs: [], children: [] }),
+		FolderChildren: async (folder: string) => [...paths]
+			.filter(path => parent(path) === folder)
+			.map(id => ({ id, name: id.slice(id.lastIndexOf('/') + 1), type: 'file' })),
 	} as unknown as FileManager
 	let fail_writes = false
 	const target: HistoryTarget = {
@@ -44,6 +51,20 @@ function make_target() {
 		upsert_strokes: async () => true,
 		delete_strokes: async () => true,
 		reorder_children: async () => true,
+		history_remove_created: async () => 'removed',
+		history_create_again: async step => ({ id: step.id }),
+		async history_move_entry(from, to) {
+			const landed = land_at ?? to
+			land_at = null
+			paths.delete(from)
+			paths.add(landed)
+			for (const [k, value] of [...attrs]) {
+				if (!k.startsWith(`${from}\0`)) continue
+				attrs.delete(k)
+				attrs.set(`${landed}${k.slice(from.length)}`, value)
+			}
+			return landed
+		},
 	}
 	return {
 		target,
@@ -55,6 +76,10 @@ function make_target() {
 		get: (id: string, name: string) => attrs.get(key(id, name)) ?? null,
 		fail(value: boolean) {
 			fail_writes = value
+		},
+		paths,
+		land(path: string) {
+			land_at = path
 		},
 	}
 }
@@ -292,6 +317,24 @@ describe('history', () => {
 		expect(s.edges.has('e1')).toBe(false)
 		await s.h.redo()
 		expect(s.edges.get('e1')).toEqual(edge)
+	})
+
+	test('an entry that comes back under another name takes the history with it', async () => {
+		const s = setup()
+		s.paths.add('/ws/b')
+		s.set('/ws/b', 'position', '2')
+		// first the card moved, then it was renamed a → b
+		await s.act([pos('/ws/a', '1', '2')])
+		await s.h.transact(meta('переименование'), async (tx) => {
+			tx?.record({ kind: 'entry_move', from: '/ws/a', to: '/ws/b', entry_type: 'file' })
+		})
+		// meanwhile someone made another "a": the name comes back as "a 2"
+		s.land('/ws/a 2')
+		await s.h.undo()
+		expect(s.paths.has('/ws/a 2')).toBe(true)
+		// the older move now finds the card under its new name
+		await s.h.undo()
+		expect(s.get('/ws/a 2', 'position')).toBe('1')
 	})
 
 	test('a store outside the Explorer records nothing', async () => {
