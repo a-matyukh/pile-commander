@@ -14,7 +14,7 @@ const blocks = (md: string) => (parse_note(md).content ?? []).map(node => node.t
 /** Writes back byte for byte: open, edit nothing, save — the file is the same. */
 const kept = (md: string) => expect(round(md), md).toBe(md)
 
-describe('the format table of TEXT_EDITING_PLAN.md', () => {
+describe('the format table of the text plan', () => {
 	test('markdown marks and blocks', () => {
 		kept('**bold** *italic* ~~strike~~ `code` [link](https://example.com)')
 		kept('# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six')

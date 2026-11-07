@@ -69,7 +69,7 @@ type FileXattrs = CommonXattrs & Partial<{
 	title: string
 	/** Caption drawn below an image preview. */
 	description: string
-	/** A shape's text, as markdown (stage 4 of TEXT_EDITING_PLAN.md). Absent: no text. */
+	/** A shape's text, as markdown (stage 4 of the text plan in pile-commander-product). Absent: no text. */
 	text: string
 	/** Where a shape's text sits: absent, inside the shape; "frame", the whole frame. */
 	text_area: 'frame'

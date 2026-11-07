@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The note editor (stage 3 of TEXT_EDITING_PLAN.md, prototype P2): the file
+ * The note editor (stage 3 of the text plan in pile-commander-product, prototype P2): the file
  * the Explorer's place names (`location.file_id`) in a window over its
  * folder, over the whole folder area, or over the whole window; the size is
  * remembered. The same engine and popup as a note on a board, larger type,

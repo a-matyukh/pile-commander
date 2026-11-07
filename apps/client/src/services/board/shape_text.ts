@@ -1,5 +1,5 @@
 /**
- * Text on a shape (stage 4 of TEXT_EDITING_PLAN.md, prototype P3): where it
+ * Text on a shape (stage 4 of the text plan in pile-commander-product, prototype P3): where it
  * sits inside the shape and what colour it takes on its fill.
  */
 

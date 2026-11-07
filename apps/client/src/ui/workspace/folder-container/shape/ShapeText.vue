@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A shape's text (stage 4 of TEXT_EDITING_PLAN.md, prototype P3): an HTML
+ * A shape's text (stage 4 of the text plan in pile-commander-product, prototype P3): an HTML
  * layer over the SVG, centred both ways in the area inscribed in the shape
  * (or its whole frame), in the colour that reads on its fill. Resizing the
  * shape moves the text, not its size. A double click edits it with the

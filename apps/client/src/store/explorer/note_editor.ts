@@ -6,7 +6,7 @@ export function is_note_file(file_id: string): boolean {
 }
 
 /**
- * Where a note opens by default (stage 3 of TEXT_EDITING_PLAN.md): in the
+ * Where a note opens by default (stage 3 of the text plan in pile-commander-product): in the
  * note editor, except a local file on the desktop, which opens in the
  * system's program as before. The other way is in the file's menu.
  */

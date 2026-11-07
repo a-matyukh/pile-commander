@@ -21,7 +21,7 @@ export type ExplorerPage = 'hub' | 'account' | 'settings' | 'trash' | 'cloud' | 
 export type ExplorerLocation =
 	/**
 	 * `file_id`: a file of the folder open in the note editor (stage 3 of
-	 * TEXT_EDITING_PLAN.md). Still the folder's place for everything that
+	 * the text plan in pile-commander-product). Still the folder's place for everything that
 	 * reads `ref` (the tree, bookmarks, the address); in the history it is a
 	 * step of its own, so Back closes the file and Forward opens it again.
 	 */

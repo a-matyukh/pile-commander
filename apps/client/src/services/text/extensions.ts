@@ -1,7 +1,7 @@
 /**
  * The schema of a note or a text block: one list of Tiptap extensions that
  * reads, writes and (from stage 1.3) edits it. The note stays a `.md` file; the
- * format table in TEXT_EDITING_PLAN.md says what each construct writes.
+ * format table in the text plan in pile-commander-product says what each construct writes.
  *
  * HTML inside the markdown is read only through these rules, so the schema is
  * the white list: a colour outside the palette, a `style` of its own, a
