@@ -71,9 +71,16 @@ onBeforeUnmount(() => {
 	editor.destroy()
 })
 
-/** The element that takes focus (and the soft keyboard). */
+/**
+ * The element that takes focus (and the soft keyboard); null until it is in
+ * the page. Tiptap moves its view into this component a tick after mounting,
+ * and an element out of the page does not take focus: the caret would not
+ * show. A loaded editor mounts in the same tick that asks for it.
+ */
 function element(): HTMLElement | null {
-	return editor.isDestroyed ? null : editor.view.dom
+	if (editor.isDestroyed) return null
+	const dom = editor.view.dom
+	return dom.isConnected ? dom : null
 }
 
 /**

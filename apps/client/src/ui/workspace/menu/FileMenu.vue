@@ -261,6 +261,7 @@ function noteOpenItems(): DropdownMenuItem[] {
 		if (location.ref.drive_id === 'demo') return []
 		return [{
 			label: t('note_editor.open_externally'),
+			icon: 'tabler:external-link',
 			onSelect() {
 				void ws.open_file_externally(props.node.id)
 			},
@@ -268,13 +269,17 @@ function noteOpenItems(): DropdownMenuItem[] {
 	}
 	return [{
 		label: t('note_editor.open_in_editor'),
+		icon: 'tabler:file-pencil',
 		onSelect() {
 			void explorer_navigation.open_file(location.ref, props.node.id)
 		},
 	}]
 }
 
-/** Where a shape's text sits, as on the shape's own switch: a rectangle's two areas are one. */
+/**
+ * Where a shape's text sits, as on the shape's own switch: a rectangle's two
+ * areas are one. A group of its own, under the open and look items.
+ */
 function shapeTextItems(): DropdownMenuItem[] {
 	const child = openedChild.value
 	if (!isShapePreview.value || isLineShape.value || readonly.value) return []
@@ -282,6 +287,7 @@ function shapeTextItems(): DropdownMenuItem[] {
 	const frame = child.text_area === 'frame'
 	return [{
 		label: t(frame ? 'shape_text.menu_inside' : 'shape_text.menu_frame'),
+		icon: frame ? 'tabler:box-padding' : 'tabler:frame',
 		onSelect() {
 			void requireWorkspace().set_shape_text_area(child.id, frame ? null : 'frame')
 		},
@@ -304,7 +310,6 @@ const items = computed<DropdownMenuItem[][]>(() => {
 			}]
 			: []),
 		...noteOpenItems(),
-		...shapeTextItems(),
 		...(props.showPreviewToggle && isPreviewable.value
 			? [{
 				label: previewToggleLabel.value,
@@ -337,8 +342,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
 		...plugItems,
 	]
 
+	const shapeText = shapeTextItems()
+
 	return [
 		...(primary.length > 0 ? [primary] : []),
+		...(shapeText.length ? [shapeText] : []),
 		...(layerItems.value.length ? [layerItems.value] : []),
 		clipboardItems.value,
 		rename_remove_items.value,

@@ -76,19 +76,38 @@ watch(text, (markdown) => {
 const draft = ref('')
 const editor = useTemplateRef<{ element(): HTMLElement | null; placeCaret(point: null): void }>('editor')
 
+/**
+ * The caret goes to the end of the text, as editing starts: asked frame by
+ * frame until the focus is in, as a note does (the editor may still load).
+ */
 watch(editing, async (now) => {
 	if (!now) return
 	draft.value = text.value
 	await nextTick()
-	for (let frame = 0; frame < 30 && editing.value; frame++) {
+	// A loaded editor is in the page a tick after it mounts: the caret shows at once
+	await nextTick()
+	let placed = false
+	for (let frame = 0; frame <= 30; frame++) {
+		if (frame > 0) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+		if (!editing.value) return
 		const element = editor.value?.element()
-		if (element) {
+		if (!element) continue
+		if (!placed) {
+			placed = true
 			editor.value?.placeCaret(null)
-			// A double tap armed the soft keyboard: it moves onto the text
-			transferNoteKeyboardFocus(element)
-			return
 		}
-		await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+		const active = document.activeElement
+		if (element.contains(active)) return
+		// Focus went into another field (the user moved on): leave it there
+		if (
+			frame > 0
+			&& active instanceof HTMLElement
+			&& (active.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName))
+			&& !active.hasAttribute('aria-hidden')
+		) return
+		// A double tap armed the soft keyboard: it moves onto the text
+		transferNoteKeyboardFocus(element)
+		if (element.contains(document.activeElement)) return
 	}
 })
 
@@ -116,7 +135,7 @@ function onFocusOut() {
 
 /** Double click on the shape: its text is edited (a line has none: the shell does not ask). */
 function startEditing() {
-	if (!canWrite.value) return
+	if (!canWrite.value || editing.value) return
 	// Inside the gesture, before anything waits: a phone opens its keyboard only then
 	armNoteKeyboardFocus()
 	void loadNoteEditor()
@@ -162,6 +181,15 @@ onBeforeUnmount(() => {
 	if (growTimer) clearTimeout(growTimer)
 })
 
+/** A press inside the text area but off the text keeps the text focused, the caret at its end. */
+function onAreaMouseDown(event: MouseEvent) {
+	if (!editing.value || event.target !== box.value) return
+	event.preventDefault()
+	editor.value?.placeCaret(null)
+	const element = editor.value?.element()
+	element?.focus({ preventScroll: true })
+}
+
 function setArea(next: 'inset' | 'frame') {
 	if (!canWrite.value || next === area.value) return
 	void requireWorkspace().set_shape_text_area(props.widget.id, next === 'frame' ? 'frame' : null)
@@ -176,6 +204,7 @@ defineExpose({ startEditing })
 		class="shape-text"
 		:class="{ 'shape-text--editing': editing }"
 		:style="boxStyle"
+		@mousedown="onAreaMouseDown"
 	>
 		<NoteRichEditor
 			v-if="editing"
@@ -192,7 +221,10 @@ defineExpose({ startEditing })
 		<!-- eslint-disable-next-line vue/no-v-html -- rendered by the note schema, then sanitized -->
 		<div v-else-if="html" class="shape-text-body note-content" v-html="html" />
 	</div>
-	<!-- On the shape under the pointer, as its resize handle, and on a selected one -->
+	<!--
+		On the shape under the pointer, as its resize handle, and on a selected one.
+		Its box reaches down to the shape: the pointer crosses no gap on its way up.
+	-->
 	<div
 		v-if="!editing && canWrite && has_text_area_switch(kind)"
 		class="shape-area nodrag nopan"
@@ -203,8 +235,10 @@ defineExpose({ startEditing })
 		@mousedown.stop
 		@dblclick.stop
 	>
-		<button type="button" :class="{ on: area === 'inset' }" @click="setArea('inset')">{{ t('shape_text.inside') }}</button>
-		<button type="button" :class="{ on: area === 'frame' }" @click="setArea('frame')">{{ t('shape_text.frame') }}</button>
+		<div class="shape-area-pill">
+			<button type="button" :class="{ on: area === 'inset' }" @click="setArea('inset')">{{ t('shape_text.inside') }}</button>
+			<button type="button" :class="{ on: area === 'frame' }" @click="setArea('frame')">{{ t('shape_text.frame') }}</button>
+		</div>
 	</div>
 </template>
 
@@ -287,11 +321,16 @@ defineExpose({ startEditing })
 
 .shape-area {
 	position: absolute;
-	top: -36px;
+	bottom: 100%;
 	left: 50%;
 	transform: translateX(-50%);
 	z-index: 3;
 	display: none;
+	padding-bottom: 8px;
+}
+
+.shape-area-pill {
+	display: flex;
 	gap: 2px;
 	padding: 2px;
 	background: var(--surface-3, #fff);

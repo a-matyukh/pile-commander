@@ -74,6 +74,50 @@ const doubleTap = useDoubleTap(() => {
 	if (!editingText.value) shapeText.value?.startEditing()
 })
 
+/**
+ * A mouse's double click, counted here too: a hand that moves a few pixels
+ * while it clicks makes the board start a drag, and the browser's dblclick
+ * does not always follow. Two presses in one place, quickly, edit the text
+ * on the second release.
+ */
+const DOUBLE_PRESS_MS = 500
+const DOUBLE_PRESS_SLOP_PX = 12
+let lastPress = { at: 0, x: 0, y: 0 }
+
+function onShapePointerDown(event: PointerEvent) {
+	doubleTap.onPointerDown(event)
+	if (event.pointerType !== 'mouse' || event.button !== 0 || editingText.value) return
+	const now = performance.now()
+	const near = Math.hypot(event.clientX - lastPress.x, event.clientY - lastPress.y) <= DOUBLE_PRESS_SLOP_PX
+	if (lastPress.at > 0 && now - lastPress.at <= DOUBLE_PRESS_MS && near) {
+		lastPress = { at: 0, x: 0, y: 0 }
+		editOnRelease(event)
+		return
+	}
+	lastPress = { at: now, x: event.clientX, y: event.clientY }
+}
+
+/** The second press edits on its release, where it was pressed: a press that became a drag does not. */
+function editOnRelease(down: PointerEvent) {
+	const done = (event: PointerEvent) => {
+		if (event.pointerId !== down.pointerId) return
+		window.removeEventListener('pointerup', done, true)
+		window.removeEventListener('pointercancel', done, true)
+		if (event.type !== 'pointerup') return
+		if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) > DOUBLE_PRESS_SLOP_PX) return
+		shapeText.value?.startEditing()
+	}
+	window.addEventListener('pointerup', done, true)
+	window.addEventListener('pointercancel', done, true)
+}
+
+/** While its text is edited, a press anywhere on the shape keeps the text focused. */
+function onShapeMouseDown(event: MouseEvent) {
+	if (!editingText.value) return
+	if (event.target instanceof Element && event.target.closest('.ProseMirror, .shape-text')) return
+	event.preventDefault()
+}
+
 const imageTitle = computed(() => props.widget.type === 'file' ? props.widget.title : undefined)
 const imageDescription = computed(() => props.widget.type === 'file' ? props.widget.description : undefined)
 </script>
@@ -106,9 +150,11 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 		<div
 			v-else-if="hasText"
 			class="shape-box"
-			@pointerdown="doubleTap.onPointerDown"
+			:class="{ 'shape-box--editing': editingText }"
+			@pointerdown="onShapePointerDown"
 			@pointerup="doubleTap.onPointerUp"
 			@pointercancel="doubleTap.onPointerCancel"
+			@mousedown="onShapeMouseDown"
 		>
 			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" />
 			<ShapeText ref="shapeText" :widget="widget" :grows="layout === 'board'" />
@@ -122,6 +168,12 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 	position: relative;
 	width: 100%;
 	height: 100%;
+}
+
+/* Editing a shape's text shows: a dashed frame around the shape, the caret in it. */
+.shape-box--editing {
+	outline: 1.5px dashed var(--pc-accent, #2182f8);
+	outline-offset: 3px;
 }
 :deep(.video-widget),
 :deep(.audio-widget),

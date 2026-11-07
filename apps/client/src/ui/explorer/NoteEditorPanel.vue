@@ -5,7 +5,8 @@
  * folder, over the whole folder area, or over the whole window; the size is
  * remembered. The same engine and popup as a note on a board, larger type,
  * saved as you type. Back, ✕ and Esc return to the folder with the file
- * selected; Forward opens it again.
+ * selected; Forward opens it again. The window over the folder moves by its
+ * header and resizes by its edges; its place is remembered too.
  */
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { t } from '@/i18n'
@@ -21,7 +22,7 @@ type Size = 'float' | 'folder' | 'window'
 const SIZE_KEY = 'pc.note_editor.size'
 const SIZES: { id: Size; icon: string }[] = [
 	{ id: 'float', icon: 'tabler:app-window' },
-	{ id: 'folder', icon: 'tabler:layout-sidebar-right-expand' },
+	{ id: 'folder', icon: 'tabler:folder' },
 	{ id: 'window', icon: 'tabler:arrows-maximize' },
 ]
 
@@ -45,6 +46,139 @@ function set_size(next: Size) {
 		// Not remembered this time
 	}
 }
+
+// ─── The window's place ────────────────────────────────────────────────────
+
+/** In pixels of the folder area, from its top left corner. */
+type Rect = { x: number; y: number; width: number; height: number }
+type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+const RECT_KEY = 'pc.note_editor.rect'
+const EDGES: Edge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
+const MIN_WIDTH = 360
+const MIN_HEIGHT = 220
+
+function read_rect(): Rect | null {
+	try {
+		const saved: unknown = JSON.parse(localStorage.getItem(RECT_KEY) ?? 'null')
+		if (saved && typeof saved === 'object') {
+			const { x, y, width, height } = saved as Record<string, unknown>
+			if ([x, y, width, height].every(value => typeof value === 'number' && Number.isFinite(value))) {
+				return { x, y, width, height } as Rect
+			}
+		}
+	} catch {
+		// No storage, or an entry it cannot read: the window's own place
+	}
+	return null
+}
+
+/** Null: the window's own place, along the folder's right side. */
+const rect = ref<Rect | null>(read_rect())
+
+function save_rect() {
+	try {
+		if (rect.value) localStorage.setItem(RECT_KEY, JSON.stringify(rect.value))
+	} catch {
+		// Not remembered this time
+	}
+}
+
+/** The folder area the window sits in. */
+const area = ref<{ width: number; height: number } | null>(null)
+const panel = useTemplateRef<HTMLElement>('panel')
+let area_observer: ResizeObserver | null = null
+
+function observe_area() {
+	area_observer?.disconnect()
+	area_observer = null
+	const parent = panel.value?.offsetParent
+	if (!(parent instanceof HTMLElement)) return
+	const measure = () => {
+		area.value = { width: parent.clientWidth, height: parent.clientHeight }
+	}
+	measure()
+	area_observer = new ResizeObserver(measure)
+	area_observer.observe(parent)
+}
+
+watch([panel, size], observe_area, { flush: 'post' })
+onBeforeUnmount(() => area_observer?.disconnect())
+
+/** Inside the folder area, never smaller than a few lines of text (unless the area is). */
+function clamp(next: Rect, bounds: { width: number; height: number }): Rect {
+	const width = Math.min(Math.max(next.width, MIN_WIDTH), bounds.width)
+	const height = Math.min(Math.max(next.height, MIN_HEIGHT), bounds.height)
+	return {
+		x: Math.round(Math.min(Math.max(next.x, 0), bounds.width - width)),
+		y: Math.round(Math.min(Math.max(next.y, 0), bounds.height - height)),
+		width: Math.round(width),
+		height: Math.round(height),
+	}
+}
+
+/** A smaller folder area (a narrower window) moves the window in, not out of sight. */
+const float_style = computed(() => {
+	if (size.value !== 'float' || !rect.value || !area.value) return undefined
+	const { x, y, width, height } = clamp(rect.value, area.value)
+	return { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px`, right: 'auto', bottom: 'auto' }
+})
+
+/** An edge or a corner pulled by `dx`, `dy`: the opposite side stays. */
+function resized(from: Rect, edge: Edge, dx: number, dy: number, bounds: { width: number; height: number }): Rect {
+	let { x, y, width, height } = from
+	const right = from.x + from.width
+	const bottom = from.y + from.height
+	if (edge.includes('e')) width = Math.min(Math.max(from.width + dx, MIN_WIDTH), bounds.width - from.x)
+	if (edge.includes('s')) height = Math.min(Math.max(from.height + dy, MIN_HEIGHT), bounds.height - from.y)
+	if (edge.includes('w')) {
+		x = Math.min(Math.max(from.x + dx, 0), right - MIN_WIDTH)
+		width = right - x
+	}
+	if (edge.includes('n')) {
+		y = Math.min(Math.max(from.y + dy, 0), bottom - MIN_HEIGHT)
+		height = bottom - y
+	}
+	return clamp({ x, y, width, height }, bounds)
+}
+
+/** Moves the window (its header) or resizes it (an edge), while the pointer is down. */
+function start_gesture(event: PointerEvent, kind: 'move' | Edge) {
+	const element = panel.value
+	const bounds = area.value
+	if (size.value !== 'float' || event.button !== 0 || !element || !bounds) return
+	const from = rect.value
+		? clamp(rect.value, bounds)
+		: { x: element.offsetLeft, y: element.offsetTop, width: element.offsetWidth, height: element.offsetHeight }
+	// No text selection, and the text keeps its focus and caret
+	event.preventDefault()
+	const handle = event.currentTarget as HTMLElement
+	handle.setPointerCapture(event.pointerId)
+	const { clientX, clientY } = event
+	const move = (next: PointerEvent) => {
+		const dx = next.clientX - clientX
+		const dy = next.clientY - clientY
+		rect.value = kind === 'move'
+			? clamp({ ...from, x: from.x + dx, y: from.y + dy }, bounds)
+			: resized(from, kind, dx, dy, bounds)
+	}
+	const end = () => {
+		handle.removeEventListener('pointermove', move)
+		handle.removeEventListener('pointerup', end)
+		handle.removeEventListener('pointercancel', end)
+		save_rect()
+	}
+	handle.addEventListener('pointermove', move)
+	handle.addEventListener('pointerup', end)
+	handle.addEventListener('pointercancel', end)
+}
+
+function on_header_pointerdown(event: PointerEvent) {
+	if (event.target instanceof Element && event.target.closest('button, a, input')) return
+	start_gesture(event, 'move')
+}
+
+// ─── The file ──────────────────────────────────────────────────────────────
 
 const NoteRichEditor = defineAsyncComponent(loadNoteEditor)
 
@@ -146,7 +280,9 @@ function on_textarea_keydown(event: KeyboardEvent) {
 /** Esc anywhere in the editor closes it, unless a menu or dialog of the page has it. */
 function on_keydown(event: KeyboardEvent) {
 	if (event.key !== 'Escape' || event.defaultPrevented) return
-	if (event.target instanceof Element && event.target.closest('[role="menu"], [role="dialog"], .note-format')) return
+	// The editor is a dialog itself: only a menu or dialog inside it keeps its Esc
+	const owner = event.target instanceof Element ? event.target.closest('[role="menu"], [role="dialog"], .note-format') : null
+	if (owner && owner !== event.currentTarget) return
 	event.preventDefault()
 	void close()
 }
@@ -165,13 +301,15 @@ const status_label = computed(() => {
 	<Teleport defer to=".explorer" :disabled="size !== 'window'">
 		<section
 			v-if="file_id"
+			ref="panel"
 			class="ne"
 			:class="`ne--${size}`"
+			:style="float_style"
 			role="dialog"
 			:aria-label="name"
 			@keydown="on_keydown"
 		>
-			<header class="ne-hd">
+			<header class="ne-hd" @pointerdown="on_header_pointerdown">
 				<span class="ne-name">{{ name }}</span>
 				<span class="ne-status">{{ status_label }}</span>
 				<span class="ne-spacer" />
@@ -212,6 +350,15 @@ const status_label = computed(() => {
 					/>
 				</template>
 			</div>
+			<template v-if="size === 'float'">
+				<div
+					v-for="edge in EDGES"
+					:key="edge"
+					class="ne-edge"
+					:class="`ne-edge--${edge}`"
+					@pointerdown="start_gesture($event, edge)"
+				/>
+			</template>
 		</section>
 	</Teleport>
 	</div>
@@ -265,7 +412,55 @@ const status_label = computed(() => {
 	padding: 0 8px 0 16px;
 	border-bottom: 0.5px solid var(--border);
 	flex: none;
+	user-select: none;
+	-webkit-user-select: none;
 }
+
+/* The window over the folder moves by its header. */
+.ne--float .ne-hd {
+	touch-action: none;
+}
+
+/* …and its edges and corners resize it. */
+.ne-edge {
+	position: absolute;
+	z-index: 2;
+	touch-action: none;
+}
+
+.ne-edge--n,
+.ne-edge--s {
+	left: 10px;
+	right: 10px;
+	height: 8px;
+	cursor: ns-resize;
+}
+
+.ne-edge--e,
+.ne-edge--w {
+	top: 10px;
+	bottom: 10px;
+	width: 8px;
+	cursor: ew-resize;
+}
+
+.ne-edge--n { top: -4px; }
+.ne-edge--s { bottom: -4px; }
+.ne-edge--e { right: -4px; }
+.ne-edge--w { left: -4px; }
+
+.ne-edge--ne,
+.ne-edge--nw,
+.ne-edge--se,
+.ne-edge--sw {
+	width: 14px;
+	height: 14px;
+}
+
+.ne-edge--ne { top: -4px; right: -4px; cursor: nesw-resize; }
+.ne-edge--sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.ne-edge--nw { top: -4px; left: -4px; cursor: nwse-resize; }
+.ne-edge--se { bottom: -4px; right: -4px; cursor: nwse-resize; }
 
 .ne-name {
 	font-weight: 600;
