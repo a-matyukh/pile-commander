@@ -161,6 +161,18 @@ function tint(value: string): string {
 	flex: 1;
 	min-width: 0;
 }
+/* On a phone the address gets its own row; the role and the button go under it. */
+@media (max-width: 480px) {
+	.invite {
+		flex-wrap: wrap;
+	}
+	.invite .grow {
+		flex-basis: 100%;
+	}
+	.invite :deep(button[type='submit']) {
+		flex: 1;
+	}
+}
 .label {
 	margin: 6px 0 0;
 	font-size: 11px;

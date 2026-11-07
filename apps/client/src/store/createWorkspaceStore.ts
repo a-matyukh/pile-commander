@@ -48,7 +48,7 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, persist_xattr_now, show_xattr_locally, clear_xattr, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, persist_xattr_now, show_xattr_locally, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -63,6 +63,7 @@ import {
 	resolve_markdown_file_name,
 	resolve_note_filename,
 	resolve_shape_filename,
+	resolve_text_block_filename,
 	resolve_text_file_name,
 	resolve_unique_filename,
 } from '../services/naming/uniqueName'
@@ -80,7 +81,7 @@ import {
 	StrokeNode,
 	stored_folder_view,
 } from '@/domain/Widget'
-import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE } from '@/services/board/layout'
+import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE, TEXT_DEFAULT_SIZE } from '@/services/board/layout'
 import { get_mime_type } from '@/services/board/media'
 import { basename } from '@tauri-apps/api/path'
 import { report_error } from './helpers/reportError'
@@ -150,26 +151,7 @@ function persist_workspace_xattr(
 	)
 }
 
-function clear_workspace_xattr(
-	store: PersistXattrStore,
-	fm: Pick<FileManager, 'remove_xattr'>,
-	folder_data: FolderWithChildrenXattrs,
-	id: string,
-	name: string,
-) {
-	const owner_id = folder_data.id
-	return clear_xattr(
-		fm,
-		folder_data,
-		id,
-		name,
-		store.preview_folders,
-		(error) => report_error(store, error),
-		xattr_hooks(store, owner_id),
-	)
-}
-
-type LookName = 'view' | 'cover' | 'icon' | 'background'
+type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField | 'text' | 'text_area'
 
 /**
  * A look attribute: on screen at once (the folder, the listings that hold it,
@@ -182,7 +164,8 @@ function persist_look_xattr(
 	owner: FolderWithChildrenXattrs,
 	id: string,
 	name: LookName,
-	value: string,
+	/** null clears the attribute */
+	value: string | null,
 	after?: Promise<boolean>,
 ): Promise<void> {
 	const holder = owner.id === id ? owner : owner.children?.find(child => child.id === id)
@@ -196,7 +179,7 @@ function persist_look_xattr(
 			show_xattr_locally(owner, id, name, shown, store.preview_folders, hooks)
 			const listed = shown ?? 'none'
 			if (name === 'cover' || name === 'icon') mirror_to_listings(store, id, name, listed)
-			if (name !== 'background' && store.type === 'cloud' && id === '/') note_cloud_root_look(store.uid, name, listed)
+			if ((name === 'view' || name === 'cover' || name === 'icon') && store.type === 'cloud' && id === '/') note_cloud_root_look(store.uid, name, listed)
 		},
 		reread: () => fm.get_xattr(id, name),
 		on_error: error => report_error(store, error),
@@ -276,6 +259,7 @@ export async function createWorkspaceStore(
 		ws.type === 'cloud' ? (folder_id === '/' ? `/${name}` : `${folder_id}/${name}`) : undefined
 	/** Set by the Explorer: a folder opened from a view goes through its navigation (its placeholder, history, header) */
 	let open_folder_hook: ((folder_id: string) => unknown) | null = null
+	let open_file_hook: ((file_id: string) => boolean) | null = null
 
 	// Session content caches live per store instance (paths repeat across
 	// workspaces — forks share the tree — so module-level caches would leak
@@ -1528,11 +1512,31 @@ export async function createWorkspaceStore(
 				const next = image_text_from_stored(value)
 				if (current === next) return
 
-				if (next === undefined) {
-					await clear_workspace_xattr(this, fm, folder_data, id, field)
-					return
-				}
-				await persist_workspace_xattr(this, fm, folder_data, id, field, next)
+				// On screen at once, written in the background, like a folder's look.
+				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null)
+			},
+
+			/** A shape's text (markdown): on screen at once, written in the background; empty removes it. */
+			async set_shape_text(id: string, markdown: string) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+				const container = to_folder_container(this.opened_folder, this.preview_folders)
+				const entity = find_widget(container, id)
+				const current = entity?.type === 'file' ? entity.text ?? null : null
+				const next = markdown.trim() ? markdown : null
+				if (current === next) return
+				// As a JSON string: an xattr reads back through JSON.parse and Number, and
+				// a text like `[1]`, `"quoted"` or `2024` would come back as something else
+				await persist_look_xattr(this, fm, folder_data, id, 'text', next === null ? null : JSON.stringify(next))
+			},
+
+			/** Where a shape's text sits: null is inside the shape (the default), "frame" the whole frame. */
+			async set_shape_text_area(id: string, area: 'frame' | null) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+				await persist_look_xattr(this, fm, folder_data, id, 'text_area', area)
 			},
 
 			async change_shape_fill(id: string, color: Color) {
@@ -1779,6 +1783,69 @@ export async function createWorkspaceStore(
 				}
 			},
 
+			async change_is_text(id: string, is_text: boolean) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const entity = find_widget(this.folder_container, id)
+				if (entity?.type !== 'file') return
+				if ((entity.is_text === true) === is_text) return
+
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					id,
+					'is_text',
+					String(is_text),
+				)
+			},
+
+			async change_text_width(id: string, mode: 'auto' | 'fixed') {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const entity = find_widget(this.folder_container, id)
+				if (entity?.type !== 'file') return
+				if ((entity.text_width ?? 'auto') === mode) return
+
+				await persist_workspace_xattr(this, fm, folder_data, id, 'text_width', mode)
+			},
+
+			async show_as_text(id: string) {
+				assert_can_write()
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const before = find_widget(this.folder_container, id)
+				if (before?.type !== 'file') return
+
+				// Text first: the cover stays a cover until preview goes on, so the
+				// file never shows as a note for the moment between the two writes.
+				if (before.is_text !== true) {
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_text', 'true')
+				}
+				if (before.is_preview !== true) {
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_preview', 'true')
+				}
+
+				const parent_container = this.folder_container
+				const index = parent_container.children.findIndex(c => c.id === id)
+				const child = index >= 0 ? parent_container.children[index] : undefined
+
+				if (child && !child.position && parent_container.view === 'board') {
+					await this.change_position(id, board_position(child, index))
+				}
+				// The text size is written whatever the view is: change_is_preview only
+				// fills a missing size on a board, and it would ask board_size about
+				// the widget before is_text reached the model.
+				if (!before.size) {
+					await this.change_size(id, TEXT_DEFAULT_SIZE)
+				}
+			},
+
 			touch_folder(folder_id: string) {
 				const live = this.folders[folder_id]
 				if (!live) return
@@ -1869,6 +1936,39 @@ export async function createWorkspaceStore(
 			// recycled path (e.g. Note 1.md after delete) cannot show
 			// stale markdown from a previous file at the same id.
 			content_caches.notes.set(node.id, '')
+				return node.id
+			},
+
+			async create_text(folder_id: string, position?: Position): Promise<string> {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) {
+					return ''
+				}
+
+				const filename = resolve_text_block_filename(
+					(folder_data.children ?? []).map(c => c.name),
+				)
+
+				const node = await create_entry(this, fm, folder_id, 'file', filename, {
+					optimistic_id: optimistic_child(folder_id, filename),
+					xattrs: [
+						{ name: 'is_preview', value: 'true' },
+						{ name: 'is_text', value: 'true' },
+						{ name: 'size', value: JSON.stringify(TEXT_DEFAULT_SIZE) },
+						...(position
+							? [{ name: 'position', value: JSON.stringify(position) }]
+							: []),
+					],
+				})
+				if (!node) {
+					return ''
+				}
+
+				// Same as a note: a recycled path must not show the old file's text.
+				content_caches.notes.set(node.id, '')
+				// Born selected, so the user sees where it is while typing.
+				this.set_selection([node.id])
 				return node.id
 			},
 
@@ -2249,6 +2349,10 @@ export async function createWorkspaceStore(
 				})
 			},
 			async open_file(id: string) {
+				if (open_file_hook?.(id)) return
+				await this.open_file_externally(id)
+			},
+			async open_file_externally(id: string) {
 				try {
 					await fm.open_file(id)
 				} catch (error) {
@@ -2767,6 +2871,10 @@ export async function createWorkspaceStore(
 
 			set_open_folder_hook(hook: ((folder_id: string) => unknown) | null) {
 				open_folder_hook = hook
+			},
+
+			set_open_file_hook(hook: ((file_id: string) => boolean) | null) {
+				open_file_hook = hook
 			},
 		})
 

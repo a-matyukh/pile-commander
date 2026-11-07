@@ -14,7 +14,7 @@ import { use_folder_place } from './use_folder_place'
  * holds the actions alone, or goes away when they moved to the top bar too.
  * A page (settings, account, Hub) shows its title and a subtitle
  */
-const { location, page, page_arg, workspace, crumbs, title } = use_folder_place()
+const { location, page, page_arg, workspace, crumbs, title, folder_name } = use_folder_place()
 
 /** Path and title are shown here; a page shows its title unless the path is on top */
 const shows_place = computed(() => path_in_header.value || (!!page.value && !path_on_top.value))
@@ -34,7 +34,7 @@ const refreshing = computed(() => !!workspace.value && !!location.value
 			<div class="hrow">
 				<Breadcrumbs :crumbs="crumbs" :title="title" />
 				<Icon v-if="refreshing" icon="tabler:loader-2" class="rfm" :title="t('folder.refreshing')" :aria-label="t('folder.refreshing')" />
-				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="title" align="end" />
+				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="folder_name" align="end" />
 			</div>
 		</div>
 
@@ -47,13 +47,13 @@ const refreshing = computed(() => !!workspace.value && !!location.value
 			<div class="hrow">
 				<div class="ttl">{{ title }}</div>
 				<Icon v-if="refreshing" icon="tabler:loader-2" class="rfm" :title="t('folder.refreshing')" :aria-label="t('folder.refreshing')" />
-				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="title" align="end" />
+				<FolderActions v-if="workspace && location" :workspace="workspace" :folder="location" :name="folder_name" align="end" />
 			</div>
 		</div>
 
 		<div v-else-if="workspace && location" class="ph0 cp lft">
 			<div class="hrow">
-				<FolderActions :workspace="workspace" :folder="location" :name="title" align="start" />
+				<FolderActions :workspace="workspace" :folder="location" :name="folder_name" align="start" />
 			</div>
 		</div>
 	</template>

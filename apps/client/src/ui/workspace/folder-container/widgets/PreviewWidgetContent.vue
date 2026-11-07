@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import FileMenu from '@/ui/workspace/menu/FileMenu.vue'
 import WidgetShell from './WidgetShell.vue'
@@ -10,6 +10,10 @@ import { useMenuNode } from './useMenuNode'
 import { useWidgetInteraction } from './useWidgetInteraction'
 import { resolveWidgetBackground } from './resolveBackground'
 import { MEDIA_CHROME_FILL } from '../media/mediaChrome'
+import ShapeText from '../shape/ShapeText.vue'
+import { useLineShapeMeta } from '../shape/useLineShapeMeta'
+import { useDoubleTap } from './useDoubleTap'
+import { useEditingNoteId } from './useEditingNoteId'
 
 const props = defineProps<{
 	widget: FolderContainerWidgetChild
@@ -21,12 +25,6 @@ const props = defineProps<{
 const config = computed(() => PREVIEW_KIND_CONFIG[props.kind])
 
 const menuNode = useMenuNode(() => props.widget)
-
-const rootClass = computed(() => ({
-	[props.layout === 'board'
-		? config.value.boardRootClass
-		: config.value.dashboardRootClass]: true,
-}))
 
 const minSize = computed(() =>
 	props.layout === 'board'
@@ -48,7 +46,84 @@ const extraStyle = computed(() => {
 	return base
 })
 
-const { onSelectStart, onDragStart, onDblClick } = useWidgetInteraction(() => props.widget, 'open_file')
+const { onSelectStart, onDragStart, onDblClick: openOnDblClick } = useWidgetInteraction(() => props.widget, 'open_file')
+
+// A shape (not a line or an arrow) has text: a double click edits it; the file opens from the menu
+const isShape = computed(() => props.kind === 'shape')
+const { isLine } = useLineShapeMeta(() => props.widget.id, isShape)
+const hasText = computed(() => isShape.value && !isLine.value)
+const shapeText = useTemplateRef<{ startEditing(): void }>('shapeText')
+const { editingNoteId } = useEditingNoteId({ optional: true })
+const editingText = computed(() => hasText.value && editingNoteId.value === props.widget.id)
+
+const rootClass = computed(() => ({
+	[props.layout === 'board'
+		? config.value.boardRootClass
+		: config.value.dashboardRootClass]: true,
+	// As a note's: the text selects, the resize corner hides, the canvas lifts the node
+	is_edit: editingText.value,
+}))
+
+/** A selection is the board's drag gesture, but a shape's text being edited selects, as a note's. */
+function onShellSelectStart(event: Event) {
+	if (!editingText.value) onSelectStart(event)
+}
+
+function onDblClick(event: MouseEvent) {
+	if (!hasText.value) return openOnDblClick(event)
+	event.preventDefault()
+	event.stopPropagation()
+	if (!editingText.value) shapeText.value?.startEditing()
+}
+
+/** A touch screen: two taps on the shape edit its text, as on a note. */
+const doubleTap = useDoubleTap(() => {
+	if (!editingText.value) shapeText.value?.startEditing()
+})
+
+/**
+ * A mouse's double click, counted here too: a hand that moves a few pixels
+ * while it clicks makes the board start a drag, and the browser's dblclick
+ * does not always follow. Two presses in one place, quickly, edit the text
+ * on the second release.
+ */
+const DOUBLE_PRESS_MS = 500
+const DOUBLE_PRESS_SLOP_PX = 12
+let lastPress = { at: 0, x: 0, y: 0 }
+
+function onShapePointerDown(event: PointerEvent) {
+	doubleTap.onPointerDown(event)
+	if (event.pointerType !== 'mouse' || event.button !== 0 || editingText.value) return
+	const now = performance.now()
+	const near = Math.hypot(event.clientX - lastPress.x, event.clientY - lastPress.y) <= DOUBLE_PRESS_SLOP_PX
+	if (lastPress.at > 0 && now - lastPress.at <= DOUBLE_PRESS_MS && near) {
+		lastPress = { at: 0, x: 0, y: 0 }
+		editOnRelease(event)
+		return
+	}
+	lastPress = { at: now, x: event.clientX, y: event.clientY }
+}
+
+/** The second press edits on its release, where it was pressed: a press that became a drag does not. */
+function editOnRelease(down: PointerEvent) {
+	const done = (event: PointerEvent) => {
+		if (event.pointerId !== down.pointerId) return
+		window.removeEventListener('pointerup', done, true)
+		window.removeEventListener('pointercancel', done, true)
+		if (event.type !== 'pointerup') return
+		if (Math.hypot(event.clientX - down.clientX, event.clientY - down.clientY) > DOUBLE_PRESS_SLOP_PX) return
+		shapeText.value?.startEditing()
+	}
+	window.addEventListener('pointerup', done, true)
+	window.addEventListener('pointercancel', done, true)
+}
+
+/** While its text is edited, a press anywhere on the shape keeps the text focused. */
+function onShapeMouseDown(event: MouseEvent) {
+	if (!editingText.value) return
+	if (event.target instanceof Element && event.target.closest('.ProseMirror, .shape-text')) return
+	event.preventDefault()
+}
 
 const imageTitle = computed(() => props.widget.type === 'file' ? props.widget.title : undefined)
 const imageDescription = computed(() => props.widget.type === 'file' ? props.widget.description : undefined)
@@ -65,23 +140,48 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 		:root-class="rootClass"
 		:extra-style="extraStyle"
 		:min-size="minSize"
-		@selectstart="onSelectStart"
+		:interactions-enabled="!editingText"
+		:ignore-from="hasText ? '.resize-handle, .ProseMirror, .shape-area' : undefined"
+		@selectstart="onShellSelectStart"
 		@dragstart="onDragStart"
 		@dblclick="onDblClick"
 	>
 		<ImageFigure
 			v-if="kind === 'image'"
-			:mode="layout === 'board' ? 'outside' : 'stack'"
+			:mode="layout === 'board' ? 'card' : 'stack'"
 			:title="imageTitle"
 			:description="imageDescription"
 		>
 			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 		</ImageFigure>
+		<div
+			v-else-if="hasText"
+			class="shape-box"
+			:class="{ 'shape-box--editing': editingText }"
+			@pointerdown="onShapePointerDown"
+			@pointerup="doubleTap.onPointerUp"
+			@pointercancel="doubleTap.onPointerCancel"
+			@mousedown="onShapeMouseDown"
+		>
+			<PreviewContent :kind="kind" :file-id="widget.id" :filename="widget.name" />
+			<ShapeText ref="shapeText" :widget="widget" :grows="layout === 'board'" />
+		</div>
 		<PreviewContent v-else :kind="kind" :file-id="widget.id" :filename="widget.name" :model-camera="widget.type === 'file' ? widget.model_camera : undefined" />
 	</WidgetShell>
 </template>
 
 <style scoped>
+.shape-box {
+	position: relative;
+	width: 100%;
+	height: 100%;
+}
+
+/* Editing a shape's text shows: a dashed frame around the shape, the caret in it. */
+.shape-box--editing {
+	outline: 1.5px dashed var(--pc-accent, #2182f8);
+	outline-offset: 3px;
+}
 :deep(.video-widget),
 :deep(.audio-widget),
 :deep(.model-widget),
@@ -95,7 +195,7 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 	overflow: hidden;
 }
 
-/* The picture clips to the card. The heading and caption hang outside it. */
+/* The picture clips to the card. The heading and caption sit inside it. */
 :deep(.image-widget) {
 	padding: 0;
 	overflow: visible;
@@ -131,6 +231,20 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 :deep(.shape-widget),
 :deep(.dashboard-shape-widget) {
 	border-radius: 0;
+}
+
+/* The board turns text selection off on its widgets: a shape's text being edited selects. */
+:deep(.shape-widget.is_edit),
+:deep(.dashboard-shape-widget.is_edit) {
+	cursor: default;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+/* A shape's text and its Inside/Frame switch may reach past the shape's box */
+:deep(.shape-widget),
+:deep(.shape-widget .board-widget-content) {
+	overflow: visible;
 }
 
 :deep(.image-widget .board-widget-content),

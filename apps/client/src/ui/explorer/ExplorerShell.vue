@@ -15,6 +15,7 @@ import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
 import CloudPage from '@/ui/explorer/pages/CloudPage.vue'
 import FolderContent from '@/ui/explorer/FolderContent.vue'
+import NoteEditorPanel from './NoteEditorPanel.vue'
 import HubPage from '@/ui/explorer/pages/hub/HubPage.vue'
 import ProfilePage from '@/ui/explorer/pages/hub/ProfilePage.vue'
 import cloud from '@/store/cloud'
@@ -284,14 +285,18 @@ onUnmounted(() => {
 					<span>{{ shell_error }}</span>
 					<button type="button" @click="dismiss_error">{{ t('dialog.close') }}</button>
 				</p>
-				<div class="content">
-					<SettingsPage v-if="page === 'settings'" />
-					<AccountPage v-else-if="page === 'account'" />
-					<TrashPage v-else-if="page === 'trash'" />
-					<CloudPage v-else-if="page === 'cloud'" />
-					<HubPage v-else-if="page === 'hub'" />
-					<ProfilePage v-else-if="page === 'profile' && page_arg" :username="page_arg" />
-					<FolderContent v-else-if="!page" />
+				<!-- The note editor lies over the folder content, which stays mounted under it -->
+				<div class="content-box">
+					<div class="content">
+						<SettingsPage v-if="page === 'settings'" />
+						<AccountPage v-else-if="page === 'account'" />
+						<TrashPage v-else-if="page === 'trash'" />
+						<CloudPage v-else-if="page === 'cloud'" />
+						<HubPage v-else-if="page === 'hub'" />
+						<ProfilePage v-else-if="page === 'profile' && page_arg" :username="page_arg" />
+						<FolderContent v-else-if="!page" />
+					</div>
+					<NoteEditorPanel v-if="!page" />
 				</div>
 				<ImportProgressOverlay :progress="store.workspace?.import_progress ?? null" />
 			</main>
@@ -343,6 +348,13 @@ onUnmounted(() => {
 	display: flex;
 	flex-direction: column;
 	background: var(--ct);
+}
+.content-box {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 }
 .content {
 	flex: 1;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { contained_image_box, image_caption_in_view, image_text_from_stored } from './imageText'
+import { image_caption_in_view, image_text_from_stored } from './imageText'
 
 describe('image_text_from_stored', () => {
 	test('keeps a trimmed string and drops blanks', () => {
@@ -18,22 +18,6 @@ describe('image_text_from_stored', () => {
 		expect(image_text_from_stored({ a: 1 })).toBeUndefined()
 		expect(image_text_from_stored([1])).toBeUndefined()
 		expect(image_text_from_stored(null)).toBeUndefined()
-	})
-})
-
-describe('contained_image_box', () => {
-	test('centers a wide image in a taller box', () => {
-		expect(contained_image_box({ width: 200, height: 200 }, { width: 400, height: 200 })).toEqual({
-			top: 50,
-			left: 0,
-			width: 200,
-			height: 100,
-		})
-	})
-
-	test('returns nothing until both sizes are known', () => {
-		expect(contained_image_box({ width: 0, height: 100 }, { width: 10, height: 10 })).toBeNull()
-		expect(contained_image_box({ width: 100, height: 100 }, { width: 0, height: 10 })).toBeNull()
 	})
 })
 

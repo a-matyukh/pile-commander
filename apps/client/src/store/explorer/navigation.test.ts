@@ -302,6 +302,34 @@ describe('explorer navigation', () => {
 		expect(current()!.go_back).not.toHaveBeenCalled()
 	})
 
+	test('a file opens as a step of its folder: back closes it with the file selected, forward opens it again', async () => {
+		const { nav, current } = setup()
+		await nav.open_at_launch()
+		const home = { drive_id: 'local', root_id: HOME, folder_id: HOME }
+		await nav.open_file(home, `${HOME}/note.txt`)
+		expect(nav.location).toEqual({ kind: 'folder', ref: home, file_id: `${HOME}/note.txt` })
+		expect(nav.can_go_back).toBe(true)
+
+		await nav.close_file()
+		expect(nav.location).toEqual({ kind: 'folder', ref: home })
+		expect(current()!.selection).toEqual([`${HOME}/note.txt`])
+		expect(nav.can_go_forward).toBe(true)
+
+		await nav.go_forward()
+		expect(nav.location).toEqual({ kind: 'folder', ref: home, file_id: `${HOME}/note.txt` })
+		// The folder was open all along: it is not read again
+		expect(current()!.open_folder).not.toHaveBeenCalled()
+	})
+
+	test('a file that is gone opens its folder only', async () => {
+		const { nav } = setup()
+		await nav.open_at_launch()
+		const home = { drive_id: 'local', root_id: HOME, folder_id: HOME }
+		await nav.open_folder({ ...home, folder_id: `${HOME}/docs` })
+		await nav.open_file(home, `${HOME}/missing.md`)
+		expect(nav.location).toEqual({ kind: 'folder', ref: home })
+	})
+
 	test('returning from a page restores the selection', async () => {
 		const { nav, current } = setup()
 		await nav.open_at_launch()

@@ -76,6 +76,15 @@ function image_text_fields(attrs: Record<string, unknown>) {
 	}
 }
 
+/** A shape's text and where it sits. */
+function shape_text_fields(attrs: Record<string, unknown>) {
+	const text = typeof attrs.text === 'string' && attrs.text.trim() ? attrs.text : image_text_from_stored(attrs.text)
+	return {
+		...(text !== undefined ? { text } : {}),
+		...(attrs.text_area === 'frame' ? { text_area: 'frame' as const } : {}),
+	}
+}
+
 function child_from_entry(
 	entry: EntryWithXattrs,
 	attrs: Record<string, unknown>,
@@ -92,8 +101,9 @@ function child_from_entry(
 		return {
 			...base,
 			type: 'file',
-			...pick(attrs, ['padding', 'cover', 'model_camera']),
+			...pick(attrs, ['padding', 'cover', 'model_camera', 'is_text', 'text_width']),
 			...image_text_fields(attrs),
+			...shape_text_fields(attrs),
 		}
 	}
 

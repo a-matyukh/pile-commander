@@ -2,11 +2,12 @@ import { describe, expect, test, vi } from 'vitest'
 import type { WorkspaceStore } from '@/domain/Store'
 import { FOLDER_VIEWS } from '@/domain/Widget'
 import { t } from '@/i18n'
-import { ADD_SHAPES, ADD_SHAPE_META, add_menu_has_pane_items, add_note, add_shape } from './add_menu'
+import { ADD_SHAPES, ADD_SHAPE_META, add_menu_has_pane_items, add_note, add_shape, add_text } from './add_menu'
 
 function fake_workspace() {
 	return {
 		create_note: vi.fn(async () => 'note'),
+		create_text: vi.fn(async () => 'text'),
 		create_shape: vi.fn(async () => 'shape'),
 		create_line: vi.fn(async () => 'line'),
 	}
@@ -31,6 +32,14 @@ describe('"Add" in the folder header', () => {
 		await add_shape(as_store(ws), '/ws/A', 'diamond')
 		expect(ws.create_shape).toHaveBeenCalledWith('/ws/A', 'diamond')
 		expect(ws.create_line).not.toHaveBeenCalled()
+	})
+
+	test('a text block goes to the open folder through the store, apart from a note', async () => {
+		const ws = fake_workspace()
+		await add_text(as_store(ws), '/ws/A')
+		expect(ws.create_text).toHaveBeenCalledWith('/ws/A')
+		expect(ws.create_note).not.toHaveBeenCalled()
+		expect(t('add.text')).not.toBe('add.text')
 	})
 
 	test('a line and an arrow are lines of the default length, as in the current menu', async () => {

@@ -1,12 +1,13 @@
 import { nextTick, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 import interact from 'interactjs'
-import type { FolderContainerWidgetChild, Size } from '@/domain/Widget'
+import type { FolderContainerWidgetChild, Position, Size } from '@/domain/Widget'
 import type { WorkspaceStore } from '@/domain/Store'
-import { board_size } from '@/services/board/layout'
+import { board_size, is_text_widget } from '@/services/board/layout'
 import { to_folder_container } from '@/services/workspace/folderContainer'
 import type { BoardSnap } from './boardDragBinding'
 import { applyGroupResizeDelta, type GroupResizeMember } from './boardGroupResize'
 import { blockGhostClick, blockGhostContextMenu } from './blockGhostClick'
+import { bindTextResize } from './boardTextResize'
 
 export function resizeModifiers(minSize: Size, snap: BoardSnap) {
 	// No restrictEdges(parent): parent is the scrollport viewport, and clamping
@@ -25,6 +26,8 @@ export function resizeModifiers(minSize: Size, snap: BoardSnap) {
 
 /** Update snap modifiers without unsetting the interactable. */
 export function updateBoardResizeSnap(el: HTMLElement, minSize: Size, snap: BoardSnap) {
+	// A text block resizes by its width alone and ignores the grid snap.
+	if (el.classList.contains('text-widget')) return
 	const current = interact(el).resizable()
 	interact(el).resizable({
 		enabled: current.enabled !== false,
@@ -34,6 +37,8 @@ export function updateBoardResizeSnap(el: HTMLElement, minSize: Size, snap: Boar
 
 type BoardResizeBindingOptions = {
 	widget: MaybeRefOrGetter<FolderContainerWidgetChild>
+	index?: MaybeRefOrGetter<number>
+	dragPositions?: Ref<Record<string, Position>>
 	dragSizes: Ref<Record<string, Size>>
 	/** Window-scoped workspace getter, captured at setup (handlers can't inject). */
 	getWorkspace: () => WorkspaceStore
@@ -91,6 +96,20 @@ function resolveGroupResizeMembers(
 
 /** interactjs resizable binding for a board widget (bottom-right handle). */
 export function bindBoardResize(el: HTMLElement, options: BoardResizeBindingOptions) {
+	// A text block has no corner handle: its height follows its text, so only the
+	// left and right edges resize, and only the width.
+	if (is_text_widget(toValue(options.widget)) && options.dragPositions) {
+		bindTextResize(el, {
+			widget: options.widget,
+			index: options.index ?? 0,
+			dragPositions: options.dragPositions,
+			dragSizes: options.dragSizes,
+			getWorkspace: options.getWorkspace,
+			enabled: options.enabled,
+		})
+		return
+	}
+
 	const { dragSizes } = options
 	let resized = false
 	let primaryStartSize: Size | null = null

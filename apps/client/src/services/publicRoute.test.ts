@@ -56,10 +56,18 @@ describe('resolve_public_route', () => {
 		})
 	})
 
-	it('falls back to the app for the root and deep paths', () => {
+	it('falls back to the app for the root', () => {
 		expect(resolve_public_route('/')).toEqual({ kind: 'app' })
 		expect(resolve_public_route('')).toEqual({ kind: 'app' })
-		expect(resolve_public_route('/foo/bar/baz')).toEqual({ kind: 'app' })
+	})
+
+	it('reads folders inside a publication and the demo', () => {
+		expect(resolve_public_route('/anna/trip/Days/Day%201')).toEqual({
+			kind: 'slug', username: 'anna', slug: 'trip', path: '/Days/Day 1',
+		})
+		expect(resolve_public_route('/demo/Use%20cases/Moodboard')).toEqual({ kind: 'demo', path: '/demo/Use cases/Moodboard' })
+		expect(resolve_public_route('/app/some-slug/deeper')).toEqual({ kind: 'app' })
+		expect(resolve_public_route('/anna/trip/%E0%A4%A')).toEqual({ kind: 'app' })
 	})
 
 	it('falls back to the app for reserved usernames', () => {

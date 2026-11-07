@@ -41,8 +41,9 @@ function needsSoftKeyboardAssist(): boolean {
 	)
 }
 
+/** The note's own field: the textarea (`.txt`) or the rich editor (`.md`). */
 function isNoteTextarea(el: HTMLElement): boolean {
-	return el.classList.contains('note-textarea')
+	return el.classList.contains('note-textarea') || el.classList.contains('note-editor')
 }
 
 function clearSafetyTimer() {
@@ -139,8 +140,8 @@ export function armNoteKeyboardFocus(): void {
 	}, SAFETY_MS)
 }
 
-/** Move the soft-keyboard session onto the real note textarea. */
-export function transferNoteKeyboardFocus(target: HTMLTextAreaElement): void {
+/** Move the soft-keyboard session onto the note's field (textarea or rich editor). */
+export function transferNoteKeyboardFocus(target: HTMLElement): void {
 	if (!armed) {
 		nativeFocus.call(target, { preventScroll: true })
 		return

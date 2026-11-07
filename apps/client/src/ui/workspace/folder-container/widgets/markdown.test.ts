@@ -39,6 +39,35 @@ describe('parseNoteMarkdown', () => {
 		expect(parseNoteMarkdown('<img src="data:text/html,<script>">')).not.toContain('data:text/html')
 	})
 
+	// A note must not restyle or cover the app it is shown in.
+	// markdown.dom.test.ts runs the same cases through DOMPurify.
+	test('drops a style element with its rules', () => {
+		const html = parseNoteMarkdown('hi <style>body { display: none }</style>')
+		expect(html).toContain('hi')
+		expect(html).not.toContain('<style')
+		expect(html).not.toContain('display')
+	})
+
+	test('keeps only text styling in a style attribute', () => {
+		const html = parseNoteMarkdown('<span style="color: #c00; position: fixed; inset: 0; z-index: 9999">x</span>')
+		expect(html).toContain('<span style="color: #c00">x</span>')
+		expect(html).not.toContain('position')
+		expect(parseNoteMarkdown('<p style="background:url(https://evil.example/b.png)">x</p>')).not.toMatch(/\sstyle\s*=/)
+	})
+
+	test('drops classes, so the app\'s own utility classes do not apply', () => {
+		const html = parseNoteMarkdown('<div class="fixed inset-0 z-50 bg-white">x</div>')
+		expect(html).toContain('x')
+		expect(html).not.toContain('class=')
+	})
+
+	test('drops a form and keeps its text', () => {
+		const html = parseNoteMarkdown('<form action="https://evil.example/login">Password: <input name="p"></form>')
+		expect(html).not.toContain('<form')
+		expect(html).not.toContain('evil.example')
+		expect(html).toContain('Password:')
+	})
+
 	// Notion exports a callout as an <aside>. The closing tag used to land
 	// inside the last list item, and markdown on the first line was left raw.
 	test('renders a Notion callout as one aside', () => {

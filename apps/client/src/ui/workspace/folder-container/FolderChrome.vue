@@ -9,7 +9,7 @@ import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useFolderContainerScope } from './useFolderContainerScope'
 import ItemsDropMenu from '@/ui/kit/ItemsDropMenu.vue'
 import { view_label } from '@/ui/kit/items_menu_labels'
-import { beginRegisteredNoteEditing, armNoteCreateFromMenu } from './panePosition'
+import { beginRegisteredNoteEditing, armNoteCreateFromMenu, resolvePaneCenterPosition } from './panePosition'
 
 const props = defineProps<{
 	view: FolderView
@@ -38,6 +38,18 @@ async function createNote() {
 	}
 }
 
+async function createText() {
+	armNoteCreateFromMenu()
+	// The chrome menu has no click point: start at the center of the pane.
+	const text_id = await ws.create_text(
+		folderId.value,
+		resolvePaneCenterPosition(folderId.value) ?? undefined,
+	)
+	if (text_id) {
+		beginRegisteredNoteEditing(folderId.value, text_id)
+	}
+}
+
 const createOnlyItems = computed<DropdownMenuItem[][]>(() => [
 	viewItems.value,
 	[
@@ -51,6 +63,13 @@ const createOnlyItems = computed<DropdownMenuItem[][]>(() => [
 					disabled: !ws.can_write,
 					onSelect() {
 						void createNote()
+					},
+				},
+				{
+					label: 'New text',
+					disabled: !ws.can_write,
+					onSelect() {
+						void createText()
 					},
 				},
 			],

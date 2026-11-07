@@ -216,7 +216,10 @@ type WorkspaceStore = {
 	): Promise<boolean>
 	/** Drops the open in flight: its folder is not applied (the Explorer left for another place) */
 	cancel_open(): void
+	/** Opens a file: in the note editor when the open-file hook takes it, else in the system's program. */
 	open_file(id: string): Promise<void>
+	/** Opens a file in the system's program (or the browser), whatever the hook would do. */
+	open_file_externally(id: string): Promise<void>
 	/** Copies external filesystem paths into the currently opened folder. Local/demo only. */
 	import_external_files(paths: string[], position?: Position): Promise<void>
 	/** Imports browser File objects (picker / drag & drop) into the given folder. */
@@ -285,6 +288,9 @@ type WorkspaceStore = {
 	change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions): Promise<void>
 	/** Image heading (`title`) or caption (`description`). An empty value removes the xattr. */
 	set_image_text(id: string, field: 'title' | 'description', value: string): Promise<void>
+	/** A shape's text, as markdown; empty removes it. */
+	set_shape_text(id: string, markdown: string): Promise<void>
+	set_shape_text_area(id: string, area: 'frame' | null): Promise<void>
 	change_shape_fill(id: string, color: Color): Promise<void>
 	change_line_geometry(
 		id: string,
@@ -310,6 +316,15 @@ type WorkspaceStore = {
 	change_size(id: string, new_size: Size): Promise<void>
 	change_model_camera(id: string, state: ModelCameraState): Promise<void>
 	change_is_preview(id: string, is_preview: boolean): Promise<void>
+	/** Draws a note file as a bare text block (or back as a note). The preview, fill and size stay as they are. */
+	change_is_text(id: string, is_text: boolean): Promise<void>
+	/** A text block's width mode: "fixed" after a side handle drag, "auto" to grow with the text again. */
+	change_text_width(id: string, mode: 'auto' | 'fixed'): Promise<void>
+	/**
+	 * A file cover becomes a text block in one write: preview on, text on, and
+	 * the default text size when the entry has none.
+	 */
+	show_as_text(id: string): Promise<void>
 	/** Re-read a folder from disk and refresh cache + sidebar tree projection. */
 	reload_folder_cache(folder_id: string): Promise<void>
 	/**
@@ -321,6 +336,8 @@ type WorkspaceStore = {
 	touch_folder(folder_id: string): void
 	reorder_children(folder_id: string, ordered_ids: string[]): Promise<void>
 	create_note(folder_id: string, position?: Position): Promise<string>
+	/** A `Text N.md` note file drawn as a bare text block. It comes back selected. */
+	create_text(folder_id: string, position?: Position): Promise<string>
 	create_shape(folder_id: string, template: ShapeTemplate, position?: Position): Promise<string>
 	/** Creates a line/arrow shape spanning two absolute pane points. */
 	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug): Promise<string>
@@ -332,6 +349,8 @@ type WorkspaceStore = {
 	open(widget: FolderContainerWidgetChild): void
 	/** The Explorer opens folders from views through its navigation; null: the store opens them itself */
 	set_open_folder_hook(hook: ((folder_id: string) => unknown) | null): void
+	/** The Explorer opens notes in its editor: true when the hook took the file; null: every file opens outside */
+	set_open_file_hook(hook: ((file_id: string) => boolean) | null): void
 
 } & SelectionStore & ClipboardStore
 

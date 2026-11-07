@@ -309,6 +309,16 @@ show only these intentional INFOs. Anything else is a regression.
   remaining origins are confirmed in production. Both `v-html` sanitizers keep
   a regex fallback for the DOM-less test environment — `parseNoteMarkdown`
   returned marked's raw output there, which was no sanitizer at all.
+- **A note cannot restyle or cover the app.** Note HTML lands in the app's own
+  document, so `parseNoteMarkdown` uses its own DOMPurify instance with no
+  `<style>`, no `<form>` and no `class` (the app's utility classes would
+  apply), and `style` keeps only text styling: color, background color,
+  alignment, weight, slant, decoration (`safeInlineStyle`) — no layout, no
+  `url()`. The hook sits on that instance only: shape fills live in `style`.
+  A DOMPurify that finds the DOM lacking returns its input untouched, so the
+  renderer checks `isSupported` and otherwise takes the regex fallback, which
+  applies the same rules. `markdown.dom.test.ts` runs the shipping path under
+  jsdom.
 - **User text never lands unescaped in a mail subject.** Bodies go through
   `escape_html`; subjects go through `subject_text` (`src/mail.ts`), which
   strips control characters, collapses whitespace and clamps to 120 chars.

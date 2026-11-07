@@ -10,6 +10,7 @@ import { useClipboardShortcuts } from '@/ui/workspace/folder-container/useClipbo
 import { createScopeFromStore, provideFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { workspaceDialogsKey } from '@/ui/workspace/sidebar/workspaceDialogs'
 import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePublishPanel'
+import { opens_in_editor } from '@/store/explorer/note_editor'
 import { use_folder_keys } from './folder_keys'
 import FolderPlaceholder from './FolderPlaceholder.vue'
 import ListView from './views/ListView.vue'
@@ -57,6 +58,22 @@ watch(workspace, (ws, _old, on_cleanup) => {
 		return explorer_navigation.open_folder({ ...ref, folder_id })
 	})
 	on_cleanup(() => ws.set_open_folder_hook(null))
+}, { immediate: true })
+
+// A note of this folder opens in the note editor: from the cloud, the
+// browser's storage, a publication or the demo. A local file on the desktop
+// opens in the system's program, as before ("Open in editor" in its menu).
+watch(workspace, (ws, _old, on_cleanup) => {
+	if (!ws) return
+	ws.set_open_file_hook((file_id) => {
+		const ref = location.value
+		if (!ref || ws !== store.workspace) return false
+		if (!opens_in_editor(ref.drive_id, file_id)) return false
+		if (!ws.opened_folder.children.some(child => child.id === file_id)) return false
+		void explorer_navigation.open_file(ref, file_id)
+		return true
+	})
+	on_cleanup(() => ws.set_open_file_hook(null))
 }, { immediate: true })
 
 // Anything else that opens a subfolder through the store: the Explorer

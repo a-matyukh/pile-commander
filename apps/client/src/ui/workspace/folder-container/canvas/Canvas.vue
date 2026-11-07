@@ -50,6 +50,7 @@ import LassoPreview from './drawing/LassoPreview.vue'
 import LineDrawPreview from './drawing/LineDrawPreview.vue'
 import EmptyPaneHint from '../EmptyPaneHint.vue'
 import { useLineDrawMode } from '../useLineDrawMode'
+import { useTextPlaceMode } from '../useTextPlaceMode'
 import CanvasAxes from './CanvasAxes.vue'
 import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackground'
 import PileImagePending from '../widgets/PileImagePending.vue'
@@ -192,6 +193,8 @@ const {
 	onNodeResizeStart,
 	onNodeResizeLive,
 	onNodeResizeEnd,
+	onTextResizeLive,
+	onTextResizeEnd,
 	applyLineGeometryLive,
 } = useCanvasNodes(container, editingNoteId, {
 	isWidgetDragging: computed(() => isWidgetDragging.value),
@@ -284,6 +287,8 @@ provide(canvasNodeResizeKey, {
 	onStart: onNodeResizeStart,
 	onLive: onNodeResizeLive,
 	onEnd: onNodeResizeEnd,
+	onTextLive: onTextResizeLive,
+	onTextEnd: onTextResizeEnd,
 })
 provide(canvasLineGeometryKey, applyLineGeometryLive)
 
@@ -400,6 +405,7 @@ const {
 	contextMenuPosition,
 	rememberContextMenuPosition,
 	createNoteAt,
+	createTextAt,
 	createFolderAt,
 	onPaneClick: onSharedPaneClick,
 	onPaneContextMenu,
@@ -408,6 +414,26 @@ const {
 	editingNoteId,
 	resolvePosition: toFlowCoords,
 })
+
+// T arms one text block for the next click on empty pane. Only the hand and
+// select tools click on the pane; with the pen or the lasso a click is a stroke.
+const textPlace = useTextPlaceMode({
+	isEmbedded,
+	canArm: () => isHandTool.value || isSelectTool.value,
+})
+
+// One placement tool at a time: arming a line, picking a shape or switching to
+// another tool drops the text one.
+watch(() => lineDraw.armed.value, (kind) => {
+	if (kind) textPlace.disarm()
+})
+watch(textPlace.armed, (armed) => {
+	if (armed) lineDraw.disarm()
+})
+watch(boardPlacementTemplate, (template) => {
+	if (template) textPlace.disarm()
+})
+watch(tool, () => textPlace.disarm())
 
 const viewportSnapshot = computed<BoardViewport>(() => ({
 	x: viewport.value.x,
@@ -517,7 +543,15 @@ function onSoloDragPointerEnd() {
 	releaseSoloDragLock()
 }
 
+/**
+ * A click is on the empty canvas only if its press was too: a text selection
+ * dragged out of a note or a shape is released on the pane, and must not end
+ * the editing.
+ */
+let pressOnEmptyCanvas = false
+
 function onFlowPointerDown(event: PointerEvent) {
+	pressOnEmptyCanvas = event.target instanceof Element && isEmptyCanvasTarget(event.target)
 	if (event.button !== 0) return
 	const target = event.target
 	if (!(target instanceof Element)) return
@@ -578,12 +612,18 @@ watch(tool, (next) => {
 })
 
 async function onPaneClick(event: MouseEvent) {
+	if (!pressOnEmptyCanvas) return
 	if (isDrawTool.value || isLassoTool.value) return
 	if (lineDraw.armed.value) return
+	if (textPlace.armed.value) {
+		textPlace.disarm()
+		await createTextAt(event)
+		return
+	}
 	await onSharedPaneClick(event)
 }
 
-function isEmptyCanvasTarget(target: HTMLElement) {
+function isEmptyCanvasTarget(target: Element) {
 	if (target.closest('.vue-flow__node')) return false
 	if (target.closest('.vue-flow__edge')) return false
 	if (target.closest('.vue-flow__edge-labels')) return false
@@ -667,7 +707,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:nodes="flowNodes"
 					v-model:edges="flowEdges"
 					class="canvas-flow"
-					:class="[`canvas-flow--${tool}`, { 'canvas-flow--embedded': isEmbedded }]"
+					:class="[`canvas-flow--${tool}`, { 'canvas-flow--embedded': isEmbedded, 'canvas-flow--text-place': textPlace.armed.value }]"
 					:style="{ cursor: lineDraw.cursor.value || undefined }"
 					:node-types="nodeTypes"
 					:edge-types="edgeTypes"
@@ -867,6 +907,13 @@ function onSectionPointerDown(event: PointerEvent) {
 	cursor: crosshair;
 }
 
+/* T is armed: the next click on the pane drops a text block. The pane has its
+   own grab cursor with the hand tool, so the text cursor is forced on it. */
+.canvas-flow--text-place,
+.canvas-flow--text-place :deep(.vue-flow__pane) {
+	cursor: text !important;
+}
+
 .canvas-flow--disconnect {
 	cursor: pointer;
 }
@@ -895,11 +942,6 @@ function onSectionPointerDown(event: PointerEvent) {
  * clipped under later nodes. */
 .canvas-flow :deep(.vue-flow__node:has(.is_edit)) {
 	z-index: 9998 !important;
-	overflow: visible;
-}
-
-/* Image heading and caption sit outside the node box. */
-.canvas-flow :deep(.vue-flow__node:has(.image-caption)) {
 	overflow: visible;
 }
 

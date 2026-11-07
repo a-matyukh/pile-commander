@@ -83,6 +83,24 @@ describe('bridge panel copy', () => {
 		expect(bridge_panel_view(input({ door: 'sync', step: 'auth' })).title).toBe('Sync with the cloud')
 	})
 
+	test('the meter shows what is taken and what this folder adds, in red when it does not fit', () => {
+		explorer_language.value = 'en'
+		const taken = measured([file({ relative: 'a.txt', size_bytes: 100_000 })], { free_bytes: 600_000 })
+		const view = bridge_panel_view(input({ door: 'sync', preflight: taken }))
+		expect(view.direction).toBe('both')
+		expect(view.stats?.count).toBe('1')
+		expect(view.stats?.count_label).toBe('file')
+		expect(view.meter?.used).toBeCloseTo(0.4)
+		expect(view.meter?.adding).toBeCloseTo(0.1)
+		expect(view.meter?.over).toBe(false)
+
+		const full = measured([file({ relative: 'a.txt', size_bytes: 300_000 })], { free_bytes: 100_000 })
+		const over = bridge_panel_view(input({ door: 'device', preflight: full }))
+		expect(over.direction).toBe('up')
+		expect(over.meter?.over).toBe(true)
+		expect(over.meter?.used! + over.meter?.adding!).toBeLessThanOrEqual(1)
+	})
+
 	test('summary counts files, names the plan, and offers the door action', () => {
 		explorer_language.value = 'en'
 		const sync = bridge_panel_view(input({ door: 'sync' }))

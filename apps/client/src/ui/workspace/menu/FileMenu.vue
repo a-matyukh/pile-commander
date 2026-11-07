@@ -6,7 +6,7 @@ import NodeMenuShell from './NodeMenuShell.vue'
 import { useNodeMenu } from './useNodeMenu'
 import { useColorSubmenu } from './useColorSubmenu'
 import { image_shows_preview } from '@/services/board/layout'
-import { get_preview_toggle_label, is_previewable_file } from '@/services/board/media'
+import { get_preview_toggle_label, is_note_file_name, is_previewable_file } from '@/services/board/media'
 import { image_caption_in_view, type ImageTextField } from '@/services/workspace/imageText'
 import {
 	is_line_shape,
@@ -20,6 +20,9 @@ import ImageTextDialog from './ImageTextDialog.vue'
 import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { t } from '@/i18n'
+import { explorer_navigation } from '@/store/explorer/navigation'
+import { is_note_file, opens_in_editor } from '@/store/explorer/note_editor'
+import { has_text_area_switch, shape_text_kind, type ShapeTextKind } from '@/services/board/shape_text'
 import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
 
 const props = defineProps<{
@@ -50,9 +53,54 @@ const {
 
 const isPreviewable = computed(() => is_previewable_file(props.node.name))
 
+const isNoteFile = computed(() => is_note_file_name(props.node.name))
+
+/** The file carries `is_text`: a text block, or a cover that comes back as one. */
+const isTextMarked = computed(() => {
+	const child = openedChild.value
+	return child?.type === 'file' && child.is_text === true
+})
+
 const previewToggleLabel = computed(() =>
-	get_preview_toggle_label(props.node.name, props.isPreview ?? false),
+	get_preview_toggle_label(props.node.name, props.isPreview ?? false, isTextMarked.value),
 )
+
+function togglePreview() {
+	const ws = requireWorkspace()
+	// A cover that was a text block returns as one, with a size if it has none.
+	if (isNoteFile.value && isTextMarked.value && !props.isPreview) {
+		void ws.show_as_text(props.node.id)
+		return
+	}
+	void ws.change_is_preview(props.node.id, !props.isPreview)
+}
+
+/**
+ * Note <-> text for a shown note file, and "Show as text" for a plain cover.
+ * The flag changes; the fill and the size stay.
+ */
+const textItems = computed<DropdownMenuItem[]>(() => {
+	if (!props.showPreviewToggle || !isNoteFile.value) return []
+	const id = props.node.id
+	if (props.isPreview) {
+		return [{
+			label: isTextMarked.value ? 'Convert to note' : 'Convert to text',
+			disabled: readonly.value,
+			onSelect() {
+				void requireWorkspace().change_is_text(id, !isTextMarked.value)
+			},
+		}]
+	}
+	// A cover already marked as text has "Show as text" as its toggle above.
+	if (isTextMarked.value) return []
+	return [{
+		label: 'Show as text',
+		disabled: readonly.value,
+		onSelect() {
+			void requireWorkspace().show_as_text(id)
+		},
+	}]
+})
 
 const isShapePreview = computed(
 	() => props.isPreview === true && props.node.name.endsWith('.svg'),
@@ -93,6 +141,7 @@ function commit_image_text(payload: { id: string; field: ImageTextField; value: 
 
 const shapeFillColor = ref<string | undefined>()
 const isLineShape = ref(false)
+const shapeTextKind = ref<ShapeTextKind>('rect')
 const startPlug = ref<LinePlug>('none')
 const endPlug = ref<LinePlug>('none')
 
@@ -110,6 +159,7 @@ watch(
 		const content = await requireWorkspace().read_note_content(id)
 		shapeFillColor.value = read_shape_color(content)
 		isLineShape.value = is_line_shape(content)
+		shapeTextKind.value = shape_text_kind(content)
 		const meta = parse_line_meta(content)
 		startPlug.value = meta?.startPlug ?? 'none'
 		endPlug.value = meta?.endPlug ?? 'none'
@@ -197,6 +247,53 @@ function linePlugItems(): DropdownMenuItem[] {
 	]
 }
 
+/**
+ * A note of the open folder opens one way by default (the note editor, or a
+ * local file on the desktop in its program): the other way is here.
+ */
+function noteOpenItems(): DropdownMenuItem[] {
+	const location = explorer_navigation.location
+	const ws = requireWorkspace()
+	if (location?.kind !== 'folder' || !is_note_file(props.node.id)) return []
+	if (!ws.opened_folder.children.some(child => child.id === props.node.id)) return []
+	if (opens_in_editor(location.ref.drive_id, props.node.id)) {
+		// The demo has no file to hand to a program
+		if (location.ref.drive_id === 'demo') return []
+		return [{
+			label: t('note_editor.open_externally'),
+			icon: 'tabler:external-link',
+			onSelect() {
+				void ws.open_file_externally(props.node.id)
+			},
+		}]
+	}
+	return [{
+		label: t('note_editor.open_in_editor'),
+		icon: 'tabler:file-pencil',
+		onSelect() {
+			void explorer_navigation.open_file(location.ref, props.node.id)
+		},
+	}]
+}
+
+/**
+ * Where a shape's text sits, as on the shape's own switch: a rectangle's two
+ * areas are one. A group of its own, under the open and look items.
+ */
+function shapeTextItems(): DropdownMenuItem[] {
+	const child = openedChild.value
+	if (!isShapePreview.value || isLineShape.value || readonly.value) return []
+	if (!child || child.type !== 'file' || !has_text_area_switch(shapeTextKind.value)) return []
+	const frame = child.text_area === 'frame'
+	return [{
+		label: t(frame ? 'shape_text.menu_inside' : 'shape_text.menu_frame'),
+		icon: frame ? 'tabler:box-padding' : 'tabler:frame',
+		onSelect() {
+			void requireWorkspace().set_shape_text_area(child.id, frame ? null : 'frame')
+		},
+	}]
+}
+
 const items = computed<DropdownMenuItem[][]>(() => {
 	if (isMultiSelection.value) return selectionMenuItems.value
 
@@ -212,15 +309,15 @@ const items = computed<DropdownMenuItem[][]>(() => {
 				},
 			}]
 			: []),
+		...noteOpenItems(),
 		...(props.showPreviewToggle && isPreviewable.value
 			? [{
 				label: previewToggleLabel.value,
 				disabled: readonly.value,
-				onSelect() {
-					void requireWorkspace().change_is_preview(props.node.id, !props.isPreview)
-				},
+				onSelect: togglePreview,
 			}]
 			: []),
+		...textItems.value,
 		...(showImageText.value
 			? [
 				{
@@ -245,8 +342,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
 		...plugItems,
 	]
 
+	const shapeText = shapeTextItems()
+
 	return [
 		...(primary.length > 0 ? [primary] : []),
+		...(shapeText.length ? [shapeText] : []),
 		...(layerItems.value.length ? [layerItems.value] : []),
 		clipboardItems.value,
 		rename_remove_items.value,

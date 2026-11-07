@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { t } from '@/i18n'
 import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
 import { traffic_inset_target } from '@/services/window/trafficInset'
+import { is_desktop } from '@/isDesktop'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open, toggle_explorer_sidebar } from '@/store/explorer/sidebar'
 import IconButton from '@/ui/kit/IconButton.vue'
@@ -37,22 +38,22 @@ const shortcut = computed(() => (macOS.value
 defineShortcuts(computed(() => ({
 	// Cmd on macOS, Alt elsewhere. meta would become Ctrl off a Mac.
 	[macOS.value ? 'meta_b' : 'alt_b']: () => toggle_explorer_sidebar(),
-	[macOS.value ? 'meta_arrowleft' : 'alt_arrowleft']: () => {
-		void explorer_navigation.go_back()
-	},
-	[macOS.value ? 'meta_arrowright' : 'alt_arrowright']: () => {
-		void explorer_navigation.go_forward()
-	},
+	[macOS.value ? 'meta_arrowleft' : 'alt_arrowleft']: () => go_back(),
+	[macOS.value ? 'meta_arrowright' : 'alt_arrowright']: () => go_forward(),
 })))
 
+// In the browser the arrows are the browser's Back and Forward, so both histories stay one.
+// A folder still opening is dropped here: the browser's entry has not moved yet
 function go_back() {
 	if (!explorer_navigation.can_go_back) return
-	void explorer_navigation.go_back()
+	if (is_desktop || explorer_navigation.target) void explorer_navigation.go_back()
+	else window.history.back()
 }
 
 function go_forward() {
 	if (!explorer_navigation.can_go_forward) return
-	void explorer_navigation.go_forward()
+	if (is_desktop) void explorer_navigation.go_forward()
+	else window.history.forward()
 }
 </script>
 

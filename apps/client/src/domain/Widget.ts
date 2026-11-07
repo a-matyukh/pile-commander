@@ -54,6 +54,14 @@ export type ModelCameraState = {
 }
 
 type FileXattrs = CommonXattrs & Partial<{
+	/** A `.md` / `.txt` preview drawn as a text block (no card) instead of a note. Kept while the preview is off. */
+	is_text: boolean
+	/**
+	 * A text block's width. Absent or "auto": the box grows to the right with the
+	 * text and breaks lines only at Enter. "fixed": the user dragged a side
+	 * handle, `size.width` is the width and the text wraps inside it.
+	 */
+	text_width: 'auto' | 'fixed'
 	padding: number
 	cover: ImageBase64 | Color
 	model_camera: ModelCameraState
@@ -61,6 +69,10 @@ type FileXattrs = CommonXattrs & Partial<{
 	title: string
 	/** Caption drawn below an image preview. */
 	description: string
+	/** A shape's text, as markdown (stage 4 of the text plan in pile-commander-product). Absent: no text. */
+	text: string
+	/** Where a shape's text sits: absent, inside the shape; "frame", the whole frame. */
+	text_area: 'frame'
 }>
 
 type FolderCoverXattrs = CommonXattrs & Partial<{

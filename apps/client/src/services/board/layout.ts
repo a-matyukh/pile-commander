@@ -6,6 +6,8 @@ export const TILE = { width: 100, height: 100, gap: 10, pad: 20 }
 export const COLS = 4
 export const DEFAULT_SIZE: Size = { width: TILE.width, height: TILE.height }
 export const NOTE_DEFAULT_SIZE: Size = { width: 220, height: 80 }
+/** Height stays at the canvas resize minimum (100x50) so a text block can be resized from its default. */
+export const TEXT_DEFAULT_SIZE: Size = { width: 200, height: 50 }
 export const SHAPE_SQUARE_DEFAULT_SIZE: Size = { width: 100, height: 100 }
 export const SHAPE_DEFAULT_SIZE: Size = SHAPE_SQUARE_DEFAULT_SIZE
 export const SHAPE_LINE_DEFAULT_SIZE: Size = { width: 120, height: 24 }
@@ -40,6 +42,34 @@ export function is_note_widget(widget: FolderContainerWidgetChild): boolean {
 	return widget.type === 'file'
 		&& widget.is_preview === true
 		&& (widget.name.endsWith('.txt') || widget.name.endsWith('.md'))
+}
+
+/** A note file drawn as a bare text block on the board and canvas. Other views still show it as a note. */
+export function is_text_widget(widget: FolderContainerWidgetChild): boolean {
+	return is_note_widget(widget)
+		&& widget.type === 'file'
+		&& widget.is_text === true
+}
+
+/** A text block whose width the user fixed with a side handle; any other text block grows with its text. */
+export function is_fixed_width_text(widget: FolderContainerWidgetChild): boolean {
+	return is_text_widget(widget)
+		&& widget.type === 'file'
+		&& widget.text_width === 'fixed'
+}
+
+/**
+ * CSS size of a text block's box. The height always follows the text. The
+ * width follows it too (`max-content`) until the user fixes it; then it is the
+ * stored width, or `width` while a side handle is being dragged.
+ */
+export function text_box_css(
+	widget: FolderContainerWidgetChild,
+	width?: number,
+): { width: string; height: string } {
+	if (width !== undefined) return { width: `${width}px`, height: 'auto' }
+	if (is_fixed_width_text(widget)) return { width: `${board_size(widget).width}px`, height: 'auto' }
+	return { width: 'max-content', height: 'auto' }
 }
 
 export function is_shape_widget(widget: FolderContainerWidgetChild): boolean {
@@ -213,6 +243,7 @@ export function absolute_from_origin(
 export function board_size(widget: FolderContainerWidgetChild): Size {
 	if (widget.size) return widget.size
 	if (is_folder_preview_widget(widget)) return FOLDER_PREVIEW_DEFAULT_SIZE
+	if (is_text_widget(widget)) return TEXT_DEFAULT_SIZE
 	if (is_note_widget(widget)) return NOTE_DEFAULT_SIZE
 	if (is_shape_widget(widget)) {
 		return widget.name.toLowerCase().includes('line')

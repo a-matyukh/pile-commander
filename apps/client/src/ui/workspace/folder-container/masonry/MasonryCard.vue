@@ -87,6 +87,8 @@ const {
 	isEditing,
 	isMarkdown,
 	previewHtml,
+	canToggleTasks,
+	toggleTask,
 	ensureLoaded,
 	onPointerDown,
 	onPointerUp,
@@ -141,8 +143,10 @@ function onDblClick(event: MouseEvent) {
 					:is-editing="isEditing"
 					:is-markdown="isMarkdown"
 					:preview-html="previewHtml"
+					:can-toggle-tasks="canToggleTasks"
 					@visible="ensureLoaded"
 					@blur="onBlur"
+					@toggle-task="toggleTask"
 				/>
 			</div>
 			<div v-else-if="fileParts" class="masonry-file">

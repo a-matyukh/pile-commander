@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent } from 'vue'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { is_folder_preview_widget } from '@/services/board/layout'
 import NoteWidgetContent from './NoteWidgetContent.vue'
+import TextWidgetContent from './TextWidgetContent.vue'
 import PreviewWidgetContent from './PreviewWidgetContent.vue'
 import DefaultWidgetContent from './DefaultWidgetContent.vue'
 import StackNoteRow from '../stack/StackNoteRow.vue'
@@ -23,7 +24,12 @@ const props = defineProps<{
 
 const previewKind = computed(() => resolvePreviewKind(props.widget))
 const widgetRole = computed(() => resolveWidgetRole(props.widget))
-const isNote = computed(() => widgetRole.value === 'note')
+/**
+ * A text block is drawn bare only on the board and canvas. Every other
+ * layout (stack, dashboard) draws it as the note it is underneath.
+ */
+const isText = computed(() => widgetRole.value === 'text' && props.layout === 'board')
+const isNote = computed(() => widgetRole.value === 'note' || (widgetRole.value === 'text' && !isText.value))
 const folderPreviewWidget = computed(() =>
 	is_folder_preview_widget(props.widget) ? props.widget : null,
 )
@@ -56,8 +62,14 @@ const paneLayout = computed(() => props.layout === 'stack' ? 'board' : props.lay
 
 	<!-- board / canvas / dashboard -->
 	<template v-else>
+		<TextWidgetContent
+			v-if="isText"
+			:layout="paneLayout"
+			:widget="widget"
+			:index="boardIndex"
+		/>
 		<NoteWidgetContent
-			v-if="isNote"
+			v-else-if="isNote"
 			:layout="paneLayout"
 			:widget="widget"
 			:index="boardIndex"

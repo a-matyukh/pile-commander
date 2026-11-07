@@ -51,3 +51,45 @@ describe('a folder look change in the store', () => {
 		expect(store.last_error).toMatch(/offline/)
 	})
 })
+
+describe('an image title or description in a cloud folder', () => {
+	async function picture() {
+		const fake = createFakeFileManager()
+		fake.seed_folder('/')
+		fake.seed_file('/pic.png')
+		let release: () => void = () => {}
+		const gate = new Promise<void>(resolve => { release = resolve })
+		const set = fake.fm.set_xattr.bind(fake.fm)
+		const remove = fake.fm.remove_xattr.bind(fake.fm)
+		fake.fm.set_xattr = async (id, name, value) => {
+			await gate
+			return set(id, name, value)
+		}
+		fake.fm.remove_xattr = async (id, name) => {
+			await gate
+			return remove(id, name)
+		}
+		const store = await createWorkspaceStore({ id: '/', type: 'cloud', name: 'ws' }, fake.fm, { root_folder_id: '/', live: false })
+		if (!store) throw new Error('store did not open')
+		opened.push(store)
+		return { store, fake, release }
+	}
+
+	const pic = (store: WorkspaceStore) =>
+		store.folder_container.children.find(child => child.id === '/pic.png') as { title?: string } | undefined
+
+	test('shows and clears before the write lands', async () => {
+		const { store, fake, release } = await picture()
+		const added = store.set_image_text('/pic.png', 'title', 'Sunset')
+		expect(pic(store)?.title).toBe('Sunset')
+		release()
+		await added
+		expect(fake.get_xattr('/pic.png', 'title')).toBe('Sunset')
+
+		const cleared = store.set_image_text('/pic.png', 'title', '')
+		expect(pic(store)?.title).toBeUndefined()
+		await cleared
+		expect(fake.get_xattr('/pic.png', 'title')).toBeNull()
+		expect(store.last_error).toBeNull()
+	})
+})

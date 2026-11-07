@@ -32,7 +32,7 @@ export const LINE_DRAW_CURSORS: Record<LineDrawKind, string> = {
 	arrow: cursorSvg('arrow'),
 }
 
-function isTypingTarget(target: EventTarget | null): boolean {
+export function isTypingTarget(target: EventTarget | null): boolean {
 	if (!(target instanceof HTMLElement)) return false
 	if (target.isContentEditable) return true
 	const tag = target.tagName

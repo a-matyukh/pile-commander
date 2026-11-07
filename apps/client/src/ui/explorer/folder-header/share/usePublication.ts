@@ -6,6 +6,7 @@ import {
 	upload_hub_preview,
 } from '@pile-commander/file-manager'
 import { t } from '@/i18n'
+import { open_external } from '@/services/openExternal'
 import { backend_url, require_supabase } from '@/services/cloud/client'
 import { app_put_blob } from '@/services/cloud/cloudFileManager'
 import cloud, { type Publication } from '@/store/cloud'
@@ -190,7 +191,7 @@ export function create_publication() {
 	}
 
 	function open_public() {
-		if (public_url.value) window.open(public_url.value, '_blank', 'noopener')
+		if (public_url.value) void open_external(public_url.value)
 	}
 
 	// ── Link ────────────────────────────────────────────────────────────

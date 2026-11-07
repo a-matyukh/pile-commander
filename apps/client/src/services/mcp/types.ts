@@ -53,6 +53,10 @@ export type EntryLayout = {
 	size?: { width: number; height: number }
 	order?: number
 	is_preview?: boolean
+	/** A preview drawn as a bare text block, not a note card. */
+	is_text?: boolean
+	/** A shape's text, as markdown. */
+	text?: string
 }
 
 export type GetContextResult = {

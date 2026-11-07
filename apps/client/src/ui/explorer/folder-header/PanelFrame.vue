@@ -50,18 +50,22 @@ defineEmits<{ close: [] }>()
 	color: var(--text-primary);
 	font-size: 13px;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
+	/* A phone is narrower than the panel: it shrinks to the screen, and useAnchoredPanel keeps it inside. */
+	width: min(var(--panel-w), calc(100% - 16px));
+	max-height: calc(100dvh - 16px);
+	overflow-y: auto;
 }
 .export {
-	width: 230px;
+	--panel-w: 230px;
 }
 .bridge {
-	width: 320px;
+	--panel-w: 320px;
 }
 .share {
-	width: 380px;
+	--panel-w: 380px;
 }
 :global(.explorer.lg) .export {
-	width: 250px;
+	--panel-w: 250px;
 	font-size: 15px;
 }
 :global(.explorer.lg) .bridge,
@@ -72,6 +76,8 @@ defineEmits<{ close: [] }>()
 	position: static;
 	z-index: auto;
 	width: 100%;
+	max-height: none;
+	overflow: visible;
 	min-width: 0;
 	padding: 6px 4px 8px;
 	background: transparent;

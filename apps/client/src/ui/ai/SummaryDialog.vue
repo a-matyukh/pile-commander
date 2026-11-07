@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { ai_base_check, ai_settings, vision_support } from '@/store/ai'
 import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
@@ -14,6 +14,7 @@ import {
 } from '@/services/ai/summarize'
 import { strip_think, untrusted_markdown } from '@/services/ai/text'
 import { parseNoteMarkdown } from '@/ui/workspace/folder-container/widgets/markdown'
+import { loadedNoteRenderer, loadNoteRenderer } from '@/ui/workspace/folder-container/widgets/noteRenderer'
 import AiReachBadge from './AiReachBadge.vue'
 
 type Phase = 'reading' | 'writing' | 'review' | 'saving' | 'failed'
@@ -30,7 +31,13 @@ const error = ref<string | null>(null)
 let controller: AbortController | null = null
 
 const summary = computed(() => untrusted_markdown(strip_think(raw.value)))
-const summary_html = computed(() => parseNoteMarkdown(summary.value))
+// The summary becomes a note: shown the way the note will show, the old
+// way until the note renderer's chunk is there.
+const note_render = shallowRef(loadedNoteRenderer())
+void loadNoteRenderer().then((render) => {
+	note_render.value = render
+})
+const summary_html = computed(() => (note_render.value ?? parseNoteMarkdown)(summary.value))
 
 async function start() {
 	controller?.abort()

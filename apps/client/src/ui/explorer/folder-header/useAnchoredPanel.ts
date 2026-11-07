@@ -39,10 +39,14 @@ export function use_anchored_panel(anchor: () => PanelAnchor, pulse: WatchSource
 	watch(anchor, () => nextTick(measure))
 	useEventListener(window, 'resize', measure)
 
+	// Under the anchor, but never past either edge: the panel's own --panel-w says how wide it is.
+	const inside = (offset: number) =>
+		`max(8px, min(${offset}px, 100% - min(var(--panel-w, 0px), 100% - 16px) - 8px))`
+
 	const style = computed(() => ({
 		top: `${place.value.top}px`,
-		left: place.value.left == null ? 'auto' : `${place.value.left}px`,
-		right: place.value.right == null ? 'auto' : `${place.value.right}px`,
+		left: place.value.left == null ? 'auto' : inside(place.value.left),
+		right: place.value.right == null ? 'auto' : inside(place.value.right),
 	}))
 
 	return { style }

@@ -9,7 +9,7 @@ import {
 } from 'vue'
 import interact from 'interactjs'
 import type { FolderContainerWidgetChild, Position, Size } from '@/domain/Widget'
-import { board_position, board_size } from '@/services/board/layout'
+import { board_position, board_size, is_text_widget, text_box_css } from '@/services/board/layout'
 import { boardDragStateKey, boardSnapSettingsKey } from '../injectKeys'
 import { useIsCanvasWidgetLayout } from '../useIsCanvasWidgetLayout'
 import { useInteractBinding } from '../widgets/useInteractBinding'
@@ -71,6 +71,19 @@ export function useBoardWidget(options: UseBoardWidgetOptions) {
 		const { dragPositions, dragSizes } = requireDragState()
 		const { x, y } = dragPositions.value[widget.id]
 			?? board_position(widget, index)
+
+		// A text block's box follows its text: only its width is ever set, and
+		// only once the user fixed it (or while a side handle is dragged).
+		if (is_text_widget(widget)) {
+			return {
+				left: `${x}px`,
+				top: `${y}px`,
+				...text_box_css(widget, dragSizes.value[widget.id]?.width),
+				zIndex: String(index),
+				...options.extraStyle?.value,
+			}
+		}
+
 		const { width, height } = dragSizes.value[widget.id]
 			?? board_size(widget)
 		return {
@@ -112,6 +125,8 @@ export function useBoardWidget(options: UseBoardWidgetOptions) {
 
 		bindBoardResize(el, {
 			widget: options.widget,
+			index: options.index,
+			dragPositions,
 			dragSizes,
 			getWorkspace: requireWorkspace,
 			minSize,

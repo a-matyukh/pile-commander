@@ -17,6 +17,9 @@ export type CanvasNodeResizeHandlers = {
 	onStart: (nodeId: string, size: Size) => void
 	onLive: (nodeId: string, size: Size) => void
 	onEnd: (nodeId: string, size: Size) => void
+	/** A text block's side handle: x moves with the left handle, the height is never dragged. */
+	onTextLive: (nodeId: string, geometry: { x: number; width: number }) => void
+	onTextEnd: (nodeId: string, geometry: { x: number; width: number }) => Promise<void>
 }
 
 export const canvasNodeResizeKey: InjectionKey<CanvasNodeResizeHandlers> =

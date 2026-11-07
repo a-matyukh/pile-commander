@@ -17,6 +17,13 @@ import {
 	type DroppedFolderPayload,
 } from '@/services/workspace/listenFolderDrop'
 import { listenOpenedPaths } from '@/services/workspace/listenOpenedPaths'
+import { listen_external_links } from '@/services/openExternal'
+import { public_start_opening } from '@/services/navigatePublic'
+import { sync_browser_history } from '@/store/explorer/browserHistory'
+import { public_roots } from '@/store/explorer/public_roots'
+import cloud from '@/store/cloud'
+import { listenBrowserDrop, type BrowserDroppedFiles } from '@/services/workspace/listenBrowserDrop'
+import { resolveExternalDropPosition } from '@/ui/workspace/folder-container/externalDropPosition'
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
@@ -70,7 +77,8 @@ const bodyPad = computed(() => {
 
 watch(dragOver, (on) => {
 	if (on) {
-		measure_bar()
+		// The browser takes files only: no folder to bookmark on the top bar
+		if (is_desktop) measure_bar()
 		return
 	}
 	overBar.value = false
@@ -102,6 +110,23 @@ function on_files_drop(payload: DroppedFilesPayload) {
 	}
 	if (!workspace.can_write) return
 	void workspace.import_external_files(payload.paths, payload.position ?? undefined)
+}
+
+/** Browser build: files from the system go into the folder on screen, as on the desktop */
+function on_browser_files_drop(payload: BrowserDroppedFiles) {
+	if (payload.files.length === 0) {
+		if (payload.skipped_folders > 0) store.last_error = t('drop.no_folders')
+		return
+	}
+	if (explorer_navigation.target) return
+	const workspace = store.workspace
+	if (!workspace) {
+		store.last_error = t('drop.open_first')
+		return
+	}
+	if (!workspace.can_write) return
+	const position = resolveExternalDropPosition(payload.client.x, payload.client.y)
+	void workspace.import_files(workspace.opened_folder_id, payload.files, position ?? undefined)
 }
 
 let unlistenDrop: (() => void) | null = null
@@ -139,8 +164,37 @@ onUnmounted(() => {
 	stop_close_request?.()
 })
 
+// A web link in a note or anywhere else never replaces the app in this window
+let unlistenLinks: (() => void) | null = null
+onMounted(() => {
+	unlistenLinks = listen_external_links(error => report_error(store, error))
+})
+onUnmounted(() => unlistenLinks?.())
+
+// Browser: the address bar and Back/Forward follow the Explorer's places
+let stopHistory: (() => void) | null = null
+onMounted(() => {
+	if (is_desktop) return
+	stopHistory = sync_browser_history({
+		navigation: explorer_navigation,
+		roots: public_roots,
+		open_public: (username, slug) => cloud.open_public(username, slug),
+		history: window.history,
+		pathname: () => window.location.pathname,
+		listen(on_pop) {
+			window.addEventListener('popstate', on_pop)
+			return () => window.removeEventListener('popstate', on_pop)
+		},
+		start_opening: public_start_opening,
+	})
+})
+onUnmounted(() => stopHistory?.())
+
 onMounted(async () => {
-	if (!is_desktop) return
+	if (!is_desktop) {
+		unlistenDrop = listenBrowserDrop({ onFilesDrop: on_browser_files_drop, dragOver })
+		return
+	}
 	unlistenDrop = await listenFolderDrop({
 		onFolderDrop: on_folder_drop,
 		onFilesDrop: on_files_drop,
@@ -167,8 +221,11 @@ onUnmounted(() => {
 		<Teleport to="body">
 			<div v-if="dragOver" class="drop-veil">
 				<div class="drop-body" :class="{ hot: !overBar }" :style="bodyPad">
-					<p class="main">{{ t('drop.open') }}</p>
-					<p class="more">{{ t('drop.open_more') }}</p>
+					<template v-if="is_desktop">
+						<p class="main">{{ t('drop.open') }}</p>
+						<p class="more">{{ t('drop.open_more') }}</p>
+					</template>
+					<p v-else class="main">{{ t('drop.files') }}</p>
 				</div>
 				<div
 					v-if="barBox"
