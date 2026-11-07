@@ -22,6 +22,7 @@ import type {
 	UploadProgressCallback,
 	WatchEvent,
 	Xattr,
+	RemoveReceipt,
 	UntouchedExpect,
 } from "./types"
 
@@ -1520,6 +1521,38 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			if (error) throw new Error(`remove failed: ${error.message}`)
 		},
 
+		// To the trash like remove; the row id finds it there again (undo)
+		async remove_with_receipt(id: string) {
+			const row = await resolve(id)
+			mark_write(row.id)
+			const { error } = await client.rpc("delete_entry", {
+				p_entry: row.id,
+				p_client_id: client_instance_id(),
+			})
+			if (error) throw new Error(`remove failed: ${error.message}`)
+			return { id, ticket: row.id }
+		},
+
+		// Out of the trash by row id, into its folder wherever that is now; a
+		// name taken meanwhile comes back as "name (n)" (rpc.sql restore_entry).
+		// Brought back by someone already: it is where they put it
+		async restore_removed(receipt: RemoveReceipt) {
+			mark_write(receipt.ticket)
+			await client.rpc("restore_entry", {
+				p_entry: receipt.ticket,
+				p_client_id: client_instance_id(),
+			})
+			const { data, error } = await client
+				.from("entries")
+				.select("path, deleted_at")
+				.eq("id", receipt.ticket)
+				.maybeSingle()
+			if (error) throw new Error(`restore_removed failed: ${error.message}`)
+			const row = data as { path: string; deleted_at: string | null } | null
+			// purged, or its folder went to the trash too
+			return row && row.deleted_at === null ? { id: row.path } : "gone" as const
+		},
+
 		// For good, not to the trash: what the person made a moment ago (undo).
 		// The fingerprint is taken first and every check reads after it, so a
 		// change landing meanwhile makes delete_moved_entry refuse under its lock
@@ -2641,6 +2674,31 @@ export async function workspace_root_info(
 		if (workspace) info[workspace]!.subfolders.push(row.name)
 	}
 	return info
+}
+
+/** Where one entry (by row id) is now: alive at `path`, in the trash, or gone for good */
+export async function entry_state_by_id(
+	client: SupabaseClient,
+	entry_id: string,
+): Promise<{ state: "live" | "trashed" | "gone"; path: string | null }> {
+	const { data, error } = await client
+		.from("entries")
+		.select("path, deleted_at")
+		.eq("id", entry_id)
+		.maybeSingle()
+	if (error) throw new Error(`entry_state_by_id failed: ${error.message}`)
+	const row = data as { path: string; deleted_at: string | null } | null
+	if (!row) return { state: "gone", path: null }
+	return { state: row.deleted_at === null ? "live" : "trashed", path: row.path }
+}
+
+/**
+ * Brings one entry (by row id) back from the trash into its folder, wherever
+ * that is now; a name taken meanwhile gives "name (n)" (rpc.sql restore_entry)
+ */
+export async function restore_entry_id(client: SupabaseClient, entry_id: string): Promise<void> {
+	const { error } = await client.rpc("restore_entry", { p_entry: entry_id, p_client_id: client_instance_id() })
+	if (error) throw new Error(`restore_entry failed: ${error.message}`)
 }
 
 /** Moves one entry (by row id, whatever its path is now) to the trash */

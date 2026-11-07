@@ -23,6 +23,8 @@ import {
 	purge_trash,
 	purge_workspace,
 	trash_workspace,
+	trash_entry_id,
+	restore_entry_id,
 	restore_workspace,
 	list_trashed_workspaces,
 	remove_from_hub,
@@ -283,6 +285,10 @@ export type CloudStore = {
 	fetch_trash(workspace_id: string): Promise<TrashEntry[]>
 	fetch_usage(workspace_id: string): Promise<WorkspaceUsage | null>
 	restore(workspace_id: string, path: string): Promise<boolean>
+	/** Back from the trash by row id (redo of a restore from the trash page) */
+	restore_by_id(workspace_id: string, entry_id: string): Promise<boolean>
+	/** To the trash again by row id (undo of a restore from the trash page) */
+	trash_by_id(workspace_id: string, entry_id: string): Promise<boolean>
 	purge(workspace_id: string, path: string): Promise<boolean>
 	purge_all(workspace_id: string): Promise<boolean>
 	list_members(workspace_id: string): Promise<WorkspaceMember[]>
@@ -1137,6 +1143,32 @@ const cloud: CloudStore = {
 		if (ws?.type === 'cloud' && ws.uid === workspace_id) {
 			await ws.reload_folder_cache(ws.opened_folder_id)
 		}
+		return true
+	},
+
+	/** Back from the trash by row id: redo of a restore from the trash page */
+	async restore_by_id(workspace_id: string, entry_id: string): Promise<boolean> {
+		try {
+			await restore_entry_id(require_supabase(), entry_id)
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			return false
+		}
+		const ws = store.workspace
+		if (ws?.type === 'cloud' && ws.uid === workspace_id) await ws.reload_folder_cache(ws.opened_folder_id)
+		return true
+	},
+
+	/** To the trash again by row id: undo of a restore from the trash page */
+	async trash_by_id(workspace_id: string, entry_id: string): Promise<boolean> {
+		try {
+			await trash_entry_id(require_supabase(), entry_id)
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			return false
+		}
+		const ws = store.workspace
+		if (ws?.type === 'cloud' && ws.uid === workspace_id) await ws.reload_folder_cache(ws.opened_folder_id)
 		return true
 	},
 

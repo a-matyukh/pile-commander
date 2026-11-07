@@ -54,6 +54,7 @@ next launch catches up exactly, from the base.
 | The folder for "Sync to a folder…" | `…/sync/syncToFolder.ts` |
 | Tests | `…/sync/sync.test.ts` |
 | App store: links, engines, Tauri fs, `LocalWriter`, cloud wiring | `apps/client/src/store/localSync.ts` |
+| Undo in a synced folder: the hooks the history calls | `apps/client/src/store/history/synced.ts` (registered by `localSync.ts`) |
 | First upload of a local folder | `store/bridge.ts`, door `sync` (steps in `SyncMenu.vue`) |
 | Menu items, status popover | `ui/workspace/sidebar/Sidebar.vue`, `SyncStatusButton.vue`, `workspaces-list/WorkspacesList.vue` |
 | Cloud reads and signal | `packages/file-manager/src/supabase.ts`: `list_workspace_entries`, `list_workspace_strokes`, `list_workspace_connections`, `watch_workspace`, `replace_file`, `purge_entry_id` |
@@ -300,6 +301,46 @@ decided one by one.
 - **Failures.** Three failed actions in a row end the pass; the error is
   shown and retried with backoff. A plan refusal (`quota_exceeded`,
   `file_too_large`) pauses; what synced before it stays in the base.
+
+## Undo (⌘Z) in a synced folder
+
+The window's undo (`store/history/`) writes both sides of a synced folder
+itself, while the folder's passes wait. `store/localSync.ts` registers the
+hooks in `store/history/synced.ts`; elsewhere (web, other folders) there
+are none and undo works on the local disk alone.
+
+- **Hold.** `engine.hold(fn)` waits for a pass already running, starts none
+  while `fn` runs (not the watcher's, the interval's, a cloud event's, or
+  Sync now), and runs the one asked for meanwhile once `fn` is done. Without
+  it any order races: a file back before the cloud row is uploaded again
+  (`reconcile.ts`, local only), a cloud row back before the file is
+  downloaded.
+- **A delete keeps its cloud row.** At the delete the step records the
+  entry's `cloud_id` from `sync.json`: the pass forgets it right after it
+  sends the cloud copy to the trash.
+- **Undo of a delete**, under the hold:
+  1. the place is taken (a pass before the hold brought a changed cloud copy
+     down): the file stays, the cloud is not touched, and undo says it left
+     it alone;
+  2. the cloud row is in the trash: `restore_entry` by its id, then the file
+     from the system trash. The next pass finds the file on both sides at
+     the same path and size and only links them (`adopt`): nothing is
+     uploaded, nothing is left in the cloud trash;
+  3. the row is still alive (no pass took the delete up yet): the file
+     alone; its base entry is still there, and the pass finds nothing to do;
+  4. the row is gone for good, or the file was never uploaded: the file
+     alone, and the pass uploads it as new.
+- **Undo of a creation**, under the hold: the file goes for good while it
+  is untouched, and so does its cloud copy (`remove_untouched` on the cloud
+  side: same text, size or children), by the row id in `sync.json`. Both
+  sides are empty then, and the next pass forgets the entry instead of
+  sending the cloud copy to the trash. Not uploaded yet: the file alone.
+- **Redo** is a plain delete or creation: the next pass syncs it as any
+  other.
+
+Rare and accepted: a cloud row that comes back as "name (n)" (someone made
+a file with its name in the cloud meanwhile) does not link up with the file
+here and is synced as a separate file.
 
 ## Why it is built this way
 

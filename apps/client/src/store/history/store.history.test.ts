@@ -1,11 +1,12 @@
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createFakeFileManager } from '@pile-commander/file-manager'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { Connection, StrokeNode } from '@/domain/Widget'
 import { shape_template_svg } from '@/services/board/shapes'
 import { createWorkspaceStore } from '../index'
-import { create_history } from './history'
+import { create_history, type HistoryEvent } from './history'
 import type { HistoryTx } from './types'
+import { set_synced_folders, type SyncedFolders } from './synced'
 
 vi.spyOn(console, 'log').mockImplementation(() => {})
 vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -24,9 +25,11 @@ async function setup() {
 	if (!ws) throw new Error('createWorkspaceStore returned null')
 	ws.history_ref = { drive_id: 'local', root_id: '/ws' }
 	const h = create_history<WorkspaceStore>({ borrow: async () => ({ store: ws, release() {} }) })
+	const events: HistoryEvent<WorkspaceStore>[] = []
+	h.on(event => events.push(event))
 	const meta = { label: 'test', folder: { drive_id: 'local', root_id: '/ws', folder_id: '/ws' }, folder_name: 'ws' }
 	const act = (fn: (tx: HistoryTx | undefined) => Promise<unknown>) => h.transact(meta, fn)
-	return { fake, ws, h, act }
+	return { fake, ws, h, act, events }
 }
 
 describe('undo through the workspace store', () => {
@@ -207,6 +210,24 @@ describe('undo of file operations within one store', () => {
 		expect(fake.get_xattr('/ws/m.md', 'position')).toBe(at(20, 20))
 	})
 
+	test('a file dropped into a folder goes back in on redo, with its place', async () => {
+		const { fake, ws, h, act } = await setup()
+		fake.seed_folder('/ws/crate')
+		fake.seed_file('/ws/d.md', 'dropping')
+		await ws.reload_folder_cache('/ws')
+		await act(async (tx) => {
+			await ws.move('/ws/d.md', '/ws/crate', 0, '/ws', undefined, { tx })
+			await ws.show_folder_children('/ws/crate')
+			await ws.change_position('/ws/crate/d.md', { x: 3, y: 4 }, { tx })
+		})
+		await h.undo()
+		expect(fake.has('/ws/d.md')).toBe(true)
+		// its place is read once it is in the folder again, not before
+		await h.redo()
+		expect(fake.has('/ws/crate/d.md')).toBe(true)
+		expect(fake.get_xattr('/ws/crate/d.md', 'position')).toBe(at(3, 4))
+	})
+
 	test('a duplicate goes away; the original stays', async () => {
 		const { fake, ws, h, act } = await setup()
 		const copies = await act(tx => ws.duplicate_entries(['/ws/a.md'], { tx })) as string[]
@@ -251,5 +272,167 @@ describe('undo of file operations within one store', () => {
 		expect(await ws.history_remove_created(id, { text: '' })).toBe('removed')
 		expect(history.can_undo).toBe(false)
 		expect(fake.has(id)).toBe(false)
+	})
+})
+
+describe('undo of a delete', () => {
+	test('a deleted note comes back with its place and the edges to it, and goes again on redo', async () => {
+		const { fake, ws, h, act } = await setup()
+		await ws.ensure_connections('/ws')
+		const edge: Connection = { id: 'e1', from: '/ws/a.md', to: '/ws/b.md', is_animated: false }
+		await ws.upsert_connections('/ws', [edge])
+		await act(tx => ws.remove('/ws/a.md', { tx }))
+		expect(fake.has('/ws/a.md')).toBe(false)
+		expect(await fake.fm.connections.list_connections('/ws')).toEqual([])
+
+		await h.undo()
+		expect(fake.has('/ws/a.md')).toBe(true)
+		expect(fake.get_xattr('/ws/a.md', 'position')).toBe(at(10, 10))
+		expect((await fake.fm.connections.list_connections('/ws')).map(c => c.id)).toEqual(['e1'])
+		expect(ws.folders['/ws']?.children.some(child => child.id === '/ws/a.md')).toBe(true)
+
+		await h.redo()
+		expect(fake.has('/ws/a.md')).toBe(false)
+		expect(await fake.fm.connections.list_connections('/ws')).toEqual([])
+		// the receipt the redo got brings it back again
+		await h.undo()
+		expect(await fake.fm.read_text_file('/ws/a.md')).toBe('hello')
+	})
+
+	test('a deleted folder comes back whole', async () => {
+		const { fake, ws, h, act } = await setup()
+		fake.seed_folder('/ws/box')
+		fake.seed_file('/ws/box/inside.md', 'kept')
+		fake.seed_strokes('/ws/box', [{ id: 's1', z: 1, position: { x: 0, y: 0 }, points: [{ x: 0, y: 0 }], color: '#000', stroke_width: 2, width: 1, height: 1 }])
+		await ws.reload_folder_cache('/ws')
+		await act(tx => ws.remove('/ws/box', { tx }))
+		expect(fake.has('/ws/box/inside.md')).toBe(false)
+		await h.undo()
+		expect(await fake.fm.read_text_file('/ws/box/inside.md')).toBe('kept')
+		expect((await fake.fm.strokes.list_strokes('/ws/box')).map(s => s.id)).toEqual(['s1'])
+	})
+
+	test('several deleted at once come back with one undo', async () => {
+		const { fake, ws, h, act } = await setup()
+		await act(async (tx) => {
+			await ws.remove('/ws/a.md', { tx })
+			await ws.remove('/ws/b.md', { tx })
+		})
+		expect(h.snapshot().undo).toHaveLength(1)
+		await h.undo()
+		expect(fake.has('/ws/a.md')).toBe(true)
+		expect(fake.has('/ws/b.md')).toBe(true)
+	})
+
+	test('an ungrouped folder comes back with its contents in it, at their places; redo ungroups again', async () => {
+		const { fake, ws, h, act, events } = await setup()
+		fake.seed_folder('/ws/F')
+		fake.set_xattr('/ws/F', 'position', at(100, 100))
+		fake.seed_file('/ws/F/c1.md', 'one')
+		fake.set_xattr('/ws/F/c1.md', 'position', at(10, 10))
+		fake.seed_file('/ws/F/c2.md', 'two')
+		fake.set_xattr('/ws/F/c2.md', 'position', at(20, 20))
+		await ws.reload_folder_cache('/ws')
+		await act(tx => ws.uncombine_folder('/ws/F', { tx }))
+		expect(fake.has('/ws/F')).toBe(false)
+		expect(fake.has('/ws/c1.md')).toBe(true)
+		expect(h.snapshot().undo).toHaveLength(1)
+
+		await h.undo()
+		expect(events.at(-1)).toMatchObject({ type: 'undone', skipped: 0, failed: 0 })
+		expect(fake.has('/ws/F')).toBe(true)
+		expect(fake.has('/ws/c1.md')).toBe(false)
+		expect(fake.get_xattr('/ws/F/c1.md', 'position')).toBe(at(10, 10))
+		expect(fake.get_xattr('/ws/F/c2.md', 'position')).toBe(at(20, 20))
+		expect(fake.get_xattr('/ws/F', 'position')).toBe(at(100, 100))
+
+		await h.redo()
+		expect(events.at(-1)).toMatchObject({ type: 'redone', skipped: 0, failed: 0 })
+		expect(fake.has('/ws/F')).toBe(false)
+		expect(fake.has('/ws/c2.md')).toBe(true)
+	})
+
+	test('a file made in its place since stays, and the deleted one waits', async () => {
+		const { fake, ws, h, act } = await setup()
+		await act(tx => ws.remove('/ws/b.md', { tx }))
+		fake.seed_file('/ws/b.md', 'a new one')
+		await h.undo()
+		expect(await fake.fm.read_text_file('/ws/b.md')).toBe('a new one')
+	})
+})
+
+describe('undo in a synced folder', () => {
+	/** A sync that links every entry under /ws to cloud row `row-1` */
+	function fake_sync(options: { row: 'live' | 'trashed' | 'gone'; cloud_id?: string | null }) {
+		const calls: string[] = []
+		const hooks: SyncedFolders = {
+			locate: async path => (path.startsWith('/ws/') ? { root: '/ws', cloud_id: options.cloud_id === undefined ? 'row-1' : options.cloud_id } : null),
+			async hold(root, fn) {
+				calls.push(`hold ${root}`)
+				try {
+					return await fn()
+				} finally {
+					calls.push('release')
+				}
+			},
+			row_state: async () => options.row,
+			async restore_row(cloud_id) {
+				calls.push(`restore ${cloud_id}`)
+			},
+			async remove_copy(entry, expect) {
+				calls.push(`remove copy ${entry.cloud_id} ${JSON.stringify(expect)}`)
+			},
+		}
+		set_synced_folders(hooks)
+		return calls
+	}
+	afterEach(() => set_synced_folders(null))
+
+	test('a delete the sync took to the cloud trash comes back on both sides: the cloud row first', async () => {
+		const calls = fake_sync({ row: 'trashed' })
+		const { fake, ws, h, act } = await setup()
+		await act(tx => ws.remove('/ws/a.md', { tx }))
+		await h.undo()
+		expect(calls).toEqual(['hold /ws', 'restore row-1', 'release'])
+		expect(fake.has('/ws/a.md')).toBe(true)
+	})
+
+	test('a delete the sync has not taken up yet, or one gone for good, comes back only here', async () => {
+		for (const row of ['live', 'gone'] as const) {
+			const calls = fake_sync({ row })
+			const { fake, ws, h, act } = await setup()
+			await act(tx => ws.remove('/ws/a.md', { tx }))
+			await h.undo()
+			expect(calls).toEqual(['hold /ws', 'release'])
+			expect(fake.has('/ws/a.md')).toBe(true)
+		}
+	})
+
+	test('a file the sync brought back meanwhile stays, and the cloud is left alone', async () => {
+		const calls = fake_sync({ row: 'trashed' })
+		const { fake, ws, h, act } = await setup()
+		await act(tx => ws.remove('/ws/b.md', { tx }))
+		fake.seed_file('/ws/b.md', 'changed in the web')
+		await h.undo()
+		expect(calls).toEqual(['hold /ws', 'release'])
+		expect(await fake.fm.read_text_file('/ws/b.md')).toBe('changed in the web')
+	})
+
+	test('an undone creation takes its cloud copy along, while the passes wait', async () => {
+		const calls = fake_sync({ row: 'live' })
+		const { fake, ws, h, act } = await setup()
+		const id = await act(tx => ws.create_note('/ws', { x: 1, y: 1 }, { tx })) as string
+		await h.undo()
+		expect(fake.has(id)).toBe(false)
+		expect(calls).toEqual(['hold /ws', 'remove copy row-1 {"text":""}', 'release'])
+	})
+
+	test('a creation not uploaded yet goes only here', async () => {
+		const calls = fake_sync({ row: 'live', cloud_id: null })
+		const { fake, ws, h, act } = await setup()
+		const id = await act(tx => ws.create_note('/ws', { x: 1, y: 1 }, { tx })) as string
+		await h.undo()
+		expect(fake.has(id)).toBe(false)
+		expect(calls).toEqual(['hold /ws', 'release'])
 	})
 })

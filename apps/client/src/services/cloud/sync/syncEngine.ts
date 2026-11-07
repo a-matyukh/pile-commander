@@ -87,6 +87,12 @@ export type SyncEngine = {
 	stop(): void
 	/** A pass right away that also reads the cloud; the `allow_*` flags confirm a paused one. */
 	sync_now(options?: SyncNowOptions): Promise<void>
+	/**
+	 * Runs `fn` with passes kept off (an undo that writes both sides): it waits
+	 * for a pass already running and starts none meanwhile, not even Sync now;
+	 * a pass asked for in between runs once `fn` is done
+	 */
+	hold<T>(fn: () => Promise<T>): Promise<T>
 }
 
 function message_of(error: unknown): string {
@@ -125,6 +131,9 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 	let interval: ReturnType<typeof setInterval> | null = null
 	let unwatch: (() => void) | null = null
 	let unwatch_cloud: (() => void) | null = null
+	/** `hold` calls in progress, and the pass asked for meanwhile (its confirmations) */
+	let holds = 0
+	let held_pass: SyncNowOptions | null = null
 
 	const publish = (patch: Partial<SyncStatus>) => {
 		status = { ...status, ...patch }
@@ -346,6 +355,10 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 
 	async function run(confirm: SyncNowOptions = {}): Promise<void> {
 		if (stopped) return
+		if (holds > 0) {
+			held_pass = { ...held_pass, ...confirm }
+			return
+		}
 		if (running) {
 			again = true
 			return running
@@ -405,6 +418,21 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 			if (running) await running
 			cloud_dirty = true
 			await run(options)
+		},
+		async hold(fn) {
+			holds += 1
+			try {
+				while (running) await running
+				return await fn()
+			} finally {
+				holds -= 1
+				if (holds === 0 && held_pass) {
+					const confirm = held_pass
+					held_pass = null
+					cloud_dirty = true
+					void run(confirm)
+				}
+			}
 		},
 	}
 }

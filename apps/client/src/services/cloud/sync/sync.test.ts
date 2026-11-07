@@ -985,6 +985,44 @@ describe('sync engine', () => {
 		}
 	})
 
+	test('a hold waits for the running pass, keeps Sync now off, and runs it after', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+		try {
+			const { local, stat } = make_local()
+			local.seed_file('/ws/note.md', 'mine')
+			const cloud = make_cloud()
+			const { deps } = make_deps(local, stat, cloud)
+			let saved: SyncState = new_state()
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => saved,
+				save_state: async (state) => {
+					saved = state
+				},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				watch: async () => () => {},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+			const starting = engine.start()
+			const order: string[] = []
+			const held = engine.hold(async () => {
+				// the first pass is done before the hold runs
+				order.push(`hold sees ${cloud.fake.has('/note.md') ? 'the upload' : 'nothing'}`)
+				local.seed_file('/ws/later.md', 'later')
+				await engine.sync_now()
+				order.push(`sync now ${cloud.fake.has('/later.md') ? 'ran' : 'waited'}`)
+			})
+			await starting
+			await held
+			await vi.waitFor(() => expect(cloud.fake.has('/later.md')).toBe(true))
+			expect(order).toEqual(['hold sees the upload', 'sync now waited'])
+			engine.stop()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	test('a change in the cloud wakes it, and the pass brings the change down', async () => {
 		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 		try {

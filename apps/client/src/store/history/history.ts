@@ -1,13 +1,15 @@
 import type { FolderRef } from '@/domain/Drive'
-import type { AttrStep, HistoryRecord, HistoryStep, HistoryStoreRef, HistoryTx } from './types'
+import type { AttrStep, CustomAction, HistoryRecord, HistoryStep, HistoryStoreRef, HistoryTx } from './types'
 import {
 	affected_entries,
+	appearing_paths,
 	apply_step,
 	depends_on,
 	fresh_reads,
 	merge_step,
 	object_count,
 	prune_steps,
+	reads_within,
 	rebase_path,
 	rebase_step,
 	step_keys,
@@ -25,7 +27,8 @@ export type HistoryEvent<S extends HistoryTarget = HistoryTarget> =
 	| {
 		type: 'undone' | 'redone'
 		record: HistoryRecord
-		store: S
+		/** null for an action that undoes itself (`custom`) */
+		store: S | null
 		/** Steps written */
 		applied: number
 		/** Things someone changed since, left as they are */
@@ -49,6 +52,10 @@ export type HistoryDeps<S extends HistoryTarget> = {
 	 * and the place on screen when it was inside, follow it
 	 */
 	on_moved?(ref: HistoryStoreRef, from: string, to: string): void
+	/** An undo brought back an entry a delete took (`back`: where it came back) */
+	on_restored?(ref: HistoryStoreRef, was: string, back: string): void
+	/** A redo took an entry away again */
+	on_removed?(ref: HistoryStoreRef, id: string): void
 	now?: () => number
 	/** Records kept for undo */
 	limit?: number
@@ -134,13 +141,14 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 	/** Resolves once no action is still being written: an undo waits for the one just done */
 	const idle = () => (open.length === 0 ? Promise.resolve() : new Promise<void>(resolve => idle_waiters.push(resolve)))
 
-	function commit(meta: TransactMeta, recorded: HistoryStep[]) {
+	function commit(meta: TransactMeta, recorded: HistoryStep[], custom?: CustomAction) {
 		const steps = prune_steps(recorded)
-		if (steps.length === 0) return
+		if (steps.length === 0 && !custom) return
 		const at = now()
 		const top = undo_stack[undo_stack.length - 1]
 		if (
-			meta.merge_key
+			!custom
+			&& meta.merge_key
 			&& top
 			&& top.merge_key === meta.merge_key
 			&& last_committed === top.id
@@ -164,6 +172,7 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 			steps: merged,
 			merge_key: meta.merge_key,
 			notice: meta.notice,
+			custom,
 			updated_at: at,
 		}
 		undo_stack.push(record)
@@ -202,6 +211,11 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 			own.done = true
 			flush()
 		}
+	}
+
+	/** Keeps a done action that undoes and redoes itself (see CustomAction) */
+	function record_custom(meta: TransactMeta, action: CustomAction) {
+		commit(meta, [], action)
 	}
 
 	/** Keeps an action that is already written (the note editor window saves as the person types) */
@@ -289,6 +303,7 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 			if (direction === 'undo' && blocked_label) emit({ type: 'blocked', label: blocked_label })
 			return
 		}
+		if (record.custom) return run_custom(record, record.custom, direction)
 		const ref = { drive_id: record.folder.drive_id, root_id: record.folder.root_id }
 		const borrowed = await deps.borrow(ref).catch(() => null)
 		if (!borrowed) {
@@ -303,8 +318,19 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 			const expect: Side = direction === 'undo' ? 'after' : 'before'
 			const write: Side = direction === 'undo' ? 'before' : 'after'
 			const order = direction === 'undo' ? [...record.steps].reverse() : [...record.steps]
-			const reads = fresh_reads(borrowed.store.file_manager)
-			const matches = await Promise.all(order.map(step => step_matches(step, expect, reads, order).catch(() => false)))
+			const fm = borrowed.store.file_manager
+			const reads = fresh_reads(fm)
+			// A step about what an earlier step of this run makes appear (a moved
+			// entry's new place, a folder made again or back from the trash) is
+			// checked once that step is written: until then there is nothing to read
+			const later = new Set<HistoryStep>()
+			const appearing: string[] = []
+			for (const step of order) {
+				if (reads_within(step, appearing)) later.add(step)
+				appearing.push(...appearing_paths(step, write))
+			}
+			const matches = await Promise.all(order.map(step =>
+				later.has(step) || step_matches(step, expect, reads, order).catch(() => false)))
 
 			const skipped = new Set<HistoryStep>()
 			const skipped_keys = new Set<string>()
@@ -329,8 +355,20 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 			const done: HistoryStep[] = []
 			const messages: string[] = []
 			let failed = 0
+			// What failed takes along what depends on it, with no toast of its
+			// own: a folder that did not come back gets nothing put back into it
+			const failed_keys = new Set<string>()
 			for (const step of order) {
 				if (skipped.has(step)) continue
+				if (depends_on(step, skipped_keys)) {
+					skip(step)
+					continue
+				}
+				if (depends_on(step, failed_keys)) continue
+				if (later.has(step) && !(await step_matches(step, expect, fresh_reads(fm), order).catch(() => false))) {
+					skip(step)
+					continue
+				}
 				const applied: Applied = await apply_step(borrowed.store, step, write).catch(() => ({ ok: false as const }))
 				if (applied.ok) {
 					done.push(step)
@@ -338,6 +376,10 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 						const moved_from = write === 'before' ? step.to : step.from
 						const moved_to = applied.rebase?.to ?? (write === 'before' ? step.from : step.to)
 						deps.on_moved?.(ref, moved_from, moved_to)
+					}
+					if (step.kind === 'entry_delete') {
+						if (write === 'before') deps.on_restored?.(ref, step.id, applied.rebase?.to ?? step.id)
+						else deps.on_removed?.(ref, step.id)
 					}
 					if (applied.rebase) rebase(ref, applied.rebase.from, applied.rebase.to, record)
 					continue
@@ -347,6 +389,7 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 				if (missed.skipped) skip(step)
 				else {
 					failed += 1
+					for (const key of step_keys(step)) failed_keys.add(key)
 					if (missed.message) messages.push(missed.message)
 				}
 			}
@@ -372,6 +415,33 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 			replaying = false
 			borrowed.release()
 		}
+	}
+
+	async function run_custom(record: HistoryRecord, action: CustomAction, direction: 'undo' | 'redo') {
+		const at_start = commits
+		replaying = true
+		let outcome: boolean | { message: string }
+		try {
+			outcome = await (direction === 'undo' ? action.undo() : action.redo()).catch(() => false)
+		} finally {
+			replaying = false
+		}
+		const ok = outcome === true
+		if (ok && commits === at_start) {
+			const to = direction === 'undo' ? redo_stack : undo_stack
+			to.push({ ...record, updated_at: now() })
+			last_committed = null
+		}
+		emit({
+			type: direction === 'undo' ? 'undone' : 'redone',
+			record,
+			store: null,
+			applied: ok ? 1 : 0,
+			skipped: 0,
+			failed: ok ? 0 : 1,
+			messages: typeof outcome === 'object' ? [outcome.message] : [],
+			affected: [],
+		})
 	}
 
 	/**
@@ -401,6 +471,7 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 	return {
 		transact,
 		record_applied,
+		record_custom,
 		barrier,
 		amend_attr,
 		drop_created,

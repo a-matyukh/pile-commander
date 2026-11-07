@@ -3,7 +3,7 @@ import type { FileManager, FolderConnection } from '@pile-commander/file-manager
 import type { Connection } from '@/domain/Widget'
 import { create_history, type HistoryEvent, type TransactMeta } from './history'
 import type { HistoryTarget } from './steps'
-import type { HistoryStep } from './types'
+import type { DeleteStep, HistoryStep } from './types'
 
 /** A store whose attributes, texts and edges live in maps: what is "there now" for the history */
 function make_target() {
@@ -27,6 +27,18 @@ function make_target() {
 			.map(id => ({ id, name: id.slice(id.lastIndexOf('/') + 1), type: 'file' })),
 	} as unknown as FileManager
 	let fail_writes = false
+	/** What the trash holds, by ticket: the paths of a removed subtree */
+	const trash = new Map<string, string[]>()
+	let tickets = 0
+	const restores: string[] = []
+	const to_trash = (id: string) => {
+		const held = [...paths].filter(path => path === id || path.startsWith(`${id}/`))
+		for (const path of held) paths.delete(path)
+		tickets += 1
+		const ticket = `t${tickets}`
+		trash.set(ticket, held)
+		return { id, ticket }
+	}
 	const target: HistoryTarget = {
 		file_manager: fm,
 		async history_write_attr(id, name, value) {
@@ -65,6 +77,23 @@ function make_target() {
 			}
 			return landed
 		},
+		async history_restore_removed(step) {
+			restores.push(step.id)
+			const held = trash.get(step.receipt.ticket)
+			if (!held) return { message: `gone ${step.id}` }
+			if (paths.has(step.id)) return 'taken'
+			const landed = land_at ?? step.id
+			land_at = null
+			trash.delete(step.receipt.ticket)
+			for (const path of held) paths.add(landed + path.slice(step.id.length))
+			for (const [k, value] of [...attrs]) {
+				if (!k.startsWith(`${step.id}\0`)) continue
+				attrs.delete(k)
+				attrs.set(`${landed}${k.slice(step.id.length)}`, value)
+			}
+			return { id: landed }
+		},
+		history_remove_again: async id => ({ receipt: to_trash(id), edges: [] }),
 	}
 	return {
 		target,
@@ -81,6 +110,10 @@ function make_target() {
 		land(path: string) {
 			land_at = path
 		},
+		trash,
+		restores,
+		/** Removes what is at `id` and below to the trash, as a delete does: its receipt */
+		to_trash,
 	}
 }
 
@@ -343,5 +376,89 @@ describe('history', () => {
 			expect(tx).toBeUndefined()
 		})
 		expect(s.h.can_undo).toBe(false)
+	})
+})
+
+describe('undo of a delete', () => {
+	const removal = (id: string, ticket: string, entry_type: 'file' | 'folder' = 'file'): DeleteStep =>
+		({ kind: 'entry_delete', id, entry_type, receipt: { id, ticket }, folder_id: '/ws', edges: [] })
+	const deleted = (h: ReturnType<typeof setup>['h'], steps: HistoryStep[]) =>
+		h.transact(meta('удаление'), async (tx) => {
+			for (const step of steps) tx?.record(step)
+		})
+
+	test('a deleted entry comes back by its receipt; redo removes it again and keeps a new one', async () => {
+		const { h, paths, to_trash } = setup()
+		paths.add('/ws/a')
+		const receipt = to_trash('/ws/a')
+		await deleted(h, [removal('/ws/a', receipt.ticket)])
+
+		await h.undo()
+		expect(paths.has('/ws/a')).toBe(true)
+		await h.redo()
+		expect(paths.has('/ws/a')).toBe(false)
+		const step = h.snapshot().undo[0]!.steps[0] as DeleteStep
+		expect(step.receipt.ticket).not.toBe(receipt.ticket)
+		await h.undo()
+		expect(paths.has('/ws/a')).toBe(true)
+	})
+
+	test('an entry whose place was taken since is left out', async () => {
+		const { h, paths, to_trash, events } = setup()
+		paths.add('/ws/a')
+		const receipt = to_trash('/ws/a')
+		await deleted(h, [removal('/ws/a', receipt.ticket)])
+		paths.add('/ws/a')
+		await h.undo()
+		expect(events.at(-1)).toMatchObject({ type: 'undone', applied: 0, skipped: 1, failed: 0 })
+		expect(h.can_redo).toBe(false)
+	})
+
+	test('a folder that cannot come back takes nothing back into it, with one message', async () => {
+		const { h, paths, to_trash, trash, restores, events } = setup()
+		paths.add('/ws/box')
+		paths.add('/ws/box/a')
+		const a = to_trash('/ws/box/a')
+		const box = to_trash('/ws/box')
+		await deleted(h, [removal('/ws/box/a', a.ticket), removal('/ws/box', box.ticket, 'folder')])
+		// the trash was emptied meanwhile
+		trash.delete(box.ticket)
+		await h.undo()
+		expect(restores).toEqual(['/ws/box'])
+		expect(events.at(-1)).toMatchObject({ type: 'undone', applied: 0, failed: 1, messages: ['gone /ws/box'] })
+	})
+
+	test('an entry back under another name takes the rest of its record along', async () => {
+		const { h, paths, to_trash, set, get, land } = setup()
+		paths.add('/ws/a')
+		set('/ws/a', 'position', 'B')
+		const receipt = to_trash('/ws/a')
+		await deleted(h, [pos('/ws/a', 'A', 'B'), removal('/ws/a', receipt.ticket)])
+		// a new "a" took the name: the trash gives it back as "a (1)"
+		land('/ws/a (1)')
+		await h.undo()
+		expect(paths.has('/ws/a (1)')).toBe(true)
+		expect(get('/ws/a (1)', 'position')).toBe('A')
+	})
+})
+
+describe('an action that undoes itself', () => {
+	test('undo and redo run its own sides; one that fails says why and is dropped', async () => {
+		const { h, events } = setup()
+		const sides: string[] = []
+		h.record_custom(meta('удаление «Plans»'), {
+			undo: async () => { sides.push('undo'); return true },
+			redo: async () => { sides.push('redo'); return true },
+		})
+		await h.undo()
+		await h.redo()
+		expect(sides).toEqual(['undo', 'redo'])
+		expect(events.at(-1)).toMatchObject({ type: 'redone', applied: 1, store: null })
+
+		h.record_custom(meta('восстановление'), { undo: async () => ({ message: 'нельзя' }), redo: async () => true })
+		await h.undo()
+		expect(events.at(-1)).toMatchObject({ type: 'undone', applied: 0, failed: 1, messages: ['нельзя'] })
+		expect(h.can_redo).toBe(false)
+		expect(h.can_undo).toBe(true)
 	})
 })

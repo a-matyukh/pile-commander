@@ -6,7 +6,7 @@ import type { EntryContentCaches } from '@/ui/workspace/folder-container/textCon
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
 import { Color, Connection, DashboardCell, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
-import type { CreateStep, HistoryStoreRef, HistoryTx } from '@/store/history/types'
+import type { CreateStep, DeleteStep, HistoryStoreRef, HistoryTx } from '@/store/history/types'
 
 /**
  * A write that is part of one of the person's actions: the method writes its
@@ -252,7 +252,8 @@ type WorkspaceStore = {
 	 * Moves all children of `folder_id` into its parent, then removes the folder.
 	 * No-op for the workspace root.
 	 */
-	uncombine_folder(folder_id: string): Promise<void>
+	/** Its contents into its parent and the folder to the trash: one action, one undo */
+	uncombine_folder(folder_id: string, options?: HistoryOptions): Promise<void>
 	create_text_file(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
 	create_markdown_file(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
 	/**
@@ -262,7 +263,14 @@ type WorkspaceStore = {
 	 */
 	rename(id: string, new_name: string, options?: { report?: boolean } & HistoryOptions): Promise<string | undefined>
 	move(id: string, target_folder_id: string, new_index: number, source_folder_id?: string, source_index?: number, options?: HistoryOptions): Promise<string | undefined>
-	remove(id: string): Promise<void>
+	/** To the trash; with history, an action of its own that undo brings back */
+	remove(id: string, options?: HistoryOptions): Promise<void>
+	/** Several at once: one action, one undo */
+	remove_entries(ids: string[], options?: HistoryOptions): Promise<void>
+	/** Undo of a delete: back from the trash by its receipt, with its edges */
+	history_restore_removed(step: DeleteStep): Promise<{ id: string } | 'taken' | { message: string } | false>
+	/** Redo of a delete: to the trash again, with a new receipt */
+	history_remove_again(id: string): Promise<Pick<DeleteStep, 'receipt' | 'edges' | 'sync'> | false>
 	/** Undo of a creation: removes it for good while untouched (see FileManager.remove_untouched) */
 	history_remove_created(id: string, expect: CreateStep['expect']): Promise<'removed' | 'changed' | 'gone' | false>
 	/** Redo of a creation: makes it again by its recipe; a message when its source changed */

@@ -5,6 +5,7 @@ import type {
 	FolderChild,
 	FolderConnection,
 	FolderStroke,
+	RemoveReceipt,
 	StrokesWatchEvent,
 	Unwatch,
 	WatchEvent,
@@ -26,6 +27,13 @@ type Entry = {
 	/** byte size of a URL-backed file, known without fetching it */
 	size?: number
 	xattrs: Map<string, string>
+}
+
+/** A subtree `remove_with_receipt` took out, kept as it was until its receipt brings it back */
+type RemovedSubtree = {
+	entries: [string, Entry][]
+	strokes: [string, Map<string, FolderStroke>][]
+	connections: [string, Map<string, FolderConnection>][]
 }
 
 /**
@@ -89,6 +97,8 @@ export function createFakeFileManager(): FakeFileManager {
 	const strokes_watchers = new Map<string, Set<(event: StrokesWatchEvent) => void>>()
 	const connections_by_folder = new Map<string, Map<string, FolderConnection>>()
 	const connections_watchers = new Map<string, Set<(event: ConnectionsWatchEvent) => void>>()
+	const removed = new Map<string, RemovedSubtree>()
+	let removed_count = 0
 
 	function folder_strokes(folder_id: string): Map<string, FolderStroke> {
 		let map = strokes_by_folder.get(folder_id)
@@ -377,6 +387,37 @@ export function createFakeFileManager(): FakeFileManager {
 					connections_by_folder.delete(p)
 				}
 			}
+		},
+		// the browser and demo trash: the subtree waits here, untouched, for undo
+		async remove_with_receipt(id) {
+			track("remove_with_receipt", [id])
+			must(id)
+			const inside = (p: string) => p === id || p.startsWith(id + "/")
+			const kept: RemovedSubtree = {
+				entries: [...entries].filter(([p]) => inside(p)),
+				strokes: [...strokes_by_folder].filter(([p]) => inside(p)),
+				connections: [...connections_by_folder].filter(([p]) => inside(p)),
+			}
+			for (const [p] of kept.entries) entries.delete(p)
+			for (const [p] of kept.strokes) strokes_by_folder.delete(p)
+			for (const [p] of kept.connections) connections_by_folder.delete(p)
+			removed_count += 1
+			const ticket = `removed-${removed_count}`
+			removed.set(ticket, kept)
+			return { id, ticket }
+		},
+		async restore_removed(receipt: RemoveReceipt) {
+			track("restore_removed", [receipt])
+			const kept = removed.get(receipt.ticket)
+			if (!kept) return "gone"
+			if (entries.has(receipt.id)) return "taken"
+			const folder = parent(receipt.id)
+			if (folder !== "/" && !entries.has(folder)) return "gone"
+			removed.delete(receipt.ticket)
+			for (const [p, entry] of kept.entries) entries.set(p, entry)
+			for (const [p, map] of kept.strokes) strokes_by_folder.set(p, map)
+			for (const [p, map] of kept.connections) connections_by_folder.set(p, map)
+			return { id: receipt.id }
 		},
 		async set_xattr(id, name, value) {
 			track("set_xattr", [id, name, value])

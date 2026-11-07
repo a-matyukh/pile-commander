@@ -11,7 +11,7 @@ import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pil
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
 import { history, record_action } from '@/store/history'
-import { forget_bookmarks, retarget_bookmarks } from './bookmarks'
+import { bring_back_bookmarks, forget_bookmarks, retarget_bookmarks } from './bookmarks'
 import { find_tree_node } from '@/services/workspace/tree'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
 import { create_entry } from '@/store/helpers/createEntry'
@@ -58,6 +58,10 @@ export type ExplorerTreeDeps = {
 	retarget_bookmarks?(from: FolderRef, to: FolderRef): void
 	/** Bookmarks at or inside a trashed or ungrouped folder go away */
 	forget_bookmarks?(gone: FolderRef): void
+	/** …and come back with it (undo) */
+	bring_back_bookmarks?(back: FolderRef): void
+	/** A public link or a Hub page that trashing the cloud root takes down for good */
+	cloud_root_published?(root_id: string): boolean
 }
 
 export function tree_root_folder_id(item: ExplorerTreeRoot): string {
@@ -880,8 +884,41 @@ export function create_explorer_tree(
 		}
 	}
 
-	/** The workspace row goes to the trash. The root entry is not deleted. */
+	/**
+	 * The workspace row goes to the trash. The root entry is not deleted. One
+	 * undo brings it back, unless it was public: its link and Hub page do not
+	 * come back, so it is an action that cannot be undone
+	 */
 	async function trash_cloud_root(item: ExplorerTreeRoot) {
+		const name = item.root.name
+		const published = deps.cloud_root_published?.(item.root.id) ?? false
+		await send_cloud_root_to_trash(item)
+		if (published) {
+			history.barrier(t('undo.op.remove_published', { name }))
+			return
+		}
+		history.record_custom({
+			label: t('undo.remove_one', { name }),
+			folder: folder_ref(item, tree_root_folder_id(item)),
+			folder_name: name,
+			notice: t('undo.removed', { name }),
+		}, {
+			undo: () => bring_back_cloud_root(item),
+			redo: async () => {
+				await send_cloud_root_to_trash(item)
+				return true
+			},
+		})
+	}
+
+	async function bring_back_cloud_root(item: ExplorerTreeRoot): Promise<boolean> {
+		if (!(await cloud.restore_trashed_workspace(item.root.id))) return false
+		deps.bring_back_bookmarks?.(folder_ref(item, tree_root_folder_id(item)))
+		if (state.listed_drive_id === item.drive.id) await show_drive(item.drive, current_ref())
+		return true
+	}
+
+	async function send_cloud_root_to_trash(item: ExplorerTreeRoot) {
 		await cloud.trash(item.root.id)
 		if (cloud.last_error) throw new Error(cloud.last_error)
 		const root_folder = tree_root_folder_id(item)
@@ -968,4 +1005,6 @@ export const explorer_tree = create_explorer_tree({
 	hold_root: root_id => explorer_drives.hold(root_id),
 	retarget_bookmarks,
 	forget_bookmarks,
+	bring_back_bookmarks: back => bring_back_bookmarks(back),
+	cloud_root_published: root_id => !!(cloud.published_slugs[root_id] || cloud.hub_listed[root_id] || cloud.hub_hidden[root_id]),
 })

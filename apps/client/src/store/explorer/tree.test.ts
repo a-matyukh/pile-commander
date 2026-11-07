@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createFakeFileManager } from '@pile-commander/file-manager'
 import cloud from '@/store/cloud'
+import { history } from '@/store/history'
 import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
@@ -262,6 +263,45 @@ describe('explorer tree', () => {
 		expect(root.root.name).toBe('New')
 		expect(on_error).not.toHaveBeenCalled()
 		rename.mockRestore()
+	})
+
+	test('a trashed cloud root comes back with one undo, its bookmarks too; a public one cannot', async () => {
+		const trash = vi.spyOn(cloud, 'trash').mockImplementation(async () => {})
+		const restore = vi.spyOn(cloud, 'restore_trashed_workspace').mockImplementation(async () => true)
+		cloud.last_error = null
+		history.clear()
+		const bring_back_bookmarks = vi.fn()
+		let published = false
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			on_error: () => {},
+			bring_back_bookmarks,
+			cloud_root_published: () => published,
+		})
+		const drive: Drive = {
+			id: 'cloud', kind: 'cloud', name: 'Cloud', icon: '', trash: 'page',
+			roots: async () => [{ id: 'ws-1', name: 'Plans', can_write: true }],
+			store_for: async () => { throw new Error('the root entry is not removed') },
+		}
+		await tree.show_drive(drive, null)
+		const root_node = { id: '/', name: 'Plans', type: 'folder' as const }
+		await tree.remove_folder(tree.roots[0]!, root_node)
+		expect(trash).toHaveBeenCalledWith('ws-1')
+		await history.undo()
+		expect(restore).toHaveBeenCalledWith('ws-1')
+		expect(bring_back_bookmarks).toHaveBeenCalledWith({ drive_id: 'cloud', root_id: 'ws-1', folder_id: '/' })
+		await history.redo()
+		expect(trash).toHaveBeenCalledTimes(2)
+
+		published = true
+		history.clear()
+		await tree.show_drive(drive, null)
+		await tree.remove_folder(tree.roots[0]!, root_node)
+		expect(history.can_undo).toBe(false)
+		trash.mockRestore()
+		restore.mockRestore()
 	})
 
 	test('renaming a top-level browser folder takes its bookmark along', async () => {

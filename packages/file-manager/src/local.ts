@@ -22,7 +22,7 @@ import * as xattrs from "@pile-commander/tauri-plugin-xattrs"
 import { PILE_DIR_NAME } from "./pile-attrs"
 import { is_pile_image_file, parse_pile_image_token, pile_image_file_role, pile_image_hash8, pile_image_token, type PileImageRole } from "./pileImage"
 import { reprefix_path, resolve_folder_connections } from "./connectionPaths"
-import type { CreateFolderOptions, CreateTextFileOptions, FileManager, FolderChild, FolderConnection, FolderStroke, UntouchedExpect, Unwatch, UploadProgressCallback, WatchEvent, WatchEventKind } from "./types"
+import type { CreateFolderOptions, CreateTextFileOptions, FileManager, FolderChild, FolderConnection, FolderStroke, RemoveReceipt, UntouchedExpect, Unwatch, UploadProgressCallback, WatchEvent, WatchEventKind } from "./types"
 
 /** Sidecar dir files holding per-folder canvas entities — never shown in listings. */
 const STROKES_FILE = "strokes.json"
@@ -200,6 +200,31 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 				return
 			}
 			await remove(path, { recursive: true })
+		},
+		// The OS trash keeps it, and its place there is the ticket (undo).
+		// Without the trash the delete is for good, as with remove
+		async remove_with_receipt(path: string) {
+			if (!options?.remove_to_trash) {
+				await remove(path, { recursive: true })
+				return null
+			}
+			const ticket = await invoke<string | null>("trash_path", { path })
+			return ticket ? { id: path, ticket } : null
+		},
+		// Back to the very path it left; a file that took the place meanwhile
+		// stays, and nothing moves (the command refuses)
+		async restore_removed(receipt: RemoveReceipt) {
+			try {
+				await invoke("restore_trashed", { ticket: receipt.ticket, originalPath: receipt.id })
+				return { id: receipt.id }
+			} catch {
+				try {
+					await stat(receipt.id)
+					return "taken" as const
+				} catch {
+					return "gone" as const
+				}
+			}
 		},
 		// For good, not to the Trash: the person made it a moment ago (undo)
 		async remove_untouched(path: string, expect: UntouchedExpect) {

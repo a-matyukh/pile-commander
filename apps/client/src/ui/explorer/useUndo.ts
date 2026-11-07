@@ -85,9 +85,9 @@ export function show_history_event(event: HistoryEvent<WorkspaceStore>, toast: U
 		if (on_screen(record.folder)) {
 			// On screen the change shows itself; what came back is selected
 			const location = explorer_navigation.location
-			const shown = new Set((store.opened_folder.children ?? []).map(child => child.id))
+			const shown = new Set((store?.opened_folder.children ?? []).map(child => child.id))
 			const ids = event.affected.filter(id => shown.has(id))
-			if (ids.length > 0 && location?.kind === 'folder' && store.opened_folder_id === location.ref.folder_id) {
+			if (store && ids.length > 0 && location?.kind === 'folder' && store.opened_folder_id === location.ref.folder_id) {
 				store.set_selection(ids)
 			}
 		} else {

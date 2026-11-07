@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { TrashEntry, TrashedWorkspace } from '@pile-commander/file-manager'
 import cloud from '@/store/cloud'
+import { history } from '@/store/history'
 import { create_cloud_trash } from './cloud_trash'
 import { explorer_tree } from './tree'
 
@@ -28,7 +29,11 @@ function setup() {
 		list_trashed: vi.fn(async (): Promise<TrashedWorkspace[]> => []),
 		restore_trashed_workspace: vi.fn(async (_id: string) => true),
 		purge_trashed_workspace: vi.fn(async (_id: string) => true),
+		restore_by_id: vi.fn(async (_workspace: string, _id: string) => true),
+		trash_by_id: vi.fn(async (_workspace: string, _id: string) => true),
+		trash: vi.fn(async (_id: string) => {}),
 	}
+	history.clear()
 	return { source, trash: create_cloud_trash(source as never) }
 }
 
@@ -91,6 +96,29 @@ describe('cloud trash', () => {
 		await trash.purge_workspace(row)
 		expect(source.purge_trashed_workspace).toHaveBeenCalledWith('ws-gone')
 		expect(trash.state.workspaces).toEqual([])
+	})
+
+	test('a restore is undone back into the trash by its row id, and redone', async () => {
+		const { source, trash } = setup()
+		await trash.load()
+		const older = trash.state.items.find(item => item.name === 'old')!
+		await trash.restore(older)
+		expect(history.can_undo).toBe(true)
+		await history.undo()
+		expect(source.trash_by_id).toHaveBeenCalledWith('w1', '/old')
+		await history.redo()
+		expect(source.restore_by_id).toHaveBeenCalledWith('w1', '/old')
+	})
+
+	test('deleting for good and emptying cannot be undone, nor what came before them', async () => {
+		const { source, trash } = setup()
+		source.purge.mockResolvedValue(true)
+		await trash.load()
+		await trash.restore(trash.state.items.find(item => item.name === 'old')!)
+		await trash.purge(trash.state.items[0]!)
+		expect(history.can_undo).toBe(false)
+		await trash.empty()
+		expect(history.can_undo).toBe(false)
 	})
 
 	test('emptying purges every trashed workspace', async () => {

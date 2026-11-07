@@ -137,9 +137,7 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 	async function onConfirm(payload: { ids: string[] }) {
 		const ws = workspace.value
 		if (!ws) return
-		for (const id of payload.ids) {
-			await ws.remove(id)
-		}
+		await ws.remove_entries(payload.ids)
 		ws.exit_selection_mode()
 	}
 

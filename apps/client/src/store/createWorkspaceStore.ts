@@ -26,8 +26,9 @@ import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { note_cloud_root_look } from '@/store/cloud'
 import type { ClipboardState, HistoryOptions, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
 import { history, entries_label, entry_name, own_action } from './history'
-import type { CreateStep, HistoryStoreRef, HistoryTx } from './history/types'
-import { path_name } from './history/steps'
+import type { CreateStep, DeleteStep, HistoryStoreRef, HistoryTx } from './history/types'
+import { path_name, rebase_path } from './history/steps'
+import { synced_folders, type SyncedEntry } from './history/synced'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
 	active_step,
@@ -35,8 +36,11 @@ import {
 	type ConnectionsWatchEvent,
 	type FileManager,
 	type FolderChild,
+	type RemoveReceipt,
+	type RestoreRemovedResult,
 	type StrokesWatchEvent,
 	type UntouchedExpect,
+	type Xattr,
 	type Unwatch,
 	type WatchEvent,
 } from '@pile-commander/file-manager'
@@ -182,6 +186,32 @@ function is_picture_value(value: string | null | undefined): boolean {
 function removed_owner_folder_id(store: WorkspaceStore, id: string): string | undefined {
 	const owner_folder = find_entry_owner_folder(store.opened_folder, store.preview_folders, id)
 	return owner_folder?.id === id ? parent_folder_id_from_node_id(id, store.id) : owner_folder?.id
+}
+
+/** Whether a cached entry is a folder: what a delete step keeps of it */
+function cached_entry_type(store: WorkspaceStore, id: string): 'file' | 'folder' {
+	const owner_folder = find_entry_owner_folder(store.opened_folder, store.preview_folders, id)
+	if (owner_folder?.id === id || store.folders[id]) return 'folder'
+	return owner_folder?.children?.find(child => child.id === id)?.type === 'folder' ? 'folder' : 'file'
+}
+
+/** The synced folder and cloud row of a local entry (desktop): its undo writes both sides */
+async function locate_synced(store: WorkspaceStore, id: string): Promise<SyncedEntry | undefined> {
+	if (store.type !== 'local') return undefined
+	return (await synced_folders()?.locate(id).catch(() => null)) ?? undefined
+}
+
+/** Something is at `id` now */
+async function entry_there(fm: FileManager, id: string, root_id: string): Promise<boolean> {
+	const siblings = await fm.FolderChildren(parent_folder_id_from_node_id(id, root_id)).catch(() => [])
+	return siblings.some(child => child.id === id)
+}
+
+/** The edges of a folder's board that end at `id`: they go when it goes */
+function edges_to(store: WorkspaceStore, folder_id: string, id: string): Connection[] {
+	return store.connections_for(folder_id)
+		.filter(connection => connection.from === id || connection.to === id)
+		.map(connection => ({ ...connection }))
 }
 
 /**
@@ -778,6 +808,41 @@ export async function createWorkspaceStore(
 		 * in the folders, the parent's edges to it, tabs inside it, and the ink
 		 * and edge caches of folders inside it
 		 */
+		/** An entry back from the trash by its receipt, into the folder caches, with its edges */
+		const restore_removed_here = async (store: WorkspaceStore, step: DeleteStep) => {
+			const gone = { message: t('undo.restore_gone', { name: path_name(step.id) }) }
+			if (!fm.restore_removed || !step.receipt.ticket) return gone
+			let back: RestoreRemovedResult
+			try {
+				back = await fm.restore_removed(step.receipt)
+			} catch (error) {
+				report_error(store, error)
+				return false as const
+			}
+			if (back === 'taken') return 'taken' as const
+			if (back === 'gone') return gone
+			const id = back.id
+			let xattrs: Xattr[] = []
+			try {
+				xattrs = await fm.list_xattrs(id)
+			} catch (error) {
+				report_error(store, error)
+			}
+			apply_entry_created(store, parent_folder_id_from_node_id(id, store.id), {
+				id,
+				name: path_name(id),
+				type: step.entry_type,
+				xattrs,
+			}, { notice: false })
+			// Its edges come back with it, to where it came back
+			if (step.edges.length > 0) {
+				const edges = step.edges.map(edge => ({ ...edge, from: rebase_path(edge.from, step.id, id), to: rebase_path(edge.to, step.id, id) }))
+				await store.ensure_connections(step.folder_id)
+				await store.upsert_connections(step.folder_id, edges)
+			}
+			return { id }
+		}
+
 		const forget_removed = async (store: WorkspaceStore, id: string, owner_folder_id: string | undefined) => {
 			const sep = path_separator(id)
 			const is_inside_removed = (folder_id: string) =>
@@ -2569,7 +2634,7 @@ export async function createWorkspaceStore(
 				})
 			},
 
-			async uncombine_folder(folder_id: string) {
+			async uncombine_folder(folder_id: string, options?: HistoryOptions) {
 				assert_can_write()
 				if (folder_id === this.id) return
 
@@ -2599,7 +2664,9 @@ export async function createWorkspaceStore(
 					? { x: folder_position_raw.x, y: folder_position_raw.y }
 					: undefined
 
-				await this.run_batch_fs_update(async () => {
+				// One undo: the folder comes back, its contents go back in at their places
+				const label = () => t('undo.ungroup', { name: folder_entry?.name ?? entry_name(this, folder_id) })
+				await own_action(this, options?.tx, { folder_id: parent_id }, label, tx => this.run_batch_fs_update(async () => {
 					await this.show_folder_children(folder_id)
 					await this.ensure_preview_folder(folder_id)
 
@@ -2630,20 +2697,20 @@ export async function createWorkspaceStore(
 									child_position ?? { x: 0, y: 0 },
 									folder_position,
 								),
+								{ tx },
 							)
 						}
 					}
 
 					for (const { id: child_id } of child_snapshots) {
-						await this.move(child_id, parent_id, insert_index, folder_id)
+						await this.move(child_id, parent_id, insert_index, folder_id, undefined, { tx })
 						insert_index += 1
 					}
 
-					await this.remove(folder_id)
+					await this.remove(folder_id, { tx })
 
 					await this.reload_folder_cache(parent_id)
-				})
-				block_history(this, t('undo.op.ungroup', { name: folder_entry?.name ?? entry_name(this, folder_id) }))
+				}))
 			},
 
 			async create_text_file(folder_id: string, position?: Position, options?: HistoryOptions) {
@@ -2903,35 +2970,112 @@ export async function createWorkspaceStore(
 					}
 				})
 			},
-			async remove(id: string) {
+			async remove(id: string, options?: HistoryOptions) {
 				assert_can_write()
 				const owner_folder_id = removed_owner_folder_id(this, id)
+				const folder_id = owner_folder_id ?? parent_folder_id_from_node_id(id, this.id)
 				const removed_name = entry_name(this, id)
+				const label = () => t('undo.remove_one', { name: removed_name })
+				await own_action(this, options?.tx, { folder_id }, label, async (tx) => {
+					const entry_type = cached_entry_type(this, id)
+					const edges = owner_folder_id ? edges_to(this, owner_folder_id, id) : []
+					// the sync forgets the cloud row right after its pass: kept for the undo
+					const sync = tx ? await locate_synced(this, id) : undefined
+					let receipt: RemoveReceipt | null = null
+					try {
+						if (tx && fm.remove_with_receipt) receipt = await fm.remove_with_receipt(id)
+						else await fm.remove(id)
+					} catch (error) {
+						report_error(this, error)
+						return
+					}
+					// To the trash with a way back; otherwise the delete is final
+					if (tx && receipt) tx.record({ kind: 'entry_delete', id, entry_type, receipt, folder_id, edges, ...(sync ? { sync } : {}) })
+					else block_history(this, t('undo.op.remove', { name: removed_name }))
+					await forget_removed(this, id, owner_folder_id)
+				}, { notice: () => t('undo.removed', { name: removed_name }) })
+			},
 
+			async remove_entries(ids: string[], options?: HistoryOptions) {
+				if (ids.length === 1) return this.remove(ids[0]!, options)
+				if (ids.length === 0) return
+				assert_can_write()
+				const first = ids[0]!
+				const folder_id = removed_owner_folder_id(this, first) ?? parent_folder_id_from_node_id(first, this.id)
+				const label = () => entries_label(this, ids, 'undo.remove_one', 'undo.remove_many')
+				await own_action(this, options?.tx, { folder_id }, label, async (tx) => {
+					for (const id of ids) await this.remove(id, { tx })
+				}, { notice: () => t('undo.removed_many', { count: count_items(ids.length) }) })
+			},
+
+			async history_restore_removed(step: DeleteStep) {
+				assert_can_write()
+				const synced = step.sync ? synced_folders() : null
+				if (!synced || !step.sync) return restore_removed_here(this, step)
+				const { root, cloud_id } = step.sync
+				// Both sides while the folder's passes wait: the cloud row first, then
+				// the file, so that no pass in between uploads or downloads it again
+				return synced.hold(root, async () => {
+					// A pass before the hold may have brought a changed cloud copy down
+					if (await entry_there(fm, step.id, this.id)) return 'taken' as const
+					if (cloud_id) {
+						try {
+							if ((await synced.row_state(cloud_id)) === 'trashed') await synced.restore_row(cloud_id)
+						} catch (error) {
+							// the file still comes back; the next pass uploads it
+							report_error(this, error)
+						}
+					}
+					return restore_removed_here(this, step)
+				})
+			},
+
+			async history_remove_again(id: string) {
+				assert_can_write()
+				if (!fm.remove_with_receipt) return false
+				const owner_folder_id = removed_owner_folder_id(this, id)
+				const edges = owner_folder_id ? edges_to(this, owner_folder_id, id) : []
+				const sync = await locate_synced(this, id)
+				let receipt: RemoveReceipt | null
 				try {
-					await fm.remove(id)
+					receipt = await fm.remove_with_receipt(id)
 				} catch (error) {
 					report_error(this, error)
-					return
+					return false
 				}
-				block_history(this, t('undo.op.remove', { name: removed_name }))
 				await forget_removed(this, id, owner_folder_id)
+				// A trash that gave no ticket this time: the next undo says it cannot bring it back
+				return { receipt: receipt ?? { id, ticket: '' }, edges, sync }
 			},
 
 			async history_remove_created(id: string, expect: CreateStep['expect']) {
 				assert_can_write()
 				const owner_folder_id = removed_owner_folder_id(this, id)
-				let outcome: 'removed' | 'changed' | 'gone'
-				try {
-					outcome = fm.remove_untouched
-						? await fm.remove_untouched(id, expect)
-						: await remove_untouched_by_reads(fm, id, parent_folder_id_from_node_id(id, this.id), expect)
-				} catch (error) {
-					report_error(this, error)
-					return false
+				const remove_here = async () => {
+					let outcome: 'removed' | 'changed' | 'gone'
+					try {
+						outcome = fm.remove_untouched
+							? await fm.remove_untouched(id, expect)
+							: await remove_untouched_by_reads(fm, id, parent_folder_id_from_node_id(id, this.id), expect)
+					} catch (error) {
+						report_error(this, error)
+						return false as const
+					}
+					if (outcome !== 'changed') await forget_removed(this, id, owner_folder_id)
+					return outcome
 				}
-				if (outcome !== 'changed') await forget_removed(this, id, owner_folder_id)
-				return outcome
+				const synced = synced_folders()
+				const found = await locate_synced(this, id)
+				if (!synced || !found) return remove_here()
+				// In a synced folder its cloud copy goes for good too, while the passes
+				// wait: otherwise the next pass sends it to the cloud trash
+				return synced.hold(found.root, async () => {
+					const outcome = await remove_here()
+					if (outcome === false || outcome === 'changed') return outcome
+					const entry = await locate_synced(this, id)
+					if (entry?.cloud_id) await synced.remove_copy(entry, expect).catch(error => report_error(this, error))
+					return outcome
+				})
 			},
 
 			async history_create_again(step: CreateStep) {

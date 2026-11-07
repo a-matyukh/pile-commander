@@ -1,4 +1,6 @@
+import type { RemoveReceipt } from '@pile-commander/file-manager'
 import type { FolderRef } from '@/domain/Drive'
+import type { SyncedEntry } from './synced'
 import type { Connection, StrokeNode } from '@/domain/Widget'
 
 /** The store a record belongs to, as Drive keys its stores */
@@ -91,7 +93,23 @@ export type MoveStep = {
 	entry_type: 'file' | 'folder'
 }
 
-export type HistoryStep = AttrStep | ContentStep | EdgesStep | StrokesStep | OrderStep | CreateStep | MoveStep
+/**
+ * An entry the action sent to the trash: undo brings it back by `receipt`
+ * with the edges of its folder's board that went with it (`folder_id`); the
+ * receipt is spent then, and redo removes it again and keeps the new one.
+ * `sync`: it was in a synced folder, linked to that cloud row then
+ */
+export type DeleteStep = {
+	kind: 'entry_delete'
+	id: string
+	entry_type: 'file' | 'folder'
+	receipt: RemoveReceipt
+	folder_id: string
+	edges: Connection[]
+	sync?: SyncedEntry
+}
+
+export type HistoryStep = AttrStep | ContentStep | EdgesStep | StrokesStep | OrderStep | CreateStep | MoveStep | DeleteStep
 
 /**
  * What a store method writes its step into. It is passed explicitly: there is
@@ -100,6 +118,16 @@ export type HistoryStep = AttrStep | ContentStep | EdgesStep | StrokesStep | Ord
  */
 export type HistoryTx = {
 	record(step: HistoryStep): void
+}
+
+/**
+ * An action outside any store's entries that undoes and redoes itself: a
+ * whole cloud workspace to the trash and back, a restore from the trash page.
+ * Each side resolves true once done, or says why it could not be
+ */
+export type CustomAction = {
+	undo(): Promise<boolean | { message: string }>
+	redo(): Promise<boolean | { message: string }>
 }
 
 export type HistoryRecord = {
@@ -114,5 +142,7 @@ export type HistoryRecord = {
 	merge_key?: string
 	/** Said in a toast with "Отменить" once the action is done: "Перенесено: «Note»" */
 	notice?: string
+	/** A record with no steps that undoes itself */
+	custom?: CustomAction
 	updated_at: number
 }

@@ -2,7 +2,7 @@ import type { WorkspaceStore } from '@/domain/Store'
 import { count_items, t } from '@/i18n'
 import { find_entry_owner_folder } from '@/services/workspace/xattrs'
 import { create_history, type TransactMeta } from './history'
-import { rebase_path } from './steps'
+import { parent_path, rebase_path, within } from './steps'
 import type { HistoryStep, HistoryTx } from './types'
 
 export type { HistoryStep, HistoryTx, HistoryRecord, HistoryStoreRef } from './types'
@@ -35,6 +35,29 @@ export const history = create_history<WorkspaceStore>({
 			if (here.drive_id !== ref.drive_id || here.root_id !== ref.root_id) return
 			const next = rebase_path(here.folder_id, from, to)
 			if (next !== here.folder_id) await explorer_navigation.open_folder({ ...here, folder_id: next })
+		})()
+	},
+	// A folder back from the trash gets back the bookmarks its delete took
+	on_restored(ref, was, back) {
+		void import('@/store/explorer/bookmarks').then(({ bring_back_bookmarks }) => {
+			bring_back_bookmarks({ ...ref, folder_id: back }, was)
+		})
+	},
+	// A redo trashes it again: its bookmarks go, and the place on screen
+	// inside it goes to the folder it was in
+	on_removed(ref, id) {
+		void (async () => {
+			const [{ forget_bookmarks }, { explorer_navigation }] = await Promise.all([
+				import('@/store/explorer/bookmarks'),
+				import('@/store/explorer/navigation'),
+			])
+			forget_bookmarks({ ...ref, folder_id: id })
+			const location = explorer_navigation.location
+			if (location?.kind !== 'folder') return
+			const here = location.ref
+			if (here.drive_id !== ref.drive_id || here.root_id !== ref.root_id) return
+			if (!within(here.folder_id, id)) return
+			await explorer_navigation.open_folder({ ...here, folder_id: parent_path(id) })
 		})()
 	},
 })

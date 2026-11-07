@@ -5,7 +5,7 @@ import { node_to_folder_stroke } from '@/services/canvas/strokes'
 import { sort_entries_by_order_then_name } from '@/services/workspace/folderContainer'
 import { path_separator } from '@/services/workspace/paths'
 import { parse_xattr_value } from '@/services/workspace/xattrs'
-import type { CreateStep, HistoryStep } from './types'
+import type { CreateStep, DeleteStep, HistoryStep } from './types'
 
 /**
  * What the history needs of a store: its file manager, to read what is there
@@ -27,6 +27,13 @@ export type HistoryTarget = {
 	history_create_again(step: CreateStep): Promise<{ id: string } | { message: string } | false>
 	/** Renames or moves an entry within the store: the path it ended at */
 	history_move_entry(from: string, to: string): Promise<string | false>
+	/**
+	 * Brings a removed entry back by its receipt, with its edges: the path it
+	 * came back at; 'taken' when something else is at its place
+	 */
+	history_restore_removed(step: DeleteStep): Promise<{ id: string } | 'taken' | { message: string } | false>
+	/** Removes an entry again (redo of a delete): the new receipt and the edges that went with it */
+	history_remove_again(id: string): Promise<Pick<DeleteStep, 'receipt' | 'edges' | 'sync'> | false>
 }
 
 /** Which state of a step: as it was (`before`) or as the action left it (`after`) */
@@ -153,8 +160,13 @@ function same_order(current: string[], expected: string[]): boolean {
 	return seen.length === expected.length && seen.every((id, index) => id === expected[index])
 }
 
+/** Something is at `path`; a folder that is not there holds nothing */
 async function exists(reads: FreshReads, path: string): Promise<boolean> {
-	return (await reads.entries(parent_path(path))).has(path)
+	try {
+		return (await reads.entries(parent_path(path))).has(path)
+	} catch {
+		return false
+	}
 }
 
 /**
@@ -206,6 +218,9 @@ export async function step_matches(step: HistoryStep, side: Side, reads: FreshRe
 			const there = side === 'after' ? step.from : step.to
 			return (await exists(reads, here)) && !(await exists(reads, there))
 		}
+		case 'entry_delete':
+			// undo: the trash says itself whether it can come back; redo: it is back
+			return side === 'after' || exists(reads, step.id)
 	}
 }
 
@@ -257,6 +272,22 @@ export async function apply_step(target: HistoryTarget, step: HistoryStep, side:
 			const landed = await target.history_move_entry(from, to)
 			if (landed === false) return { ok: false }
 			return landed === to ? { ok: true } : { ok: true, rebase: { from: to, to: landed } }
+		}
+		case 'entry_delete': {
+			if (side === 'before') {
+				const back = await target.history_restore_removed(step)
+				if (back === false) return { ok: false }
+				if (back === 'taken') return { ok: false, skipped: true }
+				if ('message' in back) return { ok: false, message: back.message }
+				return back.id === step.id ? { ok: true } : { ok: true, rebase: { from: step.id, to: back.id } }
+			}
+			const removed = await target.history_remove_again(step.id)
+			if (removed === false) return { ok: false }
+			// a receipt is spent once: the next undo needs this one
+			step.receipt = removed.receipt
+			step.edges = removed.edges
+			step.sync = removed.sync
+			return { ok: true }
 		}
 	}
 }
@@ -320,6 +351,8 @@ function copy_step(step: HistoryStep): HistoryStep {
 			return { ...step, before: [...step.before], after: [...step.after] }
 		case 'entry_create':
 			return { ...step, expect: { ...step.expect }, xattrs: { ...step.xattrs }, recipe: { ...step.recipe } }
+		case 'entry_delete':
+			return { ...step, receipt: { ...step.receipt }, edges: [...step.edges], ...(step.sync ? { sync: { ...step.sync } } : {}) }
 		default:
 			return { ...step }
 	}
@@ -386,6 +419,13 @@ export function rebase_step(step: HistoryStep, from: string, to: string): void {
 			step.from = move(step.from)
 			step.to = move(step.to)
 			return
+		case 'entry_delete': {
+			step.id = move(step.id)
+			step.folder_id = move(step.folder_id)
+			step.receipt = { ...step.receipt, id: move(step.receipt.id) }
+			step.edges = step.edges.map(edge => ({ ...edge, from: move(edge.from), to: move(edge.to) }))
+			return
+		}
 	}
 }
 
@@ -400,6 +440,7 @@ export function step_keys(step: HistoryStep): string[] {
 		case 'attr':
 		case 'content':
 		case 'entry_create':
+		case 'entry_delete':
 			return [`${PATH}${step.id}`]
 		case 'entry_move':
 			return [`${PATH}${step.from}`, `${PATH}${step.to}`]
@@ -415,6 +456,47 @@ export function step_keys(step: HistoryStep): string[] {
 function inside(path: string, folder: string): boolean {
 	const sep = path_separator(folder)
 	return path.startsWith(folder.endsWith(sep) ? folder : folder + sep)
+}
+
+/** `path` is `folder` itself or inside it */
+export function within(path: string, folder: string): boolean {
+	return path === folder || inside(path, folder)
+}
+
+/** The paths a step reads to check itself: its entry, or the folder whose board it is about */
+function step_paths(step: HistoryStep): string[] {
+	switch (step.kind) {
+		case 'attr':
+		case 'content':
+		case 'entry_create':
+		case 'entry_delete':
+			return [step.id]
+		case 'entry_move':
+			return [step.from, step.to]
+		case 'edges':
+		case 'strokes':
+		case 'order':
+			return [step.folder_id]
+	}
+}
+
+/** Where writing a step's `side` makes an entry appear: a move's new place, a folder made again or back from the trash */
+export function appearing_paths(step: HistoryStep, side: Side): string[] {
+	switch (step.kind) {
+		case 'entry_move':
+			return [side === 'before' ? step.from : step.to]
+		case 'entry_create':
+			return side === 'after' ? [step.id] : []
+		case 'entry_delete':
+			return side === 'before' ? [step.id] : []
+		default:
+			return []
+	}
+}
+
+/** The step reads something at or inside one of `paths` */
+export function reads_within(step: HistoryStep, paths: readonly string[]): boolean {
+	return step_paths(step).some(path => paths.some(at => within(path, at)))
 }
 
 /** The step is about something a skipped step is about, or about what is inside a skipped path */
@@ -442,6 +524,7 @@ export function affected_entries(steps: HistoryStep[], side: Side): string[] {
 		if (step.kind === 'attr' || step.kind === 'content') ids.add(step.id)
 		if (step.kind === 'entry_move') ids.add(side === 'before' ? step.from : step.to)
 		if (step.kind === 'entry_create' && side === 'after') ids.add(step.id)
+		if (step.kind === 'entry_delete' && side === 'before') ids.add(step.id)
 	}
 	return [...ids]
 }
