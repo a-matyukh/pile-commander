@@ -248,15 +248,18 @@ function linePlugItems(): DropdownMenuItem[] {
 }
 
 /**
- * A note of the open folder opens one way by default (the note editor, or a
- * local file on the desktop in its program): the other way is here.
+ * A note of the open folder. In the browser: the note editor (a board edits
+ * a note in place on a double click, so the menu is the way there; a program
+ * would only get the raw file in a tab). On the desktop "Open file" opens it
+ * the default way (the note editor, or a local file in its program): the
+ * other way is here.
  */
 function noteOpenItems(): DropdownMenuItem[] {
 	const location = explorer_navigation.location
 	const ws = requireWorkspace()
 	if (location?.kind !== 'folder' || !is_note_file(props.node.id)) return []
 	if (!ws.opened_folder.children.some(child => child.id === props.node.id)) return []
-	if (opens_in_editor(location.ref.drive_id, props.node.id)) {
+	if (is_desktop && opens_in_editor(location.ref.drive_id, props.node.id)) {
 		// The demo has no file to hand to a program
 		if (location.ref.drive_id === 'demo') return []
 		return [{
