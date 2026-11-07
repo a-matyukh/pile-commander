@@ -14,6 +14,8 @@ import { track_unsaved_write } from '@/services/workspace/xattrs'
 import store from '@/store'
 import { folder_basename } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { record_done } from '@/store/history'
+import type { WorkspaceStore } from '@/domain/Store'
 import IconButton from '@/ui/kit/IconButton.vue'
 import { loadNoteEditor } from '@/ui/workspace/folder-container/widgets/noteRenderer'
 import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
@@ -220,6 +222,23 @@ const status = ref<'saving' | 'saved' | null>(null)
 let timer: ReturnType<typeof setTimeout> | null = null
 let end_write: (() => void) | null = null
 
+/**
+ * The text the file had when the window opened it. The window saves as the
+ * person types and keeps ⌘Z for its text; once it closes (or shows another
+ * file), the whole session is one undo of the window's history
+ */
+let session: { id: string; ws: WorkspaceStore; before: string } | null = null
+
+function end_session(id: string | null) {
+	const open = session
+	if (!open || open.id !== id) return
+	session = null
+	if (persisted === open.before) return
+	record_done(open.ws, { entry_id: id }, t('undo.text', { name: folder_basename(id) }), [
+		{ kind: 'content', id, format: 'note', before: open.before, after: persisted },
+	])
+}
+
 /** Writes the text of `id` if it changed; the board's previews of it read it again. */
 async function flush(id: string | null) {
 	if (timer) clearTimeout(timer)
@@ -240,7 +259,10 @@ async function flush(id: string | null) {
 }
 
 watch(file_id, async (id, previous) => {
-	if (previous) await flush(previous)
+	if (previous) {
+		await flush(previous)
+		end_session(previous)
+	}
 	loaded.value = null
 	status.value = null
 	if (!id) return
@@ -251,6 +273,7 @@ watch(file_id, async (id, previous) => {
 	text.value = content
 	persisted = content
 	loaded.value = id
+	session = { id, ws, before: content }
 	await nextTick()
 	focus_text()
 }, { immediate: true })
@@ -266,11 +289,14 @@ watch(text, () => {
 })
 
 onBeforeUnmount(() => {
-	void flush(loaded.value)
+	const id = loaded.value
+	void flush(id).then(() => end_session(id))
 })
 
 async function close() {
-	await flush(loaded.value)
+	const id = loaded.value
+	await flush(id)
+	end_session(id)
 	await explorer_navigation.close_file()
 }
 

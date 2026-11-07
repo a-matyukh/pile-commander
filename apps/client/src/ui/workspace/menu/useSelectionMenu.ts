@@ -7,6 +7,8 @@ import type { BulkRemoveItem } from '@/ui/workspace/menu/BulkRemoveDialog.vue'
 import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { clipboardIdsForMenu } from './clipboardIdsForMenu'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { selectionCanSetSharedBackground } from './canHaveWidgetBackground'
 import { useColorSubmenu } from './useColorSubmenu'
 import { ai_available } from '@/store/ai'
@@ -77,9 +79,13 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 				const ws = workspace.value
 				if (!ws) return
 				const value = color.trim() === '' ? 'none' : color
-				for (const id of selectedIds.value) {
-					await ws.change_background(id, value)
-				}
+				const ids = [...selectedIds.value]
+				// The selection's new color is one undo
+				await record_action(ws, { entry_id: ids[0] }, t('undo.color'), async (tx) => {
+					for (const id of ids) {
+						await ws.change_background(id, value, { tx })
+					}
+				})
 			},
 		}
 	})

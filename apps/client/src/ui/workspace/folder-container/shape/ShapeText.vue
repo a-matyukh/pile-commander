@@ -13,6 +13,7 @@ import { t } from '@/i18n'
 import { read_shape_color } from '@/services/board/shapes'
 import { has_text_area_switch, SHAPE_TEXT_INSETS, shape_text_color, shape_text_kind } from '@/services/board/shape_text'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { record_action } from '@/store/history'
 import { armNoteKeyboardFocus, transferNoteKeyboardFocus } from '../noteKeyboardFocus'
 import { useEditingNoteId } from '../widgets/useEditingNoteId'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
@@ -113,7 +114,11 @@ watch(editing, async (now) => {
 
 const stopExit = onNoteEditExit(props.widget.id, async () => {
 	if (!canWrite.value || draft.value === text.value) return
-	await requireWorkspace().set_shape_text(props.widget.id, draft.value)
+	// The whole edit is one undo, after the editor's own undo is gone with it
+	const ws = requireWorkspace()
+	const id = props.widget.id
+	const value = draft.value
+	await record_action(ws, { entry_id: id }, t('undo.shape_text'), tx => ws.set_shape_text(id, value, { tx }))
 })
 onBeforeUnmount(stopExit)
 
@@ -192,7 +197,10 @@ function onAreaMouseDown(event: MouseEvent) {
 
 function setArea(next: 'inset' | 'frame') {
 	if (!canWrite.value || next === area.value) return
-	void requireWorkspace().set_shape_text_area(props.widget.id, next === 'frame' ? 'frame' : null)
+	const ws = requireWorkspace()
+	const id = props.widget.id
+	void record_action(ws, { entry_id: id }, t('undo.text_area'), tx =>
+		ws.set_shape_text_area(id, next === 'frame' ? 'frame' : null, { tx }))
 }
 
 defineExpose({ startEditing })

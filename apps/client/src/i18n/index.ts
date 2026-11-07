@@ -30,13 +30,15 @@ export function t(key: string, params?: Record<string, string | number>): string
 	return value.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ''))
 }
 
-/** "1 элемент / 3 элемента / 5 элементов", "1 item / 5 items" */
-export function count_items(n: number): string {
+/** Which plural form `n` takes in the current language: Russian has three, English two */
+export function plural_form(n: number): 'one' | 'few' | 'many' {
 	const mod10 = n % 10
 	const mod100 = n % 100
-	const form =
-		locale.value === 'en'
-			? n === 1 ? 'one' : 'many'
-			: mod10 === 1 && mod100 !== 11 ? 'one' : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) ? 'few' : 'many'
-	return t(`plural.items.${form}`, { n })
+	if (locale.value === 'en') return n === 1 ? 'one' : 'many'
+	return mod10 === 1 && mod100 !== 11 ? 'one' : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20) ? 'few' : 'many'
+}
+
+/** "1 элемент / 3 элемента / 5 элементов", "1 item / 5 items" */
+export function count_items(n: number): string {
+	return t(`plural.items.${plural_form(n)}`, { n })
 }

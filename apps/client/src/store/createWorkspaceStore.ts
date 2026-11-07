@@ -24,7 +24,9 @@ import {
 import { path_separator } from '../services/workspace/paths'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { note_cloud_root_look } from '@/store/cloud'
-import type { ClipboardState, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
+import type { ClipboardState, HistoryOptions, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
+import { history, entry_name } from './history'
+import type { HistoryStoreRef, HistoryTx } from './history/types'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
 	active_step,
@@ -48,7 +50,7 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, persist_xattr_now, show_xattr_locally, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, persist_xattr_now, clear_xattr, show_xattr_locally, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -119,6 +121,7 @@ type PersistXattrStore = {
 	folders: Record<string, FolderWithChildrenXattrs>
 	preview_folders: Record<string, FolderWithChildrenXattrs>
 	last_error: string | null
+	history_ref?: HistoryStoreRef | null
 }
 
 function xattr_hooks(store: PersistXattrStore, owner_id: string) {
@@ -130,16 +133,59 @@ function xattr_hooks(store: PersistXattrStore, owner_id: string) {
 	}
 }
 
-function persist_workspace_xattr(
+/** A write that is a step of the person's action: `before` is the stored value it replaces (null: not set) */
+type AttrRecord = { tx?: HistoryTx; before: string | null }
+
+/** The stored value of one attribute in a cached folder: the folder's own, or a child's */
+function raw_xattr(folder: FolderWithChildrenXattrs | null | undefined, id: string, name: string): string | null {
+	if (!folder) return null
+	const holder = folder.id === id ? folder : folder.children?.find(child => child.id === id)
+	return holder?.xattrs.find(xattr => xattr.name === name)?.value ?? null
+}
+
+/**
+ * A saved attribute write: a step of the person's action when it has `tx`;
+ * otherwise the app's own write (a text block growing with its text), which
+ * updates the nearest step about the same attribute instead
+ */
+function note_attr_write(
+	store: PersistXattrStore,
+	id: string,
+	name: string,
+	before: string | null,
+	after: string | null,
+	look: boolean,
+	tx: HistoryTx | undefined,
+) {
+	if (tx) tx.record({ kind: 'attr', id, name, before, after, look })
+	else history.amend_attr(store.history_ref, id, name, after)
+}
+
+/**
+ * An action the history cannot undo yet (a file operation, a picture): undo
+ * stops before it and says so instead of undoing something older. Only the
+ * Explorer's stores keep a history
+ */
+function block_history(store: { history_ref?: HistoryStoreRef | null }, label: string) {
+	if (store.history_ref) history.barrier(label)
+}
+
+/** A value that names a picture, not a color: undo cannot bring one back yet (old pictures are swept) */
+function is_picture_value(value: string | null | undefined): boolean {
+	return !!value && /^(pile:|data:|blob:|https?:|url\()/i.test(value.trim())
+}
+
+async function persist_workspace_xattr(
 	store: PersistXattrStore,
 	fm: Pick<FileManager, 'set_xattr'>,
 	folder_data: FolderWithChildrenXattrs,
 	id: string,
 	name: string,
 	value: string,
-) {
+	record?: AttrRecord,
+): Promise<boolean> {
 	const owner_id = folder_data.id
-	return persist_xattr(
+	const saved = await persist_xattr(
 		fm,
 		folder_data,
 		id,
@@ -149,6 +195,8 @@ function persist_workspace_xattr(
 		(error) => report_error(store, error),
 		xattr_hooks(store, owner_id),
 	)
+	if (saved) note_attr_write(store, id, name, record?.before ?? null, value, false, record?.tx)
+	return saved
 }
 
 type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField | 'text' | 'text_area'
@@ -158,7 +206,7 @@ type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField | 'tex
  * the Cloud page's tile for a root), written in the background. A failed
  * write shows what the backend has again, the same way
  */
-function persist_look_xattr(
+async function persist_look_xattr(
 	store: PersistXattrStore & { type: string; uid: string },
 	fm: Pick<FileManager, 'set_xattr' | 'remove_xattr' | 'get_xattr'>,
 	owner: FolderWithChildrenXattrs,
@@ -167,11 +215,12 @@ function persist_look_xattr(
 	/** null clears the attribute */
 	value: string | null,
 	after?: Promise<boolean>,
-): Promise<void> {
+	tx?: HistoryTx,
+): Promise<boolean> {
 	const holder = owner.id === id ? owner : owner.children?.find(child => child.id === id)
 	const previous = holder?.xattrs.find(xattr => xattr.name === name)?.value ?? null
 	const hooks = xattr_hooks(store, owner.id)
-	return persist_xattr_now(fm, owner.id, id, name, value, {
+	const saved = await persist_xattr_now(fm, owner.id, id, name, value, {
 		scope: store.uid,
 		previous,
 		after,
@@ -184,6 +233,8 @@ function persist_look_xattr(
 		reread: () => fm.get_xattr(id, name),
 		on_error: error => report_error(store, error),
 	})
+	if (saved) note_attr_write(store, id, name, previous, value, true, tx)
+	return saved
 }
 
 /**
@@ -668,6 +719,8 @@ export async function createWorkspaceStore(
 			uid: ws.id,
 			type: ws.type,
 			name: ws.name,
+			// Drive sets it: only the Explorer's stores record undo history
+			history_ref: null as HistoryStoreRef | null,
 			can_write,
 			pile_images: fm.pile_images,
 			live,
@@ -1058,20 +1111,24 @@ export async function createWorkspaceStore(
 				await persist_look_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
 			},
 
-			async change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions) {
+			async change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions & HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
-				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
-				await persist_look_xattr(this, fm, folder_data, folder_id, 'cover', cover, options?.after)
+				const previous = folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none'
+				if (previous === cover) return
+				// A picture, new or replaced, cannot be undone yet: the old one is swept
+				const picture = is_picture_value(cover) || is_picture_value(previous)
+				if (picture) block_history(this, t('undo.op.cover_picture'))
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'cover', cover, options?.after, picture ? undefined : options?.tx)
 			},
 
-			async change_folder_icon(folder_id: string, icon: string) {
+			async change_folder_icon(folder_id: string, icon: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
-				await persist_look_xattr(this, fm, folder_data, folder_id, 'icon', icon)
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'icon', icon, undefined, options?.tx)
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {
@@ -1174,7 +1231,7 @@ export async function createWorkspaceStore(
 				)
 			},
 
-			async change_dashboard_cell(id: string, cell: DashboardCell) {
+			async change_dashboard_cell(id: string, cell: DashboardCell, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1197,6 +1254,7 @@ export async function createWorkspaceStore(
 					id,
 					'dashboard',
 					JSON.stringify(cell),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'dashboard') },
 				)
 			},
 
@@ -1344,13 +1402,15 @@ export async function createWorkspaceStore(
 			return load
 		},
 
-		async upsert_connections(folder_id: string, connections: Connection[]) {
+		async upsert_connections(folder_id: string, connections: Connection[], options?: HistoryOptions) {
 			assert_can_write()
-			if (connections.length === 0) return
+			if (connections.length === 0) return true
 
 			const by_id = new Map<string, Connection>(
 				(this.connections_by_folder[folder_id] ?? []).map(connection => [connection.id, connection]),
 			)
+			const touched = new Set(connections.map(connection => connection.id))
+			const before = [...by_id.values()].filter(connection => touched.has(connection.id))
 			for (const connection of connections) by_id.set(connection.id, connection)
 			this.connections_by_folder[folder_id] = [...by_id.values()]
 
@@ -1365,15 +1425,19 @@ export async function createWorkspaceStore(
 				} catch (reload_error) {
 					report_error(this, reload_error)
 				}
+				return false
 			}
+			options?.tx?.record({ kind: 'edges', folder_id, ids: [...touched], before, after: [...connections] })
+			return true
 		},
 
-		async delete_connections(folder_id: string, connection_ids: string[]) {
+		async delete_connections(folder_id: string, connection_ids: string[], options?: HistoryOptions) {
 			assert_can_write()
-			if (connection_ids.length === 0) return
+			if (connection_ids.length === 0) return true
 
 			const doomed = new Set(connection_ids)
 			const current = this.connections_by_folder[folder_id]
+			const before = (current ?? []).filter(connection => doomed.has(connection.id))
 			if (current) {
 				this.connections_by_folder[folder_id] = current.filter(connection => !doomed.has(connection.id))
 			}
@@ -1388,7 +1452,10 @@ export async function createWorkspaceStore(
 				} catch (reload_error) {
 					report_error(this, reload_error)
 				}
+				return false
 			}
+			options?.tx?.record({ kind: 'edges', folder_id, ids: [...doomed], before, after: [] })
+			return true
 		},
 
 			strokes_for(folder_id: string): StrokeNode[] {
@@ -1441,13 +1508,15 @@ export async function createWorkspaceStore(
 				return load
 			},
 
-			async upsert_strokes(folder_id: string, strokes: StrokeNode[]) {
+			async upsert_strokes(folder_id: string, strokes: StrokeNode[], options?: HistoryOptions) {
 				assert_can_write()
-				if (strokes.length === 0) return
+				if (strokes.length === 0) return true
 
 			const by_id = new Map<string, StrokeNode>(
 				(this.strokes_by_folder[folder_id] ?? []).map(stroke => [stroke.id, stroke]),
 			)
+				const touched = new Set(strokes.map(stroke => stroke.id))
+				const before = [...by_id.values()].filter(stroke => touched.has(stroke.id))
 				for (const stroke of strokes) by_id.set(stroke.id, stroke)
 				this.strokes_by_folder[folder_id] = [...by_id.values()].sort((a, b) => a.z - b.z)
 
@@ -1462,15 +1531,19 @@ export async function createWorkspaceStore(
 					} catch (reload_error) {
 						report_error(this, reload_error)
 					}
+					return false
 				}
+				options?.tx?.record({ kind: 'strokes', folder_id, ids: [...touched], before, after: [...strokes] })
+				return true
 			},
 
-			async delete_strokes(folder_id: string, stroke_ids: string[]) {
+			async delete_strokes(folder_id: string, stroke_ids: string[], options?: HistoryOptions) {
 				assert_can_write()
-				if (stroke_ids.length === 0) return
+				if (stroke_ids.length === 0) return true
 
 				const doomed = new Set(stroke_ids)
 				const current = this.strokes_by_folder[folder_id]
+				const before = (current ?? []).filter(stroke => doomed.has(stroke.id))
 				if (current) {
 					this.strokes_by_folder[folder_id] = current.filter(stroke => !doomed.has(stroke.id))
 				}
@@ -1485,10 +1558,13 @@ export async function createWorkspaceStore(
 					} catch (reload_error) {
 						report_error(this, reload_error)
 					}
+					return false
 				}
+				options?.tx?.record({ kind: 'strokes', folder_id, ids: [...doomed], before, after: [] })
+				return true
 			},
 
-			async change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions) {
+			async change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions & HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1498,10 +1574,13 @@ export async function createWorkspaceStore(
 				if (entity?.background === new_background) {
 					return
 				}
-				await persist_look_xattr(this, fm, folder_data, id, 'background', new_background, options?.after)
+				// A picture, new or replaced, cannot be undone yet: the old one is swept
+				const picture = is_picture_value(new_background) || is_picture_value(raw_xattr(folder_data, id, 'background'))
+				if (picture) block_history(this, t('undo.op.background_picture'))
+				await persist_look_xattr(this, fm, folder_data, id, 'background', new_background, options?.after, picture ? undefined : options?.tx)
 			},
 
-			async set_image_text(id: string, field: ImageTextField, value: string) {
+			async set_image_text(id: string, field: ImageTextField, value: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1513,11 +1592,11 @@ export async function createWorkspaceStore(
 				if (current === next) return
 
 				// On screen at once, written in the background, like a folder's look.
-				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null)
+				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null, undefined, options?.tx)
 			},
 
 			/** A shape's text (markdown): on screen at once, written in the background; empty removes it. */
-			async set_shape_text(id: string, markdown: string) {
+			async set_shape_text(id: string, markdown: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1528,18 +1607,18 @@ export async function createWorkspaceStore(
 				if (current === next) return
 				// As a JSON string: an xattr reads back through JSON.parse and Number, and
 				// a text like `[1]`, `"quoted"` or `2024` would come back as something else
-				await persist_look_xattr(this, fm, folder_data, id, 'text', next === null ? null : JSON.stringify(next))
+				await persist_look_xattr(this, fm, folder_data, id, 'text', next === null ? null : JSON.stringify(next), undefined, options?.tx)
 			},
 
 			/** Where a shape's text sits: null is inside the shape (the default), "frame" the whole frame. */
-			async set_shape_text_area(id: string, area: 'frame' | null) {
+			async set_shape_text_area(id: string, area: 'frame' | null, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
-				await persist_look_xattr(this, fm, folder_data, id, 'text_area', area)
+				await persist_look_xattr(this, fm, folder_data, id, 'text_area', area, undefined, options?.tx)
 			},
 
-			async change_shape_fill(id: string, color: Color) {
+			async change_shape_fill(id: string, color: Color, options?: HistoryOptions) {
 				assert_can_write()
 				try {
 					const raw = await fm.read_text_file(id)
@@ -1549,6 +1628,7 @@ export async function createWorkspaceStore(
 				await fm.save_text_file(id, updated)
 				const prepared = prepare_svg_for_preview(updated)
 				content_caches.shapes.set(id, prepared)
+				options?.tx?.record({ kind: 'content', id, format: 'svg', before: raw, after: updated })
 				} catch (error) {
 					report_error(this, error)
 				}
@@ -1565,6 +1645,7 @@ export async function createWorkspaceStore(
 					startPlug?: LinePlug
 					endPlug?: LinePlug
 				},
+				options?: HistoryOptions,
 			) {
 				assert_can_write()
 				try {
@@ -1593,8 +1674,10 @@ export async function createWorkspaceStore(
 
 				await fm.save_text_file(id, nextSvg)
 				content_caches.shapes.set(id, prepare_svg_for_preview(nextSvg))
-				await this.change_position(id, geometry.position)
-				await this.change_size(id, geometry.size)
+				options?.tx?.record({ kind: 'content', id, format: 'svg', before: raw, after: nextSvg })
+				// The box moves with the drawing: one action, so undo puts back all three
+				await this.change_position(id, geometry.position, options)
+				await this.change_size(id, geometry.size, options)
 				} catch (error) {
 					report_error(this, error)
 				}
@@ -1606,6 +1689,7 @@ export async function createWorkspaceStore(
 					startPlug: LinePlug
 					endPlug: LinePlug
 				},
+				options?: HistoryOptions,
 			) {
 				assert_can_write()
 				try {
@@ -1629,12 +1713,13 @@ export async function createWorkspaceStore(
 
 				await fm.save_text_file(id, nextSvg)
 				content_caches.shapes.set(id, prepare_svg_for_preview(nextSvg))
+				options?.tx?.record({ kind: 'content', id, format: 'svg', before: raw, after: nextSvg })
 			} catch (error) {
 				report_error(this, error)
 			}
 		},
 
-		async change_cover(id: string, new_cover: Color) {
+		async change_cover(id: string, new_cover: Color, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1644,10 +1729,13 @@ export async function createWorkspaceStore(
 				if (entity && 'cover' in entity && entity.cover === new_cover) {
 					return
 				}
-				await persist_workspace_xattr(this, fm, folder_data, id, 'cover', new_cover)
+				await persist_workspace_xattr(this, fm, folder_data, id, 'cover', new_cover, {
+					tx: options?.tx,
+					before: raw_xattr(folder_data, id, 'cover'),
+				})
 			},
 
-			async change_position(id: string, new_position: Position) {
+			async change_position(id: string, new_position: Position, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1666,6 +1754,8 @@ export async function createWorkspaceStore(
 				) {
 					return
 				}
+				// read before the optimistic update below shows the new place
+				const before = raw_xattr(live, id, 'position')
 
 				const value = JSON.stringify(new_position)
 				// Optimistic memory update so board/preview re-render before disk I/O.
@@ -1687,10 +1777,11 @@ export async function createWorkspaceStore(
 					id,
 					'position',
 					value,
+					{ tx: options?.tx, before },
 				)
 			},
 
-			async change_size(id: string, new_size: Size) {
+			async change_size(id: string, new_size: Size, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1710,6 +1801,7 @@ export async function createWorkspaceStore(
 					id,
 					'size',
 					JSON.stringify(new_size),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'size') },
 				)
 			},
 
@@ -1738,7 +1830,7 @@ export async function createWorkspaceStore(
 				)
 			},
 
-			async change_is_preview(id: string, is_preview: boolean) {
+			async change_is_preview(id: string, is_preview: boolean, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1756,6 +1848,7 @@ export async function createWorkspaceStore(
 					id,
 					'is_preview',
 					String(is_preview),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'is_preview') },
 				)
 
 				if (is_preview) {
@@ -1770,7 +1863,7 @@ export async function createWorkspaceStore(
 
 					if (child && !child.position && parent_container.view === 'board') {
 						const position = board_position(child, index)
-						await this.change_position(id, position)
+						await this.change_position(id, position, options)
 					}
 
 					if (child && !child.size && parent_container.view === 'board') {
@@ -1778,12 +1871,12 @@ export async function createWorkspaceStore(
 						const size = entry?.type === 'folder'
 							? FOLDER_PREVIEW_DEFAULT_SIZE
 							: board_size(child)
-						await this.change_size(id, size)
+						await this.change_size(id, size, options)
 					}
 				}
 			},
 
-			async change_is_text(id: string, is_text: boolean) {
+			async change_is_text(id: string, is_text: boolean, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1799,10 +1892,11 @@ export async function createWorkspaceStore(
 					id,
 					'is_text',
 					String(is_text),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'is_text') },
 				)
 			},
 
-			async change_text_width(id: string, mode: 'auto' | 'fixed') {
+			async change_text_width(id: string, mode: 'auto' | 'fixed', options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1811,10 +1905,13 @@ export async function createWorkspaceStore(
 				if (entity?.type !== 'file') return
 				if ((entity.text_width ?? 'auto') === mode) return
 
-				await persist_workspace_xattr(this, fm, folder_data, id, 'text_width', mode)
+				await persist_workspace_xattr(this, fm, folder_data, id, 'text_width', mode, {
+					tx: options?.tx,
+					before: raw_xattr(folder_data, id, 'text_width'),
+				})
 			},
 
-			async show_as_text(id: string) {
+			async show_as_text(id: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1825,10 +1922,16 @@ export async function createWorkspaceStore(
 				// Text first: the cover stays a cover until preview goes on, so the
 				// file never shows as a note for the moment between the two writes.
 				if (before.is_text !== true) {
-					await persist_workspace_xattr(this, fm, folder_data, id, 'is_text', 'true')
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_text', 'true', {
+						tx: options?.tx,
+						before: raw_xattr(folder_data, id, 'is_text'),
+					})
 				}
 				if (before.is_preview !== true) {
-					await persist_workspace_xattr(this, fm, folder_data, id, 'is_preview', 'true')
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_preview', 'true', {
+						tx: options?.tx,
+						before: raw_xattr(folder_data, id, 'is_preview'),
+					})
 				}
 
 				const parent_container = this.folder_container
@@ -1836,14 +1939,68 @@ export async function createWorkspaceStore(
 				const child = index >= 0 ? parent_container.children[index] : undefined
 
 				if (child && !child.position && parent_container.view === 'board') {
-					await this.change_position(id, board_position(child, index))
+					await this.change_position(id, board_position(child, index), options)
 				}
 				// The text size is written whatever the view is: change_is_preview only
 				// fills a missing size on a board, and it would ask board_size about
 				// the widget before is_text reached the model.
 				if (!before.size) {
-					await this.change_size(id, TEXT_DEFAULT_SIZE)
+					await this.change_size(id, TEXT_DEFAULT_SIZE, options)
 				}
+			},
+
+			async history_write_attr(id: string, name: string, value: string | null, look: boolean) {
+				assert_can_write()
+				const owner = widget_folder_data(this, id)
+					?? (this.folders[id] ? this.folders[id]! : null)
+				if (!owner) {
+					// Not on screen (a folder that is not open): written to the backend only
+					try {
+						if (value === null) await fm.remove_xattr(id, name)
+						else await fm.set_xattr(id, name, value)
+						return true
+					} catch (error) {
+						report_error(this, error)
+						return false
+					}
+				}
+				if (look) return persist_look_xattr(this, fm, owner, id, name as LookName, value)
+				if (value === null) {
+					return clear_xattr(
+						fm,
+						owner,
+						id,
+						name,
+						this.preview_folders,
+						error => report_error(this, error),
+						xattr_hooks(this, owner.id),
+					)
+				}
+				// On screen at once, the way change_position shows a drag before the write
+				const live = this.folders[owner.id] ?? owner
+				upsert_folder_xattr(live, id, name, value)
+				notify_entry_xattr_changed(live, id)
+				this.folders[owner.id] = {
+					...live,
+					xattrs: [...live.xattrs],
+					children: live.children?.map(child => ({ ...child, xattrs: [...child.xattrs] })),
+				}
+				return persist_workspace_xattr(this, fm, this.folders[owner.id]!, id, name, value)
+			},
+
+			async history_write_content(id: string, content: string, format: 'note' | 'svg') {
+				assert_can_write()
+				try {
+					await fm.save_text_file(id, content)
+				} catch (error) {
+					report_error(this, error)
+					return false
+				}
+				if (format === 'svg') content_caches.shapes.set(id, prepare_svg_for_preview(content))
+				// A note on screen reloads on a drop (not on a set), and takes the
+				// reloaded text as its saved one: its next edit starts from it
+				else content_caches.notes.invalidate(id)
+				return true
 			},
 
 			touch_folder(folder_id: string) {
@@ -1887,15 +2044,16 @@ export async function createWorkspaceStore(
 				return run_batch_fs_update_impl(fn)
 			},
 
-			async reorder_children(folder_id: string, ordered_ids: string[]) {
+			async reorder_children(folder_id: string, ordered_ids: string[], options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
-				if (!folder_data) return
+				if (!folder_data) return false
 
 				const children = folder_data.children ?? []
 				const full_order = complete_visible_order(children, ordered_ids)
-				if (!full_order) return
-				if (children_orders_match(children, full_order)) return
+				if (!full_order) return false
+				if (children_orders_match(children, full_order)) return true
+				const before = sort_entries_by_order_then_name(children).map(child => child.id)
 
 				const persisted = await persist_children_order(
 					this,
@@ -1903,9 +2061,9 @@ export async function createWorkspaceStore(
 					folder_id,
 					full_order,
 				)
-				if (!persisted) {
-					return
-				}
+				if (!persisted) return false
+				options?.tx?.record({ kind: 'order', folder_id, before, after: full_order })
+				return true
 			},
 
 			async create_note(folder_id: string, position?: Position): Promise<string> {
@@ -1936,6 +2094,7 @@ export async function createWorkspaceStore(
 			// recycled path (e.g. Note 1.md after delete) cannot show
 			// stale markdown from a previous file at the same id.
 			content_caches.notes.set(node.id, '')
+				block_history(this, t('undo.op.create', { name: filename }))
 				return node.id
 			},
 
@@ -1969,6 +2128,7 @@ export async function createWorkspaceStore(
 				content_caches.notes.set(node.id, '')
 				// Born selected, so the user sees where it is while typing.
 				this.set_selection([node.id])
+				block_history(this, t('undo.op.create', { name: filename }))
 				return node.id
 			},
 
@@ -2006,6 +2166,7 @@ export async function createWorkspaceStore(
 					return ''
 				}
 
+				block_history(this, t('undo.op.create', { name: filename }))
 				return node.id
 			},
 
@@ -2056,6 +2217,7 @@ export async function createWorkspaceStore(
 					return ''
 				}
 
+				block_history(this, t('undo.op.create', { name: filename }))
 				return node.id
 			},
 
@@ -2076,7 +2238,7 @@ export async function createWorkspaceStore(
 				return fm.get_media_src(id, { mimeType: get_mime_type(filename), preview: options?.preview })
 			},
 
-		async save_note_content(id: string, new_content: string) {
+		async save_note_content(id: string, new_content: string, options?: HistoryOptions & { before?: string }) {
 			assert_can_write()
 			try {
 				await fm.save_text_file(id, new_content)
@@ -2084,7 +2246,12 @@ export async function createWorkspaceStore(
 				if (!is_missing_path_error(error)) {
 					report_error(this, error)
 				}
+				return false
 			}
+			if (options?.before !== undefined) {
+				options.tx?.record({ kind: 'content', id, format: 'note', before: options.before, after: new_content })
+			}
+			return true
 		},
 
 		...makeSelection(),
@@ -2129,6 +2296,7 @@ export async function createWorkspaceStore(
 					mode: clip.mode === 'cut' ? 'move' : 'copy',
 				})
 				if (created_ids.length === 0) return
+				block_history(this, t('undo.op.paste'))
 
 				this.clear_clipboard()
 				if (clip.mode === 'cut') clip.source_store.exit_selection_mode()
@@ -2161,6 +2329,7 @@ export async function createWorkspaceStore(
 					clip.entry_ids,
 				)
 				if (created_ids.length === 0) return
+				block_history(this, t('undo.op.paste'))
 
 				this.clear_clipboard()
 			},
@@ -2170,7 +2339,8 @@ export async function createWorkspaceStore(
 				const entry_ids = ids.filter(Boolean)
 				if (entry_ids.length === 0) return
 
-				await copy_entries_into(this, fm, this.opened_folder_id, entry_ids)
+				const created_ids = await copy_entries_into(this, fm, this.opened_folder_id, entry_ids)
+				if (created_ids.length > 0) block_history(this, t('undo.op.duplicate'))
 			},
 
 			async show_folder_children(
@@ -2237,6 +2407,7 @@ export async function createWorkspaceStore(
 							: []),
 					],
 				})
+				if (node) block_history(this, t('undo.op.create', { name: folder_name }))
 				return node?.id ?? ''
 			},
 
@@ -2314,6 +2485,7 @@ export async function createWorkspaceStore(
 
 					await this.reload_folder_cache(parent_id)
 				})
+				block_history(this, t('undo.op.ungroup', { name: folder_entry?.name ?? entry_name(this, folder_id) }))
 			},
 
 			async create_text_file(folder_id: string, position?: Position) {
@@ -2325,12 +2497,13 @@ export async function createWorkspaceStore(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				await create_entry(this, fm, folder_id, 'file', filename, {
+				const node = await create_entry(this, fm, folder_id, 'file', filename, {
 					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: position
 						? [{ name: 'position', value: JSON.stringify(position) }]
 						: [],
 				})
+				if (node) block_history(this, t('undo.op.create', { name: filename }))
 			},
 			async create_markdown_file(folder_id: string, position?: Position) {
 				assert_can_write()
@@ -2341,12 +2514,13 @@ export async function createWorkspaceStore(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				await create_entry(this, fm, folder_id, 'file', filename, {
+				const node = await create_entry(this, fm, folder_id, 'file', filename, {
 					optimistic_id: optimistic_child(folder_id, filename),
 					xattrs: position
 						? [{ name: 'position', value: JSON.stringify(position) }]
 						: [],
 				})
+				if (node) block_history(this, t('undo.op.create', { name: filename }))
 			},
 			async open_file(id: string) {
 				if (open_file_hook?.(id)) return
@@ -2444,6 +2618,7 @@ export async function createWorkspaceStore(
 					if (last_id) this.select(last_id)
 				} finally {
 					note_hidden_names(this, created_names)
+					if (created_ids.length > 0) block_history(this, t('undo.op.import'))
 				}
 			},
 			async import_files(folder_id: string, files: File[], position?: Position) {
@@ -2528,6 +2703,7 @@ export async function createWorkspaceStore(
 				// once per hidden import.
 				note_hidden_names(this, created_names)
 				this.import_progress = null
+				if (created_ids.length > 0) block_history(this, t('undo.op.import'))
 			}
 		},
 			async remove(id: string) {
@@ -2537,6 +2713,7 @@ export async function createWorkspaceStore(
 				const owner_folder_id = owner_folder?.id === id
 					? parent_folder_id_from_node_id(id, this.id)
 					: owner_folder?.id
+				const removed_name = entry_name(this, id)
 
 				try {
 					await fm.remove(id)
@@ -2544,6 +2721,7 @@ export async function createWorkspaceStore(
 					report_error(this, error)
 					return
 				}
+				block_history(this, t('undo.op.remove', { name: removed_name }))
 		const sep = path_separator(id)
 		const is_inside_removed = (folder_id: string) =>
 			folder_id === id || folder_id.startsWith(id + sep)
@@ -2652,6 +2830,7 @@ export async function createWorkspaceStore(
 			apply_id_changed(this, shown_id, result.id, result.name)
 		}
 		note_hidden_name(this, result.name)
+		block_history(this, t('undo.op.rename', { name: old_name ?? result.name }))
 		await rename_folder_canvas_connections(this, id, result.id)
 	},
 
@@ -2817,6 +2996,7 @@ export async function createWorkspaceStore(
 					revert_folders()
 					return
 				}
+				block_history(this, t('undo.op.move', { name: node.name }))
 
 				// Entry should sit under the target with the old id so
 				// apply_id_changed can rewrite it; avoid a duplicate push.

@@ -236,6 +236,8 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 					throw new Error('Drive was closed')
 				}
 				stores.set(key, store)
+				// The window's undo history finds the store again by this
+				store.history_ref = { drive_id, root_id }
 				return store
 			},
 			(error: unknown) => {

@@ -11,6 +11,8 @@ import {
 } from '@/services/board/shapes'
 import { snap_position, type BoardSnap } from '@/services/board/layout'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { boardDragStateKey, boardSnapSettingsKey } from '../injectKeys'
 import { blockGhostClick } from '../board/blockGhostClick'
 
@@ -172,7 +174,8 @@ export function useLineEndpointDrag(options: UseLineEndpointDragOptions) {
 
 		const widget = toValue(options.widget)
 		const ws = requireWorkspace()
-		await ws.change_line_geometry(widget.id, {
+		// The drawing, its place and its box: one undo
+		await record_action(ws, { entry_id: widget.id }, t('undo.line'), tx => ws.change_line_geometry(widget.id, {
 			position: layout.position,
 			size: layout.size,
 			flipX: layout.flipX,
@@ -180,7 +183,7 @@ export function useLineEndpointDrag(options: UseLineEndpointDragOptions) {
 			axis: layout.axis,
 			startPlug: meta.startPlug,
 			endPlug: meta.endPlug,
-		})
+		}, { tx }))
 
 		// Keep the line selected so endpoint handles stay available until the
 		// user explicitly clicks empty space.

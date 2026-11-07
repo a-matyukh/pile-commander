@@ -7,6 +7,8 @@ import { layer_order, layer_step_from_key } from '@/services/board/layerOrder'
 import { normalize_workspace_id, parent_folder_id_from_node_id } from '@/services/workspace/paths'
 import { root_folder_id } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 
 /** Views where the arrows move the selection; on a board or canvas they move the selected items */
 const ARROW_VIEWS: FolderView[] = ['list', 'grid', 'stack', 'masonry', 'dashboard']
@@ -151,7 +153,7 @@ export function use_folder_keys(
 		if (!moving.length) return false
 		const next = layer_order(ids, moving, step)
 		if (!next) return true
-		void ws.reorder_children(folder.id, next)
+		void record_action(ws, { folder_id: folder.id }, t('undo.layers'), tx => ws.reorder_children(folder.id, next, { tx }))
 		return true
 	}
 

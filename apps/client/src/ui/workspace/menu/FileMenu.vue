@@ -21,6 +21,7 @@ import { useSelectionMenu } from './useSelectionMenu'
 import BulkRemoveDialog from './BulkRemoveDialog.vue'
 import { t } from '@/i18n'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { record_action, type HistoryTx } from '@/store/history'
 import { is_note_file, opens_in_editor } from '@/store/explorer/note_editor'
 import { has_text_area_switch, shape_text_kind, type ShapeTextKind } from '@/services/board/shape_text'
 import ColorPanel from '@/ui/explorer/folder-header/ColorPanel.vue'
@@ -67,12 +68,15 @@ const previewToggleLabel = computed(() =>
 
 function togglePreview() {
 	const ws = requireWorkspace()
+	const id = props.node.id
+	const label = t('undo.look', { name: props.node.name })
 	// A cover that was a text block returns as one, with a size if it has none.
 	if (isNoteFile.value && isTextMarked.value && !props.isPreview) {
-		void ws.show_as_text(props.node.id)
+		record(label, tx => ws.show_as_text(id, { tx }))
 		return
 	}
-	void ws.change_is_preview(props.node.id, !props.isPreview)
+	const next = !props.isPreview
+	record(label, tx => ws.change_is_preview(id, next, { tx }))
 }
 
 /**
@@ -87,7 +91,8 @@ const textItems = computed<DropdownMenuItem[]>(() => {
 			label: isTextMarked.value ? 'Convert to note' : 'Convert to text',
 			disabled: readonly.value,
 			onSelect() {
-				void requireWorkspace().change_is_text(id, !isTextMarked.value)
+				const next = !isTextMarked.value
+				record(t('undo.look', { name: props.node.name }), tx => requireWorkspace().change_is_text(id, next, { tx }))
 			},
 		}]
 	}
@@ -97,7 +102,7 @@ const textItems = computed<DropdownMenuItem[]>(() => {
 		label: 'Show as text',
 		disabled: readonly.value,
 		onSelect() {
-			void requireWorkspace().show_as_text(id)
+			record(t('undo.look', { name: props.node.name }), tx => requireWorkspace().show_as_text(id, { tx }))
 		},
 	}]
 })
@@ -107,6 +112,12 @@ const isShapePreview = computed(
 )
 
 const requireWorkspace = useRequireWorkspace()
+
+/** A menu command on this file: one undo record */
+function record(label: string, write: (tx: HistoryTx | undefined) => Promise<unknown>) {
+	const ws = requireWorkspace()
+	void record_action(ws, { entry_id: props.node.id }, label, write)
+}
 const workspace = useWorkspace()
 const readonly = computed(() => workspace.value?.can_write === false)
 const { container } = useFolderContainerScope()
@@ -136,7 +147,9 @@ function open_image_text(field: ImageTextField) {
 }
 
 function commit_image_text(payload: { id: string; field: ImageTextField; value: string }) {
-	void requireWorkspace().set_image_text(payload.id, payload.field, payload.value)
+	const ws = requireWorkspace()
+	void record_action(ws, { entry_id: payload.id }, t('undo.caption', { name: props.node.name }), tx =>
+		ws.set_image_text(payload.id, payload.field, payload.value, { tx }))
 }
 
 const shapeFillColor = ref<string | undefined>()
@@ -219,10 +232,8 @@ function linePlugItems(): DropdownMenuItem[] {
 			disabled: readonly.value,
 			onUpdateChecked(checked: boolean) {
 				startPlug.value = checked ? 'arrow' : 'none'
-				void requireWorkspace().change_line_plugs(props.node.id, {
-					startPlug: startPlug.value,
-					endPlug: endPlug.value,
-				})
+				const plugs = { startPlug: startPlug.value, endPlug: endPlug.value }
+				record(t('undo.line'), tx => requireWorkspace().change_line_plugs(props.node.id, plugs, { tx }))
 			},
 			onSelect(e: Event) {
 				e.preventDefault()
@@ -235,10 +246,8 @@ function linePlugItems(): DropdownMenuItem[] {
 			disabled: readonly.value,
 			onUpdateChecked(checked: boolean) {
 				endPlug.value = checked ? 'arrow' : 'none'
-				void requireWorkspace().change_line_plugs(props.node.id, {
-					startPlug: startPlug.value,
-					endPlug: endPlug.value,
-				})
+				const plugs = { startPlug: startPlug.value, endPlug: endPlug.value }
+				record(t('undo.line'), tx => requireWorkspace().change_line_plugs(props.node.id, plugs, { tx }))
 			},
 			onSelect(e: Event) {
 				e.preventDefault()
@@ -292,7 +301,7 @@ function shapeTextItems(): DropdownMenuItem[] {
 		label: t(frame ? 'shape_text.menu_inside' : 'shape_text.menu_frame'),
 		icon: frame ? 'tabler:box-padding' : 'tabler:frame',
 		onSelect() {
-			void requireWorkspace().set_shape_text_area(child.id, frame ? null : 'frame')
+			record(t('undo.text_area'), tx => requireWorkspace().set_shape_text_area(child.id, frame ? null : 'frame', { tx }))
 		},
 	}]
 }

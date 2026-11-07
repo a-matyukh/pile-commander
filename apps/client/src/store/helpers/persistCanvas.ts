@@ -16,8 +16,8 @@ type CanvasPersistStore = {
 	connections_for(folder_id: string): Connection[]
 	/** Loads the folder's connections cache when the store supports it. */
 	ensure_connections?(folder_id: string): Promise<void>
-	upsert_connections(folder_id: string, connections: Connection[]): Promise<void>
-	delete_connections(folder_id: string, connection_ids: string[]): Promise<void>
+	upsert_connections(folder_id: string, connections: Connection[]): Promise<unknown>
+	delete_connections(folder_id: string, connection_ids: string[]): Promise<unknown>
 	/** Rekeys the connections cache for a renamed/moved folder subtree. */
 	rekey_connections(old_id: string, new_id: string): void
 }

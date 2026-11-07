@@ -7,6 +7,8 @@ import { applyGroupResizeDelta } from '../board/boardGroupResize'
 import { relativePositionsForFolderDrop } from '../board/boardGroupDrag'
 import { tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
 import { clear_live_text_width, set_live_text_width } from '../liveTextWidth'
+import { t } from '@/i18n'
+import { record_action, type HistoryTx } from '@/store/history'
 import {
 	persistDragPositionSnapshots,
 	type CanvasDragPositionSnapshot,
@@ -136,9 +138,11 @@ export function useCanvasNodes(
 		)
 	}
 
+	/** `tx`: the drag's undo record, which also holds the dragged strokes */
 	async function onNodeDragStop(
 		event: NodeDragEvent,
 		snapshots: CanvasDragPositionSnapshot[],
+		tx?: HistoryTx,
 	) {
 		const dropIds = snapshots.map(snapshot => snapshot.id)
 		// Must use the primary dragged widget — mouseup target is often the folder
@@ -195,7 +199,7 @@ export function useCanvasNodes(
 
 		const ws = requireWorkspace()
 		await persistDragPositionSnapshots(snapshots, (id, position) =>
-			ws.change_position(id, position),
+			ws.change_position(id, position, { tx }),
 		)
 	}
 
@@ -274,10 +278,13 @@ export function useCanvasNodes(
 		resizeGroup = null
 
 		const ws = requireWorkspace()
-		await ws.change_size(nodeId, size)
-		for (const [memberId, memberSize] of Object.entries(memberSizes)) {
-			await ws.change_size(memberId, memberSize)
-		}
+		// The resized selection is one undo
+		await record_action(ws, { entry_id: nodeId }, t('undo.resize'), async (tx) => {
+			await ws.change_size(nodeId, size, { tx })
+			for (const [memberId, memberSize] of Object.entries(memberSizes)) {
+				await ws.change_size(memberId, memberSize, { tx })
+			}
+		})
 	}
 
 	/** A text block's side handle: only the width (and, from the left handle, x) changes. */
@@ -319,14 +326,17 @@ export function useCanvasNodes(
 			const height = Math.round(box?.offsetHeight ?? board_size(child).height)
 			const start = board_position(child, index)
 
-			await ws.change_text_width(nodeId, 'fixed')
-			await ws.change_size(nodeId, { width, height })
-			if (Math.round(geometry.x) !== Math.round(start.x)) {
-				await ws.change_position(nodeId, {
-					x: Math.round(geometry.x),
-					y: start.y,
-				})
-			}
+			// Width mode, size and (from the left handle) place: one undo
+			await record_action(ws, { entry_id: nodeId }, t('undo.resize'), async (tx) => {
+				await ws.change_text_width(nodeId, 'fixed', { tx })
+				await ws.change_size(nodeId, { width, height }, { tx })
+				if (Math.round(geometry.x) !== Math.round(start.x)) {
+					await ws.change_position(nodeId, {
+						x: Math.round(geometry.x),
+						y: start.y,
+					}, { tx })
+				}
+			})
 		} finally {
 			textResizing.delete(nodeId)
 			clear_live_text_width(nodeId)

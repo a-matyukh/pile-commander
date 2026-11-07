@@ -3,6 +3,8 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Color } from '@/domain/Widget'
 import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 
 export const PRESET_COLORS: { label: string; color: Color }[] = [
 	{ label: 'Transparent', color: 'transparent' },
@@ -53,14 +55,17 @@ export function useColorSubmenu(options: MaybeRefOrGetter<ColorSubmenuOptions | 
 		if (!ws) return
 
 		const value = color.trim() === '' ? 'none' : color
+		const id = opts.entityId
 
-		if (opts.mode === 'background') {
-			await ws.change_background(opts.entityId, value)
-		} else if (opts.mode === 'shape_fill') {
-			await ws.change_shape_fill(opts.entityId, value)
-		} else {
-			await ws.change_cover(opts.entityId, value)
-		}
+		await record_action(ws, { entry_id: id }, t('undo.color'), async (tx) => {
+			if (opts.mode === 'background') {
+				await ws.change_background(id, value, { tx })
+			} else if (opts.mode === 'shape_fill') {
+				await ws.change_shape_fill(id, value, { tx })
+			} else {
+				await ws.change_cover(id, value, { tx })
+			}
+		})
 	}
 
 	const colorMenuItem = computed<DropdownMenuItem | null>(() => {

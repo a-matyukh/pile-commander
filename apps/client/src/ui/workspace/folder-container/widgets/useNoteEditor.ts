@@ -9,6 +9,8 @@ import {
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { toggle_task } from '@/services/text/tasks'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { t } from '@/i18n'
+import { entry_name, record_action } from '@/store/history'
 import { armNoteKeyboardFocus } from '../noteKeyboardFocus'
 import { rememberEditPoint } from './editPoint'
 import { loadedNoteRenderer, loadNoteEditor, loadNoteRenderer, taskBoxLabel } from './noteRenderer'
@@ -91,19 +93,29 @@ export function useNoteEditor(
 		return loadPromise
 	}
 
-	/** Writes the text, unless the file already holds it: leaving a note unchanged writes nothing. */
-	async function save() {
+	/**
+	 * Writes the text, unless the file already holds it: leaving a note
+	 * unchanged writes nothing. One undo for the whole edit (the editor's own
+	 * undo ends with it), or for one ticked task (`task`)
+	 */
+	async function save(kind: 'text' | 'task' = 'text') {
 		const ws = requireWorkspace()
 		if (!ws.can_write) return
 		const id = toValue(widgetId)
 		const content = text.value
 		if (content === persisted) return
-		await ws.save_note_content(id, content)
-		persisted = content
+		const before = persisted
+		const name = toValue(fileName) ?? entry_name(ws, id)
+		const label = t(kind === 'task' ? 'undo.task' : 'undo.text', { name })
+		const saved = await record_action(ws, { entry_id: id }, label, tx =>
+			ws.save_note_content(id, content, { tx, before }))
 		// Capture content before await — ensureLoaded can clobber text.value
 		// with a stale empty cache entry while save_note_content is in flight.
-		ws.content_caches.notes.set(id, content)
 		text.value = content
+		// Not saved: the text stays on screen and the next exit writes it again
+		if (!saved) return
+		persisted = content
+		ws.content_caches.notes.set(id, content)
 	}
 
 	/**
@@ -117,7 +129,7 @@ export function useNoteEditor(
 		if (next !== null && next !== text.value) {
 			text.value = next
 			refreshPreview()
-			await save()
+			await save('task')
 		} else {
 			refreshPreview()
 		}

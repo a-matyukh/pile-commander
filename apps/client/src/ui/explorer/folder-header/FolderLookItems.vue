@@ -5,6 +5,7 @@ import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import app_store from '@/store'
 import { report_error } from '@/store/helpers/reportError'
+import { record_action } from '@/store/history'
 import { t } from '@/i18n'
 import { set_pile_image } from '@/services/workspace/choosePileImage'
 import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
@@ -58,9 +59,17 @@ async function in_store(write: (store: WorkspaceStore) => Promise<void>) {
 	}
 }
 
+/** A look change of the folder in the store on screen: one undo */
+function record_look(store: WorkspaceStore, write: Parameters<typeof record_action>[3]) {
+	const folder_id = props.folder.folder_id
+	const label = t('undo.look', { name: store.resolve_folder_data(folder_id)?.name ?? folder_id })
+	return record_action(store, { folder_id }, label, write).then(() => undefined)
+}
+
 function write_icon(value: string) {
-	if (props.store) void in_store(store => store.change_folder_icon(props.folder.folder_id, value))
-	else if (props.item) void explorer_tree.set_folder_icon(props.item, props.folder.folder_id, value)
+	const folder_id = props.folder.folder_id
+	if (props.store) void in_store(store => record_look(store, tx => store.change_folder_icon(folder_id, value, { tx })))
+	else if (props.item) void explorer_tree.set_folder_icon(props.item, folder_id, value)
 }
 
 function set_icon(next: Partial<FolderIcon>) {
@@ -92,8 +101,9 @@ const pile_images = computed(() => (props.store ?? props.item?.workspace)?.pile_
 function set_cover(value: string) {
 	if (isBlockedFillText(value)) return
 	const cover = value.trim() || 'none'
-	if (props.store) void in_store(store => store.change_folder_cover(props.folder.folder_id, cover))
-	else if (props.item) void explorer_tree.set_folder_cover(props.item, props.folder.folder_id, cover)
+	const folder_id = props.folder.folder_id
+	if (props.store) void in_store(store => record_look(store, tx => store.change_folder_cover(folder_id, cover, { tx })))
+	else if (props.item) void explorer_tree.set_folder_cover(props.item, folder_id, cover)
 }
 
 async function choose_cover() {

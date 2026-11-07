@@ -8,8 +8,12 @@ import {
 } from './canvasDragPersist'
 import type { EditorTool } from './drawing/types'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { count_items, t } from '@/i18n'
+import { entries_label, record_action, type HistoryTx } from '@/store/history'
 
 type UseCanvasNodeInteractionsOptions = {
+	/** The canvas's folder: where a drag's undo record belongs */
+	folderId: Readonly<Ref<string>>
 	tool: Ref<EditorTool>
 	hoveredNodeId: Ref<string | null>
 	/** Created by the view before node sync composables, which pause on them. */
@@ -18,12 +22,13 @@ type UseCanvasNodeInteractionsOptions = {
 	setStrokePosition: (nodeId: string, position: Position) => void
 	setWidgetPosition: (nodeId: string, position: Position) => void
 	/** Persist the given strokes after a drag stop (positions changed). */
-	persistStrokes: (ids: string[]) => Promise<void>
+	persistStrokes: (ids: string[], tx?: HistoryTx) => Promise<void>
 	/** Persist stroke deletions (eraser click / delete-selected). */
-	deleteStrokes: (ids: string[]) => Promise<void>
+	deleteStrokes: (ids: string[], tx?: HistoryTx) => Promise<void>
 	onWidgetDragStop: (
 		event: NodeDragEvent,
 		snapshots: CanvasDragPositionSnapshot[],
+		tx?: HistoryTx,
 	) => Promise<void>
 	removeStrokeNode: (id: string) => void
 	removeConnection: (id: string) => Promise<void>
@@ -110,11 +115,24 @@ export function useCanvasNodeInteractions(options: UseCanvasNodeInteractionsOpti
 		}
 
 		try {
-			if (dragged_stroke_ids.length > 0) {
-				await options.persistStrokes(dragged_stroke_ids)
+			// Strokes and cards dragged together are one undo
+			const persist = async (tx: HistoryTx | undefined) => {
+				if (dragged_stroke_ids.length > 0) {
+					await options.persistStrokes(dragged_stroke_ids, tx)
+				}
+				if (snapshots.length > 0) {
+					await options.onWidgetDragStop(event, snapshots, tx)
+				}
 			}
-			if (snapshots.length > 0) {
-				await options.onWidgetDragStop(event, snapshots)
+			const ws = workspace.value
+			if (ws) {
+				// Cards are named; strokes have no name, so a drag with ink is counted
+				const label = dragged_stroke_ids.length === 0
+					? entries_label(ws, snapshots.map(snapshot => snapshot.id), 'undo.move_one', 'undo.move_many')
+					: t('undo.move_many', { count: count_items(snapshots.length + dragged_stroke_ids.length) })
+				await record_action(ws, { folder_id: options.folderId.value }, label, persist)
+			} else {
+				await persist(undefined)
 			}
 		} finally {
 			isStrokeDragging.value = false

@@ -10,6 +10,7 @@ import cloud from '@/store/cloud'
 import { delete_moved_entry, entry_subtree_stamp_at, trash_entry_id } from '@pile-commander/file-manager'
 import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { forget_bookmarks, retarget_bookmarks } from './bookmarks'
 import { find_tree_node } from '@/services/workspace/tree'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
@@ -614,7 +615,9 @@ export function create_explorer_tree(
 		try {
 			const workspace = await ensure_workspace(item)
 			if (!workspace.resolve_folder_data(folder_id)) await workspace.show_folder_children(folder_id, undefined, { silent: true })
-			await workspace.change_folder_cover(folder_id, cover, options)
+			// A color is one undo; a picture stops undo before it (the store decides)
+			const label = t('undo.look', { name: workspace.resolve_folder_data(folder_id)?.name ?? folder_id })
+			await record_action(workspace, { folder_id }, label, tx => workspace.change_folder_cover(folder_id, cover, { ...options, tx }))
 		} catch (error) {
 			deps.on_error(error)
 		}
@@ -625,7 +628,8 @@ export function create_explorer_tree(
 		try {
 			const workspace = await ensure_workspace(item)
 			if (!workspace.resolve_folder_data(folder_id)) await workspace.show_folder_children(folder_id, undefined, { silent: true })
-			await workspace.change_folder_icon(folder_id, icon)
+			const label = t('undo.look', { name: workspace.resolve_folder_data(folder_id)?.name ?? folder_id })
+			await record_action(workspace, { folder_id }, label, tx => workspace.change_folder_icon(folder_id, icon, { tx }))
 		} catch (error) {
 			deps.on_error(error)
 		}

@@ -1,6 +1,8 @@
 import { computed, ref, toValue, watch, type ComputedRef, type MaybeRefOrGetter } from 'vue'
 import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 
 function ordersMatch(a: string[], b: string[]): boolean {
 	return a.length === b.length && a.every((id, i) => id === b[i])
@@ -83,8 +85,10 @@ export function useDraggableReorder(
 
 		is_persisting.value = true
 		is_dragging.value = false
+		const ws = workspace.value
+		const folder_id = folderId.value
 		try {
-			await workspace.value.reorder_children(folderId.value, orderedIds)
+			await record_action(ws, { folder_id }, t('undo.layers'), tx => ws.reorder_children(folder_id, orderedIds, { tx }))
 		} finally {
 			is_persisting.value = false
 			sync_children_from_store()
