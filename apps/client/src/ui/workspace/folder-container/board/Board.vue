@@ -158,7 +158,19 @@ function onBoardContextMenu(event: MouseEvent) {
 	onPaneContextMenu(event)
 }
 
+/**
+ * A click is on the empty board only if its press was too. A text selection
+ * dragged out past a note's or a shape's edge is released on the board, and
+ * its click lands there: it must not end the editing.
+ */
+let pressOnEmptyBoard = false
+
+function onBoardPointerDownCapture(event: PointerEvent) {
+	pressOnEmptyBoard = isEmptyBoardPointerTarget(event.target, boardRef.value)
+}
+
 function onBoardPaneClick(event: MouseEvent) {
+	if (!pressOnEmptyBoard) return
 	if (consumeSuppressedPaneClick()) return
 	if (textPlace.armed.value) {
 		textPlace.disarm()
@@ -229,6 +241,7 @@ const boardExtentStyle = computed(() => {
 			ref="boardRef"
 			:style="boardChromeStyle"
 			:data-path="folderId"
+			@pointerdown.capture="onBoardPointerDownCapture"
 			@pointerdown="onBoardPointerDown"
 			@pointermove="onPointerMove"
 			@pointerup="onPointerUp"

@@ -257,6 +257,9 @@ defineExpose({ startEditing })
 .shape-text--editing {
 	pointer-events: auto;
 	cursor: text;
+	/* Whatever holds the shape (a board, a canvas, a cell) turns selection off */
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .shape-text-body {

@@ -26,12 +26,6 @@ const config = computed(() => PREVIEW_KIND_CONFIG[props.kind])
 
 const menuNode = useMenuNode(() => props.widget)
 
-const rootClass = computed(() => ({
-	[props.layout === 'board'
-		? config.value.boardRootClass
-		: config.value.dashboardRootClass]: true,
-}))
-
 const minSize = computed(() =>
 	props.layout === 'board'
 		? config.value.boardMinSize
@@ -61,6 +55,19 @@ const hasText = computed(() => isShape.value && !isLine.value)
 const shapeText = useTemplateRef<{ startEditing(): void }>('shapeText')
 const { editingNoteId } = useEditingNoteId({ optional: true })
 const editingText = computed(() => hasText.value && editingNoteId.value === props.widget.id)
+
+const rootClass = computed(() => ({
+	[props.layout === 'board'
+		? config.value.boardRootClass
+		: config.value.dashboardRootClass]: true,
+	// As a note's: the text selects, the resize corner hides, the canvas lifts the node
+	is_edit: editingText.value,
+}))
+
+/** A selection is the board's drag gesture, but a shape's text being edited selects, as a note's. */
+function onShellSelectStart(event: Event) {
+	if (!editingText.value) onSelectStart(event)
+}
 
 function onDblClick(event: MouseEvent) {
 	if (!hasText.value) return openOnDblClick(event)
@@ -135,7 +142,7 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 		:min-size="minSize"
 		:interactions-enabled="!editingText"
 		:ignore-from="hasText ? '.resize-handle, .ProseMirror, .shape-area' : undefined"
-		@selectstart="onSelectStart"
+		@selectstart="onShellSelectStart"
 		@dragstart="onDragStart"
 		@dblclick="onDblClick"
 	>
@@ -224,6 +231,14 @@ const imageDescription = computed(() => props.widget.type === 'file' ? props.wid
 :deep(.shape-widget),
 :deep(.dashboard-shape-widget) {
 	border-radius: 0;
+}
+
+/* The board turns text selection off on its widgets: a shape's text being edited selects. */
+:deep(.shape-widget.is_edit),
+:deep(.dashboard-shape-widget.is_edit) {
+	cursor: default;
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 /* A shape's text and its Inside/Frame switch may reach past the shape's box */

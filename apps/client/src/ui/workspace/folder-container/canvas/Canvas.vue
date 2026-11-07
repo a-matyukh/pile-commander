@@ -543,7 +543,15 @@ function onSoloDragPointerEnd() {
 	releaseSoloDragLock()
 }
 
+/**
+ * A click is on the empty canvas only if its press was too: a text selection
+ * dragged out of a note or a shape is released on the pane, and must not end
+ * the editing.
+ */
+let pressOnEmptyCanvas = false
+
 function onFlowPointerDown(event: PointerEvent) {
+	pressOnEmptyCanvas = event.target instanceof Element && isEmptyCanvasTarget(event.target)
 	if (event.button !== 0) return
 	const target = event.target
 	if (!(target instanceof Element)) return
@@ -604,6 +612,7 @@ watch(tool, (next) => {
 })
 
 async function onPaneClick(event: MouseEvent) {
+	if (!pressOnEmptyCanvas) return
 	if (isDrawTool.value || isLassoTool.value) return
 	if (lineDraw.armed.value) return
 	if (textPlace.armed.value) {
@@ -614,7 +623,7 @@ async function onPaneClick(event: MouseEvent) {
 	await onSharedPaneClick(event)
 }
 
-function isEmptyCanvasTarget(target: HTMLElement) {
+function isEmptyCanvasTarget(target: Element) {
 	if (target.closest('.vue-flow__node')) return false
 	if (target.closest('.vue-flow__edge')) return false
 	if (target.closest('.vue-flow__edge-labels')) return false
