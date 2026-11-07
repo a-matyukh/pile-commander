@@ -86,6 +86,8 @@ function save_rect() {
 
 /** The folder area the window sits in. */
 const area = ref<{ width: number; height: number } | null>(null)
+/** The window is being moved by its header: the grip shows as held. */
+const moving = ref(false)
 const panel = useTemplateRef<HTMLElement>('panel')
 let area_observer: ResizeObserver | null = null
 
@@ -155,6 +157,7 @@ function start_gesture(event: PointerEvent, kind: 'move' | Edge) {
 	const handle = event.currentTarget as HTMLElement
 	handle.setPointerCapture(event.pointerId)
 	const { clientX, clientY } = event
+	moving.value = kind === 'move'
 	const move = (next: PointerEvent) => {
 		const dx = next.clientX - clientX
 		const dy = next.clientY - clientY
@@ -163,6 +166,7 @@ function start_gesture(event: PointerEvent, kind: 'move' | Edge) {
 			: resized(from, kind, dx, dy, bounds)
 	}
 	const end = () => {
+		moving.value = false
 		handle.removeEventListener('pointermove', move)
 		handle.removeEventListener('pointerup', end)
 		handle.removeEventListener('pointercancel', end)
@@ -303,7 +307,7 @@ const status_label = computed(() => {
 			v-if="file_id"
 			ref="panel"
 			class="ne"
-			:class="`ne--${size}`"
+			:class="[`ne--${size}`, { 'ne--moving': moving }]"
 			:style="float_style"
 			role="dialog"
 			:aria-label="name"
@@ -419,6 +423,11 @@ const status_label = computed(() => {
 /* The window over the folder moves by its header. */
 .ne--float .ne-hd {
 	touch-action: none;
+	cursor: grab;
+}
+
+.ne--float.ne--moving .ne-hd {
+	cursor: grabbing;
 }
 
 /* …and its edges and corners resize it. */
