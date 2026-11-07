@@ -16,6 +16,8 @@ import { folder_basename } from '@/store/explorer/folder_header'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import IconButton from '@/ui/kit/IconButton.vue'
 import { loadNoteEditor } from '@/ui/workspace/folder-container/widgets/noteRenderer'
+import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
+import { traffic_inset_target } from '@/services/window/trafficInset'
 
 type Size = 'float' | 'folder' | 'window'
 
@@ -186,6 +188,17 @@ function on_header_pointerdown(event: PointerEvent) {
 
 const NoteRichEditor = defineAsyncComponent(loadNoteEditor)
 
+/** Over the whole window on a Mac, the window's own buttons sit at the header's left, as on the top bar. */
+const overlay = use_overlay_titlebar()
+const traffic_inset = computed(() => size.value === 'window' && traffic_inset_target({
+	enabled: overlay.enabled,
+	fullscreen: overlay.fullscreen.value,
+	gallery: false,
+	sidebar_inline: false,
+	sidebar_collapsed: false,
+	drawer_open: false,
+}) === 'header')
+
 const file_id = computed(() => {
 	const location = explorer_navigation.location
 	return location?.kind === 'folder' ? location.file_id ?? null : null
@@ -313,7 +326,7 @@ const status_label = computed(() => {
 			:aria-label="name"
 			@keydown="on_keydown"
 		>
-			<header class="ne-hd" @pointerdown="on_header_pointerdown">
+			<header class="ne-hd" :class="{ 'ne-hd--inset': traffic_inset }" @pointerdown="on_header_pointerdown">
 				<span class="ne-name">{{ name }}</span>
 				<span class="ne-status">{{ status_label }}</span>
 				<span class="ne-spacer" />
@@ -418,6 +431,12 @@ const status_label = computed(() => {
 	flex: none;
 	user-select: none;
 	-webkit-user-select: none;
+}
+
+/* Clear of the macOS window buttons: the top bar's inset and height (TopBar.vue). */
+.ne-hd--inset {
+	padding-left: var(--pc-traffic-inset);
+	height: 47px;
 }
 
 /* The window over the folder moves by its header. */
