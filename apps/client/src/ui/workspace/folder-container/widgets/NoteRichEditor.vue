@@ -127,6 +127,7 @@ function bubbleShouldShow({ editor: current, state, from, to }: { editor: { isEd
 <template>
 	<div>
 		<!-- One root, so NoteBody's classes, scoped styles and listeners reach the text. -->
+		<!-- The popup's positioned box is the menu layer (50): over the note editor at full window (45). -->
 		<EditorContent class="note-editor-content" :editor="editor" />
 		<BubbleMenu
 			:editor="editor"
@@ -134,6 +135,7 @@ function bubbleShouldShow({ editor: current, state, from, to }: { editor: { isEd
 			:options="bubbleOptions"
 			:should-show="bubbleShouldShow"
 			:update-delay="120"
+			:style="{ zIndex: 50 }"
 		>
 			<FormatBubble ref="bubble" :editor="editor" :default-align="defaultAlign" @leave="emit('leave')" />
 		</BubbleMenu>

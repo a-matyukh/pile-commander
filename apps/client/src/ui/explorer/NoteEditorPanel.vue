@@ -414,11 +414,12 @@ const status_label = computed(() => {
 	border-top: 0.5px solid var(--border);
 }
 
-/* The whole window, above the sidebar and the top bar; under dialogs. */
+/* The whole window, above the sidebar, the top bar and panels (40); under menus and the
+   format popup (50) and dialogs (70). */
 .ne--window {
 	position: fixed;
 	inset: 0;
-	z-index: 60;
+	z-index: 45;
 }
 
 .ne-hd {
