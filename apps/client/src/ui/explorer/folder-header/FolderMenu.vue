@@ -100,7 +100,7 @@ function ungroup() {
 	if (item.value) void explorer_tree.ungroup_folder(item.value, folder_menu_node(props.folder))
 }
 
-const remove_text = computed(() => remove_confirm_text(item.value?.drive.trash ?? null))
+const remove_text = computed(() => remove_confirm_text(item.value?.drive))
 
 function create_folder() {
 	void create_child_folder(props.folder, item.value)

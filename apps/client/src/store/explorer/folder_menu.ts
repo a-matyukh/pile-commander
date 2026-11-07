@@ -108,30 +108,56 @@ export async function reveal_in_finder(ref: FolderRef): Promise<void> {
 /** i18n keys of the confirmation before "Move to trash" */
 export type RemoveConfirmText = { title: string; description: string; confirm: string }
 
+/** The drive a delete happens on: whether it keeps a trash, and which drive it is */
+export type DeleteDrive = Pick<Drive, 'trash' | 'kind'> | null | undefined
+
+const has_trash = (drive: DeleteDrive) => (drive?.trash ?? null) !== null
+
 /**
- * "Move to trash" always asks first. A drive without a trash (browser
- * storage) deletes for good and says so
+ * A drive without a trash (browser storage, the demo) deletes for good,
+ * yet undo brings it back while the page or the window is open: the ask
+ * says so, and where
  */
-export function remove_confirm_text(trash: Drive['trash']): RemoveConfirmText {
-	return trash === null
+function no_trash_hint(drive: DeleteDrive): string {
+	return drive?.kind === 'demo' ? 'list.no_trash_demo' : 'list.no_trash_browser'
+}
+
+/** "Move to trash" always asks first */
+export function remove_confirm_text(drive: DeleteDrive): RemoveConfirmText {
+	return has_trash(drive)
 		? {
-			title: 'tree.delete_permanently_title',
-			description: 'tree.delete_permanently_description',
-			confirm: 'tree.delete_permanently',
-		}
-		: {
 			title: 'tree.move_to_trash_title',
 			description: 'tree.move_to_trash_description',
 			confirm: 'menu.move_to_trash',
 		}
+		: {
+			title: 'tree.delete_permanently_title',
+			description: no_trash_hint(drive),
+			confirm: 'tree.delete_permanently',
+		}
+}
+
+/** The same ask for one file */
+export function remove_file_confirm_text(drive: DeleteDrive): RemoveConfirmText {
+	return has_trash(drive)
+		? {
+			title: 'list.file_trash_title',
+			description: 'list.file_trash_description',
+			confirm: 'menu.move_to_trash',
+		}
+		: {
+			title: 'list.file_delete_title',
+			description: no_trash_hint(drive),
+			confirm: 'tree.delete_permanently',
+		}
 }
 
 /** The same ask for several selected files and folders at once */
-export function bulk_remove_confirm_text(trash: Drive['trash'], has_folder: boolean): RemoveConfirmText {
-	return trash === null
+export function bulk_remove_confirm_text(drive: DeleteDrive, has_folder: boolean): RemoveConfirmText {
+	return !has_trash(drive)
 		? {
-			title: 'list.bulk_delete_title',
-			description: has_folder ? 'list.bulk_delete_folders_description' : 'list.bulk_delete_description',
+			title: has_folder ? 'list.bulk_delete_folders_title' : 'list.bulk_delete_title',
+			description: no_trash_hint(drive),
 			confirm: 'tree.delete_permanently',
 		}
 		: {

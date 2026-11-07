@@ -3,7 +3,7 @@ import type { Drive, DriveRoot, FolderRef } from '@/domain/Drive'
 import { BROWSER_ROOT } from './drives'
 import { explorer_bookmarks, explorer_last_opened, is_bookmarked } from './bookmarks'
 import { count_items, t } from '@/i18n'
-import { bulk_remove_confirm_text, create_child_folder, entry_can_rename, folder_menu_items, folder_menu_node, remove_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
+import { bulk_remove_confirm_text, create_child_folder, entry_can_rename, folder_menu_items, folder_menu_node, remove_confirm_text, remove_file_confirm_text, reveal_in_finder, toggle_bookmark } from './folder_menu'
 import { explorer_language } from './language'
 import { explorer_tree, type ExplorerTreeRoot } from './tree'
 
@@ -178,8 +178,9 @@ describe('folder header menu: actions', () => {
 })
 
 describe('folder menu: "Move to trash" confirmation', () => {
+	const drive = (trash: Drive['trash'], kind: Drive['kind'] = 'local') => ({ trash, kind })
 	const render = (trash: Drive['trash']) => {
-		const text = remove_confirm_text(trash)
+		const text = remove_confirm_text(drive(trash))
 		return [t(text.title, { name: 'A' }), t(text.confirm)]
 	}
 
@@ -198,15 +199,28 @@ describe('folder menu: "Move to trash" confirmation', () => {
 		expect(t('menu.ungroup_folder')).toBe('Ungroup folder')
 	})
 
-	test('a drive without a trash (browser storage) keeps "Delete permanently"', () => {
+	test('a drive without a trash says undo brings it back while the page (browser) or the window (demo) is open', () => {
 		explorer_language.value = 'ru'
-		expect(render(null)).toEqual(['Удалить папку безвозвратно?', 'Удалить безвозвратно'])
-		expect(t(remove_confirm_text(null).description, { name: 'A' })).toContain('«A»')
+		const browser = remove_confirm_text(drive(null, 'browser'))
+		expect([t(browser.title, { name: 'A' }), t(browser.description), t(browser.confirm)]).toEqual([
+			'Удалить папку «A» со всем, что в ней?',
+			'В браузере нет корзины: отменить можно, пока страница открыта.',
+			'Удалить',
+		])
+		const file = remove_file_confirm_text(drive(null, 'browser'))
+		expect([t(file.title, { name: 'a.md' }), t(file.description)]).toEqual([
+			'Удалить «a.md»?',
+			'В браузере нет корзины: отменить можно, пока страница открыта.',
+		])
+		expect(t(remove_file_confirm_text(drive(null, 'demo')).description)).toBe('В демо нет корзины: отменить можно, пока окно открыто.')
+		expect(t(remove_file_confirm_text(drive('system')).title, { name: 'a.md' })).toBe('Переместить «a.md» в корзину?')
+		explorer_language.value = 'en'
+		expect(t(remove_file_confirm_text(drive(null, 'browser')).description)).toBe('The browser has no trash: you can undo this while the page is open.')
 	})
 
 	test('several selected items ask once, and mention folders when one is selected', () => {
 		const ask = (trash: Drive['trash'], has_folder: boolean) => {
-			const text = bulk_remove_confirm_text(trash, has_folder)
+			const text = bulk_remove_confirm_text(drive(trash, trash === null ? 'browser' : 'local'), has_folder)
 			return [t(text.title, { items: count_items(2) }), t(text.description), t(text.confirm)]
 		}
 		explorer_language.value = 'ru'
@@ -216,7 +230,9 @@ describe('folder menu: "Move to trash" confirmation', () => {
 			'Переместить в корзину',
 		])
 		expect(ask('system', true)[1]).toContain('со всем содержимым папок')
-		expect(ask(null, true)[0]).toBe('Удалить 2 элемента безвозвратно?')
+		expect(ask(null, false)[0]).toBe('Удалить 2 элемента?')
+		expect(ask(null, true)[0]).toBe('Удалить 2 элемента вместе с содержимым папок?')
+		expect(ask(null, true)[1]).toBe('В браузере нет корзины: отменить можно, пока страница открыта.')
 		explorer_language.value = 'en'
 		expect(ask('page', false)[0]).toBe('Move 2 items to the trash?')
 	})

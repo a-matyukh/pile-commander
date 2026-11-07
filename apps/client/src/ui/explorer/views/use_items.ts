@@ -6,7 +6,7 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { is_desktop } from '@/isDesktop'
 import { explorer_drives } from '@/store/explorer/drives'
 import { standard_folder_icon, system_folder_name } from '@/store/explorer/folder_cover'
-import { entry_can_rename, folder_menu_node, remove_confirm_text } from '@/store/explorer/folder_menu'
+import { entry_can_rename, folder_menu_node, remove_file_confirm_text } from '@/store/explorer/folder_menu'
 import { explorer_tree } from '@/store/explorer/tree'
 import { tree_item_for } from '@/store/explorer/tree_item'
 import { keys_elsewhere, rename_hotkey_target } from '@/ui/explorer/folder_keys'
@@ -151,8 +151,8 @@ export function use_items(source: () => {
 		get: () => trashing.value !== null,
 		set: (open: boolean) => { if (!open) trashing.value = null },
 	})
-	const to_trash = computed(() =>
-		remove_confirm_text(explorer_drives.drive(source().location.drive_id)?.trash ?? null).confirm !== 'tree.delete_permanently')
+	/** What the ask before removing a file says: to the drive's trash, or for good where it has none */
+	const trash_text = computed(() => remove_file_confirm_text(explorer_drives.drive(source().location.drive_id)))
 	function trash() {
 		const child = trashing.value
 		trashing.value = null
@@ -176,7 +176,7 @@ export function use_items(source: () => {
 		rename,
 		trashing,
 		trash_open,
-		to_trash,
+		trash_text,
 		trash,
 	})
 }
