@@ -5,9 +5,10 @@ import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 
 /**
  * A file's actions, as the prototype's item menu: open, rename, the
- * clipboard and the trash. The list owns the dialogs: a menu closes first
+ * clipboard and the trash. The list owns the dialogs: a menu closes first.
+ * `trash_label`: "Move to trash", or "Delete" on a drive without a trash
  */
-defineProps<{ can_write: boolean; preview_label?: string }>()
+defineProps<{ can_write: boolean; preview_label?: string; trash_label: string }>()
 const emit = defineEmits<{
 	open: []
 	rename: []
@@ -34,6 +35,6 @@ const emit = defineEmits<{
 	<MenuItem v-if="can_write" icon="tabler:copy-plus" :label="t('menu.duplicate')" @select="emit('duplicate')" />
 	<template v-if="can_write">
 		<MenuSeparator />
-		<MenuItem icon="tabler:trash" :label="t('menu.move_to_trash')" @select="emit('trash')" />
+		<MenuItem icon="tabler:trash" :label="trash_label" @select="emit('trash')" />
 	</template>
 </template>

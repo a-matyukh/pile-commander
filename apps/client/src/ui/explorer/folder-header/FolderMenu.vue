@@ -161,7 +161,7 @@ function reveal() {
 				:data-tip="t('menu.ungroup_folder_tip')"
 				@select="ungroup"
 			/>
-			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t('menu.move_to_trash')" @select="remove_open = true" />
+			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t(remove_text.confirm)" @select="remove_open = true" />
 		</template>
 	</DropMenu>
 	<RenameFolderDialog v-model:open="rename_open" :name="name" @confirm="rename" />
