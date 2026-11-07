@@ -288,6 +288,7 @@ describe('add_summary_note', () => {
 		const ws = {
 			create_note: vi.fn(async () => '/f/Note 1.md'),
 			save_note_content: vi.fn(async () => {}),
+			content_caches: { notes: { invalidate: vi.fn() } },
 			resolve_folder_data: () => ({
 				children: [
 					{ id: '/f/Note 1.md', name: 'Note 1.md' },
@@ -297,22 +298,25 @@ describe('add_summary_note', () => {
 			rename,
 		}
 		await add_summary_note(ws as never, '/f', '  # Rome\n- bags  ', { x: 10, y: 20 })
-		expect(ws.create_note).toHaveBeenCalledWith('/f', { x: 10, y: 20 })
-		expect(ws.save_note_content).toHaveBeenCalledWith('/f/Note 1.md', '# Rome\n- bags\n')
-		expect(rename).toHaveBeenCalledWith('/f/Note 1.md', 'Summary (1).md', { report: false })
+		expect(ws.create_note).toHaveBeenCalledWith('/f', { x: 10, y: 20 }, { tx: undefined })
+		expect(ws.save_note_content).toHaveBeenCalledWith('/f/Note 1.md', '# Rome\n- bags\n', { tx: undefined, before: '' })
+		expect(rename).toHaveBeenCalledWith('/f/Note 1.md', 'Summary (1).md', { report: false, tx: undefined })
+		// the card born empty reads the summary again
+		expect(ws.content_caches.notes.invalidate).toHaveBeenCalledWith('/f/Note 1.md')
 	})
 
 	test('keeps the Note N.md name when rename fails, so the text is not lost', async () => {
 		const ws = {
 			create_note: vi.fn(async () => '/f/Note 2.md'),
 			save_note_content: vi.fn(async () => {}),
+			content_caches: { notes: { invalidate: vi.fn() } },
 			resolve_folder_data: () => ({ children: [] }),
 			rename: vi.fn(async () => {
 				throw new Error('taken')
 			}),
 		}
 		await add_summary_note(ws as never, '/f', '# Kept', null)
-		expect(ws.create_note).toHaveBeenCalledWith('/f', undefined)
+		expect(ws.create_note).toHaveBeenCalledWith('/f', undefined, { tx: undefined })
 		expect(ws.save_note_content).toHaveBeenCalled()
 		expect(ws.rename).toHaveBeenCalled()
 	})
@@ -354,9 +358,10 @@ describe('add_summary_note', () => {
 		await add_summary_note({
 			create_note: vi.fn(async () => '/f/Note 1.md'),
 			save_note_content: save,
+			content_caches: { notes: { invalidate: vi.fn() } },
 			resolve_folder_data: () => ({ children: [] }),
 			rename: vi.fn(async () => {}),
 		} as never, '/f', raw, null)
-		expect(save).toHaveBeenCalledWith('/f/Note 1.md', `${summary}\n`)
+		expect(save).toHaveBeenCalledWith('/f/Note 1.md', `${summary}\n`, { tx: undefined, before: '' })
 	})
 })

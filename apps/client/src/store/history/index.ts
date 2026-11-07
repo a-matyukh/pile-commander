@@ -110,9 +110,27 @@ export function record_action<T>(
 	where: { folder_id?: string; entry_id?: string },
 	label: string,
 	fn: (tx: HistoryTx | undefined) => Promise<T>,
-	options?: { merge_key?: string; notice?: string },
+	options?: {
+		merge_key?: string
+		notice?: string
+		/**
+		 * What the action did, known once it is done (how many names changed):
+		 * its name and its toast. The record is kept after `fn`, so they are
+		 * read then
+		 */
+		describe?: (result: T) => { label?: string; notice?: string }
+	},
 ): Promise<T> {
-	return history.transact(action_meta(ws, where, label, options), fn)
+	const meta = action_meta(ws, where, label, options)
+	const describe = options?.describe
+	if (!meta || !describe) return history.transact(meta, fn)
+	return history.transact(meta, async (tx) => {
+		const result = await fn(tx)
+		const said = describe(result)
+		if (said.label) meta.label = said.label
+		if (said.notice !== undefined) meta.notice = said.notice
+		return result
+	})
 }
 
 /**

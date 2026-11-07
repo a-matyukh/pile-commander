@@ -3,6 +3,8 @@ import { createFakeFileManager } from '@pile-commander/file-manager'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { Connection, StrokeNode } from '@/domain/Widget'
 import { shape_template_svg } from '@/services/board/shapes'
+import { NAME_TAKEN_MEANWHILE, rename_entry } from '@/services/ai/bulkRename'
+import { add_summary_note } from '@/services/ai/summarize'
 import { createWorkspaceStore } from '../index'
 import { create_history, type HistoryEvent } from './history'
 import type { HistoryTx } from './types'
@@ -434,5 +436,56 @@ describe('undo in a synced folder', () => {
 		await h.undo()
 		expect(fake.has(id)).toBe(false)
 		expect(calls).toEqual(['hold /ws', 'release'])
+	})
+})
+
+describe('AI actions are one undo each', () => {
+	test('a batch of AI names is one undo; a rename that failed is not in it', async () => {
+		const { fake, ws, h, act } = await setup()
+		const errors = await act(async tx => [
+			await rename_entry(ws, '/ws', '/ws/a.md', 'alpha.md', tx),
+			await rename_entry(ws, '/ws', '/ws/b.md', 'beta.md', tx),
+			// taken by the first: refused before any write
+			await rename_entry(ws, '/ws', '/ws/Shape 1.svg', 'alpha.md', tx),
+		]) as (string | null)[]
+		expect(errors).toEqual([null, null, NAME_TAKEN_MEANWHILE])
+		expect(h.snapshot().undo).toHaveLength(1)
+		expect(h.snapshot().undo[0]!.steps).toHaveLength(2)
+
+		await h.undo()
+		expect(fake.has('/ws/a.md')).toBe(true)
+		expect(fake.has('/ws/b.md')).toBe(true)
+		expect(fake.has('/ws/alpha.md')).toBe(false)
+		expect(fake.has('/ws/Shape 1.svg')).toBe(true)
+		await h.redo()
+		expect(fake.has('/ws/alpha.md')).toBe(true)
+		expect(fake.has('/ws/beta.md')).toBe(true)
+	})
+
+	test('a summary is one undo that takes the note away for good; redo brings it back named and filled', async () => {
+		const { fake, ws, h, act, events } = await setup()
+		await act(tx => add_summary_note(ws, '/ws', '# Plan\n- one', { x: 5, y: 5 }, tx))
+		expect(await fake.fm.read_text_file('/ws/Summary.md')).toBe('# Plan\n- one\n')
+		expect(h.snapshot().undo).toHaveLength(1)
+
+		await h.undo()
+		expect(events.at(-1)).toMatchObject({ type: 'undone', skipped: 0, failed: 0 })
+		expect(fake.list_entries('/ws').map(entry => entry.path).filter(path => /Note \d+\.md$|Summary/.test(path))).toEqual([])
+
+		await h.redo()
+		expect(events.at(-1)).toMatchObject({ type: 'redone', skipped: 0, failed: 0 })
+		expect(await fake.fm.read_text_file('/ws/Summary.md')).toBe('# Plan\n- one\n')
+		expect(fake.get_xattr('/ws/Summary.md', 'position')).toBe(at(5, 5))
+	})
+
+	test('an action is named by what it did, once it is done', async () => {
+		const { ws } = await setup()
+		const { history, record_action } = await import('./index')
+		history.clear()
+		await record_action(ws, { folder_id: '/ws' }, 'переименование: 3 элемента', async (tx) => {
+			await ws.rename('/ws/b.md', 'c.md', { tx })
+			return 1
+		}, { describe: done => ({ label: `переименование: ${done}`, notice: `Переименовано: ${done}` }) })
+		expect(history.snapshot().undo.at(-1)).toMatchObject({ label: 'переименование: 1', notice: 'Переименовано: 1' })
 	})
 })

@@ -1,4 +1,5 @@
 import type { WorkspaceStore } from '@/domain/Store'
+import type { HistoryTx } from '@/store/history/types'
 import { resolve_unique_filename } from '@/services/naming/uniqueName'
 import { AiError } from './types'
 import type { NameEntry } from './suggestName'
@@ -105,18 +106,19 @@ export const NAME_TAKEN_MEANWHILE = 'Name taken meanwhile'
  * folder is checked again, ignoring case: a file synced in during the
  * review may hold the name now, and is never replaced. The store throws
  * instead of raising its toast (`report: false`); success means the new
- * name is in the folder.
+ * name is in the folder. `tx`: the batch it is part of, one undo for all
  */
 export async function rename_entry(
 	workspace: Pick<WorkspaceStore, 'rename' | 'resolve_folder_data'>,
 	folder_id: string,
 	entry_id: string,
 	name: string,
+	tx?: HistoryTx,
 ): Promise<string | null> {
 	const children = workspace.resolve_folder_data(folder_id)?.children ?? []
 	if (children.some(child => child.id !== entry_id && same_name(child.name, name))) return NAME_TAKEN_MEANWHILE
 	try {
-		await workspace.rename(entry_id, name, { report: false })
+		await workspace.rename(entry_id, name, { report: false, tx })
 	} catch (error) {
 		return error instanceof Error ? error.message : String(error)
 	}

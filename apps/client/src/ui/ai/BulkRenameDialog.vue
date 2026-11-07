@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window'
-import { t } from '@/i18n'
+import { count_items, t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { model_label } from '@/services/ai/presets'
@@ -12,6 +12,7 @@ import { suggest_batch } from '@/services/ai/bulkSuggest'
 import { notify_proposal, signal_unfocused_proposal } from '@/services/mcp/attention'
 import { basename_of } from '@/services/mcp/path'
 import { close_proposal, confirm_proposal, proposal_decisions, ready_proposal_rows } from '@/services/mcp/propose'
+import { record_action } from '@/store/history'
 import AiReachBadge from './AiReachBadge.vue'
 
 type Phase = 'working' | 'review' | 'applying' | 'done'
@@ -125,6 +126,32 @@ function stop() {
 	controller?.abort()
 }
 
+/** A renamed entry: its name before and after */
+type Renamed = { from: string; to: string }
+
+/** How the history names a batch once it is done, and its toast with "Undo" */
+function renamed_text(renamed: Renamed[]): { label?: string; notice?: string } {
+	if (renamed.length === 0) return {}
+	if (renamed.length === 1) return { label: t('undo.rename', { name: renamed[0]!.from }), notice: t('undo.renamed', { name: renamed[0]!.to }) }
+	const count = count_items(renamed.length)
+	return { label: t('undo.rename_many', { count }), notice: t('undo.renamed_many', { count }) }
+}
+
+/**
+ * What is left to say once a batch is done: the history's toast says how many
+ * were renamed, with "Undo"; here only what it cannot (nothing renamed, or a
+ * store without history)
+ */
+function report_batch(renamed: number, total: number) {
+	if (renamed > 0 && workspace.value?.history_ref) return
+	const failed = total - renamed
+	toast.add({
+		title: t('bulk_rename.renamed', { renamed, total }),
+		description: failed ? t('bulk_rename.failed', { n: failed }) : undefined,
+		color: failed ? 'warning' : 'success',
+	})
+}
+
 async function apply() {
 	if (bulk_rename_request.source === 'proposal') {
 		await apply_proposal()
@@ -135,25 +162,27 @@ async function apply() {
 	const batch = to_rename.value.map(row => ({ row, name: planned.value.get(row.entry.id)! }))
 	if (!batch.length) return
 	phase.value = 'applying'
-	let renamed = 0
-	for (const { row, name } of batch) {
-		const error = await rename_entry(ws, bulk_rename_request.folder_id, row.entry.id, name)
-		if (error) {
-			row.status = 'rename_failed'
-			row.reason = error
-		} else {
-			row.status = 'renamed'
-			renamed++
+	const folder_id = bulk_rename_request.folder_id
+	// The whole batch is one undo; a rename that failed is not in it
+	const done = await record_action(ws, { folder_id }, t('undo.rename_many', { count: count_items(batch.length) }), async (tx) => {
+		const renamed: Renamed[] = []
+		for (const { row, name } of batch) {
+			const error = await rename_entry(ws, folder_id, row.entry.id, name, tx)
+			if (error) {
+				row.status = 'rename_failed'
+				row.reason = error
+			} else {
+				row.status = 'renamed'
+				renamed.push({ from: row.entry.name, to: name })
+			}
+			row.checked = false
 		}
-		row.checked = false
-	}
+		return renamed
+	}, { describe: renamed_text })
 	ws.exit_selection_mode()
+	const renamed = done.length
 	const failed = batch.length - renamed
-	toast.add({
-		title: `Renamed ${renamed} of ${batch.length}`,
-		description: failed ? `${failed} failed` : undefined,
-		color: failed ? 'warning' : 'success',
-	})
+	report_batch(renamed, batch.length)
 	if (failed) {
 		rows.value = rows.value.filter(row => row.status === 'rename_failed')
 		notice.value = `${failed} ${failed === 1 ? 'file was' : 'files were'} not renamed.`
@@ -170,11 +199,18 @@ async function apply_proposal() {
 	const decisions = proposal_decisions(rows.value, sibling_names())
 	if (!decisions.some(decision => decision.checked)) return
 	phase.value = 'applying'
-	const outcomes = await confirm_proposal(
+	const folder_id = bulk_rename_request.folder_id
+	const asked = decisions.filter(decision => decision.checked).length
+	// What the agent proposed and the person accepted is one undo, as in the dialog
+	const outcomes = await record_action(ws, { folder_id }, t('undo.rename_many', { count: count_items(asked) }), tx => confirm_proposal(
 		bulk_rename_request.proposal_id,
 		decisions,
-		(entry_id, name) => rename_entry(ws, bulk_rename_request.folder_id, entry_id, name),
-	)
+		(entry_id, name) => rename_entry(ws, folder_id, entry_id, name, tx),
+	), {
+		describe: rows => renamed_text(rows
+			.filter(row => row.outcome === 'renamed')
+			.map(row => ({ from: row.name, to: row.written_name ?? row.to }))),
+	})
 	const by_name = new Map(outcomes.map(row => [row.name, row]))
 	let renamed = 0
 	let failed = 0
@@ -195,12 +231,7 @@ async function apply_proposal() {
 		row.checked = false
 	}
 	ws.exit_selection_mode()
-	const total = renamed + failed
-	toast.add({
-		title: t('bulk_rename.renamed', { renamed, total }),
-		description: failed ? t('bulk_rename.failed', { n: failed }) : undefined,
-		color: failed ? 'warning' : 'success',
-	})
+	report_batch(renamed, renamed + failed)
 	if (failed) {
 		rows.value = rows.value.filter(row => row.status === 'rename_failed')
 		notice.value = t('bulk_rename.not_renamed', { n: failed })

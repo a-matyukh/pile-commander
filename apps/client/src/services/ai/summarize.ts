@@ -7,6 +7,7 @@ import { is_note_name } from './naming'
 import type { NameSources } from './suggestName'
 import { strip_think, untrusted_markdown } from './text'
 import type { AiContentPart, AiMessage } from './types'
+import type { HistoryTx } from '@/store/history/types'
 
 /** Images in one summary request, the first ones on the board. */
 export const MAX_SUMMARY_IMAGES = 12
@@ -176,21 +177,26 @@ export function summary_note_name(sibling_names: Iterable<string>): string {
  * `Summary.md` (numbered when taken). A failed rename leaves the saved note
  * under its `Note N.md` name rather than losing it. The model answer is
  * not trusted: reasoning is removed, HTML is escaped, markdown images go.
+ * With `tx` the three writes are one undo, which removes the note for good
+ * while no one has touched it
  */
 export async function add_summary_note(
-	workspace: Pick<WorkspaceStore, 'create_note' | 'save_note_content' | 'resolve_folder_data' | 'rename'>,
+	workspace: Pick<WorkspaceStore, 'create_note' | 'save_note_content' | 'resolve_folder_data' | 'rename' | 'content_caches'>,
 	folder_id: string,
 	text: string,
 	position: Position | null,
+	tx?: HistoryTx,
 ): Promise<void> {
-	const note_id = await workspace.create_note(folder_id, position ?? undefined)
+	const note_id = await workspace.create_note(folder_id, position ?? undefined, { tx })
 	if (!note_id) throw new Error('The note could not be created')
-	await workspace.save_note_content(note_id, `${untrusted_markdown(strip_think(text)).trim()}\n`)
+	await workspace.save_note_content(note_id, `${untrusted_markdown(strip_think(text)).trim()}\n`, { tx, before: '' })
+	// The new note's card holds the empty text it was born with: it reads the summary again
+	workspace.content_caches.notes.invalidate(note_id)
 	const siblings = (workspace.resolve_folder_data(folder_id)?.children ?? [])
 		.filter(child => child.id !== note_id)
 		.map(child => child.name)
 	try {
-		await workspace.rename(note_id, summary_note_name(siblings), { report: false })
+		await workspace.rename(note_id, summary_note_name(siblings), { report: false, tx })
 	} catch {
 		// the summary is saved; it keeps the "Note N.md" name
 	}
