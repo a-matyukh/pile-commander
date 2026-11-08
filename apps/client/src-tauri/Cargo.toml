@@ -1,6 +1,6 @@
 [package]
 name = "pile-commander"
-version = "2.6.3"
+version = "2.6.4"
 description = "File manager with unusual possibilities"
 authors = ["you"]
 license = ""
