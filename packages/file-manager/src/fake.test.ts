@@ -259,3 +259,46 @@ describe("fake FileManager bulk xattrs and sizes", () => {
 		expect(await fake.fm.entry_size("/board/photo.png")).toBe(9)
 	})
 })
+
+describe("fake FileManager delete with a receipt", () => {
+	test("a removed folder comes back whole: entries, attributes, ink and edges", async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder("/ws")
+		fake.seed_folder("/ws/box")
+		fake.seed_file("/ws/box/a.txt", "alpha")
+		fake.set_xattr("/ws/box/a.txt", "position", "{\"x\":1,\"y\":2}")
+		fake.seed_strokes("/ws/box", [stroke("s1")])
+		fake.seed_connections("/ws/box", [edge("c1", "/ws/box/a.txt", "/ws/box/a.txt")])
+
+		const receipt = await fake.fm.remove_with_receipt!("/ws/box")
+		expect(receipt?.id).toBe("/ws/box")
+		expect(fake.has("/ws/box")).toBe(false)
+		expect(fake.has("/ws/box/a.txt")).toBe(false)
+
+		expect(await fake.fm.restore_removed!(receipt!)).toEqual({ id: "/ws/box" })
+		expect(await fake.fm.read_text_file("/ws/box/a.txt")).toBe("alpha")
+		expect(fake.get_xattr("/ws/box/a.txt", "position")).toBe("{\"x\":1,\"y\":2}")
+		expect((await fake.fm.strokes.list_strokes("/ws/box")).map(s => s.id)).toEqual(["s1"])
+		expect((await fake.fm.connections.list_connections("/ws/box")).map(c => c.id)).toEqual(["c1"])
+	})
+
+	test("a receipt is spent once; a taken place or a missing folder keeps it out", async () => {
+		const fake = createFakeFileManager()
+		fake.seed_folder("/ws")
+		fake.seed_folder("/ws/box")
+		fake.seed_file("/ws/a.txt", "alpha")
+		fake.seed_file("/ws/box/b.txt", "beta")
+
+		const a = await fake.fm.remove_with_receipt!("/ws/a.txt")
+		fake.seed_file("/ws/a.txt", "someone else's")
+		expect(await fake.fm.restore_removed!(a!)).toBe("taken")
+		expect(await fake.fm.read_text_file("/ws/a.txt")).toBe("someone else's")
+		await fake.fm.remove("/ws/a.txt")
+		expect(await fake.fm.restore_removed!(a!)).toEqual({ id: "/ws/a.txt" })
+		expect(await fake.fm.restore_removed!(a!)).toBe("gone")
+
+		const b = await fake.fm.remove_with_receipt!("/ws/box/b.txt")
+		await fake.fm.remove("/ws/box")
+		expect(await fake.fm.restore_removed!(b!)).toBe("gone")
+	})
+})

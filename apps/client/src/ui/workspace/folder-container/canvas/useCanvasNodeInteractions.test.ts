@@ -11,6 +11,7 @@ vi.mock('@/store', () => ({
 
 function makeOptions() {
 	return {
+		folderId: ref('/ws'),
 		tool: ref<EditorTool>('select'),
 		hoveredNodeId: ref<string | null>(null),
 		isStrokeDragging: ref(false),
@@ -42,7 +43,7 @@ describe('useCanvasNodeInteractions', () => {
 
 		expect(options.setStrokePosition).toHaveBeenCalledWith('s1', { x: 10, y: 20 })
 		expect(options.setStrokePosition).toHaveBeenCalledWith('s2', { x: 30, y: 40 })
-		expect(options.persistStrokes).toHaveBeenCalledWith(['s1', 's2'])
+		expect(options.persistStrokes).toHaveBeenCalledWith(['s1', 's2'], undefined)
 		expect(options.isStrokeDragging.value).toBe(false)
 		expect(options.onWidgetDragStop).not.toHaveBeenCalled()
 	})
@@ -98,7 +99,7 @@ describe('useCanvasNodeInteractions', () => {
 		]))
 
 		expect(options.setStrokePosition).toHaveBeenCalledWith('s1', { x: 10, y: 20 })
-		expect(options.persistStrokes).toHaveBeenCalledWith(['s1'])
+		expect(options.persistStrokes).toHaveBeenCalledWith(['s1'], undefined)
 		expect(options.setWidgetPosition).toHaveBeenCalledWith('w1', { x: 50, y: 60 })
 		expect(options.onWidgetDragStop).toHaveBeenCalled()
 		expect(options.isStrokeDragging.value).toBe(false)

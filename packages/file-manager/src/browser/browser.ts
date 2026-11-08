@@ -198,6 +198,21 @@ export function createBrowserFileManager(storage: BrowserStorage): FileManager {
 			await storage.apply({ clear_prefix: id })
 		},
 
+		// the core keeps the subtree for undo; storage forgets it until it is back
+		async remove_with_receipt(id) {
+			await ready
+			const receipt = await core.fm.remove_with_receipt!(id)
+			await storage.apply({ clear_prefix: id })
+			return receipt
+		},
+
+		async restore_removed(receipt) {
+			await ready
+			const restored = await core.fm.restore_removed!(receipt)
+			if (typeof restored === "object") await storage.apply(await subtree_write(restored.id))
+			return restored
+		},
+
 		async set_xattr(id, name, value) {
 			await ready
 			await core.fm.set_xattr(id, name, value)

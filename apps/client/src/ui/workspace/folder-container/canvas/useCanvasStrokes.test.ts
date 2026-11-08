@@ -149,7 +149,7 @@ describe('useCanvasStrokes', () => {
 
 		expect(ws.upsert_strokes).toHaveBeenCalledWith('/a', [
 			expect.objectContaining({ id: 'ink-new', z: 5, type: 'stroke' }),
-		])
+		], { tx: undefined })
 	})
 
 	test('persistStrokes upserts only the dragged ids', async () => {
@@ -178,7 +178,7 @@ describe('useCanvasStrokes', () => {
 		strokeNodes.value = strokeNodes.value.filter(n => n.id !== 'ink-a')
 		await deleteStrokes(['ink-a'])
 
-		expect(ws.delete_strokes).toHaveBeenCalledWith('/a', ['ink-a'])
+		expect(ws.delete_strokes).toHaveBeenCalledWith('/a', ['ink-a'], { tx: undefined })
 	})
 
 	test('does not write in read-only workspaces', async () => {

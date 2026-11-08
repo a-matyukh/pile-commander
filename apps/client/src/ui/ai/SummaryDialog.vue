@@ -4,6 +4,8 @@ import { ai_base_check, ai_settings, vision_support } from '@/store/ai'
 import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { close_summary, summary_request } from '@/store/aiSummary'
+import { record_action } from '@/store/history'
+import { t } from '@/i18n'
 import { ai_chat, explain_chat_error } from '@/services/ai/client'
 import { is_abort_error } from '@/services/ai/errors'
 import {
@@ -125,9 +127,14 @@ async function accept() {
 	const text = summary.value
 	if (!ws || !text) return
 	phase.value = 'saving'
+	const folder_id = summary_request.folder_id
 	try {
-		await add_summary_note(ws, summary_request.folder_id, text, summary_request.position)
-		toast.add({ title: 'Summary added to the board', color: 'success' })
+		// Made, filled and named: one undo, which takes the note away for good while untouched
+		await record_action(ws, { folder_id }, t('undo.summary'), tx => add_summary_note(ws, folder_id, text, summary_request.position, tx), {
+			notice: t('undo.summary_added'),
+		})
+		// The history's toast says it, with "Undo"; a store without history says it here
+		if (!ws.history_ref) toast.add({ title: t('undo.summary_added'), color: 'success' })
 		close_summary()
 	} catch (failure) {
 		error.value = failure instanceof Error ? failure.message : String(failure)

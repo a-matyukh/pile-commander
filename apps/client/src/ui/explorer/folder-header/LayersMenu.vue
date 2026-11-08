@@ -4,6 +4,7 @@ import { Icon } from '@iconify/vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { to_folder_container } from '@/services/workspace/folderContainer'
 import { layer_peek_id } from '@/ui/workspace/folder-container/layerPeek'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -36,7 +37,9 @@ function move(key: string, target: string, after: boolean) {
 	const index = ids.indexOf(target)
 	if (index === -1) return
 	ids.splice(after ? index + 1 : index, 0, key)
-	void props.workspace.reorder_children(props.folder.folder_id, ids)
+	const ws = props.workspace
+	const folder_id = props.folder.folder_id
+	void record_action(ws, { folder_id }, t('undo.layers'), tx => ws.reorder_children(folder_id, ids, { tx }))
 }
 
 function row_key(from: Element | null | undefined): string | null {

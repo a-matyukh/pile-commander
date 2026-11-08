@@ -23,8 +23,8 @@ const items = ref<BulkRemoveItem[]>([])
 
 const text = computed(() => {
 	const location = explorer_navigation.location
-	const trash = location?.kind === 'folder' ? explorer_drives.drive(location.ref.drive_id)?.trash ?? null : null
-	const copy = bulk_remove_confirm_text(trash, items.value.some(item => item.isFolder))
+	const drive = location?.kind === 'folder' ? explorer_drives.drive(location.ref.drive_id) : null
+	const copy = bulk_remove_confirm_text(drive, items.value.some(item => item.isFolder))
 	return {
 		title: t(copy.title, { items: count_items(items.value.length) }),
 		description: t(copy.description),

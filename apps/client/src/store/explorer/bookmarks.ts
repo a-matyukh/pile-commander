@@ -140,14 +140,51 @@ export function retarget_bookmarks(from: FolderRef, to: FolderRef): void {
  * places) at it or inside it go away instead of pointing at nothing
  */
 export function forget_bookmarks(gone: FolderRef): void {
-	const keep = (list: FolderRef[]) => {
-		const next = list.filter(ref => ref.drive_id !== gone.drive_id
-			|| ref.root_id !== gone.root_id
-			|| !is_within(ref.folder_id, gone.folder_id))
+	const taken: TakenBookmarks = { bookmarks: [], last_opened: [] }
+	const keep = (list: FolderRef[], into: TakenBookmarks['bookmarks']) => {
+		const next: FolderRef[] = []
+		list.forEach((ref, index) => {
+			const inside = ref.drive_id === gone.drive_id && ref.root_id === gone.root_id && is_within(ref.folder_id, gone.folder_id)
+			if (inside) into.push({ ref, index })
+			else next.push(ref)
+		})
 		return next.length === list.length ? list : next
 	}
-	explorer_bookmarks.value = keep(explorer_bookmarks.value)
-	explorer_last_opened.value = keep(explorer_last_opened.value)
+	explorer_bookmarks.value = keep(explorer_bookmarks.value, taken.bookmarks)
+	explorer_last_opened.value = keep(explorer_last_opened.value, taken.last_opened)
+	if (taken.bookmarks.length + taken.last_opened.length > 0) taken_by_delete.set(folder_ref_key(gone), taken)
+}
+
+/** What `forget_bookmarks` took away, and where each stood in its list */
+type TakenBookmarks = {
+	bookmarks: { ref: FolderRef; index: number }[]
+	last_opened: { ref: FolderRef; index: number }[]
+}
+
+/** By the folder whose delete took them: an undo of that delete brings them back */
+const taken_by_delete = new Map<string, TakenBookmarks>()
+
+/**
+ * A trashed folder is back (undo), at `back` (its old address `was`, or
+ * "name (n)" when its name was taken meanwhile): the bookmarks its delete
+ * took return to their places in the lists
+ */
+export function bring_back_bookmarks(back: FolderRef, was: string = back.folder_id): void {
+	const key = folder_ref_key({ ...back, folder_id: was })
+	const taken = taken_by_delete.get(key)
+	if (!taken) return
+	taken_by_delete.delete(key)
+	const put_back = (list: FolderRef[], items: TakenBookmarks['bookmarks']) => {
+		const next = [...list]
+		for (const { ref, index } of items) {
+			const returned = { ...ref, folder_id: back.folder_id + ref.folder_id.slice(was.length) }
+			if (next.some(item => same_ref(item, returned))) continue
+			next.splice(Math.min(index, next.length), 0, returned)
+		}
+		return next
+	}
+	explorer_bookmarks.value = put_back(explorer_bookmarks.value, taken.bookmarks)
+	explorer_last_opened.value = put_back(explorer_last_opened.value, taken.last_opened)
 }
 
 /** Remembers a folder that is not already bookmarked. The list is not shown yet. */

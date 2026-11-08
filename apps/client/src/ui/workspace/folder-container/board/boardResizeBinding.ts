@@ -4,6 +4,8 @@ import type { FolderContainerWidgetChild, Position, Size } from '@/domain/Widget
 import type { WorkspaceStore } from '@/domain/Store'
 import { board_size, is_text_widget } from '@/services/board/layout'
 import { to_folder_container } from '@/services/workspace/folderContainer'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import type { BoardSnap } from './boardDragBinding'
 import { applyGroupResizeDelta, type GroupResizeMember } from './boardGroupResize'
 import { blockGhostClick, blockGhostContextMenu } from './blockGhostClick'
@@ -159,13 +161,16 @@ export function bindBoardResize(el: HTMLElement, options: BoardResizeBindingOpti
 			const ws = options.getWorkspace()
 				const groupIds = Object.keys(groupStartSizes)
 				const size = dragSizes.value[id] ?? board_size(widget)
-				await ws.change_size(id, size)
-				for (const memberId of groupIds) {
-					const memberSize = dragSizes.value[memberId]
-					if (memberSize) {
-						await ws.change_size(memberId, memberSize)
+				// The resized selection is one undo
+				await record_action(ws, { entry_id: id }, t('undo.resize'), async (tx) => {
+					await ws.change_size(id, size, { tx })
+					for (const memberId of groupIds) {
+						const memberSize = dragSizes.value[memberId]
+						if (memberSize) {
+							await ws.change_size(memberId, memberSize, { tx })
+						}
 					}
-				}
+				})
 				await nextTick()
 				delete dragSizes.value[id]
 				for (const memberId of groupIds) {

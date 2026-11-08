@@ -400,7 +400,7 @@ type LookWrite = {
 	/** Bumped by every change: a write that finds it moved lets the newer value go next */
 	version: number
 	options: WriteNowOptions
-	running?: Promise<void>
+	running?: Promise<boolean>
 }
 
 /** Per file manager (one per workspace store), by entry id and attribute */
@@ -447,7 +447,8 @@ export type WriteNowOptions = {
  * last (the server does not order concurrent merges). A failed write that no
  * newer change has replaced shows what the backend really has: re-read (the
  * answer may have been lost after the save), or the last saved value when
- * even that fails. Resolves once the attribute has settled.
+ * even that fails. Resolves once the attribute has settled: true when the
+ * newest value was saved, false when what was on screen had to be put back.
  */
 export function persist_xattr_now(
 	fm: Pick<FileManager, 'set_xattr' | 'remove_xattr'>,
@@ -456,7 +457,7 @@ export function persist_xattr_now(
 	name: string,
 	value: string | null,
 	options: WriteNowOptions,
-): Promise<void> {
+): Promise<boolean> {
 	let writes = look_writes.get(fm)
 	if (!writes) {
 		writes = new Map()
@@ -487,6 +488,7 @@ export function persist_xattr_now(
 		own.options.show(shown)
 	}
 	own.running = (async () => {
+		let saved = true
 		try {
 			for (;;) {
 				const version = own.version
@@ -495,6 +497,7 @@ export function persist_xattr_now(
 				if (after && !(await after)) {
 					if (own.version !== version) continue
 					put_back(own.confirmed)
+					saved = false
 					break
 				}
 				if (own.version !== version) continue
@@ -513,10 +516,12 @@ export function persist_xattr_now(
 					own.confirmed = cloud
 					put_back(cloud)
 					own.options.on_error(error)
+					saved = false
 					break
 				}
 				if (own.version === version) break
 			}
+			return saved
 		} finally {
 			all.delete(key)
 			done()

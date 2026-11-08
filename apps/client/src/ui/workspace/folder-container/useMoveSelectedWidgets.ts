@@ -12,6 +12,8 @@ import {
 	type BoardSnapSettings,
 } from '@/services/board/layout'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { clampBoardPosition } from './board/boardDragBinding'
 
 type UseMoveSelectedWidgetsOptions = {
@@ -102,11 +104,14 @@ export function useMoveSelectedWidgets(options: UseMoveSelectedWidgetsOptions) {
 		event.preventDefault()
 		event.stopPropagation()
 
-		void (async () => {
+		// Presses that follow each other on the same selection merge into one undo
+		const ids = moves.map(move => move.id)
+		const merge_key = `nudge\0${[...ids].sort().join('\0')}`
+		void record_action(ws, { entry_id: ids[0] }, t('undo.nudge'), async (tx) => {
 			for (const move of moves) {
-				await ws.change_position(move.id, move.position)
+				await ws.change_position(move.id, move.position, { tx })
 			}
-		})()
+		}, { merge_key })
 	}
 
 	onMounted(() => {

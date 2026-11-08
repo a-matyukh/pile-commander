@@ -45,3 +45,5 @@ tauri-plugin-window-state = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "NSView", "NSResponder", "NSScrollView"] }
+# The Trash path of a deleted item, so undo can put it back (trash_path)
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }

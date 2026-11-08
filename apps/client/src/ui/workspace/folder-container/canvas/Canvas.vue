@@ -56,6 +56,8 @@ import { backgroundStyle, defaultViewBackground } from '../widgets/resolveBackgr
 import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { setExternalDropPositionResolver } from '../externalDropPosition'
 import {
 	registerPaneEditingNoteSetter,
@@ -232,7 +234,9 @@ async function on_update_connection(patch: Partial<Pick<Connection, 'marker_star
 	const ws = workspace.value
 	const connection = selectedConnection.value
 	if (!ws || !ws.can_write || !connection) return
-	await ws.upsert_connections(folderId.value, [{ ...connection, ...patch }])
+	const folder_id = folderId.value
+	await record_action(ws, { folder_id }, t('undo.arrow'), tx =>
+		ws.upsert_connections(folder_id, [{ ...connection, ...patch }], { tx }))
 }
 
 async function on_delete_connection() {
@@ -265,7 +269,8 @@ async function commitEdgeLabel(edgeId: string, raw: string) {
 	} else {
 		next.label = label
 	}
-	await ws.upsert_connections(folderId.value, [next])
+	const folder_id = folderId.value
+	await record_action(ws, { folder_id }, t('undo.arrow'), tx => ws.upsert_connections(folder_id, [next], { tx }))
 }
 
 function onEdgeDoubleClick(event: EdgeMouseEvent) {
@@ -503,6 +508,7 @@ const {
 	onEdgeClick,
 	deleteSelectedStrokes,
 } = useCanvasNodeInteractions({
+	folderId,
 	tool,
 	hoveredNodeId,
 	isStrokeDragging,

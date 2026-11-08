@@ -162,6 +162,26 @@ describe("browser FileManager", () => {
 		expect(snapshot.connections.filter(c => c.folder.startsWith(`${ROOT}/docs`))).toEqual([])
 	})
 
+	test("a folder removed with a receipt comes back durably: entries, blobs, ink, edges", async () => {
+		const storage = seeded_storage()
+		const fm = await create_ready(storage)
+		await fm.create_folder(ROOT, "docs")
+		await fm.upload_file(`${ROOT}/docs`, "photo.png", new Blob(["png-bytes"]))
+		await fm.strokes.upsert_strokes(`${ROOT}/docs`, [stroke("s1")])
+		await fm.connections.upsert_connections(`${ROOT}/docs`, [connection("c1", "a", "b")])
+
+		const receipt = await fm.remove_with_receipt!(`${ROOT}/docs`)
+		expect((await storage.load_all()).entries.some(e => e.path.startsWith(`${ROOT}/docs`))).toBe(false)
+
+		expect(await fm.restore_removed!(receipt!)).toEqual({ id: `${ROOT}/docs` })
+		// a reload reads only what storage kept
+		const reloaded = createBrowserFileManager(storage)
+		expect((await reloaded.FolderChildren(`${ROOT}/docs`)).map(c => c.name)).toEqual(["photo.png"])
+		expect(await reloaded.entry_size(`${ROOT}/docs/photo.png`)).toBe(9)
+		expect((await reloaded.strokes.list_strokes(`${ROOT}/docs`)).map(s => s.id)).toEqual(["s1"])
+		expect((await reloaded.connections.list_connections(`${ROOT}/docs`)).map(c => c.id)).toEqual(["c1"])
+	})
+
 	test("remove of `ab` keeps the sibling `ab2`", async () => {
 		const storage = seeded_storage()
 		const fm = await create_ready(storage)

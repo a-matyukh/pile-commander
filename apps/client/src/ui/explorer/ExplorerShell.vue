@@ -31,6 +31,7 @@ import { tree_drag } from '@/ui/explorer/sidebar/tree_drag'
 import FolderHeader from '@/ui/explorer/folder-header/FolderHeader.vue'
 import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open } from '@/store/explorer/sidebar'
 import { explorer_tree } from '@/store/explorer/tree'
+import { use_undo } from '@/ui/explorer/useUndo'
 import './tokens.css'
 
 const restore_workspace = store.workspace
@@ -219,6 +220,8 @@ watch([explorer_sidebar_open, explorer_mobile, fine_pointer], () => {
 })
 
 const toast = useToast()
+// ⌘Z / ⇧⌘Z for the whole window, and the toasts of what undo did
+use_undo(toast)
 
 /**
  * A folder just copied to the cloud (Share, Publish, Copy to cloud) opens

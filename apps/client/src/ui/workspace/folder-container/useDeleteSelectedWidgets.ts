@@ -77,9 +77,7 @@ export function useDeleteSelectedWidgets(options: UseDeleteSelectedWidgetsOption
 	}
 
 	async function onConfirm(payload: { ids: string[] }) {
-		for (const id of payload.ids) {
-			await ws.remove(id)
-		}
+		await ws.remove_entries(payload.ids)
 		ws.exit_selection_mode()
 	}
 

@@ -3,14 +3,17 @@ import { useStorage } from '@vueuse/core'
 import {
 	client_instance_id,
 	createFileManager,
+	entry_state_by_id,
 	forget_sync_device,
 	list_workspace_connections,
 	list_workspace_entries,
 	list_workspace_strokes,
 	purge_entry_id,
+	restore_entry_id,
 	touch_sync_device,
 	workspace_state,
 	type EntryRow,
+	type FileManager,
 } from '@pile-commander/file-manager'
 import { is_desktop } from '@/isDesktop'
 import { require_supabase } from '@/services/cloud/client'
@@ -33,6 +36,7 @@ import {
 } from '@/services/cloud/sync/stateFile'
 import type { CloudEntry, SyncState } from '@/services/cloud/sync/types'
 import cloud from '@/store/cloud'
+import { set_synced_folders } from '@/store/history/synced'
 
 /** A local folder kept in sync with a cloud workspace, on this device. */
 export type SyncLink = {
@@ -50,6 +54,9 @@ const links = useStorage<Record<string, SyncLink>>('local_sync_links', {})
 export const sync_statuses: Record<string, SyncStatus> = reactive({})
 
 const engines = new Map<string, SyncEngine>()
+
+/** Each engine's cloud file manager: undo removes a just-made entry's cloud copy through it */
+const cloud_fms = new Map<string, FileManager>()
 
 /**
  * How often this copy re-stamps a workspace it syncs. The stamp is its
@@ -134,8 +141,23 @@ async function load_state(link: SyncLink): Promise<SyncState | null> {
 	}
 }
 
+/**
+ * The link file as of a moment ago: a delete of many files in a synced
+ * folder reads it once. A pass that saves it drops the copy
+ */
+const recent_states = new Map<string, { at: number; state: Promise<SyncState | null> }>()
+
+function state_now(link: SyncLink): Promise<SyncState | null> {
+	const kept = recent_states.get(link.root)
+	if (kept && Date.now() - kept.at < 1000) return kept.state
+	const state = load_state(link)
+	recent_states.set(link.root, { at: Date.now(), state })
+	return state
+}
+
 /** Written to a twin and renamed over: a crash never leaves half a file. */
 async function save_state(link: SyncLink, state: SyncState): Promise<void> {
+	recent_states.delete(link.root)
 	const { mkdir, rename, writeTextFile } = await fs()
 	const path = sync_state_path(link.root)
 	await mkdir(sync_state_dir(link.root), { recursive: true })
@@ -240,12 +262,15 @@ function start_engine(link: SyncLink): void {
 		},
 	})
 	engines.set(link.root, engine)
+	cloud_fms.set(link.root, cloud_fm)
 	void engine.start().catch((error: unknown) => console.error('[sync] start failed', error))
 }
 
 function stop_engine(root: string): void {
 	engines.get(root)?.stop()
 	engines.delete(root)
+	cloud_fms.delete(root)
+	recent_states.delete(root)
 	delete sync_statuses[root]
 }
 
@@ -394,6 +419,36 @@ export async function sync_now(root: string, options: SyncNowOptions = {}): Prom
 	await engines.get(root)?.sync_now(options)
 }
 
+/** The link whose folder holds a local path (the deepest one, if links nest) */
+function link_holding(path: string): SyncLink | null {
+	let found: SyncLink | null = null
+	for (const link of Object.values(links.value)) {
+		// null: elsewhere; '': the synced folder itself, which undo never removes
+		if (!relative_of(link.root, path)) continue
+		if (!found || link.root.length > found.root.length) found = link
+	}
+	return found
+}
+
 if (is_desktop) {
 	watch(() => cloud.user?.id ?? null, sync_engines_with_account, { immediate: true })
+	// Undo of a delete or a creation in a synced folder writes both sides
+	// while the folder's passes wait (LOCAL_SYNC.md, "Undo")
+	set_synced_folders({
+		async locate(path) {
+			const link = link_holding(path)
+			if (!link || !engines.has(link.root)) return null
+			const state = await state_now(link)
+			return { root: link.root, cloud_id: state?.entries[relative_of(link.root, path)!]?.cloud_id ?? null }
+		},
+		hold: (root, fn) => engines.get(root)?.hold(fn) ?? fn(),
+		row_state: async cloud_id => (await entry_state_by_id(require_supabase(), cloud_id)).state,
+		restore_row: cloud_id => restore_entry_id(require_supabase(), cloud_id),
+		async remove_copy(entry, expect) {
+			const fm = cloud_fms.get(entry.root)
+			if (!entry.cloud_id || !fm?.remove_untouched) return
+			const row = await entry_state_by_id(require_supabase(), entry.cloud_id)
+			if (row.state === 'live' && row.path) await fm.remove_untouched(row.path, expect)
+		},
+	})
 }

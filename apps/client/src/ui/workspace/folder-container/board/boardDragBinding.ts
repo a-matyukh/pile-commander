@@ -3,6 +3,7 @@ import type { FolderContainerWidgetChild, Position } from '@/domain/Widget'
 import type { WorkspaceStore } from '@/domain/Store'
 import { board_position, snap_position, type BoardSnap } from '@/services/board/layout'
 import { to_folder_container } from '@/services/workspace/folderContainer'
+import { entries_label, record_action } from '@/store/history'
 import { findDropFolder, tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
 import {
 	applyGroupDragDelta,
@@ -558,9 +559,13 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 			return position ? { id: persistId, position: { ...position } } : null
 		}).filter((entry): entry is { id: string; position: Position } => entry !== null)
 
-		for (const { id: persistId, position } of snapshots) {
-			await ws.change_position(persistId, position)
-		}
+		// One drag of the selection is one undo
+		const label = entries_label(ws, snapshots.map(snapshot => snapshot.id), 'undo.move_one', 'undo.move_many')
+		await record_action(ws, { entry_id: id }, label, async (tx) => {
+			for (const { id: persistId, position } of snapshots) {
+				await ws.change_position(persistId, position, { tx })
+			}
+		})
 		await nextTick()
 		// A new gesture may own an entry by now — let it finish and clean up.
 		for (const { id: persistId } of snapshots) {

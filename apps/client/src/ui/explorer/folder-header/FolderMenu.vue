@@ -100,7 +100,7 @@ function ungroup() {
 	if (item.value) void explorer_tree.ungroup_folder(item.value, folder_menu_node(props.folder))
 }
 
-const remove_text = computed(() => remove_confirm_text(item.value?.drive.trash ?? null))
+const remove_text = computed(() => remove_confirm_text(item.value?.drive))
 
 function create_folder() {
 	void create_child_folder(props.folder, item.value)
@@ -161,7 +161,7 @@ function reveal() {
 				:data-tip="t('menu.ungroup_folder_tip')"
 				@select="ungroup"
 			/>
-			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t('menu.move_to_trash')" @select="remove_open = true" />
+			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t(remove_text.confirm)" @select="remove_open = true" />
 		</template>
 	</DropMenu>
 	<RenameFolderDialog v-model:open="rename_open" :name="name" @confirm="rename" />

@@ -129,4 +129,20 @@ describe('forget_bookmarks', () => {
 		])
 		explorer_bookmarks.value = []
 	})
+
+	test('an undo of the delete brings them back to their places, under the name it came back with', async () => {
+		const { explorer_bookmarks, forget_bookmarks, bring_back_bookmarks } = await import('./bookmarks')
+		explorer_bookmarks.value = [
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/A' },
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old/sub' },
+			{ drive_id: 'cloud', root_id: 'w1', folder_id: '/B' },
+		]
+		forget_bookmarks({ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old' })
+		bring_back_bookmarks({ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old (1)' }, '/Old')
+		expect(explorer_bookmarks.value.map(ref => ref.folder_id)).toEqual(['/A', '/Old (1)/sub', '/B'])
+		// spent: a second undo has nothing to bring
+		bring_back_bookmarks({ drive_id: 'cloud', root_id: 'w1', folder_id: '/Old' })
+		expect(explorer_bookmarks.value).toHaveLength(3)
+		explorer_bookmarks.value = []
+	})
 })

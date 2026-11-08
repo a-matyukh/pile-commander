@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { GridItem, GridLayout } from 'vue-grid-layout-v3'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
@@ -124,14 +126,18 @@ async function persistLayout() {
 	try {
 		const ws = requireWorkspace()
 		const current = new Map(children.value.map(child => [child.id, child.dashboard]))
-		for (const item of dashboardCellsToWrite(layout.value, current)) {
-			await ws.change_dashboard_cell(item.i, {
-				x: Math.round(item.x),
-				y: Math.round(item.y),
-				w: Math.max(1, Math.round(item.w)),
-				h: Math.max(1, Math.round(item.h)),
-			})
-		}
+		const cells = dashboardCellsToWrite(layout.value, current)
+		// The grid moves the neighbours along: the whole new layout is one undo
+		await record_action(ws, { entry_id: cells[0]?.i }, t('undo.layout'), async (tx) => {
+			for (const item of cells) {
+				await ws.change_dashboard_cell(item.i, {
+					x: Math.round(item.x),
+					y: Math.round(item.y),
+					w: Math.max(1, Math.round(item.w)),
+					h: Math.max(1, Math.round(item.h)),
+				}, { tx })
+			}
+		})
 	} finally {
 		isPersisting.value = false
 	}

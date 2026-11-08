@@ -3,6 +3,8 @@ import interact from 'interactjs'
 import type { FolderContainerWidgetChild, Position, Size } from '@/domain/Widget'
 import type { WorkspaceStore } from '@/domain/Store'
 import { board_position } from '@/services/board/layout'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { blockGhostClick, blockGhostContextMenu } from './blockGhostClick'
 import { clear_live_text_width, set_live_text_width } from '../liveTextWidth'
 
@@ -86,14 +88,17 @@ export function bindTextResize(el: HTMLElement, options: BoardTextResizeOptions)
 					await nextTick()
 					const height = Math.round(el.offsetHeight)
 
-					await ws.change_text_width(id, 'fixed')
-					await ws.change_size(id, { width, height })
-					if (position && position.x !== startPosition.x) {
-						await ws.change_position(id, {
-							x: Math.max(0, Math.round(position.x)),
-							y: position.y,
-						})
-					}
+					// Width mode, size and (from the left handle) place: one undo
+					await record_action(ws, { entry_id: id }, t('undo.resize'), async (tx) => {
+						await ws.change_text_width(id, 'fixed', { tx })
+						await ws.change_size(id, { width, height }, { tx })
+						if (position && position.x !== startPosition.x) {
+							await ws.change_position(id, {
+								x: Math.max(0, Math.round(position.x)),
+								y: position.y,
+							}, { tx })
+						}
+					})
 				} finally {
 					await finish()
 				}

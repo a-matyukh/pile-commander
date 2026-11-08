@@ -49,18 +49,106 @@ fn mcp_current_exe() -> Result<String, String> {
 }
 
 /// Moves a path to the OS trash — the reversible delete used by desktop
-/// boards (plugin-fs `remove` is permanent).
+/// boards (plugin-fs `remove` is permanent). Returns the ticket
+/// `restore_trashed` takes to put it back (undo): on macOS the path the item
+/// got in the Trash, on Windows and Linux the trash item's id. None when the
+/// trash cannot tell which item is this one: that delete cannot be undone.
 #[tauri::command]
-fn trash_path(path: String) -> Result<(), String> {
-    let mut ctx = trash::TrashContext::new();
-    // Finder's AppleScript path asks to control Finder. The system call
-    // moves the item into the Trash without that prompt.
-    #[cfg(target_os = "macos")]
-    {
-        use trash::macos::{DeleteMethod, TrashContextExtMacos};
-        ctx.set_delete_method(DeleteMethod::NsFileManager);
+fn trash_path(path: String) -> Result<Option<String>, String> {
+    trash_with_ticket(&path)
+}
+
+/// Puts a trashed item back where it was (undo of a delete). Refuses when
+/// something else took its place meanwhile, or the item left the trash.
+#[tauri::command]
+fn restore_trashed(ticket: String, original_path: String) -> Result<(), String> {
+    let original = std::path::Path::new(&original_path);
+    if original.symlink_metadata().is_ok() {
+        return Err(format!("“{original_path}” already exists"));
     }
-    ctx.delete(&path).map_err(|e| e.to_string())
+    restore_with_ticket(&ticket, original)
+}
+
+#[cfg(target_os = "macos")]
+fn trash_with_ticket(path: &str) -> Result<Option<String>, String> {
+    use objc2::rc::Retained;
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+    // Not Finder's AppleScript, which asks to control Finder: the system call
+    // moves the item into the Trash without that prompt, and says where to
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    let mut resulting: Option<Retained<NSURL>> = None;
+    NSFileManager::defaultManager()
+        .trashItemAtURL_resultingItemURL_error(&url, Some(&mut resulting))
+        .map_err(|error| error.localizedDescription().to_string())?;
+    Ok(resulting.and_then(|url| url.path()).map(|path| path.to_string()))
+}
+
+#[cfg(target_os = "macos")]
+fn restore_with_ticket(ticket: &str, original: &std::path::Path) -> Result<(), String> {
+    // The Trash cannot be listed without Full Disk Access, but the item's own
+    // path in it can be moved: the Trash is on the item's volume, so a rename
+    std::fs::rename(ticket, original).map_err(|error| error.to_string())
+}
+
+#[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))))]
+fn trash_with_ticket(path: &str) -> Result<Option<String>, String> {
+    use std::collections::HashSet;
+    // The trash lists items, not "the one just added": the new item with this
+    // original path is the ticket. None or two of them: no undo for it
+    let original = std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
+    let before: HashSet<std::ffi::OsString> = trash::os_limited::list()
+        .map(|items| items.into_iter().map(|item| item.id).collect())
+        .unwrap_or_default();
+    trash::delete(path).map_err(|error| error.to_string())?;
+    let fresh: Vec<_> = trash::os_limited::list()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|item| !before.contains(&item.id) && item.original_path() == original)
+        .collect();
+    Ok(match fresh.as_slice() {
+        [item] => item.id.to_str().map(str::to_string),
+        _ => None,
+    })
+}
+
+#[cfg(any(target_os = "windows", all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))))]
+fn restore_with_ticket(ticket: &str, _original: &std::path::Path) -> Result<(), String> {
+    let item = trash::os_limited::list()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|item| item.id.to_str() == Some(ticket))
+        .ok_or_else(|| "the item is no longer in the trash".to_string())?;
+    trash::os_limited::restore_all([item]).map_err(|error| error.to_string())
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn trash_with_ticket(path: &str) -> Result<Option<String>, String> {
+    trash::delete(path).map(|_| None).map_err(|error| error.to_string())
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn restore_with_ticket(_ticket: &str, _original: &std::path::Path) -> Result<(), String> {
+    Err("the trash cannot be read here".to_string())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod trash_ticket_tests {
+    /// Touches the real Trash: run by hand with `cargo test -- --ignored`
+    #[test]
+    #[ignore]
+    fn a_trashed_file_comes_back_by_its_ticket() {
+        let dir = std::env::temp_dir().join(format!("pile-trash-ticket-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("probe.txt");
+        std::fs::write(&file, "probe").unwrap();
+        let path = file.to_str().unwrap().to_string();
+
+        let ticket = super::trash_path(path.clone()).unwrap().expect("a ticket");
+        assert!(!file.exists());
+        super::restore_trashed(ticket, path.clone()).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "probe");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 /// Returns `"directory"`, `"file"`, or `"other"` for an existing path.
@@ -229,6 +317,7 @@ pub fn run() {
             ensure_directory,
             path_kind,
             trash_path,
+            restore_trashed,
             workspace_pack::export_workspace_zip,
             workspace_pack::import_workspace_zip,
             presigned_put::put_presigned_start,

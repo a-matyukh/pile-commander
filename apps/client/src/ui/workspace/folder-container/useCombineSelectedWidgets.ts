@@ -7,6 +7,8 @@ import {
 	top_left_position,
 } from '@/services/board/layout'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
+import { count_items, t } from '@/i18n'
+import { record_action } from '@/store/history'
 
 type UseCombineSelectedWidgetsOptions = {
 	children: MaybeRefOrGetter<FolderContainerWidgetChild[]>
@@ -50,17 +52,19 @@ export function useCombineSelectedWidgets(options: UseCombineSelectedWidgetsOpti
 		})
 		const origin = top_left_position(withPositions.map(entry => entry.position))
 
-		await ws.run_batch_fs_update(async () => {
-			const newId = await ws.create_folder(parentId, origin, { view })
+		// The folder, the entries going into it and their places there: one undo
+		const label = t('undo.combine', { count: count_items(selected.length) })
+		await record_action(ws, { folder_id: parentId }, label, tx => ws.run_batch_fs_update(async () => {
+			const newId = await ws.create_folder(parentId, origin, { view, tx })
 			if (!newId) return
 
 			// Open the embedded preview first so FolderPreview is mounted and
 			// tracking folders[newId] while we move/normalize children.
-			await ws.change_is_preview(newId, true)
+			await ws.change_is_preview(newId, true, { tx })
 
 			for (let index = 0; index < withPositions.length; index++) {
 				const { child, position } = withPositions[index]!
-				const movedId = await ws.move(child.id, newId, index, parentId)
+				const movedId = await ws.move(child.id, newId, index, parentId, undefined, { tx })
 				if (!movedId || !origin) continue
 
 				await ws.change_position(
@@ -69,6 +73,7 @@ export function useCombineSelectedWidgets(options: UseCombineSelectedWidgetsOpti
 						x: TILE.pad,
 						y: TILE.pad,
 					}),
+					{ tx },
 				)
 			}
 
@@ -77,7 +82,7 @@ export function useCombineSelectedWidgets(options: UseCombineSelectedWidgetsOpti
 			await ws.reload_folder_cache(newId)
 			await ws.reload_folder_cache(parentId)
 			await ws.expand_folder_in_sidebar(newId)
-		})
+		}))
 
 		ws.exit_selection_mode()
 	}

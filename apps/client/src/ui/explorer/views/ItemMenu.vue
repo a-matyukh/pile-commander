@@ -48,6 +48,7 @@ const preview_label = computed(() => {
 		<FileMenuItems
 			:can_write="workspace.can_write"
 			:preview_label="preview_label"
+			:trash_label="t(items.trash_text.confirm)"
 			@open="workspace.open(props.child)"
 			@rename="items.start_rename(props.child)"
 			@cut="workspace.cut_entries([props.child.id])"

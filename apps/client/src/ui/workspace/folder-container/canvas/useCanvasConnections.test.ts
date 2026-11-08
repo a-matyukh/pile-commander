@@ -208,7 +208,7 @@ describe('useCanvasConnections', () => {
 				to_handle: 'right',
 				is_animated: false,
 			},
-		])
+		], { tx: undefined })
 	})
 
 	test('onConnect dedups by endpoints+handles and refuses self-loops', async () => {
@@ -235,7 +235,7 @@ describe('useCanvasConnections', () => {
 		await nextTick()
 
 		await removeConnection('c1')
-		expect(ws.delete_connections).toHaveBeenCalledWith('/a', ['c1'])
+		expect(ws.delete_connections).toHaveBeenCalledWith('/a', ['c1'], { tx: undefined })
 		await nextTick()
 		expect(edges.value.map(e => e.id)).toEqual(['c2'])
 
@@ -247,7 +247,7 @@ describe('useCanvasConnections', () => {
 			sourceHandle: null,
 			targetHandle: null,
 		}])
-		expect(ws.delete_connections).toHaveBeenCalledWith('/a', ['c2'])
+		expect(ws.delete_connections).toHaveBeenCalledWith('/a', ['c2'], { tx: undefined })
 	})
 
 	test('keeps edge selection across store-triggered rebuilds', async () => {

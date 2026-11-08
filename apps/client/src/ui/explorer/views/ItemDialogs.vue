@@ -13,12 +13,12 @@ defineProps<{ items: Items }>()
 	<RenameFolderDialog v-model:open="items.rename_open" :name="items.renaming?.name ?? ''" @confirm="items.rename" />
 	<Modal
 		v-model:open="items.trash_open"
-		:title="t(items.to_trash ? 'list.file_trash_title' : 'list.file_delete_title', { name: items.trashing?.name ?? '' })"
-		:description="t(items.to_trash ? 'list.file_trash_description' : 'list.file_delete_description')"
+		:title="t(items.trash_text.title, { name: items.trashing?.name ?? '' })"
+		:description="t(items.trash_text.description)"
 	>
 		<template #footer>
 			<Button @click="items.trash_open = false">{{ t('dialog.cancel') }}</Button>
-			<Button variant="danger" @click="items.trash">{{ t(items.to_trash ? 'menu.move_to_trash' : 'tree.delete_permanently') }}</Button>
+			<Button variant="danger" @click="items.trash">{{ t(items.trash_text.confirm) }}</Button>
 		</template>
 	</Modal>
 </template>

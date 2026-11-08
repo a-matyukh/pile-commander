@@ -448,6 +448,45 @@ describe("createLocalFileManager", () => {
 		expect(remove).not.toHaveBeenCalled()
 	})
 
+	test("a delete with a receipt goes to the OS trash and comes back by its ticket", async () => {
+		const fm = createLocalFileManager({ remove_to_trash: true })
+		invoke.mockResolvedValueOnce("/Users/me/.Trash/note.md")
+		const receipt = await fm.remove_with_receipt!("/home/user/note.md")
+		expect(invoke).toHaveBeenCalledWith("trash_path", { path: "/home/user/note.md" })
+		expect(receipt).toEqual({ id: "/home/user/note.md", ticket: "/Users/me/.Trash/note.md" })
+
+		invoke.mockResolvedValueOnce(undefined)
+		expect(await fm.restore_removed!(receipt!)).toEqual({ id: "/home/user/note.md" })
+		expect(invoke).toHaveBeenLastCalledWith("restore_trashed", {
+			ticket: "/Users/me/.Trash/note.md",
+			originalPath: "/home/user/note.md",
+		})
+	})
+
+	test("a trash that gives no ticket makes the delete final", async () => {
+		const fm = createLocalFileManager({ remove_to_trash: true })
+		invoke.mockResolvedValueOnce(null)
+		expect(await fm.remove_with_receipt!("/home/user/note.md")).toBeNull()
+	})
+
+	test("without the trash a delete with a receipt is for good", async () => {
+		const fm = createLocalFileManager()
+		expect(await fm.remove_with_receipt!("/home/user/note.md")).toBeNull()
+		expect(remove).toHaveBeenCalledWith("/home/user/note.md", { recursive: true })
+		expect(invoke).not.toHaveBeenCalled()
+	})
+
+	test("a refused restore says whether the place is taken or the item is gone", async () => {
+		const fm = createLocalFileManager({ remove_to_trash: true })
+		const receipt = { id: "/home/user/note.md", ticket: "/Users/me/.Trash/note.md" }
+		invoke.mockRejectedValueOnce("“/home/user/note.md” already exists")
+		expect(await fm.restore_removed!(receipt)).toBe("taken")
+
+		invoke.mockRejectedValueOnce("No such file or directory")
+		stat.mockRejectedValueOnce(new Error("not found"))
+		expect(await fm.restore_removed!(receipt)).toBe("gone")
+	})
+
 	test("open_file delegates to the opener plugin", async () => {
 		const fm = createLocalFileManager()
 		await fm.open_file("/home/user/readme.md")

@@ -180,6 +180,25 @@ export interface FolderConnectionsStore {
  * treat every successful rename/move as an id change, not an in-place update.
  */
 export type CreateFolderOptions = { xattrs?: Record<string, string> }
+
+/** What a just-made entry holds while no one has touched it (see `remove_untouched`) */
+export type UntouchedExpect = { text?: string; size?: number; children?: string[] }
+
+/**
+ * A delete that can be taken back (undo): where the entry was, and the
+ * backend's own way to find it again — its place in the OS trash (local),
+ * the row id (cloud), the removed subtree it keeps (browser, demo). One use:
+ * `restore_removed` spends it
+ */
+export type RemoveReceipt = { id: string; ticket: string }
+
+/**
+ * What `restore_removed` did: the entry is back, under `id` (the cloud gives
+ * "name (n)" when the name was taken meanwhile); 'taken': something else is
+ * at its place and nothing moved; 'gone': it cannot come back (the trash was
+ * emptied, its folder is gone)
+ */
+export type RestoreRemovedResult = { id: string } | "taken" | "gone"
 export type CreateTextFileOptions = CreateFolderOptions & { content?: string }
 
 export
@@ -225,6 +244,23 @@ interface FileManager {
 	 */
 	copy_entry(source_path: string, target_folder_id: string, new_name?: string): Promise<FolderChild>
 	remove(id: string): Promise<void>
+	/**
+	 * Removes for good, with no trash, an entry the person just made and no one
+	 * touched since: undo of a creation. `expect` says what untouched means: a
+	 * text file still holds `text`, any other file has `size` bytes, a folder
+	 * holds exactly `children` (names). 'changed': it was touched and nothing is
+	 * removed; 'gone': it is not there. Without it, a caller checks with reads
+	 * and calls `remove` (fine where `remove` is permanent anyway)
+	 */
+	remove_untouched?(id: string, expect: UntouchedExpect): Promise<'removed' | 'changed' | 'gone'>
+	/**
+	 * Removes like `remove`, and says how to bring the entry back (undo of a
+	 * delete). null: it is removed but cannot come back (a permanent delete,
+	 * a trash that gave no id), so the delete is final
+	 */
+	remove_with_receipt?(id: string): Promise<RemoveReceipt | null>
+	/** Brings back what `remove_with_receipt` removed */
+	restore_removed?(receipt: RemoveReceipt): Promise<RestoreRemovedResult>
 	/** Payload size in bytes (text or blob); 0 for folders. */
 	entry_size(id: string): Promise<number>
 

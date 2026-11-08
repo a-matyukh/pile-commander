@@ -8,6 +8,8 @@ import {
 } from '@/services/canvas/connections'
 import { createId } from './drawing/createId'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 
 /**
  * The public `Edge` type omits `selected` (it lives on the internal
@@ -192,8 +194,9 @@ export function useCanvasConnections(
 		}
 
 		in_flight.add(next.id)
+		const folder_id = folderId.value
 		try {
-			await ws.upsert_connections(folderId.value, [next])
+			await record_action(ws, { folder_id }, t('undo.arrow'), tx => ws.upsert_connections(folder_id, [next], { tx }))
 		} finally {
 			in_flight.delete(next.id)
 		}
@@ -218,8 +221,9 @@ export function useCanvasConnections(
 		const ws = workspace.value
 		if (!ws || !ws.can_write) return
 		for (const id of removed_ids) in_flight.add(id)
+		const folder_id = folderId.value
 		try {
-			await ws.delete_connections(folderId.value, removed_ids)
+			await record_action(ws, { folder_id }, t('undo.arrow'), tx => ws.delete_connections(folder_id, removed_ids, { tx }))
 		} finally {
 			for (const id of removed_ids) in_flight.delete(id)
 		}

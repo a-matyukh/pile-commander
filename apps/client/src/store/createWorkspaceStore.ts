@@ -24,14 +24,23 @@ import {
 import { path_separator } from '../services/workspace/paths'
 import type { WorkspacesListItem } from '@/domain/WorkspacesList'
 import { note_cloud_root_look } from '@/store/cloud'
-import type { ClipboardState, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
+import type { ClipboardState, HistoryOptions, LookWriteOptions, WorkspaceStore, WorkspaceTab, ImportProgress } from '../domain/Store'
+import { history, entries_label, entry_name, own_action } from './history'
+import type { CreateStep, DeleteStep, HistoryStoreRef, HistoryTx } from './history/types'
+import { path_name, rebase_path } from './history/steps'
+import { synced_folders, type SyncedEntry } from './history/synced'
 import type { WorkspaceTree } from '@/domain/WorkspaceTree'
 import {
 	active_step,
 	FolderWithChildrenXattrs,
 	type ConnectionsWatchEvent,
 	type FileManager,
+	type FolderChild,
+	type RemoveReceipt,
+	type RestoreRemovedResult,
 	type StrokesWatchEvent,
+	type UntouchedExpect,
+	type Xattr,
 	type Unwatch,
 	type WatchEvent,
 } from '@pile-commander/file-manager'
@@ -48,7 +57,7 @@ import {
 } from '../services/workspace/folderContainer'
 import { hidden_paths } from './hiddenPaths'
 import { show_hidden_files } from './showHiddenFiles'
-import { persist_xattr, persist_xattr_now, show_xattr_locally, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
+import { persist_xattr, persist_xattr_now, clear_xattr, show_xattr_locally, find_entry_owner_folder, xattrs_map, upsert_folder_xattr, notify_entry_xattr_changed, apply_pending_entry_xattrs, bump_folder_cache_generation } from '../services/workspace/xattrs'
 import { image_text_from_stored, type ImageTextField } from '../services/workspace/imageText'
 import { shape_template_svg, apply_shape_color, prepare_svg_for_preview, parse_line_meta, build_line_svg, is_line_shape, line_layout_from_endpoints, SHAPE_LINE_DEFAULT_STROKE, LINE_STROKE_WIDTH, type LinePlug, type LineAxis } from '../services/board/shapes'
 import {
@@ -96,7 +105,7 @@ import {
 	rename_folder_canvas_connections,
 	type CanvasPersistStore,
 } from './helpers/persistCanvas'
-import { t } from '@/i18n'
+import { count_items, t } from '@/i18n'
 import { hold_entry } from '@/services/cloud/pendingEntries'
 import {
 	cached_folders_affected_by,
@@ -119,6 +128,7 @@ type PersistXattrStore = {
 	folders: Record<string, FolderWithChildrenXattrs>
 	preview_folders: Record<string, FolderWithChildrenXattrs>
 	last_error: string | null
+	history_ref?: HistoryStoreRef | null
 }
 
 function xattr_hooks(store: PersistXattrStore, owner_id: string) {
@@ -130,16 +140,141 @@ function xattr_hooks(store: PersistXattrStore, owner_id: string) {
 	}
 }
 
-function persist_workspace_xattr(
+/** A write that is a step of the person's action: `before` is the stored value it replaces (null: not set) */
+type AttrRecord = { tx?: HistoryTx; before: string | null }
+
+/** The stored value of one attribute in a cached folder: the folder's own, or a child's */
+function raw_xattr(folder: FolderWithChildrenXattrs | null | undefined, id: string, name: string): string | null {
+	if (!folder) return null
+	const holder = folder.id === id ? folder : folder.children?.find(child => child.id === id)
+	return holder?.xattrs.find(xattr => xattr.name === name)?.value ?? null
+}
+
+/**
+ * A saved attribute write: a step of the person's action when it has `tx`;
+ * otherwise the app's own write (a text block growing with its text), which
+ * updates the nearest step about the same attribute instead
+ */
+function note_attr_write(
+	store: PersistXattrStore,
+	id: string,
+	name: string,
+	before: string | null,
+	after: string | null,
+	look: boolean,
+	tx: HistoryTx | undefined,
+) {
+	if (tx) tx.record({ kind: 'attr', id, name, before, after, look })
+	else history.amend_attr(store.history_ref, id, name, after)
+}
+
+/**
+ * An action the history cannot undo yet (a file operation, a picture): undo
+ * stops before it and says so instead of undoing something older. Only the
+ * Explorer's stores keep a history
+ */
+function block_history(store: { history_ref?: HistoryStoreRef | null }, label: string) {
+	if (store.history_ref) history.barrier(label)
+}
+
+/** A value that names a picture, not a color: undo cannot bring one back yet (old pictures are swept) */
+function is_picture_value(value: string | null | undefined): boolean {
+	return !!value && /^(pile:|data:|blob:|https?:|url\()/i.test(value.trim())
+}
+
+/** Where the edges to a removed entry live: its folder, or the parent of the open folder itself */
+function removed_owner_folder_id(store: WorkspaceStore, id: string): string | undefined {
+	const owner_folder = find_entry_owner_folder(store.opened_folder, store.preview_folders, id)
+	return owner_folder?.id === id ? parent_folder_id_from_node_id(id, store.id) : owner_folder?.id
+}
+
+/** Whether a cached entry is a folder: what a delete step keeps of it */
+function cached_entry_type(store: WorkspaceStore, id: string): 'file' | 'folder' {
+	const owner_folder = find_entry_owner_folder(store.opened_folder, store.preview_folders, id)
+	if (owner_folder?.id === id || store.folders[id]) return 'folder'
+	return owner_folder?.children?.find(child => child.id === id)?.type === 'folder' ? 'folder' : 'file'
+}
+
+/** The synced folder and cloud row of a local entry (desktop): its undo writes both sides */
+async function locate_synced(store: WorkspaceStore, id: string): Promise<SyncedEntry | undefined> {
+	if (store.type !== 'local') return undefined
+	return (await synced_folders()?.locate(id).catch(() => null)) ?? undefined
+}
+
+/** Something is at `id` now */
+async function entry_there(fm: FileManager, id: string, root_id: string): Promise<boolean> {
+	const siblings = await fm.FolderChildren(parent_folder_id_from_node_id(id, root_id)).catch(() => [])
+	return siblings.some(child => child.id === id)
+}
+
+/** The edges of a folder's board that end at `id`: they go when it goes */
+function edges_to(store: WorkspaceStore, folder_id: string, id: string): Connection[] {
+	return store.connections_for(folder_id)
+		.filter(connection => connection.from === id || connection.to === id)
+		.map(connection => ({ ...connection }))
+}
+
+/**
+ * `remove_untouched` for a file manager without its own (browser, demo:
+ * their remove is permanent anyway): reads, then removes
+ */
+async function remove_untouched_by_reads(
+	fm: FileManager,
+	id: string,
+	parent: string,
+	expect: UntouchedExpect,
+): Promise<'removed' | 'changed' | 'gone'> {
+	const siblings = await fm.FolderChildren(parent).catch(() => null)
+	const me = siblings?.find(child => child.id === id)
+	if (!me) return 'gone'
+	if (me.type === 'folder') {
+		const names = (await fm.FolderChildren(id)).map(child => child.name).sort()
+		const wanted = [...(expect.children ?? [])].sort()
+		if (names.length !== wanted.length || names.some((name, i) => name !== wanted[i])) return 'changed'
+	} else if (expect.text !== undefined) {
+		if ((await fm.read_text_file(id)) !== expect.text) return 'changed'
+	} else if (expect.size !== undefined && (await fm.entry_size(id)) !== expect.size) {
+		return 'changed'
+	}
+	await fm.remove(id)
+	return 'removed'
+}
+
+/** "добавление «photo.jpg»" for one file, "добавление: 3 элемента" for several */
+function import_label(names: string[]): string {
+	if (names.length !== 1) return t('undo.import_many', { count: count_items(names.length) })
+	const parts = names[0]!.split(/[\\/]/)
+	return t('undo.import_one', { name: parts[parts.length - 1] ?? names[0]! })
+}
+
+/** The step of a text file the person made: undo removes it while it still holds `content` */
+function created_text(
+	id: string,
+	content: string,
+	format: 'note' | 'svg' | 'plain',
+	xattrs: { name: string; value: string }[],
+): CreateStep {
+	return {
+		kind: 'entry_create',
+		id,
+		entry_type: 'file',
+		expect: { text: content },
+		xattrs: Object.fromEntries(xattrs.map(xattr => [xattr.name, xattr.value])),
+		recipe: { via: 'text', content, format },
+	}
+}
+
+async function persist_workspace_xattr(
 	store: PersistXattrStore,
 	fm: Pick<FileManager, 'set_xattr'>,
 	folder_data: FolderWithChildrenXattrs,
 	id: string,
 	name: string,
 	value: string,
-) {
+	record?: AttrRecord,
+): Promise<boolean> {
 	const owner_id = folder_data.id
-	return persist_xattr(
+	const saved = await persist_xattr(
 		fm,
 		folder_data,
 		id,
@@ -149,6 +284,8 @@ function persist_workspace_xattr(
 		(error) => report_error(store, error),
 		xattr_hooks(store, owner_id),
 	)
+	if (saved) note_attr_write(store, id, name, record?.before ?? null, value, false, record?.tx)
+	return saved
 }
 
 type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField | 'text' | 'text_area'
@@ -158,7 +295,7 @@ type LookName = 'view' | 'cover' | 'icon' | 'background' | ImageTextField | 'tex
  * the Cloud page's tile for a root), written in the background. A failed
  * write shows what the backend has again, the same way
  */
-function persist_look_xattr(
+async function persist_look_xattr(
 	store: PersistXattrStore & { type: string; uid: string },
 	fm: Pick<FileManager, 'set_xattr' | 'remove_xattr' | 'get_xattr'>,
 	owner: FolderWithChildrenXattrs,
@@ -167,11 +304,12 @@ function persist_look_xattr(
 	/** null clears the attribute */
 	value: string | null,
 	after?: Promise<boolean>,
-): Promise<void> {
+	tx?: HistoryTx,
+): Promise<boolean> {
 	const holder = owner.id === id ? owner : owner.children?.find(child => child.id === id)
 	const previous = holder?.xattrs.find(xattr => xattr.name === name)?.value ?? null
 	const hooks = xattr_hooks(store, owner.id)
-	return persist_xattr_now(fm, owner.id, id, name, value, {
+	const saved = await persist_xattr_now(fm, owner.id, id, name, value, {
 		scope: store.uid,
 		previous,
 		after,
@@ -184,6 +322,8 @@ function persist_look_xattr(
 		reread: () => fm.get_xattr(id, name),
 		on_error: error => report_error(store, error),
 	})
+	if (saved) note_attr_write(store, id, name, previous, value, true, tx)
+	return saved
 }
 
 /**
@@ -663,11 +803,113 @@ export async function createWorkspaceStore(
 		// would stop updating after the first watch refresh.
 		let stop_show_hidden_watch = () => {}
 		let stop_shallow_watch = () => {}
+		/**
+		 * What goes with an entry once it is removed: its cached text, its place
+		 * in the folders, the parent's edges to it, tabs inside it, and the ink
+		 * and edge caches of folders inside it
+		 */
+		/** An entry back from the trash by its receipt, into the folder caches, with its edges */
+		const restore_removed_here = async (store: WorkspaceStore, step: DeleteStep) => {
+			const gone = { message: t('undo.restore_gone', { name: path_name(step.id) }) }
+			if (!fm.restore_removed || !step.receipt.ticket) return gone
+			let back: RestoreRemovedResult
+			try {
+				back = await fm.restore_removed(step.receipt)
+			} catch (error) {
+				report_error(store, error)
+				return false as const
+			}
+			if (back === 'taken') return 'taken' as const
+			if (back === 'gone') return gone
+			const id = back.id
+			let xattrs: Xattr[] = []
+			try {
+				xattrs = await fm.list_xattrs(id)
+			} catch (error) {
+				report_error(store, error)
+			}
+			apply_entry_created(store, parent_folder_id_from_node_id(id, store.id), {
+				id,
+				name: path_name(id),
+				type: step.entry_type,
+				xattrs,
+			}, { notice: false })
+			// Its edges come back with it, to where it came back
+			if (step.edges.length > 0) {
+				const edges = step.edges.map(edge => ({ ...edge, from: rebase_path(edge.from, step.id, id), to: rebase_path(edge.to, step.id, id) }))
+				await store.ensure_connections(step.folder_id)
+				await store.upsert_connections(step.folder_id, edges)
+			}
+			return { id }
+		}
+
+		const forget_removed = async (store: WorkspaceStore, id: string, owner_folder_id: string | undefined) => {
+			const sep = path_separator(id)
+			const is_inside_removed = (folder_id: string) =>
+				folder_id === id || folder_id.startsWith(id + sep)
+			invalidate_entry_content_caches(content_caches, id)
+			apply_entry_removed(store, id)
+
+			if (owner_folder_id) {
+				await prune_folder_canvas_connections(store, owner_folder_id, [id])
+			}
+
+			const affected_tabs = store.tabs.filter(tab => is_inside_removed(tab.folder_id))
+			if (affected_tabs.length > 0) {
+				try {
+					// Background tabs first: closing the active tab activates a
+					// neighbor, which must not itself sit inside the removed subtree.
+					for (const tab of affected_tabs) {
+						if (store.tabs.length <= 1) break
+						if (tab.id === store.active_tab_id) continue
+						await store.close_tab(tab.id)
+					}
+					if (is_inside_removed(store.opened_folder_id)) {
+						if (store.tabs.length > 1) {
+							await store.close_tab(store.active_tab_id)
+						} else {
+							// Last remaining tab: fall back to the workspace root.
+							await store.open_folder(store.id, { skipHistory: true })
+						}
+					}
+					for (const folder_id of Object.keys(store.folders)) {
+						if (is_inside_removed(folder_id)) {
+							delete store.folders[folder_id]
+						}
+					}
+				} catch (error) {
+					report_error(store, error)
+				}
+			}
+
+			// Ink cache/watches die with the folder regardless of open tabs.
+			for (const folder_id of Object.keys(store.strokes_by_folder)) {
+				if (is_inside_removed(folder_id)) {
+					strokes_unwatch.get(folder_id)?.()
+					strokes_unwatch.delete(folder_id)
+					strokes_loaded.delete(folder_id)
+					delete store.strokes_by_folder[folder_id]
+				}
+			}
+
+			// Same for canvas edges.
+			for (const folder_id of Object.keys(store.connections_by_folder)) {
+				if (is_inside_removed(folder_id)) {
+					connections_unwatch.get(folder_id)?.()
+					connections_unwatch.delete(folder_id)
+					connections_loaded.delete(folder_id)
+					delete store.connections_by_folder[folder_id]
+				}
+			}
+		}
+
 		const workspace: WorkspaceStore = reactive({
 			id: root_folder_id,
 			uid: ws.id,
 			type: ws.type,
 			name: ws.name,
+			// Drive sets it: only the Explorer's stores record undo history
+			history_ref: null as HistoryStoreRef | null,
 			can_write,
 			pile_images: fm.pile_images,
 			live,
@@ -1058,20 +1300,24 @@ export async function createWorkspaceStore(
 				await persist_look_xattr(this, fm, folder_data, folder_id, 'view', stored_folder_view(new_view))
 			},
 
-			async change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions) {
+			async change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions & HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
-				if ((folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none') === cover) return
-				await persist_look_xattr(this, fm, folder_data, folder_id, 'cover', cover, options?.after)
+				const previous = folder_data.xattrs.find(xattr => xattr.name === 'cover')?.value ?? 'none'
+				if (previous === cover) return
+				// A picture, new or replaced, cannot be undone yet: the old one is swept
+				const picture = is_picture_value(cover) || is_picture_value(previous)
+				if (picture) block_history(this, t('undo.op.cover_picture'))
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'cover', cover, options?.after, picture ? undefined : options?.tx)
 			},
 
-			async change_folder_icon(folder_id: string, icon: string) {
+			async change_folder_icon(folder_id: string, icon: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) return
 				if ((folder_data.xattrs.find(xattr => xattr.name === 'icon')?.value ?? 'none') === icon) return
-				await persist_look_xattr(this, fm, folder_data, folder_id, 'icon', icon)
+				await persist_look_xattr(this, fm, folder_data, folder_id, 'icon', icon, undefined, options?.tx)
 			},
 
 			async change_selected_slide_index(folder_id: string, index: number) {
@@ -1174,7 +1420,7 @@ export async function createWorkspaceStore(
 				)
 			},
 
-			async change_dashboard_cell(id: string, cell: DashboardCell) {
+			async change_dashboard_cell(id: string, cell: DashboardCell, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1197,6 +1443,7 @@ export async function createWorkspaceStore(
 					id,
 					'dashboard',
 					JSON.stringify(cell),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'dashboard') },
 				)
 			},
 
@@ -1344,13 +1591,15 @@ export async function createWorkspaceStore(
 			return load
 		},
 
-		async upsert_connections(folder_id: string, connections: Connection[]) {
+		async upsert_connections(folder_id: string, connections: Connection[], options?: HistoryOptions) {
 			assert_can_write()
-			if (connections.length === 0) return
+			if (connections.length === 0) return true
 
 			const by_id = new Map<string, Connection>(
 				(this.connections_by_folder[folder_id] ?? []).map(connection => [connection.id, connection]),
 			)
+			const touched = new Set(connections.map(connection => connection.id))
+			const before = [...by_id.values()].filter(connection => touched.has(connection.id))
 			for (const connection of connections) by_id.set(connection.id, connection)
 			this.connections_by_folder[folder_id] = [...by_id.values()]
 
@@ -1365,15 +1614,19 @@ export async function createWorkspaceStore(
 				} catch (reload_error) {
 					report_error(this, reload_error)
 				}
+				return false
 			}
+			options?.tx?.record({ kind: 'edges', folder_id, ids: [...touched], before, after: [...connections] })
+			return true
 		},
 
-		async delete_connections(folder_id: string, connection_ids: string[]) {
+		async delete_connections(folder_id: string, connection_ids: string[], options?: HistoryOptions) {
 			assert_can_write()
-			if (connection_ids.length === 0) return
+			if (connection_ids.length === 0) return true
 
 			const doomed = new Set(connection_ids)
 			const current = this.connections_by_folder[folder_id]
+			const before = (current ?? []).filter(connection => doomed.has(connection.id))
 			if (current) {
 				this.connections_by_folder[folder_id] = current.filter(connection => !doomed.has(connection.id))
 			}
@@ -1388,7 +1641,10 @@ export async function createWorkspaceStore(
 				} catch (reload_error) {
 					report_error(this, reload_error)
 				}
+				return false
 			}
+			options?.tx?.record({ kind: 'edges', folder_id, ids: [...doomed], before, after: [] })
+			return true
 		},
 
 			strokes_for(folder_id: string): StrokeNode[] {
@@ -1441,13 +1697,15 @@ export async function createWorkspaceStore(
 				return load
 			},
 
-			async upsert_strokes(folder_id: string, strokes: StrokeNode[]) {
+			async upsert_strokes(folder_id: string, strokes: StrokeNode[], options?: HistoryOptions) {
 				assert_can_write()
-				if (strokes.length === 0) return
+				if (strokes.length === 0) return true
 
 			const by_id = new Map<string, StrokeNode>(
 				(this.strokes_by_folder[folder_id] ?? []).map(stroke => [stroke.id, stroke]),
 			)
+				const touched = new Set(strokes.map(stroke => stroke.id))
+				const before = [...by_id.values()].filter(stroke => touched.has(stroke.id))
 				for (const stroke of strokes) by_id.set(stroke.id, stroke)
 				this.strokes_by_folder[folder_id] = [...by_id.values()].sort((a, b) => a.z - b.z)
 
@@ -1462,15 +1720,19 @@ export async function createWorkspaceStore(
 					} catch (reload_error) {
 						report_error(this, reload_error)
 					}
+					return false
 				}
+				options?.tx?.record({ kind: 'strokes', folder_id, ids: [...touched], before, after: [...strokes] })
+				return true
 			},
 
-			async delete_strokes(folder_id: string, stroke_ids: string[]) {
+			async delete_strokes(folder_id: string, stroke_ids: string[], options?: HistoryOptions) {
 				assert_can_write()
-				if (stroke_ids.length === 0) return
+				if (stroke_ids.length === 0) return true
 
 				const doomed = new Set(stroke_ids)
 				const current = this.strokes_by_folder[folder_id]
+				const before = (current ?? []).filter(stroke => doomed.has(stroke.id))
 				if (current) {
 					this.strokes_by_folder[folder_id] = current.filter(stroke => !doomed.has(stroke.id))
 				}
@@ -1485,10 +1747,13 @@ export async function createWorkspaceStore(
 					} catch (reload_error) {
 						report_error(this, reload_error)
 					}
+					return false
 				}
+				options?.tx?.record({ kind: 'strokes', folder_id, ids: [...doomed], before, after: [] })
+				return true
 			},
 
-			async change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions) {
+			async change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions & HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1498,10 +1763,13 @@ export async function createWorkspaceStore(
 				if (entity?.background === new_background) {
 					return
 				}
-				await persist_look_xattr(this, fm, folder_data, id, 'background', new_background, options?.after)
+				// A picture, new or replaced, cannot be undone yet: the old one is swept
+				const picture = is_picture_value(new_background) || is_picture_value(raw_xattr(folder_data, id, 'background'))
+				if (picture) block_history(this, t('undo.op.background_picture'))
+				await persist_look_xattr(this, fm, folder_data, id, 'background', new_background, options?.after, picture ? undefined : options?.tx)
 			},
 
-			async set_image_text(id: string, field: ImageTextField, value: string) {
+			async set_image_text(id: string, field: ImageTextField, value: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1513,11 +1781,11 @@ export async function createWorkspaceStore(
 				if (current === next) return
 
 				// On screen at once, written in the background, like a folder's look.
-				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null)
+				await persist_look_xattr(this, fm, folder_data, id, field, next ?? null, undefined, options?.tx)
 			},
 
 			/** A shape's text (markdown): on screen at once, written in the background; empty removes it. */
-			async set_shape_text(id: string, markdown: string) {
+			async set_shape_text(id: string, markdown: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1528,18 +1796,18 @@ export async function createWorkspaceStore(
 				if (current === next) return
 				// As a JSON string: an xattr reads back through JSON.parse and Number, and
 				// a text like `[1]`, `"quoted"` or `2024` would come back as something else
-				await persist_look_xattr(this, fm, folder_data, id, 'text', next === null ? null : JSON.stringify(next))
+				await persist_look_xattr(this, fm, folder_data, id, 'text', next === null ? null : JSON.stringify(next), undefined, options?.tx)
 			},
 
 			/** Where a shape's text sits: null is inside the shape (the default), "frame" the whole frame. */
-			async set_shape_text_area(id: string, area: 'frame' | null) {
+			async set_shape_text_area(id: string, area: 'frame' | null, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
-				await persist_look_xattr(this, fm, folder_data, id, 'text_area', area)
+				await persist_look_xattr(this, fm, folder_data, id, 'text_area', area, undefined, options?.tx)
 			},
 
-			async change_shape_fill(id: string, color: Color) {
+			async change_shape_fill(id: string, color: Color, options?: HistoryOptions) {
 				assert_can_write()
 				try {
 					const raw = await fm.read_text_file(id)
@@ -1549,6 +1817,7 @@ export async function createWorkspaceStore(
 				await fm.save_text_file(id, updated)
 				const prepared = prepare_svg_for_preview(updated)
 				content_caches.shapes.set(id, prepared)
+				options?.tx?.record({ kind: 'content', id, format: 'svg', before: raw, after: updated })
 				} catch (error) {
 					report_error(this, error)
 				}
@@ -1565,6 +1834,7 @@ export async function createWorkspaceStore(
 					startPlug?: LinePlug
 					endPlug?: LinePlug
 				},
+				options?: HistoryOptions,
 			) {
 				assert_can_write()
 				try {
@@ -1593,8 +1863,10 @@ export async function createWorkspaceStore(
 
 				await fm.save_text_file(id, nextSvg)
 				content_caches.shapes.set(id, prepare_svg_for_preview(nextSvg))
-				await this.change_position(id, geometry.position)
-				await this.change_size(id, geometry.size)
+				options?.tx?.record({ kind: 'content', id, format: 'svg', before: raw, after: nextSvg })
+				// The box moves with the drawing: one action, so undo puts back all three
+				await this.change_position(id, geometry.position, options)
+				await this.change_size(id, geometry.size, options)
 				} catch (error) {
 					report_error(this, error)
 				}
@@ -1606,6 +1878,7 @@ export async function createWorkspaceStore(
 					startPlug: LinePlug
 					endPlug: LinePlug
 				},
+				options?: HistoryOptions,
 			) {
 				assert_can_write()
 				try {
@@ -1629,12 +1902,13 @@ export async function createWorkspaceStore(
 
 				await fm.save_text_file(id, nextSvg)
 				content_caches.shapes.set(id, prepare_svg_for_preview(nextSvg))
+				options?.tx?.record({ kind: 'content', id, format: 'svg', before: raw, after: nextSvg })
 			} catch (error) {
 				report_error(this, error)
 			}
 		},
 
-		async change_cover(id: string, new_cover: Color) {
+		async change_cover(id: string, new_cover: Color, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1644,10 +1918,13 @@ export async function createWorkspaceStore(
 				if (entity && 'cover' in entity && entity.cover === new_cover) {
 					return
 				}
-				await persist_workspace_xattr(this, fm, folder_data, id, 'cover', new_cover)
+				await persist_workspace_xattr(this, fm, folder_data, id, 'cover', new_cover, {
+					tx: options?.tx,
+					before: raw_xattr(folder_data, id, 'cover'),
+				})
 			},
 
-			async change_position(id: string, new_position: Position) {
+			async change_position(id: string, new_position: Position, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1666,6 +1943,8 @@ export async function createWorkspaceStore(
 				) {
 					return
 				}
+				// read before the optimistic update below shows the new place
+				const before = raw_xattr(live, id, 'position')
 
 				const value = JSON.stringify(new_position)
 				// Optimistic memory update so board/preview re-render before disk I/O.
@@ -1687,10 +1966,11 @@ export async function createWorkspaceStore(
 					id,
 					'position',
 					value,
+					{ tx: options?.tx, before },
 				)
 			},
 
-			async change_size(id: string, new_size: Size) {
+			async change_size(id: string, new_size: Size, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1710,6 +1990,7 @@ export async function createWorkspaceStore(
 					id,
 					'size',
 					JSON.stringify(new_size),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'size') },
 				)
 			},
 
@@ -1738,7 +2019,7 @@ export async function createWorkspaceStore(
 				)
 			},
 
-			async change_is_preview(id: string, is_preview: boolean) {
+			async change_is_preview(id: string, is_preview: boolean, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1756,6 +2037,7 @@ export async function createWorkspaceStore(
 					id,
 					'is_preview',
 					String(is_preview),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'is_preview') },
 				)
 
 				if (is_preview) {
@@ -1770,7 +2052,7 @@ export async function createWorkspaceStore(
 
 					if (child && !child.position && parent_container.view === 'board') {
 						const position = board_position(child, index)
-						await this.change_position(id, position)
+						await this.change_position(id, position, options)
 					}
 
 					if (child && !child.size && parent_container.view === 'board') {
@@ -1778,12 +2060,12 @@ export async function createWorkspaceStore(
 						const size = entry?.type === 'folder'
 							? FOLDER_PREVIEW_DEFAULT_SIZE
 							: board_size(child)
-						await this.change_size(id, size)
+						await this.change_size(id, size, options)
 					}
 				}
 			},
 
-			async change_is_text(id: string, is_text: boolean) {
+			async change_is_text(id: string, is_text: boolean, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1799,10 +2081,11 @@ export async function createWorkspaceStore(
 					id,
 					'is_text',
 					String(is_text),
+					{ tx: options?.tx, before: raw_xattr(folder_data, id, 'is_text') },
 				)
 			},
 
-			async change_text_width(id: string, mode: 'auto' | 'fixed') {
+			async change_text_width(id: string, mode: 'auto' | 'fixed', options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1811,10 +2094,13 @@ export async function createWorkspaceStore(
 				if (entity?.type !== 'file') return
 				if ((entity.text_width ?? 'auto') === mode) return
 
-				await persist_workspace_xattr(this, fm, folder_data, id, 'text_width', mode)
+				await persist_workspace_xattr(this, fm, folder_data, id, 'text_width', mode, {
+					tx: options?.tx,
+					before: raw_xattr(folder_data, id, 'text_width'),
+				})
 			},
 
-			async show_as_text(id: string) {
+			async show_as_text(id: string, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = widget_folder_data(this, id)
 				if (!folder_data) return
@@ -1825,10 +2111,16 @@ export async function createWorkspaceStore(
 				// Text first: the cover stays a cover until preview goes on, so the
 				// file never shows as a note for the moment between the two writes.
 				if (before.is_text !== true) {
-					await persist_workspace_xattr(this, fm, folder_data, id, 'is_text', 'true')
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_text', 'true', {
+						tx: options?.tx,
+						before: raw_xattr(folder_data, id, 'is_text'),
+					})
 				}
 				if (before.is_preview !== true) {
-					await persist_workspace_xattr(this, fm, folder_data, id, 'is_preview', 'true')
+					await persist_workspace_xattr(this, fm, folder_data, id, 'is_preview', 'true', {
+						tx: options?.tx,
+						before: raw_xattr(folder_data, id, 'is_preview'),
+					})
 				}
 
 				const parent_container = this.folder_container
@@ -1836,14 +2128,68 @@ export async function createWorkspaceStore(
 				const child = index >= 0 ? parent_container.children[index] : undefined
 
 				if (child && !child.position && parent_container.view === 'board') {
-					await this.change_position(id, board_position(child, index))
+					await this.change_position(id, board_position(child, index), options)
 				}
 				// The text size is written whatever the view is: change_is_preview only
 				// fills a missing size on a board, and it would ask board_size about
 				// the widget before is_text reached the model.
 				if (!before.size) {
-					await this.change_size(id, TEXT_DEFAULT_SIZE)
+					await this.change_size(id, TEXT_DEFAULT_SIZE, options)
 				}
+			},
+
+			async history_write_attr(id: string, name: string, value: string | null, look: boolean) {
+				assert_can_write()
+				const owner = widget_folder_data(this, id)
+					?? (this.folders[id] ? this.folders[id]! : null)
+				if (!owner) {
+					// Not on screen (a folder that is not open): written to the backend only
+					try {
+						if (value === null) await fm.remove_xattr(id, name)
+						else await fm.set_xattr(id, name, value)
+						return true
+					} catch (error) {
+						report_error(this, error)
+						return false
+					}
+				}
+				if (look) return persist_look_xattr(this, fm, owner, id, name as LookName, value)
+				if (value === null) {
+					return clear_xattr(
+						fm,
+						owner,
+						id,
+						name,
+						this.preview_folders,
+						error => report_error(this, error),
+						xattr_hooks(this, owner.id),
+					)
+				}
+				// On screen at once, the way change_position shows a drag before the write
+				const live = this.folders[owner.id] ?? owner
+				upsert_folder_xattr(live, id, name, value)
+				notify_entry_xattr_changed(live, id)
+				this.folders[owner.id] = {
+					...live,
+					xattrs: [...live.xattrs],
+					children: live.children?.map(child => ({ ...child, xattrs: [...child.xattrs] })),
+				}
+				return persist_workspace_xattr(this, fm, this.folders[owner.id]!, id, name, value)
+			},
+
+			async history_write_content(id: string, content: string, format: 'note' | 'svg') {
+				assert_can_write()
+				try {
+					await fm.save_text_file(id, content)
+				} catch (error) {
+					report_error(this, error)
+					return false
+				}
+				if (format === 'svg') content_caches.shapes.set(id, prepare_svg_for_preview(content))
+				// A note on screen reloads on a drop (not on a set), and takes the
+				// reloaded text as its saved one: its next edit starts from it
+				else content_caches.notes.invalidate(id)
+				return true
 			},
 
 			touch_folder(folder_id: string) {
@@ -1887,15 +2233,16 @@ export async function createWorkspaceStore(
 				return run_batch_fs_update_impl(fn)
 			},
 
-			async reorder_children(folder_id: string, ordered_ids: string[]) {
+			async reorder_children(folder_id: string, ordered_ids: string[], options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
-				if (!folder_data) return
+				if (!folder_data) return false
 
 				const children = folder_data.children ?? []
 				const full_order = complete_visible_order(children, ordered_ids)
-				if (!full_order) return
-				if (children_orders_match(children, full_order)) return
+				if (!full_order) return false
+				if (children_orders_match(children, full_order)) return true
+				const before = sort_entries_by_order_then_name(children).map(child => child.id)
 
 				const persisted = await persist_children_order(
 					this,
@@ -1903,12 +2250,12 @@ export async function createWorkspaceStore(
 					folder_id,
 					full_order,
 				)
-				if (!persisted) {
-					return
-				}
+				if (!persisted) return false
+				options?.tx?.record({ kind: 'order', folder_id, before, after: full_order })
+				return true
 			},
 
-			async create_note(folder_id: string, position?: Position): Promise<string> {
+			async create_note(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string> {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) {
@@ -1919,27 +2266,31 @@ export async function createWorkspaceStore(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				const node = await create_entry(this, fm, folder_id, 'file', filename, {
-					optimistic_id: optimistic_child(folder_id, filename),
-					xattrs: [
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
+					const xattrs = [
 						{ name: 'is_preview', value: 'true' },
 						...(position
 							? [{ name: 'position', value: JSON.stringify(position) }]
 							: []),
-					],
-				})
-				if (!node) {
-					return ''
-				}
+					]
+					const node = await create_entry(this, fm, folder_id, 'file', filename, {
+						optimistic_id: optimistic_child(folder_id, filename),
+						xattrs,
+					})
+					if (!node) {
+						return ''
+					}
 
-			// New notes are empty on disk; seed the session cache so a
-			// recycled path (e.g. Note 1.md after delete) cannot show
-			// stale markdown from a previous file at the same id.
-			content_caches.notes.set(node.id, '')
-				return node.id
+					// New notes are empty on disk; seed the session cache so a
+					// recycled path (e.g. Note 1.md after delete) cannot show
+					// stale markdown from a previous file at the same id.
+					content_caches.notes.set(node.id, '')
+					tx?.record(created_text(node.id, '', 'note', xattrs))
+					return node.id
+				})
 			},
 
-			async create_text(folder_id: string, position?: Position): Promise<string> {
+			async create_text(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string> {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) {
@@ -1950,32 +2301,37 @@ export async function createWorkspaceStore(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				const node = await create_entry(this, fm, folder_id, 'file', filename, {
-					optimistic_id: optimistic_child(folder_id, filename),
-					xattrs: [
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
+					const xattrs = [
 						{ name: 'is_preview', value: 'true' },
 						{ name: 'is_text', value: 'true' },
 						{ name: 'size', value: JSON.stringify(TEXT_DEFAULT_SIZE) },
 						...(position
 							? [{ name: 'position', value: JSON.stringify(position) }]
 							: []),
-					],
-				})
-				if (!node) {
-					return ''
-				}
+					]
+					const node = await create_entry(this, fm, folder_id, 'file', filename, {
+						optimistic_id: optimistic_child(folder_id, filename),
+						xattrs,
+					})
+					if (!node) {
+						return ''
+					}
 
-				// Same as a note: a recycled path must not show the old file's text.
-				content_caches.notes.set(node.id, '')
-				// Born selected, so the user sees where it is while typing.
-				this.set_selection([node.id])
-				return node.id
+					// Same as a note: a recycled path must not show the old file's text.
+					content_caches.notes.set(node.id, '')
+					// Born selected, so the user sees where it is while typing.
+					this.set_selection([node.id])
+					tx?.record(created_text(node.id, '', 'note', xattrs))
+					return node.id
+				})
 			},
 
 			async create_shape(
 				folder_id: string,
 				template: ShapeTemplate,
 				position?: Position,
+				options?: HistoryOptions,
 			): Promise<string> {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
@@ -1991,22 +2347,27 @@ export async function createWorkspaceStore(
 					? SHAPE_LINE_DEFAULT_SIZE
 					: SHAPE_SQUARE_DEFAULT_SIZE
 
-				const node = await create_entry(this, fm, folder_id, 'file', filename, {
-					optimistic_id: optimistic_child(folder_id, filename),
-					content: shape_template_svg(template),
-					xattrs: [
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
+					const content = shape_template_svg(template)
+					const xattrs = [
 						{ name: 'is_preview', value: 'true' },
 						{ name: 'size', value: JSON.stringify(defaultSize) },
 						...(position
 							? [{ name: 'position', value: JSON.stringify(position) }]
 							: []),
-					],
-				})
-				if (!node) {
-					return ''
-				}
+					]
+					const node = await create_entry(this, fm, folder_id, 'file', filename, {
+						optimistic_id: optimistic_child(folder_id, filename),
+						content,
+						xattrs,
+					})
+					if (!node) {
+						return ''
+					}
 
-				return node.id
+					tx?.record(created_text(node.id, content, 'svg', xattrs))
+					return node.id
+				})
 			},
 
 			async create_line(
@@ -2014,6 +2375,7 @@ export async function createWorkspaceStore(
 				start: Position,
 				end: Position,
 				end_plug: LinePlug = 'none',
+				options?: HistoryOptions,
 			): Promise<string> {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
@@ -2043,20 +2405,24 @@ export async function createWorkspaceStore(
 					strokeWidth: LINE_STROKE_WIDTH,
 				})
 
-				const node = await create_entry(this, fm, folder_id, 'file', filename, {
-					optimistic_id: optimistic_child(folder_id, filename),
-					content: svg,
-					xattrs: [
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
+					const xattrs = [
 						{ name: 'is_preview', value: 'true' },
 						{ name: 'size', value: JSON.stringify(layout.size) },
 						{ name: 'position', value: JSON.stringify(layout.position) },
-					],
-				})
-				if (!node) {
-					return ''
-				}
+					]
+					const node = await create_entry(this, fm, folder_id, 'file', filename, {
+						optimistic_id: optimistic_child(folder_id, filename),
+						content: svg,
+						xattrs,
+					})
+					if (!node) {
+						return ''
+					}
 
-				return node.id
+					tx?.record(created_text(node.id, svg, 'svg', xattrs))
+					return node.id
+				})
 			},
 
 		async read_note_content(id: string): Promise<string> {
@@ -2076,7 +2442,7 @@ export async function createWorkspaceStore(
 				return fm.get_media_src(id, { mimeType: get_mime_type(filename), preview: options?.preview })
 			},
 
-		async save_note_content(id: string, new_content: string) {
+		async save_note_content(id: string, new_content: string, options?: HistoryOptions & { before?: string }) {
 			assert_can_write()
 			try {
 				await fm.save_text_file(id, new_content)
@@ -2084,7 +2450,12 @@ export async function createWorkspaceStore(
 				if (!is_missing_path_error(error)) {
 					report_error(this, error)
 				}
+				return false
 			}
+			if (options?.before !== undefined) {
+				options.tx?.record({ kind: 'content', id, format: 'note', before: options.before, after: new_content })
+			}
+			return true
 		},
 
 		...makeSelection(),
@@ -2103,7 +2474,7 @@ export async function createWorkspaceStore(
 				: null
 		},
 
-		async paste() {
+		async paste(options?: HistoryOptions) {
 			assert_can_write()
 			const clip = entry_clipboard.current
 			if (!clip?.entry_ids.length) return
@@ -2129,6 +2500,7 @@ export async function createWorkspaceStore(
 					mode: clip.mode === 'cut' ? 'move' : 'copy',
 				})
 				if (created_ids.length === 0) return
+				block_history(this, t('undo.op.paste'))
 
 				this.clear_clipboard()
 				if (clip.mode === 'cut') clip.source_store.exit_selection_mode()
@@ -2136,42 +2508,52 @@ export async function createWorkspaceStore(
 			}
 
 			if (clip.mode === 'cut') {
+				const moving = clip.entry_ids.filter(id => target_folder_id !== id && !is_descendant(this.tree, id, target_folder_id))
+				// The cut entries arriving here are one undo
+				await own_action(this, options?.tx, { folder_id: target_folder_id }, () => entries_label(this, moving, 'undo.move_entry', 'undo.move_entries'), async (tx) => {
 					let insert_index = folder_data.children?.length ?? 0
-					for (const id of clip.entry_ids) {
-						if (target_folder_id === id || is_descendant(this.tree, id, target_folder_id)) {
-							continue
-						}
+					for (const id of moving) {
 						const moved = await this.move(
 							id,
 							target_folder_id,
 							insert_index,
 							clip.source_folder_id,
+							undefined,
+							{ tx },
 						)
 						if (moved) insert_index += 1
 					}
-					this.clear_clipboard()
-					this.exit_selection_mode()
-					return
-				}
-
-				const created_ids = await copy_entries_into(
-					this,
-					fm,
-					target_folder_id,
-					clip.entry_ids,
-				)
-				if (created_ids.length === 0) return
-
+				}, { notice: () => entries_label(this, moving, 'undo.moved', 'undo.moved_many') })
 				this.clear_clipboard()
-			},
+				this.exit_selection_mode()
+				return
+			}
 
-			async duplicate_entries(ids: string[]) {
-				assert_can_write()
-				const entry_ids = ids.filter(Boolean)
-				if (entry_ids.length === 0) return
+			const created_ids = await own_action(
+				this,
+				options?.tx,
+				{ folder_id: target_folder_id },
+				() => entries_label(this, clip.entry_ids, 'undo.paste_one', 'undo.paste_many'),
+				tx => copy_entries_into(this, fm, target_folder_id, clip.entry_ids, tx),
+			)
+			if (created_ids.length === 0) return
 
-				await copy_entries_into(this, fm, this.opened_folder_id, entry_ids)
-			},
+			this.clear_clipboard()
+		},
+
+		async duplicate_entries(ids: string[], options?: HistoryOptions) {
+			assert_can_write()
+			const entry_ids = ids.filter(Boolean)
+			if (entry_ids.length === 0) return []
+
+			return own_action(
+				this,
+				options?.tx,
+				{ folder_id: this.opened_folder_id },
+				() => entries_label(this, entry_ids, 'undo.duplicate_one', 'undo.duplicate_many'),
+				tx => copy_entries_into(this, fm, this.opened_folder_id, entry_ids, tx),
+			)
+		},
 
 			async show_folder_children(
 				folder_id: string,
@@ -2213,7 +2595,7 @@ export async function createWorkspaceStore(
 			async create_folder(
 				folder_id: string,
 				position?: Position,
-				options?: { view?: FolderView },
+				options?: { view?: FolderView } & HistoryOptions,
 			): Promise<string> {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
@@ -2225,9 +2607,8 @@ export async function createWorkspaceStore(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				const node = await create_entry(this, fm, folder_id, 'folder', folder_name, {
-					optimistic_id: optimistic_child(folder_id, folder_name),
-					xattrs: [
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: folder_name }), async (tx) => {
+					const xattrs = [
 						{ name: 'view', value: stored_folder_view(options?.view ?? 'board') },
 						...(position
 							? [
@@ -2235,12 +2616,25 @@ export async function createWorkspaceStore(
 								{ name: 'size', value: JSON.stringify(FOLDER_PREVIEW_DEFAULT_SIZE) },
 							]
 							: []),
-					],
+					]
+					const node = await create_entry(this, fm, folder_id, 'folder', folder_name, {
+						optimistic_id: optimistic_child(folder_id, folder_name),
+						xattrs,
+					})
+					if (!node) return ''
+					tx?.record({
+						kind: 'entry_create',
+						id: node.id,
+						entry_type: 'folder',
+						expect: { children: [] },
+						xattrs: Object.fromEntries(xattrs.map(xattr => [xattr.name, xattr.value])),
+						recipe: { via: 'folder' },
+					})
+					return node.id
 				})
-				return node?.id ?? ''
 			},
 
-			async uncombine_folder(folder_id: string) {
+			async uncombine_folder(folder_id: string, options?: HistoryOptions) {
 				assert_can_write()
 				if (folder_id === this.id) return
 
@@ -2270,7 +2664,9 @@ export async function createWorkspaceStore(
 					? { x: folder_position_raw.x, y: folder_position_raw.y }
 					: undefined
 
-				await this.run_batch_fs_update(async () => {
+				// One undo: the folder comes back, its contents go back in at their places
+				const label = () => t('undo.ungroup', { name: folder_entry?.name ?? entry_name(this, folder_id) })
+				await own_action(this, options?.tx, { folder_id: parent_id }, label, tx => this.run_batch_fs_update(async () => {
 					await this.show_folder_children(folder_id)
 					await this.ensure_preview_folder(folder_id)
 
@@ -2301,51 +2697,64 @@ export async function createWorkspaceStore(
 									child_position ?? { x: 0, y: 0 },
 									folder_position,
 								),
+								{ tx },
 							)
 						}
 					}
 
 					for (const { id: child_id } of child_snapshots) {
-						await this.move(child_id, parent_id, insert_index, folder_id)
+						await this.move(child_id, parent_id, insert_index, folder_id, undefined, { tx })
 						insert_index += 1
 					}
 
-					await this.remove(folder_id)
+					await this.remove(folder_id, { tx })
 
 					await this.reload_folder_cache(parent_id)
-				})
+				}))
 			},
 
-			async create_text_file(folder_id: string, position?: Position) {
+			async create_text_file(folder_id: string, position?: Position, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
-				if (!folder_data) return
+				if (!folder_data) return ''
 
 				const filename = resolve_text_file_name(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				await create_entry(this, fm, folder_id, 'file', filename, {
-					optimistic_id: optimistic_child(folder_id, filename),
-					xattrs: position
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
+					const xattrs = position
 						? [{ name: 'position', value: JSON.stringify(position) }]
-						: [],
+						: []
+					const node = await create_entry(this, fm, folder_id, 'file', filename, {
+						optimistic_id: optimistic_child(folder_id, filename),
+						xattrs,
+					})
+					if (!node) return ''
+					tx?.record(created_text(node.id, '', 'plain', xattrs))
+					return node.id
 				})
 			},
-			async create_markdown_file(folder_id: string, position?: Position) {
+			async create_markdown_file(folder_id: string, position?: Position, options?: HistoryOptions) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
-				if (!folder_data) return
+				if (!folder_data) return ''
 
 				const filename = resolve_markdown_file_name(
 					(folder_data.children ?? []).map(c => c.name),
 				)
 
-				await create_entry(this, fm, folder_id, 'file', filename, {
-					optimistic_id: optimistic_child(folder_id, filename),
-					xattrs: position
+				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
+					const xattrs = position
 						? [{ name: 'position', value: JSON.stringify(position) }]
-						: [],
+						: []
+					const node = await create_entry(this, fm, folder_id, 'file', filename, {
+						optimistic_id: optimistic_child(folder_id, filename),
+						xattrs,
+					})
+					if (!node) return ''
+					tx?.record(created_text(node.id, '', 'plain', xattrs))
+					return node.id
 				})
 			},
 			async open_file(id: string) {
@@ -2359,7 +2768,7 @@ export async function createWorkspaceStore(
 					report_error(this, error)
 				}
 			},
-			async import_external_files(paths: string[], position?: Position) {
+			async import_external_files(paths: string[], position?: Position, options?: HistoryOptions) {
 				assert_can_write()
 				if (this.type === 'cloud') {
 					let files: File[]
@@ -2369,7 +2778,8 @@ export async function createWorkspaceStore(
 						report_error(this, error)
 						return
 					}
-					await this.import_files(this.opened_folder_id, files, position)
+					// redo reads the paths again rather than keep the bytes
+					await this.import_files(this.opened_folder_id, files, position, { tx: options?.tx, paths })
 					return
 				}
 				const folder_id = this.opened_folder_id
@@ -2384,69 +2794,84 @@ export async function createWorkspaceStore(
 				const created_ids: string[] = []
 				const created_names: string[] = []
 
-				try {
-					for (let index = 0; index < paths.length; index++) {
-						const source_path = paths[index]!
-						let base_name: string
-						try {
-							base_name = await basename(source_path)
-						} catch (error) {
-							report_error(this, error)
-							return
-						}
-
-						const name = resolve_unique_filename(base_name, existing)
-						existing.add(name)
-
-						let node
-						try {
-							node = await fm.copy_file(source_path, folder_id, name)
-						} catch (error) {
-							report_error(this, error)
-							return
-						}
-
-						const xattrs: { name: string; value: string }[] = []
-						if (position) {
-							const staggered = {
-								x: position.x + index * 24,
-								y: position.y + index * 24,
-							}
-							xattrs.push({ name: 'position', value: JSON.stringify(staggered) })
-						}
-
-						for (const { name: xattr_name, value } of xattrs) {
+				// The files added together are one undo
+				await own_action(this, options?.tx, { folder_id }, () => import_label(paths), async (tx) => {
+					try {
+						for (let index = 0; index < paths.length; index++) {
+							const source_path = paths[index]!
+							let base_name: string
 							try {
-								await fm.set_xattr(node.id, xattr_name, value)
+								base_name = await basename(source_path)
 							} catch (error) {
 								report_error(this, error)
+								return
+							}
+
+							const name = resolve_unique_filename(base_name, existing)
+							existing.add(name)
+
+							let node
+							try {
+								node = await fm.copy_file(source_path, folder_id, name)
+							} catch (error) {
+								report_error(this, error)
+								return
+							}
+
+							const xattrs: { name: string; value: string }[] = []
+							if (position) {
+								const staggered = {
+									x: position.x + index * 24,
+									y: position.y + index * 24,
+								}
+								xattrs.push({ name: 'position', value: JSON.stringify(staggered) })
+							}
+
+							for (const { name: xattr_name, value } of xattrs) {
+								try {
+									await fm.set_xattr(node.id, xattr_name, value)
+								} catch (error) {
+									report_error(this, error)
+								}
+							}
+
+							apply_entry_created(this, folder_id, {
+								id: node.id,
+								name: node.name,
+								type: 'file',
+								xattrs: [...xattrs],
+							}, { notice: false })
+							created_ids.push(node.id)
+							created_names.push(node.name)
+							if (tx) {
+								// Redo copies the file again, while it is the same size as it was
+								const size = await fm.entry_size(node.id).catch(() => undefined)
+								tx.record({
+									kind: 'entry_create',
+									id: node.id,
+									entry_type: 'file',
+									expect: { size },
+									xattrs: Object.fromEntries(xattrs.map(xattr => [xattr.name, xattr.value])),
+									recipe: { via: 'copy', source: source_path, external: true, size },
+								})
 							}
 						}
 
-						apply_entry_created(this, folder_id, {
-							id: node.id,
-							name: node.name,
-							type: 'file',
-							xattrs: [...xattrs],
-						}, { notice: false })
-						created_ids.push(node.id)
-						created_names.push(node.name)
+						if (created_ids.length === 0) return
+
+						await persist_children_order(this, fm, folder_id, [
+							...existing_ids,
+							...created_ids,
+						])
+
+						const last_id = created_ids[created_ids.length - 1]
+						if (last_id) this.select(last_id)
+					} finally {
+						note_hidden_names(this, created_names)
 					}
-
-					if (created_ids.length === 0) return
-
-					await persist_children_order(this, fm, folder_id, [
-						...existing_ids,
-						...created_ids,
-					])
-
-					const last_id = created_ids[created_ids.length - 1]
-					if (last_id) this.select(last_id)
-				} finally {
-					note_hidden_names(this, created_names)
-				}
+				})
 			},
-			async import_files(folder_id: string, files: File[], position?: Position) {
+			async import_files(folder_id: string, files: File[], position?: Position, options?: HistoryOptions & { paths?: string[] }) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
 				if (!folder_data) {
@@ -2454,158 +2879,285 @@ export async function createWorkspaceStore(
 					return
 				}
 
-			const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
-			const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
-			const created_ids: string[] = []
-			const created_names: string[] = []
+				const existing_ids = sort_entries_by_order_then_name(folder_data.children ?? []).map(c => c.id)
+				const existing = new Set<string>((folder_data.children ?? []).map(c => c.name))
+				const created_ids: string[] = []
+				const created_names: string[] = []
 
-			try {
-				for (let index = 0; index < files.length; index++) {
-					const file = files[index]!
-					const name = resolve_unique_filename(file.name, existing)
-					existing.add(name)
-
-					this.import_progress = {
-						file_name: file.name,
-						file_index: index + 1,
-						total_files: files.length,
-						loaded_bytes: 0,
-						total_bytes: file.size,
-					}
-
-					let node
+				// The files added together are one undo
+				await own_action(this, options?.tx, { folder_id }, () => import_label(files.map(file => file.name)), async (tx) => {
 					try {
-						node = await fm.upload_file(folder_id, name, file, file.type || undefined, (loaded, total) => {
-							if (this.import_progress) {
-								this.import_progress.loaded_bytes = loaded
-								this.import_progress.total_bytes = total
+						for (let index = 0; index < files.length; index++) {
+							const file = files[index]!
+							const name = resolve_unique_filename(file.name, existing)
+							existing.add(name)
+
+							this.import_progress = {
+								file_name: file.name,
+								file_index: index + 1,
+								total_files: files.length,
+								loaded_bytes: 0,
+								total_bytes: file.size,
 							}
-						})
+
+							let node
+							try {
+								node = await fm.upload_file(folder_id, name, file, file.type || undefined, (loaded, total) => {
+									if (this.import_progress) {
+										this.import_progress.loaded_bytes = loaded
+										this.import_progress.total_bytes = total
+									}
+								})
+							} catch (error) {
+								report_error(this, error)
+								return
+							}
+
+							const xattrs: { name: string; value: string }[] = []
+							if (position) {
+								const staggered = {
+									x: position.x + index * 24,
+									y: position.y + index * 24,
+								}
+								xattrs.push({ name: 'position', value: JSON.stringify(staggered) })
+							}
+
+							for (const { name: xattr_name, value } of xattrs) {
+								try {
+									await fm.set_xattr(node.id, xattr_name, value)
+								} catch (error) {
+									report_error(this, error)
+								}
+							}
+
+							apply_entry_created(this, folder_id, {
+								id: node.id,
+								name: node.name,
+								type: 'file',
+								xattrs: [...xattrs],
+							}, { notice: false })
+							created_ids.push(node.id)
+							created_names.push(node.name)
+							if (tx) {
+								// Redo uploads it again: from its path on the desktop, from the File in the browser
+								const path = options?.paths?.[index]
+								tx.record({
+									kind: 'entry_create',
+									id: node.id,
+									entry_type: 'file',
+									expect: { size: await fm.entry_size(node.id).catch(() => file.size) },
+									xattrs: Object.fromEntries(xattrs.map(xattr => [xattr.name, xattr.value])),
+									recipe: { via: 'upload', file: path ? undefined : file, path, mime: file.type || undefined, size: file.size },
+								})
+							}
+						}
+
+						if (created_ids.length === 0) return
+
+						await persist_children_order(this, fm, folder_id, [
+							...existing_ids,
+							...created_ids,
+						])
+
+						const last_id = created_ids[created_ids.length - 1]
+						if (last_id) this.select(last_id)
+					} finally {
+						// After every file, including a failed upload: the window clears
+						// a notice as soon as it shows it, so a per-file notice would toast
+						// once per hidden import.
+						note_hidden_names(this, created_names)
+						this.import_progress = null
+					}
+				})
+			},
+			async remove(id: string, options?: HistoryOptions) {
+				assert_can_write()
+				const owner_folder_id = removed_owner_folder_id(this, id)
+				const folder_id = owner_folder_id ?? parent_folder_id_from_node_id(id, this.id)
+				const removed_name = entry_name(this, id)
+				const label = () => t('undo.remove_one', { name: removed_name })
+				await own_action(this, options?.tx, { folder_id }, label, async (tx) => {
+					const entry_type = cached_entry_type(this, id)
+					const edges = owner_folder_id ? edges_to(this, owner_folder_id, id) : []
+					// the sync forgets the cloud row right after its pass: kept for the undo
+					const sync = tx ? await locate_synced(this, id) : undefined
+					let receipt: RemoveReceipt | null = null
+					try {
+						if (tx && fm.remove_with_receipt) receipt = await fm.remove_with_receipt(id)
+						else await fm.remove(id)
 					} catch (error) {
 						report_error(this, error)
 						return
 					}
+					// To the trash with a way back; otherwise the delete is final
+					if (tx && receipt) tx.record({ kind: 'entry_delete', id, entry_type, receipt, folder_id, edges, ...(sync ? { sync } : {}) })
+					else block_history(this, t('undo.op.remove', { name: removed_name }))
+					await forget_removed(this, id, owner_folder_id)
+				}, { notice: () => t('undo.removed', { name: removed_name }) })
+			},
 
-					const xattrs: { name: string; value: string }[] = []
-					if (position) {
-						const staggered = {
-							x: position.x + index * 24,
-							y: position.y + index * 24,
-						}
-						xattrs.push({ name: 'position', value: JSON.stringify(staggered) })
-					}
+			async remove_entries(ids: string[], options?: HistoryOptions) {
+				if (ids.length === 1) return this.remove(ids[0]!, options)
+				if (ids.length === 0) return
+				assert_can_write()
+				const first = ids[0]!
+				const folder_id = removed_owner_folder_id(this, first) ?? parent_folder_id_from_node_id(first, this.id)
+				const label = () => entries_label(this, ids, 'undo.remove_one', 'undo.remove_many')
+				await own_action(this, options?.tx, { folder_id }, label, async (tx) => {
+					for (const id of ids) await this.remove(id, { tx })
+				}, { notice: () => t('undo.removed_many', { count: count_items(ids.length) }) })
+			},
 
-					for (const { name: xattr_name, value } of xattrs) {
+			async history_restore_removed(step: DeleteStep) {
+				assert_can_write()
+				const synced = step.sync ? synced_folders() : null
+				if (!synced || !step.sync) return restore_removed_here(this, step)
+				const { root, cloud_id } = step.sync
+				// Both sides while the folder's passes wait: the cloud row first, then
+				// the file, so that no pass in between uploads or downloads it again
+				return synced.hold(root, async () => {
+					// A pass before the hold may have brought a changed cloud copy down
+					if (await entry_there(fm, step.id, this.id)) return 'taken' as const
+					if (cloud_id) {
 						try {
-							await fm.set_xattr(node.id, xattr_name, value)
+							if ((await synced.row_state(cloud_id)) === 'trashed') await synced.restore_row(cloud_id)
 						} catch (error) {
+							// the file still comes back; the next pass uploads it
 							report_error(this, error)
 						}
 					}
+					return restore_removed_here(this, step)
+				})
+			},
 
-					apply_entry_created(this, folder_id, {
-						id: node.id,
-						name: node.name,
-						type: 'file',
-						xattrs: [...xattrs],
-					}, { notice: false })
-					created_ids.push(node.id)
-					created_names.push(node.name)
-				}
-
-				if (created_ids.length === 0) return
-
-				await persist_children_order(this, fm, folder_id, [
-					...existing_ids,
-					...created_ids,
-				])
-
-				const last_id = created_ids[created_ids.length - 1]
-				if (last_id) this.select(last_id)
-			} finally {
-				// After every file, including a failed upload: the window clears
-				// a notice as soon as it shows it, so a per-file notice would toast
-				// once per hidden import.
-				note_hidden_names(this, created_names)
-				this.import_progress = null
-			}
-		},
-			async remove(id: string) {
+			async history_remove_again(id: string) {
 				assert_can_write()
-				const owner_folder = find_entry_owner_folder(this.opened_folder, this.preview_folders, id)
-				// The open folder itself being removed: its edges live in its parent
-				const owner_folder_id = owner_folder?.id === id
-					? parent_folder_id_from_node_id(id, this.id)
-					: owner_folder?.id
-
+				if (!fm.remove_with_receipt) return false
+				const owner_folder_id = removed_owner_folder_id(this, id)
+				const edges = owner_folder_id ? edges_to(this, owner_folder_id, id) : []
+				const sync = await locate_synced(this, id)
+				let receipt: RemoveReceipt | null
 				try {
-					await fm.remove(id)
+					receipt = await fm.remove_with_receipt(id)
 				} catch (error) {
 					report_error(this, error)
-					return
+					return false
 				}
-		const sep = path_separator(id)
-		const is_inside_removed = (folder_id: string) =>
-			folder_id === id || folder_id.startsWith(id + sep)
-		invalidate_entry_content_caches(content_caches, id)
-		apply_entry_removed(this, id)
+				await forget_removed(this, id, owner_folder_id)
+				// A trash that gave no ticket this time: the next undo says it cannot bring it back
+				return { receipt: receipt ?? { id, ticket: '' }, edges, sync }
+			},
 
-		if (owner_folder_id) {
-			await prune_folder_canvas_connections(this, owner_folder_id, [id])
-		}
-
-		const affected_tabs = this.tabs.filter(tab => is_inside_removed(tab.folder_id))
-		if (affected_tabs.length > 0) {
-			try {
-				// Background tabs first: closing the active tab activates a
-				// neighbor, which must not itself sit inside the removed subtree.
-				for (const tab of affected_tabs) {
-					if (this.tabs.length <= 1) break
-					if (tab.id === this.active_tab_id) continue
-					await this.close_tab(tab.id)
+			async history_remove_created(id: string, expect: CreateStep['expect']) {
+				assert_can_write()
+				const owner_folder_id = removed_owner_folder_id(this, id)
+				const remove_here = async () => {
+					let outcome: 'removed' | 'changed' | 'gone'
+					try {
+						outcome = fm.remove_untouched
+							? await fm.remove_untouched(id, expect)
+							: await remove_untouched_by_reads(fm, id, parent_folder_id_from_node_id(id, this.id), expect)
+					} catch (error) {
+						report_error(this, error)
+						return false as const
+					}
+					if (outcome !== 'changed') await forget_removed(this, id, owner_folder_id)
+					return outcome
 				}
-				if (is_inside_removed(this.opened_folder_id)) {
-					if (this.tabs.length > 1) {
-						await this.close_tab(this.active_tab_id)
+				const synced = synced_folders()
+				const found = await locate_synced(this, id)
+				if (!synced || !found) return remove_here()
+				// In a synced folder its cloud copy goes for good too, while the passes
+				// wait: otherwise the next pass sends it to the cloud trash
+				return synced.hold(found.root, async () => {
+					const outcome = await remove_here()
+					if (outcome === false || outcome === 'changed') return outcome
+					const entry = await locate_synced(this, id)
+					if (entry?.cloud_id) await synced.remove_copy(entry, expect).catch(error => report_error(this, error))
+					return outcome
+				})
+			},
+
+			async history_create_again(step: CreateStep) {
+				assert_can_write()
+				const parent = parent_folder_id_from_node_id(step.id, this.id)
+				const name = path_name(step.id)
+				const xattrs = Object.entries(step.xattrs).map(([xattr_name, value]) => ({ name: xattr_name, value }))
+				const recipe = step.recipe
+				if (recipe.via === 'text' || recipe.via === 'folder') {
+					const node = await create_entry(this, fm, parent, recipe.via === 'folder' ? 'folder' : 'file', name, {
+						content: recipe.via === 'text' ? recipe.content : undefined,
+						xattrs,
+						optimistic_id: optimistic_child(parent, name),
+					})
+					if (!node) return false
+					if (recipe.via === 'text' && recipe.format === 'note') content_caches.notes.set(node.id, recipe.content)
+					if (recipe.via === 'text' && recipe.format === 'svg') content_caches.shapes.set(node.id, prepare_svg_for_preview(recipe.content))
+					return { id: node.id }
+				}
+				const source_changed = { message: t('undo.source_changed', { name }) }
+				let node: FolderChild
+				try {
+					if (recipe.via === 'copy' && recipe.external) {
+						// A file from outside is copied again only while it is the same size as then
+						const size = await fm.entry_size(recipe.source).catch(() => null)
+						if (size === null || (recipe.size !== undefined && size !== recipe.size)) return source_changed
+						node = await fm.copy_file(recipe.source, parent, name)
+					} else if (recipe.via === 'copy') {
+						node = await fm.copy_entry(recipe.source, parent, name)
 					} else {
-						// Last remaining tab: fall back to the workspace root.
-						await this.open_folder(this.id, { skipHistory: true })
+						const file = recipe.path
+							? (await read_paths_as_files([recipe.path]).catch(() => [] as File[]))[0]
+							: recipe.file
+						if (!file || file.size !== recipe.size) return source_changed
+						node = await fm.upload_file(parent, name, file, recipe.mime)
+					}
+				} catch (error) {
+					// A browser File whose file changed on disk can no longer be read
+					if (recipe.via === 'upload') return source_changed
+					report_error(this, error)
+					return false
+				}
+				for (const { name: xattr_name, value } of xattrs) {
+					try {
+						await fm.set_xattr(node.id, xattr_name, value)
+					} catch (error) {
+						report_error(this, error)
 					}
 				}
-		for (const folder_id of Object.keys(this.folders)) {
-			if (is_inside_removed(folder_id)) {
-				delete this.folders[folder_id]
-			}
-		}
-		} catch (error) {
-			report_error(this, error)
-		}
-	}
+				apply_entry_created(this, parent, { id: node.id, name: node.name, type: node.type, xattrs: [...xattrs] }, { notice: false })
+				return { id: node.id }
+			},
 
-	// Ink cache/watches die with the folder regardless of open tabs.
-	for (const folder_id of Object.keys(this.strokes_by_folder)) {
-		if (is_inside_removed(folder_id)) {
-			strokes_unwatch.get(folder_id)?.()
-			strokes_unwatch.delete(folder_id)
-			strokes_loaded.delete(folder_id)
-			delete this.strokes_by_folder[folder_id]
-		}
-	}
-
-	// Same for canvas edges.
-	for (const folder_id of Object.keys(this.connections_by_folder)) {
-		if (is_inside_removed(folder_id)) {
-			connections_unwatch.get(folder_id)?.()
-			connections_unwatch.delete(folder_id)
-			connections_loaded.delete(folder_id)
-			delete this.connections_by_folder[folder_id]
-		}
-	}
-	},
-			async rename(id: string, new_name: string, options?: { report?: boolean }) {
+			async history_move_entry(from: string, to: string) {
+				assert_can_write()
+				const from_parent = parent_folder_id_from_node_id(from, this.id)
+				const to_parent = parent_folder_id_from_node_id(to, this.id)
+				// rename and move find the entry in the tree: its folder (and theirs) must be read
+				for (const folder_id of folder_ancestor_chain(from_parent, this.id)) {
+					if (this.tree_loaded_folder_ids.has(folder_id) && this.folders[folder_id]) continue
+					try {
+						await this.show_folder_children(folder_id, undefined, { silent: true })
+					} catch (error) {
+						report_error(this, error)
+						return false
+					}
+				}
+				if (from_parent === to_parent) {
+					try {
+						return (await this.rename(from, path_name(to), { report: false })) ?? false
+					} catch (error) {
+						report_error(this, error)
+						return false
+					}
+				}
+				// A name taken meanwhile: it lands as the store names it, and the history follows
+				return (await this.move(from, to_parent, Number.MAX_SAFE_INTEGER, from_parent)) ?? false
+			},
+			async rename(id: string, new_name: string, options?: { report?: boolean } & HistoryOptions) {
 				assert_can_write()
 				const name = new_name.trim()
-				if (!name) return
+				if (!name) return undefined
 
 				const tree_node = find_tree_node(this.tree, id)
 				const folder_entry = find_child_entry(this.folders, id)
@@ -2616,11 +3168,14 @@ export async function createWorkspaceStore(
 					|| folder_entry?.name === name
 					|| (is_opened_folder && this.opened_folder.name === name)
 				) {
-					return
+					return id
 				}
 
-				if (!tree_node && !folder_entry && !is_opened_folder) return
+				if (!tree_node && !folder_entry && !is_opened_folder) return undefined
+				const entry_type = folder_entry?.type ?? tree_node?.type ?? (is_opened_folder ? 'folder' : 'file')
+				const shown_name = folder_entry?.name ?? tree_node?.name ?? (is_opened_folder ? this.opened_folder.name : id)
 
+				return own_action(this, options?.tx, { entry_id: id }, () => t('undo.rename', { name: shown_name }), async (tx) => {
 				// Cloud: the new name (and the paths under it) shows at once; the
 				// request holds every later call that names the entry, and a refusal
 				// puts the old name back and says why
@@ -2643,7 +3198,7 @@ export async function createWorkspaceStore(
 					}
 					if (options?.report === false) throw error
 					report_error(this, error)
-					return
+					return undefined
 				}
 
 		const shown_id = shown_early ? expected : id
@@ -2653,6 +3208,9 @@ export async function createWorkspaceStore(
 		}
 		note_hidden_name(this, result.name)
 		await rename_folder_canvas_connections(this, id, result.id)
+		tx?.record({ kind: 'entry_move', from: id, to: result.id, entry_type: entry_type === 'folder' ? 'folder' : 'file' })
+		return result.id
+				})
 	},
 
 			async move(
@@ -2661,6 +3219,7 @@ export async function createWorkspaceStore(
 				new_index: number,
 				source_folder_id?: string,
 				_source_index?: number,
+				options?: HistoryOptions,
 			): Promise<string | undefined> {
 				assert_can_write()
 				const node = find_tree_node(this.tree, id)
@@ -2708,19 +3267,25 @@ export async function createWorkspaceStore(
 						revert_to_folders()
 						return
 					}
+					const before_order = sort_entries_by_order_then_name(folder_data?.children ?? []).map(child => child.id)
 
-					const persisted = await persist_children_order(
-						this,
-						fm,
-						target_folder_id,
-						full_order,
-					)
-					if (!persisted) {
-						revert_to_folders()
-					}
-					return
+					return own_action(this, options?.tx, { folder_id: target_folder_id }, () => t('undo.order'), async (tx) => {
+						const persisted = await persist_children_order(
+							this,
+							fm,
+							target_folder_id,
+							full_order,
+						)
+						if (!persisted) {
+							revert_to_folders()
+							return undefined
+						}
+						tx?.record({ kind: 'order', folder_id: target_folder_id, before: before_order, after: full_order })
+						return undefined
+					})
 				}
 
+				return own_action(this, options?.tx, { folder_id: resolved_source_folder_id }, () => t('undo.move_entry', { name: node.name }), async (tx) => {
 				const is_workspace_root = target_folder_id === this.id
 
 				if (!is_workspace_root) {
@@ -2860,7 +3425,9 @@ export async function createWorkspaceStore(
 					this.touch_folder(target_folder_id)
 				}
 
+				tx?.record({ kind: 'entry_move', from: old_id, to: result.id, entry_type: node.type === 'folder' ? 'folder' : 'file' })
 				return result.id
+				}, { notice: () => t('undo.moved', { name: node.name }) })
 			},
 
 			open(widget: FolderContainerWidgetChild) {

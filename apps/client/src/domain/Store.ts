@@ -6,6 +6,14 @@ import type { EntryContentCaches } from '@/ui/workspace/folder-container/textCon
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
 import { Color, Connection, DashboardCell, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
+import type { CreateStep, DeleteStep, HistoryStoreRef, HistoryTx } from '@/store/history/types'
+
+/**
+ * A write that is part of one of the person's actions: the method writes its
+ * step ("was → became") into `tx` once the write succeeded. Without `tx` it
+ * records nothing (see store/history)
+ */
+export type HistoryOptions = { tx?: HistoryTx }
 
 export
 type LoadWorkspaceOptions = {
@@ -83,6 +91,11 @@ type WorkspaceStore = {
 	uid: string
 	type: WorkspaceType
 	name: string
+	/**
+	 * Where Drive keeps this store, so the window's undo history can find it
+	 * again. Null for a store outside the Explorer: its writes record nothing
+	 */
+	history_ref: HistoryStoreRef | null
 
 	/**
 	 * The store's file manager. Exposed for cross-store transfers (desktop →
@@ -220,32 +233,50 @@ type WorkspaceStore = {
 	open_file(id: string): Promise<void>
 	/** Opens a file in the system's program (or the browser), whatever the hook would do. */
 	open_file_externally(id: string): Promise<void>
-	/** Copies external filesystem paths into the currently opened folder. Local/demo only. */
-	import_external_files(paths: string[], position?: Position): Promise<void>
-	/** Imports browser File objects (picker / drag & drop) into the given folder. */
-	import_files(folder_id: string, files: File[], position?: Position): Promise<void>
+	/** Copies external filesystem paths into the currently opened folder. Local/demo only. One undo */
+	import_external_files(paths: string[], position?: Position, options?: HistoryOptions): Promise<void>
+	/**
+	 * Imports browser File objects (picker / drag & drop) into the given folder.
+	 * One undo; `paths`: where the files were read from, so redo reads them again
+	 */
+	import_files(folder_id: string, files: File[], position?: Position, options?: HistoryOptions & { paths?: string[] }): Promise<void>
 	/** Byte-level progress of the running `import_files`, null when idle. */
 	import_progress: ImportProgress | null
+	/** The new folder's id ('' when it failed). Like every file operation, one undo unless part of `tx` */
 	create_folder(
 		folder_id: string,
 		position?: Position,
-		options?: { view?: FolderView },
+		options?: { view?: FolderView } & HistoryOptions,
 	): Promise<string>
 	/**
 	 * Moves all children of `folder_id` into its parent, then removes the folder.
 	 * No-op for the workspace root.
 	 */
-	uncombine_folder(folder_id: string): Promise<void>
-	create_text_file(folder_id: string, position?: Position): Promise<void>
-	create_markdown_file(folder_id: string, position?: Position): Promise<void>
+	/** Its contents into its parent and the folder to the trash: one action, one undo */
+	uncombine_folder(folder_id: string, options?: HistoryOptions): Promise<void>
+	create_text_file(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
+	create_markdown_file(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
 	/**
 	 * `report: false` throws a failed rename to the caller instead of
 	 * setting `last_error` (which the window shows as a toast): a batch
-	 * reports its failures itself.
+	 * reports its failures itself. The entry's new id
 	 */
-	rename(id: string, new_name: string, options?: { report?: boolean }): Promise<void>
-	move(id: string, target_folder_id: string, new_index: number, source_folder_id?: string, source_index?: number): Promise<string | undefined>
-	remove(id: string): Promise<void>
+	rename(id: string, new_name: string, options?: { report?: boolean } & HistoryOptions): Promise<string | undefined>
+	move(id: string, target_folder_id: string, new_index: number, source_folder_id?: string, source_index?: number, options?: HistoryOptions): Promise<string | undefined>
+	/** To the trash; with history, an action of its own that undo brings back */
+	remove(id: string, options?: HistoryOptions): Promise<void>
+	/** Several at once: one action, one undo */
+	remove_entries(ids: string[], options?: HistoryOptions): Promise<void>
+	/** Undo of a delete: back from the trash by its receipt, with its edges */
+	history_restore_removed(step: DeleteStep): Promise<{ id: string } | 'taken' | { message: string } | false>
+	/** Redo of a delete: to the trash again, with a new receipt */
+	history_remove_again(id: string): Promise<Pick<DeleteStep, 'receipt' | 'edges' | 'sync'> | false>
+	/** Undo of a creation: removes it for good while untouched (see FileManager.remove_untouched) */
+	history_remove_created(id: string, expect: CreateStep['expect']): Promise<'removed' | 'changed' | 'gone' | false>
+	/** Redo of a creation: makes it again by its recipe; a message when its source changed */
+	history_create_again(step: CreateStep): Promise<{ id: string } | { message: string } | false>
+	/** Undo and redo of a rename or move within the store: the path it ended at */
+	history_move_entry(from: string, to: string): Promise<string | false>
 
 	// opened folder
 	// A look change (view, cover, icon, background) shows at once and is written
@@ -256,15 +287,15 @@ type WorkspaceStore = {
 	 * The folder's own cover: a color, a picture link, or a local `pile:` image. Written on the folder itself, as its view.
 	 * `after`: a picture's upload; the attribute is written only once it succeeded
 	 */
-	change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions): Promise<void>
+	change_folder_cover(folder_id: string, cover: string, options?: LookWriteOptions & HistoryOptions): Promise<void>
 	/** The folder's own icon, "<name>;<color>" ("none" clears it). Written on the folder itself */
-	change_folder_icon(folder_id: string, icon: string): Promise<void>
+	change_folder_icon(folder_id: string, icon: string, options?: HistoryOptions): Promise<void>
 	change_selected_slide_index(folder_id: string, index: number): Promise<void>
 	change_snap_to_grid(folder_id: string, snap_to_grid: boolean): Promise<void>
 	change_grid_size(folder_id: string, grid_size: number): Promise<void>
 	change_show_grid_dots(folder_id: string, show_grid_dots: boolean): Promise<void>
 	change_show_axes(folder_id: string, show_axes: boolean): Promise<void>
-	change_dashboard_cell(id: string, cell: DashboardCell): Promise<void>
+	change_dashboard_cell(id: string, cell: DashboardCell, options?: HistoryOptions): Promise<void>
 	change_dashboard_compact(folder_id: string, compact: boolean): Promise<void>
 	change_masonry_column_width(folder_id: string, width: number): Promise<void>
 	/** `0` is Auto: as many columns as fit. */
@@ -273,25 +304,28 @@ type WorkspaceStore = {
 	// canvas ink: entity-level per-stroke storage (see fm.strokes)
 	strokes_for(folder_id: string): StrokeNode[]
 	ensure_strokes(folder_id: string): Promise<void>
-	upsert_strokes(folder_id: string, strokes: StrokeNode[]): Promise<void>
-	delete_strokes(folder_id: string, stroke_ids: string[]): Promise<void>
+	/** True once saved; a failed write puts back what storage has and reports it */
+	upsert_strokes(folder_id: string, strokes: StrokeNode[], options?: HistoryOptions): Promise<boolean>
+	delete_strokes(folder_id: string, stroke_ids: string[], options?: HistoryOptions): Promise<boolean>
 
 	// canvas edges: entity-level per-connection storage (see fm.connections)
 	connections_for(folder_id: string): Connection[]
 	ensure_connections(folder_id: string): Promise<void>
-	upsert_connections(folder_id: string, connections: Connection[]): Promise<void>
-	delete_connections(folder_id: string, connection_ids: string[]): Promise<void>
+	/** True once saved; a failed write puts back what storage has and reports it */
+	upsert_connections(folder_id: string, connections: Connection[], options?: HistoryOptions): Promise<boolean>
+	delete_connections(folder_id: string, connection_ids: string[], options?: HistoryOptions): Promise<boolean>
 	/** Folder ids with a loaded connections cache (persistCanvas helpers). */
 	connections_folder_ids(): string[]
 	/** Rekeys the connections cache for a renamed/moved folder subtree. */
 	rekey_connections(old_id: string, new_id: string): void
-	change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions): Promise<void>
+	/** A picture (on its own or replacing one) cannot be undone yet: it stops undo before it */
+	change_background(id: string, new_background: ImageBase64 | Color, options?: LookWriteOptions & HistoryOptions): Promise<void>
 	/** Image heading (`title`) or caption (`description`). An empty value removes the xattr. */
-	set_image_text(id: string, field: 'title' | 'description', value: string): Promise<void>
+	set_image_text(id: string, field: 'title' | 'description', value: string, options?: HistoryOptions): Promise<void>
 	/** A shape's text, as markdown; empty removes it. */
-	set_shape_text(id: string, markdown: string): Promise<void>
-	set_shape_text_area(id: string, area: 'frame' | null): Promise<void>
-	change_shape_fill(id: string, color: Color): Promise<void>
+	set_shape_text(id: string, markdown: string, options?: HistoryOptions): Promise<void>
+	set_shape_text_area(id: string, area: 'frame' | null, options?: HistoryOptions): Promise<void>
+	change_shape_fill(id: string, color: Color, options?: HistoryOptions): Promise<void>
 	change_line_geometry(
 		id: string,
 		geometry: {
@@ -303,6 +337,7 @@ type WorkspaceStore = {
 			startPlug?: LinePlug
 			endPlug?: LinePlug
 		},
+		options?: HistoryOptions,
 	): Promise<void>
 	change_line_plugs(
 		id: string,
@@ -310,21 +345,30 @@ type WorkspaceStore = {
 			startPlug: LinePlug
 			endPlug: LinePlug
 		},
+		options?: HistoryOptions,
 	): Promise<void>
-	change_cover(id: string, new_cover: Color): Promise<void>
-	change_position(id: string, new_position: Position): Promise<void>
-	change_size(id: string, new_size: Size): Promise<void>
+	change_cover(id: string, new_cover: Color, options?: HistoryOptions): Promise<void>
+	change_position(id: string, new_position: Position, options?: HistoryOptions): Promise<void>
+	change_size(id: string, new_size: Size, options?: HistoryOptions): Promise<void>
 	change_model_camera(id: string, state: ModelCameraState): Promise<void>
-	change_is_preview(id: string, is_preview: boolean): Promise<void>
+	change_is_preview(id: string, is_preview: boolean, options?: HistoryOptions): Promise<void>
 	/** Draws a note file as a bare text block (or back as a note). The preview, fill and size stay as they are. */
-	change_is_text(id: string, is_text: boolean): Promise<void>
+	change_is_text(id: string, is_text: boolean, options?: HistoryOptions): Promise<void>
 	/** A text block's width mode: "fixed" after a side handle drag, "auto" to grow with the text again. */
-	change_text_width(id: string, mode: 'auto' | 'fixed'): Promise<void>
+	change_text_width(id: string, mode: 'auto' | 'fixed', options?: HistoryOptions): Promise<void>
 	/**
 	 * A file cover becomes a text block in one write: preview on, text on, and
 	 * the default text size when the entry has none.
 	 */
-	show_as_text(id: string): Promise<void>
+	show_as_text(id: string, options?: HistoryOptions): Promise<void>
+	/**
+	 * Undo and redo write an attribute back with this (null removes it): on
+	 * screen and saved like the action's own write, and recorded nowhere.
+	 * True once saved
+	 */
+	history_write_attr(id: string, name: string, value: string | null, look: boolean): Promise<boolean>
+	/** The same for a text file's whole content: a note, or a shape's SVG */
+	history_write_content(id: string, content: string, format: 'note' | 'svg'): Promise<boolean>
 	/** Re-read a folder from disk and refresh cache + sidebar tree projection. */
 	reload_folder_cache(folder_id: string): Promise<void>
 	/**
@@ -334,17 +378,22 @@ type WorkspaceStore = {
 	run_batch_fs_update<T>(fn: () => Promise<T>): Promise<T>
 	/** Shallow-clone a cached folder so Vue recomputes embedded previews. */
 	touch_folder(folder_id: string): void
-	reorder_children(folder_id: string, ordered_ids: string[]): Promise<void>
-	create_note(folder_id: string, position?: Position): Promise<string>
+	/** True once the order is saved (or already was) */
+	reorder_children(folder_id: string, ordered_ids: string[], options?: HistoryOptions): Promise<boolean>
+	create_note(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
 	/** A `Text N.md` note file drawn as a bare text block. It comes back selected. */
-	create_text(folder_id: string, position?: Position): Promise<string>
-	create_shape(folder_id: string, template: ShapeTemplate, position?: Position): Promise<string>
+	create_text(folder_id: string, position?: Position, options?: HistoryOptions): Promise<string>
+	create_shape(folder_id: string, template: ShapeTemplate, position?: Position, options?: HistoryOptions): Promise<string>
 	/** Creates a line/arrow shape spanning two absolute pane points. */
-	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug): Promise<string>
+	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug, options?: HistoryOptions): Promise<string>
 	read_note_content(id: string): Promise<string>
 	/** `preview`: a tile asks for the image's ready preview instead of the original */
 	get_media_src(id: string, filename: string, options?: { preview?: boolean }): Promise<MediaSrc>
-	save_note_content(id: string, new_content: string): Promise<void>
+	/**
+	 * True once saved. With `tx` and `before` (the text it replaces) the save
+	 * is one step of the person's action
+	 */
+	save_note_content(id: string, new_content: string, options?: HistoryOptions & { before?: string }): Promise<boolean>
 
 	open(widget: FolderContainerWidgetChild): void
 	/** The Explorer opens folders from views through its navigation; null: the store opens them itself */
@@ -387,7 +436,7 @@ export interface ClipboardStore {
 	 * Copy may paste into the source folder (unique names).
 	 * Cut is a no-op in the source folder.
 	 */
-	paste(): Promise<void>
-	/** Duplicates entries into `opened_folder_id` with unique names (no clipboard). */
-	duplicate_entries(ids: string[]): Promise<void>
+	paste(options?: HistoryOptions): Promise<void>
+	/** Duplicates entries into `opened_folder_id` with unique names (no clipboard). The copies' ids */
+	duplicate_entries(ids: string[], options?: HistoryOptions): Promise<string[]>
 }

@@ -96,7 +96,10 @@ describe('rename_entry', () => {
 	function store(names: string[], rename: (self: { names: string[] }, id: string, name: string) => void) {
 		const self = {
 			names,
-			rename: vi.fn(async (id: string, name: string, _options?: { report?: boolean }) => rename(self, id, name)),
+			rename: vi.fn(async (id: string, name: string, _options?: { report?: boolean }) => {
+				rename(self, id, name)
+				return `/f/${name}` as string | undefined
+			}),
 			resolve_folder_data: () => ({ id: '/f', name: 'f', type: 'folder' as const, xattrs: [], children: self.names.map(n => ({ id: `/f/${n}`, name: n, type: 'file' as const, xattrs: [] })) }),
 		}
 		return self

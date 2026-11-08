@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
+import { record_action } from '@/store/history'
 import { DEFAULT_GRID_SIZE } from '@/services/board/layout'
 import { set_pile_image } from '@/services/workspace/choosePileImage'
 import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
@@ -50,10 +51,17 @@ watch(open, (is_open) => {
  */
 const vFocus = { mounted: (el: HTMLElement) => { requestAnimationFrame(() => el.focus()) } }
 
+/** The folder's background: a color is one undo (a picture link stops undo before it) */
+function set_background(value: string) {
+	const store = ws()
+	const folder_id = props.folder_id
+	void record_action(store, { folder_id }, t('undo.color'), tx => store.change_background(folder_id, value, { tx }))
+}
+
 function apply_custom() {
 	const value = custom.value.trim()
 	if (isBlockedFillText(value)) return
-	void ws().change_background(props.folder_id, value === '' ? 'none' : value)
+	set_background(value === '' ? 'none' : value)
 	open.value = false
 }
 
@@ -125,7 +133,7 @@ async function choose_picture() {
 					:style="{ background: preset.color }"
 					:aria-label="preset.label"
 					:data-tip="preset.label"
-					@click="ws().change_background(folder_id, preset.color)"
+					@click="set_background(preset.color)"
 				/>
 			</div>
 		</MenuSub>
@@ -144,7 +152,7 @@ async function choose_picture() {
 			</form>
 		</MenuSub>
 		<MenuSeparator />
-		<MenuItem icon="tabler:arrow-back-up" :label="t('background.reset')" @select="ws().change_background(folder_id, 'none')" />
+		<MenuItem icon="tabler:arrow-back-up" :label="t('background.reset')" @select="set_background('none')" />
 	</DropMenu>
 </template>
 

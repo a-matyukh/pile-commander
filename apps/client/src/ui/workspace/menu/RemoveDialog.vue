@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { t } from '@/i18n'
 import { explorer_drives } from '@/store/explorer/drives'
-import { remove_confirm_text } from '@/store/explorer/folder_menu'
+import { remove_confirm_text, remove_file_confirm_text } from '@/store/explorer/folder_menu'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
@@ -43,19 +43,12 @@ function cancel() {
 
 /**
  * In the Explorer it asks as its List and tree do: to the drive's trash, or
- * forever where the drive has none
+ * for good where the drive has none
  */
 const explorer_text = computed(() => {
 	const location = explorer_navigation.location
-	const trash = location?.kind === 'folder' ? explorer_drives.drive(location.ref.drive_id)?.trash ?? null : null
-	const folder = remove_confirm_text(trash)
-	if (kind.value === 'folder') return folder
-	const to_trash = folder.confirm !== 'tree.delete_permanently'
-	return {
-		title: to_trash ? 'list.file_trash_title' : 'list.file_delete_title',
-		description: to_trash ? 'list.file_trash_description' : 'list.file_delete_description',
-		confirm: folder.confirm,
-	}
+	const drive = location?.kind === 'folder' ? explorer_drives.drive(location.ref.drive_id) : null
+	return kind.value === 'folder' ? remove_confirm_text(drive) : remove_file_confirm_text(drive)
 })
 
 defineExpose({ open })

@@ -376,10 +376,11 @@ describe("cloud pile images", () => {
 		const client = {
 			from() {
 				const filters: Record<string, string> = {}
+				const nulls = new Set<string>()
 				const builder = {
 					select: () => builder,
 					eq: (column: string, value: string) => { filters[column] = value; return builder },
-					is: () => builder,
+					is: (column: string) => { nulls.add(column); return builder },
 					insert(patch: Row) {
 						return {
 							select: () => ({
@@ -409,7 +410,11 @@ describe("cloud pile images", () => {
 							},
 						}
 					},
-					maybeSingle: async () => ({ data: live(filters.path ?? ""), error: null }),
+					maybeSingle: async () => {
+						if (filters.id === undefined) return { data: live(filters.path ?? ""), error: null }
+						const row = rows.get(filters.id) ?? null
+						return { data: row && (!nulls.has("deleted_at") || row.deleted_at === null) ? row : null, error: null }
+					},
 				}
 				return builder
 			},
@@ -472,6 +477,21 @@ describe("cloud pile images", () => {
 					const row = rows.get(String(args.p_entry))
 					if (!row || row.deleted_at) return { error: { message: "delete_entry: entry not found" } }
 					row.deleted_at = "now"
+					return { error: null }
+				}
+				if (name === "restore_entry") {
+					const row = rows.get(String(args.p_entry))
+					if (!row?.deleted_at) return { error: { message: "restore_entry: entry not found in trash" } }
+					const parent = rows.get(row.parent_id ?? "")
+					if (parent?.deleted_at) return { error: { message: "restore_entry: parent is in trash" } }
+					const taken = [...rows.values()].some(other =>
+						other.id !== row.id && other.parent_id === row.parent_id && other.name === row.name && other.deleted_at === null)
+					if (taken) {
+						const dot = row.name.lastIndexOf(".")
+						row.name = dot > 0 ? `${row.name.slice(0, dot)} (1)${row.name.slice(dot)}` : `${row.name} (1)`
+						row.path = parent && parent.path !== "/" ? `${parent.path}/${row.name}` : `/${row.name}`
+					}
+					row.deleted_at = null
 					return { error: null }
 				}
 				if (name === "purge_entry") {
@@ -830,5 +850,44 @@ describe("cloud pile images", () => {
 		} finally {
 			restore()
 		}
+	})
+
+	describe("delete with a receipt", () => {
+		function seeded() {
+			const w = world()
+			w.rows.set("box", blank({ id: "box", parent_id: "root", name: "box", kind: "folder", path: "/box" }))
+			w.rows.set("a", blank({ id: "a", parent_id: "box", name: "a.md", kind: "file", path: "/box/a.md" }))
+			return w
+		}
+
+		test("a deleted file comes back by its row id, as \"name (1)\" when its name was taken", async () => {
+			const { fm, rows } = seeded()
+			const receipt = await fm.remove_with_receipt!("/box/a.md")
+			expect(receipt).toEqual({ id: "/box/a.md", ticket: "a" })
+			expect(rows.get("a")!.deleted_at).not.toBeNull()
+
+			expect(await fm.restore_removed!(receipt!)).toEqual({ id: "/box/a.md" })
+			expect(rows.get("a")!.deleted_at).toBeNull()
+
+			const again = await fm.remove_with_receipt!("/box/a.md")
+			rows.set("a2", blank({ id: "a2", parent_id: "box", name: "a.md", kind: "file", path: "/box/a.md" }))
+			expect(await fm.restore_removed!(again!)).toEqual({ id: "/box/a (1).md" })
+		})
+
+		test("a purged entry, or one whose folder went to the trash, cannot come back", async () => {
+			const { fm, rows } = seeded()
+			const receipt = await fm.remove_with_receipt!("/box/a.md")
+			rows.get("box")!.deleted_at = "later"
+			expect(await fm.restore_removed!(receipt!)).toBe("gone")
+			rows.delete("a")
+			expect(await fm.restore_removed!(receipt!)).toBe("gone")
+		})
+
+		test("an entry someone brought back already is where they put it", async () => {
+			const { fm, rows } = seeded()
+			const receipt = await fm.remove_with_receipt!("/box/a.md")
+			Object.assign(rows.get("a")!, { deleted_at: null, name: "a (1).md", path: "/box/a (1).md" })
+			expect(await fm.restore_removed!(receipt!)).toEqual({ id: "/box/a (1).md" })
+		})
 	})
 })

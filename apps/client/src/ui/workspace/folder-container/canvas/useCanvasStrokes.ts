@@ -7,6 +7,8 @@ import {
 } from '@/services/canvas/strokes'
 import { pointsToPath } from './drawing/strokePath'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
+import { record_action, type HistoryTx } from '@/store/history'
 
 /**
  * Mirrors the workspace store's per-folder ink (`ws.strokes_for`) into local
@@ -76,12 +78,15 @@ export function useCanvasStrokes(
 		const ws = workspace.value
 		if (!ws || !ws.can_write) return
 		in_flight.add(node.id)
-		void ws.upsert_strokes(folderId.value, [flow_node_to_stroke(node)])
+		const folder_id = folderId.value
+		const stroke = flow_node_to_stroke(node)
+		// Each stroke is one undo; it is kept once saved
+		void record_action(ws, { folder_id }, t('undo.ink'), tx => ws.upsert_strokes(folder_id, [stroke], { tx }))
 			.finally(() => in_flight.delete(node.id))
 	}
 
-	/** Drag stop: persist only the dragged strokes (positions changed, z kept). */
-	async function persistStrokes(ids: string[]) {
+	/** Drag stop: persist only the dragged strokes (positions changed, z kept). `tx`: the drag's undo record */
+	async function persistStrokes(ids: string[], tx?: HistoryTx) {
 		const ws = workspace.value
 		if (!ws || !ws.can_write) return
 		const by_id = new Map(strokeNodes.value.map(n => [n.id, n]))
@@ -92,19 +97,24 @@ export function useCanvasStrokes(
 		if (strokes.length === 0) return
 		for (const stroke of strokes) in_flight.add(stroke.id)
 		try {
-			await ws.upsert_strokes(folderId.value, strokes)
+			await ws.upsert_strokes(folderId.value, strokes, { tx })
 		} finally {
 			for (const stroke of strokes) in_flight.delete(stroke.id)
 		}
 	}
 
-	/** Eraser / delete-selected: local removal is done by the caller. */
-	async function deleteStrokes(ids: string[]) {
+	/**
+	 * Eraser / delete-selected: local removal is done by the caller. Its own
+	 * undo record, unless it is part of a larger action (`tx`)
+	 */
+	async function deleteStrokes(ids: string[], tx?: HistoryTx) {
 		const ws = workspace.value
 		if (!ws || !ws.can_write || ids.length === 0) return
 		for (const id of ids) in_flight.add(id)
 		try {
-			await ws.delete_strokes(folderId.value, ids)
+			const folder_id = folderId.value
+			if (tx) await ws.delete_strokes(folder_id, ids, { tx })
+			else await record_action(ws, { folder_id }, t('undo.eraser'), own => ws.delete_strokes(folder_id, ids, { tx: own }))
 		} finally {
 			for (const id of ids) in_flight.delete(id)
 		}
