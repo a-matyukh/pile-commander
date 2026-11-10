@@ -13,10 +13,13 @@ export const boardDragStateKey: InjectionKey<BoardDragState> =
 export const boardSnapSettingsKey: InjectionKey<ComputedRef<BoardSnapSettings>> =
 	Symbol('boardSnapSettings')
 
+/** A resized node's box: the left and top handles move its corner too. */
+export type CanvasNodeGeometry = Position & Size
+
 export type CanvasNodeResizeHandlers = {
 	onStart: (nodeId: string, size: Size) => void
-	onLive: (nodeId: string, size: Size) => void
-	onEnd: (nodeId: string, size: Size) => void
+	onLive: (nodeId: string, geometry: CanvasNodeGeometry) => void
+	onEnd: (nodeId: string, geometry: CanvasNodeGeometry) => void
 	/** A text block's side handle: x moves with the left handle, the height is never dragged. */
 	onTextLive: (nodeId: string, geometry: { x: number; width: number }) => void
 	onTextEnd: (nodeId: string, geometry: { x: number; width: number }) => Promise<void>
