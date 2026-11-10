@@ -5,7 +5,7 @@ import type { FolderContainerWidget, FolderContainerWidgetChild, Position, Size 
 import { board_position, board_size, is_text_widget, text_box_css } from '@/services/board/layout'
 import { applyGroupResizeDelta } from '../board/boardGroupResize'
 import { relativePositionsForFolderDrop } from '../board/boardGroupDrag'
-import { tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
+import { eventClientPoint, tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
 import { clear_live_text_width, set_live_text_width } from '../liveTextWidth'
 import type { CanvasNodeGeometry } from '../injectKeys'
 import { t } from '@/i18n'
@@ -177,6 +177,7 @@ export function useCanvasNodes(
 				getWorkspace: requireWorkspace,
 				// a drop during a canvas drag belongs to the drag's undo
 				tx,
+				pointer: eventClientPoint(event.event),
 				resolveRelativePosition(_dragged, folder, widgetId) {
 					if (!cachedRelativeById) {
 						const folderPos = getNodePosition(folder.dataset.id ?? '')

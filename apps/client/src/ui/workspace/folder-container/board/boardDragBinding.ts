@@ -448,8 +448,8 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 			}
 		}
 
-		// Multi-drag can still drop into a folder (primary hit-tests).
-		const folder = findDropFolder(el)
+		// Multi-drag can still drop into a folder (the pointer hit-tests).
+		const folder = findDropFolder(el, { x: event.clientX, y: event.clientY })
 		if (folder !== highlightedFolder) {
 			clearFolderHighlight()
 			highlightedFolder = folder
@@ -510,6 +510,7 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 
 		const dropOptions: FolderDropOptions = {
 			getWorkspace: options.getWorkspace,
+			pointer: { x: event.clientX, y: event.clientY },
 			resolveRelativePosition(_dragged, folder, widgetId) {
 				if (!cachedRelativeById) {
 					const folderLeft = parsePx(folder.style.left)
