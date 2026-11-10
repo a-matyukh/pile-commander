@@ -494,25 +494,47 @@ const {
 	resolvePosition: toFlowCoords,
 })
 
-// T arms one text block for the next click on empty pane. Only the hand and
-// select tools click on the pane; with the pen or the lasso a click is a stroke.
+/**
+ * T arms one text block for the next click on empty pane, whatever the tool.
+ * Hand and Select leave a click on the pane free. With the other tools a
+ * click is the tool's own (a stroke, a lasso, a connection), so the canvas
+ * steps to the tool it opens with. Escape or T again brings that tool back;
+ * a placed text does not.
+ */
+let toolBeforeText: EditorTool | null = null
 const textPlace = useTextPlaceMode({
 	isEmbedded,
-	canArm: () => isHandTool.value || isSelectTool.value,
+	beforeArm: () => {
+		if (tool.value === 'hand' || tool.value === 'select') return
+		toolBeforeText = tool.value
+		tool.value = defaultTool()
+	},
 })
 
-// One placement tool at a time: arming a line, picking a shape or switching to
-// another tool drops the text one.
+// One placement tool at a time: arming a line, picking a shape or choosing a
+// tool that uses the click itself drops the text one.
 watch(() => lineDraw.armed.value, (kind) => {
 	if (kind) textPlace.disarm()
 })
 watch(textPlace.armed, (armed) => {
-	if (armed) lineDraw.disarm()
+	if (armed) {
+		lineDraw.disarm()
+		return
+	}
+	// Given up, not placed: back to the tool T stepped away from
+	const back = toolBeforeText
+	toolBeforeText = null
+	if (back) tool.value = back
 })
 watch(boardPlacementTemplate, (template) => {
 	if (template) textPlace.disarm()
 })
-watch(tool, () => textPlace.disarm())
+watch(tool, (next) => {
+	if (next === 'hand' || next === 'select') return
+	// Another tool chosen while T was armed: that choice stands
+	toolBeforeText = null
+	textPlace.disarm()
+})
 
 const viewportSnapshot = computed<BoardViewport>(() => ({
 	x: viewport.value.x,
@@ -698,6 +720,8 @@ async function onPaneClick(event: MouseEvent) {
 	if (isDrawTool.value || isLassoTool.value) return
 	if (lineDraw.armed.value) return
 	if (textPlace.armed.value) {
+		// Placed: the canvas stays with the tool the text was placed with
+		toolBeforeText = null
 		textPlace.disarm()
 		await createTextAt(event)
 		return
