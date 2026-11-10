@@ -992,6 +992,18 @@ function onSectionPointerDown(event: PointerEvent) {
 	cursor: crosshair;
 }
 
+/* What the lasso selected can be dragged at once: the hand says so. A note
+   being typed in keeps its text cursor. */
+.canvas-flow--lasso :deep(.vue-flow__node.selected:not(:has(.is_edit))),
+.canvas-flow--lasso :deep(.vue-flow__node.selected:not(:has(.is_edit)) *) {
+	cursor: grab !important;
+}
+
+.canvas-flow--lasso :deep(.vue-flow__node.selected.dragging),
+.canvas-flow--lasso :deep(.vue-flow__node.selected.dragging *) {
+	cursor: grabbing !important;
+}
+
 .canvas-flow--eraser {
 	cursor: pointer;
 }

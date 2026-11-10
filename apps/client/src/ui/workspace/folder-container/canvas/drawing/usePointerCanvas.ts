@@ -6,6 +6,8 @@ interface PointerCanvasOptions {
 	isPinching: Ref<boolean>
 	paneEl: Ref<HTMLElement | null>
 	screenToFlow: (clientX: number, clientY: number) => Point
+	/** A press here is left to what is under it: the lasso lets its selection be dragged */
+	passThrough?: (target: EventTarget | null) => boolean
 	onStrokeStart: (point: Point) => void
 	onStrokeExtend: (point: Point) => void
 	onStrokeEnd: () => void
@@ -102,6 +104,7 @@ export function usePointerCanvas(options: PointerCanvasOptions) {
 	function onPointerDown(event: PointerEvent) {
 		if (event.pointerType === 'touch') return
 		if (!isDrawTool()) return
+		if (options.passThrough?.(event.target)) return
 		if (options.isPinching.value) return
 		if (!event.isPrimary) return
 		// Left mouse / stylus tip only. Right-click must not start a one-point stroke.
@@ -158,6 +161,7 @@ export function usePointerCanvas(options: PointerCanvasOptions) {
 
 	function onTouchStart(event: TouchEvent) {
 		if (!isDrawTool()) return
+		if (options.passThrough?.(event.target)) return
 		if (options.isPinching.value) return
 		if (activePointerId !== null) return
 

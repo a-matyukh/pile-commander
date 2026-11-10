@@ -71,7 +71,7 @@ export function useCanvasFlow(options: {
 	}
 
 	const toolFlags = useCanvasToolFlags(tool, boardSnapSettings)
-	const { isSelectTool, isHandTool } = toolFlags
+	const { isSelectTool, isHandTool, isLassoTool } = toolFlags
 	const workspace = useWorkspace()
 	const can_write = computed(() => workspace.value?.can_write !== false)
 
@@ -83,11 +83,17 @@ export function useCanvasFlow(options: {
 		widgetNodes.value.filter(n => n.selected).length,
 	)
 
+	/**
+	 * The lasso moves what it selected, with no switch to Select first. What is
+	 * not selected stays put: a press on it draws a new lasso.
+	 */
+	const lassoMoves = (node: { selected?: boolean }) => isLassoTool.value && node.selected === true
+
 	/** Avoid vue-flow `Node<>` deep instantiation (same pattern as CanvasFlowNode). */
 	const flowNodes = computed(() => {
 		const strokes = strokeNodes.value.map(node => ({
 			...node,
-			draggable: isSelectTool.value && can_write.value,
+			draggable: (isSelectTool.value || lassoMoves(node)) && can_write.value,
 			selectable: isSelectTool.value,
 		}))
 		const widgets = widgetNodes.value.map(node => ({
@@ -95,7 +101,7 @@ export function useCanvasFlow(options: {
 			// per-node draggable overrides the global nodes-draggable — gate the
 			// read-only case here or viewers could drag widgets (drop → persist throws)
 			draggable:
-				(isHandTool.value || isSelectTool.value)
+				(isHandTool.value || isSelectTool.value || lassoMoves(node))
 				&& !panOnly?.value
 				&& editingNoteId.value !== node.id
 				&& can_write.value,

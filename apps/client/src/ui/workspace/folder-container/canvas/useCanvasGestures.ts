@@ -135,11 +135,22 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions) {
 		else cancelLasso()
 	}
 
+	/**
+	 * With the lasso, a press on what is selected drags it (Vue Flow takes the
+	 * press); anywhere else it draws a new lasso, over cards too.
+	 */
+	function onLassoSelection(target: EventTarget | null): boolean {
+		return tool.value === 'lasso'
+			&& target instanceof Element
+			&& target.closest('.vue-flow__node.selected') !== null
+	}
+
 	const { bindPane } = usePointerCanvas({
 		tool,
 		isPinching,
 		paneEl: options.paneEl,
 		screenToFlow: options.screenToFlow,
+		passThrough: onLassoSelection,
 		onStrokeStart: onDrawStart,
 		onStrokeExtend: onDrawExtend,
 		onStrokeEnd: onDrawEnd,
