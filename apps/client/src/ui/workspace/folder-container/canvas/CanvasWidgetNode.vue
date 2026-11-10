@@ -15,6 +15,7 @@ import {
 	canvasZoomKey,
 } from '../injectKeys'
 import type { CanvasNodeData } from './useCanvasNodes'
+import { canvas_tool_resizes } from './useCanvasToolFlags'
 import type { LineEndpointLiveLayout } from '../shape/useLineEndpointDrag'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
 import { is_shape_widget, is_text_widget } from '@/services/board/layout'
@@ -59,13 +60,16 @@ const showLineEndpoints = computed(
 	() => isLine.value && isSelected.value && workspace.value?.can_write !== false,
 )
 const isText = computed(() => is_text_widget(props.data.widget))
+/** No resize zones with Connect and the drawing tools: see canvas_tool_resizes */
+const toolResizes = computed(() => canvas_tool_resizes(tool.value))
 // A text block's height follows its text, so it has no corner and no vertical
 // handle: the left and right handles change the width, once it is selected.
 const showResize = computed(
-	() => !isLine.value && !isText.value && !isEditingThis.value && workspace.value?.can_write !== false,
+	() => toolResizes.value && !isLine.value && !isText.value && !isEditingThis.value && workspace.value?.can_write !== false,
 )
 const showTextResize = computed(
-	() => isText.value
+	() => toolResizes.value
+		&& isText.value
 		&& isSelected.value
 		&& !isEditingThis.value
 		&& workspace.value?.can_write !== false,

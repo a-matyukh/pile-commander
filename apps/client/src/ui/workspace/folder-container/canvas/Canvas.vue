@@ -1041,6 +1041,11 @@ function onSectionPointerDown(event: PointerEvent) {
 	cursor: grabbing !important;
 }
 
+/* A press on a card's edge moves the canvas too, it does not resize the card */
+.canvas-flow--space :deep(.vue-flow__resize-control) {
+	pointer-events: none;
+}
+
 /* Both: the rect inside sets its own pointer-events */
 .canvas-flow--space :deep(.vue-flow__nodesselection),
 .canvas-flow--space :deep(.vue-flow__nodesselection-rect) {

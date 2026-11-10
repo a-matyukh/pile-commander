@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { computed, ref } from 'vue'
 import type { BoardSnapSettings } from '@/services/board/layout'
 import type { EditorTool } from './drawing/types'
-import { useCanvasToolFlags } from './useCanvasToolFlags'
+import { canvas_tool_resizes, useCanvasToolFlags } from './useCanvasToolFlags'
 
 const snap = computed<BoardSnapSettings>(() => ({
 	snap_to_grid: false,
@@ -28,5 +28,23 @@ describe('useCanvasToolFlags panOnDrag', () => {
 		expect(flags('pen').panOnDrag.value).toBe(false)
 		expect(flags('eraser').panOnDrag.value).toBe(false)
 		expect(flags('lasso').panOnDrag.value).toBe(false)
+	})
+})
+
+describe('canvas_tool_resizes', () => {
+	test('Hand and Select resize a card by its edges and corners', () => {
+		expect(canvas_tool_resizes('hand')).toBe(true)
+		expect(canvas_tool_resizes('select')).toBe(true)
+	})
+
+	test('Connect leaves the edges to the connection points', () => {
+		expect(canvas_tool_resizes('connect')).toBe(false)
+		expect(canvas_tool_resizes('disconnect')).toBe(false)
+	})
+
+	test('the drawing tools and the lasso do not resize', () => {
+		expect(canvas_tool_resizes('pen')).toBe(false)
+		expect(canvas_tool_resizes('eraser')).toBe(false)
+		expect(canvas_tool_resizes('lasso')).toBe(false)
 	})
 })
