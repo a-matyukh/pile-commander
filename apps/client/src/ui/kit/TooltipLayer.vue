@@ -4,7 +4,8 @@ import { useEventListener } from '@vueuse/core'
 
 /**
  * One tooltip for the whole app. Any element with `data-tip` gets it;
- * `data-tip-key` adds a keyboard shortcut on the right.
+ * `data-tip-key` adds a keyboard shortcut on the right;
+ * `data-tip-side="top"` puts it above the element.
  *
  * A layer instead of a wrapper component: menu triggers are `as-child`
  * slots and need the button itself as their root.
@@ -50,8 +51,11 @@ async function show(el: HTMLElement) {
 		tip.y = r.top + r.height / 2 - h / 2
 	} else {
 		tip.x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8)
-		// below the element; above when there is no room
-		tip.y = r.bottom + 6 + h > innerHeight - 8 ? r.top - 6 - h : r.bottom + 6
+		// below the element; above when there is no room, or when it asks for it
+		// (`data-tip-side="top"`: a panel with more of itself right under the element)
+		const above = r.top - 6 - h
+		const wants_above = el.dataset.tipSide === 'top' && above >= 8
+		tip.y = wants_above || r.bottom + 6 + h > innerHeight - 8 ? above : r.bottom + 6
 	}
 	tip.measured = true
 }

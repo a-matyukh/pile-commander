@@ -1,3 +1,4 @@
+import { shallowReactive } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { AttrStep, CustomAction, HistoryRecord, HistoryStep, HistoryStoreRef, HistoryTx } from './types'
 import {
@@ -95,8 +96,9 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 	const limit = deps.limit ?? 100
 	const merge_window_ms = deps.merge_window_ms ?? 1000
 
-	const undo_stack: HistoryRecord[] = []
-	const redo_stack: HistoryRecord[] = []
+	// Reactive: a button shows whether there is anything to undo or redo
+	const undo_stack: HistoryRecord[] = shallowReactive([])
+	const redo_stack: HistoryRecord[] = shallowReactive([])
 	/**
 	 * Actions still being written, in the order they started. One that ends
 	 * first still waits for the ones before it: records go in the order the

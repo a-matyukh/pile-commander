@@ -7,12 +7,17 @@ export type CanvasToolbarSide = 'top' | 'bottom'
 
 export type CanvasToolbarPrefs = {
 	hidden: boolean
+	/** The old toolbar along the top or bottom edge, instead of the panel at the bottom center */
+	classic: boolean
+	/** The classic toolbar's: one button that opens the tools */
 	compactView: boolean
+	/** The classic toolbar's edge */
 	side: CanvasToolbarSide
 }
 
 export const DEFAULT_CANVAS_TOOLBAR_PREFS: CanvasToolbarPrefs = {
 	hidden: false,
+	classic: false,
 	compactView: false,
 	side: 'top',
 }
@@ -26,6 +31,7 @@ export function mergeCanvasToolbarPrefs(
 		: {}
 	return {
 		hidden: typeof source.hidden === 'boolean' ? source.hidden : defaults.hidden,
+		classic: typeof source.classic === 'boolean' ? source.classic : defaults.classic,
 		compactView: typeof source.compactView === 'boolean' ? source.compactView : defaults.compactView,
 		side: source.side === 'bottom' || source.side === 'top' ? source.side : defaults.side,
 	}

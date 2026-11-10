@@ -41,6 +41,11 @@ export function useCanvasFlow(options: {
 	edges: Ref<FlowEdgeLike[]>
 	editingNoteId: Ref<string | null>
 	tool: Ref<EditorTool>
+	/**
+	 * Space is held to move the canvas: nothing is dragged. Vue Flow lets a
+	 * drag that starts on a card it cannot drag move the canvas instead.
+	 */
+	panOnly?: Ref<boolean>
 	boardSnapSettings: ComputedRef<BoardSnapSettings>
 	/** Persist Vue Flow keyboard-delete of strokes (toolbar/eraser call this themselves). */
 	deleteStrokes: (ids: string[]) => Promise<void>
@@ -51,6 +56,7 @@ export function useCanvasFlow(options: {
 		edges,
 		editingNoteId,
 		tool,
+		panOnly,
 		boardSnapSettings,
 		deleteStrokes,
 	} = options
@@ -90,6 +96,7 @@ export function useCanvasFlow(options: {
 			// read-only case here or viewers could drag widgets (drop → persist throws)
 			draggable:
 				(isHandTool.value || isSelectTool.value)
+				&& !panOnly?.value
 				&& editingNoteId.value !== node.id
 				&& can_write.value,
 			selectable: isSelectTool.value,

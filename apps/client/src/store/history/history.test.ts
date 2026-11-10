@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
+import { computed } from 'vue'
 import type { FileManager, FolderConnection } from '@pile-commander/file-manager'
 import type { Connection } from '@/domain/Widget'
 import { create_history, type HistoryEvent, type TransactMeta } from './history'
@@ -157,6 +158,25 @@ describe('history', () => {
 		await s.h.redo()
 		expect(s.get('/ws/a', 'position')).toBe('{"x":2}')
 		expect(s.h.can_redo).toBe(false)
+	})
+
+	test('a button sees at once whether there is anything to undo or redo', async () => {
+		const s = setup()
+		const seen = computed(() => [s.h.can_undo, s.h.can_redo])
+		expect(seen.value).toEqual([false, false])
+
+		await s.act([pos('/ws/a', null, '{"x":2}')])
+		expect(seen.value).toEqual([true, false])
+
+		await s.h.undo()
+		expect(seen.value).toEqual([false, true])
+
+		await s.h.redo()
+		expect(seen.value).toEqual([true, false])
+
+		// what cannot be undone empties both without an event
+		s.h.barrier('удаление «b»')
+		expect(seen.value).toEqual([false, false])
 	})
 
 	test('a new action drops what could be redone', async () => {
