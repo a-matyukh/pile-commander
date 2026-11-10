@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { count_items, t } from '@/i18n'
 import { entry_clipboard } from '@/store/entryClipboard'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 
@@ -15,10 +16,8 @@ const visible = computed(() => (clip.value?.entry_ids.length ?? 0) > 0)
 const countLabel = computed(() => {
 	const current = clip.value
 	if (!current) return ''
-	const n = current.entry_ids.length
-	const noun = n === 1 ? 'entry' : 'entries'
-	const verb = current.mode === 'cut' ? 'cut' : 'copied'
-	return `${n} ${noun} ${verb}`
+	const items = count_items(current.entry_ids.length)
+	return t(current.mode === 'cut' ? 'clipboard.cut' : 'clipboard.copied', { items })
 })
 
 const canPaste = computed(() => {
@@ -55,7 +54,7 @@ function pasteHere() {
 			class="clipboard-banner__paste"
 			@click="pasteHere"
 		>
-			Paste here
+			{{ t('clipboard.paste_here') }}
 			<span class="clipboard-banner__kbds hidden md:inline-flex">
 				<UKbd value="meta" size="sm" />
 				<UKbd value="V" size="sm" />

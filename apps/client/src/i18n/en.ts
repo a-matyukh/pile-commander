@@ -924,6 +924,11 @@ export const en: typeof ru = {
 		combine_selected: 'Combine selected',
 		remove_selected: 'Remove selected',
 	},
+	clipboard: {
+		cut: '{items} cut',
+		copied: '{items} copied',
+		paste_here: 'Paste here',
+	},
 	empty_pane: {
 		double_click: 'Double click',
 		shift_double_click: 'Shift + double click',

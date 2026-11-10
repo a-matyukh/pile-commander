@@ -922,6 +922,11 @@ export const ru = {
 		combine_selected: 'Объединить выбранное в папку',
 		remove_selected: 'Удалить выбранное',
 	},
+	clipboard: {
+		cut: 'Вырезано: {items}',
+		copied: 'Скопировано: {items}',
+		paste_here: 'Вставить сюда',
+	},
 	empty_pane: {
 		double_click: 'Двойной клик',
 		shift_double_click: 'Shift + двойной клик',
