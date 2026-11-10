@@ -70,6 +70,7 @@ import { PEN_CURSOR } from './drawing/cursors'
 import { isCanvasToolAllowed, useCanvasToolbarPrefs } from './useCanvasToolbarPrefs'
 import { clearCanvasToolbarInset, setCanvasToolbarInset } from './canvasToolbarInset'
 import { useHoverClickMenu } from './useHoverClickMenu'
+import { useRevealEditingNote } from '../revealEditingNote'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
 const isMdUp = useMediaQuery('(min-width: 768px)')
@@ -336,6 +337,17 @@ const {
 } = useVueFlow(flowId)
 
 provide(canvasZoomKey, () => viewport.value.zoom || 1)
+
+// A note opened for typing on a phone stays above the keyboard
+useRevealEditingNote({
+	editingNoteId,
+	paneElement: () => flowWrapper.value,
+	pan: (dx, dy) => {
+		const { x, y, zoom } = viewport.value
+		void setViewport({ x: x + dx, y: y + dy, zoom })
+	},
+	enabled: () => !isEmbedded,
+})
 
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
 
