@@ -14,6 +14,7 @@ import CanvasDockButton from './CanvasDockButton.vue'
 import CanvasDockContext from './CanvasDockContext.vue'
 import { DOCK_TOOLS, dock_items, dock_tool, type DockItemId, type DockTool, type DockZoomAction } from './canvasDockItems'
 import { DOCK_METRICS, dock_layout } from './canvasDockLayout'
+import { useCloseOnCanvasPress } from './useCloseOnCanvasPress'
 
 /**
  * The canvas panel: one island at the bottom center with undo, the tools and
@@ -83,6 +84,8 @@ const tucked_in_use = computed(() => tucked_tools.value.find(tool => tool.id ===
 
 const zoom_open = ref(false)
 const more_open = ref(false)
+useCloseOnCanvasPress(zoom_open)
+useCloseOnCanvasPress(more_open)
 
 /** A folder preview shows its panel on hover; these keep it there */
 const pinned = computed(() => props.tool !== 'hand' || zoom_open.value || more_open.value)
@@ -92,7 +95,7 @@ const has_context = computed(() =>
 )
 
 /** The pen's colors and widths side by side, with the strip's padding and border */
-const PEN_ROW_WIDTH = 410
+const PEN_ROW_WIDTH = 444
 const strip_stacked = computed(() => width.value < PEN_ROW_WIDTH)
 
 /** Hotkey hints are for a keyboard at hand, as the menus' own: not a touch screen */
@@ -166,7 +169,7 @@ const vars = computed(() => ({
 							:data-tip-key="redo_key"
 							@click="emit('redo')"
 						/>
-						<DropMenu v-else-if="id === 'zoom'" v-model:open="zoom_open" side="top" align="end" :width="200">
+						<DropMenu v-else-if="id === 'zoom'" v-model:open="zoom_open" side="top" align="end" :width="200" :offset="10">
 							<template #trigger>
 								<button
 									type="button"
@@ -202,7 +205,7 @@ const vars = computed(() => ({
 
 			<template v-if="layout.more">
 				<span v-if="groups.length > 0" class="sep" aria-hidden="true" />
-				<DropMenu v-model:open="more_open" side="top" align="end" :width="220">
+				<DropMenu v-model:open="more_open" side="top" align="end" :width="220" :offset="10">
 					<template #trigger>
 						<CanvasDockButton
 							:icon="tucked_in_use?.icon ?? 'tabler:dots'"

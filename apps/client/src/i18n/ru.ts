@@ -626,6 +626,9 @@ export const ru = {
 		pen_color: 'Цвет пера',
 		custom_color: 'Свой цвет',
 		pen_width: 'Толщина {n}',
+		custom_width: 'Своя толщина',
+		/** Over the slider of any width */
+		pen_width_title: 'Толщина пера',
 		delete_stroke: 'Удалить штрих',
 		delete_strokes: 'Удалить штрихи',
 		connection: 'Вид связи',

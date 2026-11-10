@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { Connection, ConnectionMarker } from '@/domain/Widget'
 import { t } from '@/i18n'
+import DropMenu from '@/ui/kit/DropMenu.vue'
+import MenuLabel from '@/ui/kit/MenuLabel.vue'
+import { PEN_WIDTH_MAX, PEN_WIDTH_MIN } from '../canvasPenPrefs'
 import type { EditorTool } from '../drawing/types'
 import CanvasDockButton from './CanvasDockButton.vue'
+import { useCloseOnCanvasPress } from './useCloseOnCanvasPress'
 
 /**
  * The strip above the canvas panel: what the chosen tool or the selection
@@ -37,6 +41,23 @@ const PEN_WIDTHS = [2, 4, 8, 16]
 
 const same_color = (color: string) => color.toLowerCase() === props.penColor.toLowerCase()
 const custom_color = computed(() => !PEN_PALETTE.some(same_color))
+/** Any width between the presets, as the classic toolbar's slider gives */
+const custom_width = computed(() => !PEN_WIDTHS.includes(props.penWidth))
+
+/**
+ * The slider opens above the whole strip, not over it: past the strip's
+ * padding, and past the row of colors when the widths stand under it.
+ */
+const slider_offset = computed(() => (props.stacked ? 46 : 10))
+
+/** The slider closes as soon as the pen goes back to the canvas */
+const width_open = ref(false)
+useCloseOnCanvasPress(width_open)
+
+/** The slider keeps its own keys (arrows, Home, End) from the menu; Escape and Tab stay the menu's */
+function on_slider_key(event: KeyboardEvent) {
+	if (event.key !== 'Escape' && event.key !== 'Tab') event.stopPropagation()
+}
 
 const MARKERS: { key: 'none' | 'arrow' | 'closed'; value: ConnectionMarker | undefined; start: string; end: string }[] = [
 	{ key: 'none', value: undefined, start: 'tabler:minus', end: 'tabler:minus' },
@@ -112,6 +133,38 @@ function on_key_click(event: MouseEvent, what: 'delete-selected' | 'delete-conne
 				>
 					<i class="dot" :style="{ width: `${width + 2}px`, height: `${width + 2}px`, background: penColor }" />
 				</CanvasDockButton>
+				<!-- Any width: a slider behind the last button, which shows the width once it is not a preset -->
+				<DropMenu v-model:open="width_open" side="top" align="end" :width="220" :offset="slider_offset">
+					<template #trigger>
+						<CanvasDockButton
+							:icon="custom_width ? undefined : 'tabler:adjustments-horizontal'"
+							:selected="custom_width"
+							:aria-label="t('canvas_dock.custom_width')"
+							:data-tip="t('canvas_dock.custom_width')"
+						>
+							<span v-if="custom_width" class="wn">{{ penWidth }}</span>
+						</CanvasDockButton>
+					</template>
+					<MenuLabel>
+						<span class="lr">
+							{{ t('canvas_dock.pen_width_title') }}
+							<span>{{ penWidth }} px</span>
+						</span>
+					</MenuLabel>
+					<div class="sz" @keydown="on_slider_key" @pointerdown.stop>
+						<i class="dot" :style="{ width: '3px', height: '3px', background: penColor }" />
+						<input
+							type="range"
+							:min="PEN_WIDTH_MIN"
+							:max="PEN_WIDTH_MAX"
+							step="1"
+							:value="penWidth"
+							:aria-label="t('canvas_dock.pen_width_title')"
+							@input="emit('update:penWidth', Number(($event.target as HTMLInputElement).value))"
+						>
+						<i class="dot" :style="{ width: '18px', height: '18px', background: penColor }" />
+					</div>
+				</DropMenu>
 			</div>
 		</div>
 
@@ -277,8 +330,34 @@ function on_key_click(event: MouseEvent, what: 'delete-selected' | 'delete-conne
 }
 .dot {
 	display: block;
+	flex: none;
 	border-radius: 50%;
 	box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, .2);
+}
+/* The width that is not a preset, on its button */
+.wn {
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+/* The slider's menu: its title with the width at the right, as the view menu's sizes */
+.lr {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	width: 100%;
+	font-variant-numeric: tabular-nums;
+}
+.sz {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 10px 8px;
+}
+.sz input {
+	flex: 1;
+	min-width: 0;
+	accent-color: var(--fill-accent);
 }
 .act {
 	display: flex;

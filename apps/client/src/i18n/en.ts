@@ -628,6 +628,9 @@ export const en: typeof ru = {
 		pen_color: 'Pen color',
 		custom_color: 'Custom color',
 		pen_width: 'Width {n}',
+		custom_width: 'Custom width',
+		/** Over the slider of any width */
+		pen_width_title: 'Pen width',
 		delete_stroke: 'Delete stroke',
 		delete_strokes: 'Delete strokes',
 		connection: 'Connection style',
