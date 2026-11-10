@@ -927,6 +927,11 @@ export const ru = {
 		shift_double_click: 'Shift + двойной клик',
 		remembered: 'Я запомнил',
 	},
+	/** A board does not reach what a canvas placed left of or above it */
+	off_board: {
+		hint: 'За краем доски: {items}',
+		show: 'Показать',
+	},
 	updates: {
 		check: 'Проверить обновления',
 		up_to_date: 'У вас последняя версия',

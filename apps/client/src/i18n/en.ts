@@ -929,6 +929,11 @@ export const en: typeof ru = {
 		shift_double_click: 'Shift + double click',
 		remembered: 'I remembered',
 	},
+	/** A board does not reach what a canvas placed left of or above it */
+	off_board: {
+		hint: 'Off the board\'s edge: {items}',
+		show: 'Show',
+	},
 	updates: {
 		check: 'Check for updates',
 		up_to_date: 'You’re up to date',

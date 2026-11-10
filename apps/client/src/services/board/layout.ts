@@ -128,29 +128,45 @@ export function board_position(widget: FolderContainerWidgetChild, index: number
 }
 
 /**
- * Translate a dropped group so it sits in the board's visible quadrant.
- * An axis whose minimum is already >= 0 is left alone, so a group that only
- * hangs off the left keeps its vertical arrangement. Returns the same array
- * when nothing is negative.
+ * How far a group must move to sit in the board's visible quadrant. An axis
+ * whose minimum is already >= 0 does not move, so a group that only hangs off
+ * the left keeps its vertical arrangement.
  */
-export function shift_into_board_quadrant(positions: Position[]): Position[] {
-	if (positions.length === 0) return positions
-
+export function board_quadrant_shift(positions: Position[]): Position {
 	let min_x = Infinity
 	let min_y = Infinity
 	for (const position of positions) {
 		if (position.x < min_x) min_x = position.x
 		if (position.y < min_y) min_y = position.y
 	}
+	return {
+		x: min_x < 0 ? TILE.pad - min_x : 0,
+		y: min_y < 0 ? TILE.pad - min_y : 0,
+	}
+}
 
-	const dx = min_x < 0 ? TILE.pad - min_x : 0
-	const dy = min_y < 0 ? TILE.pad - min_y : 0
+/**
+ * Translate a dropped group so it sits in the board's visible quadrant.
+ * Returns the same array when nothing is negative.
+ */
+export function shift_into_board_quadrant(positions: Position[]): Position[] {
+	if (positions.length === 0) return positions
+
+	const { x: dx, y: dy } = board_quadrant_shift(positions)
 	if (dx === 0 && dy === 0) return positions
 
 	return positions.map(position => ({
 		x: position.x + dx,
 		y: position.y + dy,
 	}))
+}
+
+/**
+ * Children the board cannot show: a board starts at 0,0 and does not scroll
+ * up or left, so a canvas position left of or above it is out of reach.
+ */
+export function off_board_children(children: FolderContainerWidgetChild[]): FolderContainerWidgetChild[] {
+	return children.filter(child => !!child.position && (child.position.x < 0 || child.position.y < 0))
 }
 
 /**

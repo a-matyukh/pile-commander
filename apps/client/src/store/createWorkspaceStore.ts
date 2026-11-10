@@ -90,7 +90,7 @@ import {
 	StrokeNode,
 	stored_folder_view,
 } from '@/domain/Widget'
-import { board_position, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE, TEXT_DEFAULT_SIZE } from '@/services/board/layout'
+import { board_position, board_quadrant_shift, board_size, absolute_from_origin, read_position_attr, FOLDER_PREVIEW_DEFAULT_SIZE, SHAPE_LINE_DEFAULT_SIZE, SHAPE_SQUARE_DEFAULT_SIZE, TEXT_DEFAULT_SIZE } from '@/services/board/layout'
 import { get_mime_type } from '@/services/board/media'
 import { basename } from '@tauri-apps/api/path'
 import { report_error } from './helpers/reportError'
@@ -183,6 +183,38 @@ function is_picture_value(value: string | null | undefined): boolean {
 }
 
 /** Where the edges to a removed entry live: its folder, or the parent of the open folder itself */
+/**
+ * A paste onto a board: the board cannot show what sits left of or above it,
+ * so entries pasted from a canvas at negative coordinates move in together,
+ * keeping their arrangement (as a canvas → board drop does).
+ */
+async function fit_pasted_on_board(
+	store: WorkspaceStore,
+	folder_id: string,
+	ids_before: Set<string>,
+	tx?: HistoryTx,
+) {
+	const folder = store.resolve_folder_data(folder_id)
+	if (!folder) return
+	if (to_folder_container(folder, store.preview_folders).view !== 'board') return
+
+	const pasted: Array<{ id: string; position: Position }> = []
+	for (const child of folder.children ?? []) {
+		if (ids_before.has(child.id)) continue
+		const position = read_position_attr(xattrs_map(child.xattrs).position)
+		if (position) pasted.push({ id: child.id, position })
+	}
+	const shift = board_quadrant_shift(pasted.map(entry => entry.position))
+	if (shift.x === 0 && shift.y === 0) return
+
+	for (const entry of pasted) {
+		await store.change_position(entry.id, {
+			x: entry.position.x + shift.x,
+			y: entry.position.y + shift.y,
+		}, { tx })
+	}
+}
+
 function removed_owner_folder_id(store: WorkspaceStore, id: string): string | undefined {
 	const owner_folder = find_entry_owner_folder(store.opened_folder, store.preview_folders, id)
 	return owner_folder?.id === id ? parent_folder_id_from_node_id(id, store.id) : owner_folder?.id
@@ -2491,6 +2523,10 @@ export async function createWorkspaceStore(
 				return
 			}
 
+			// Entries already in the folder: whatever is not among them after
+			// the paste arrived with it (a cut and a copy both land under new ids)
+			const ids_before = new Set<string>((folder_data.children ?? []).map(child => child.id))
+
 			if (clip.source_store !== this) {
 				const created_ids = await transfer_entries({
 					source_store: clip.source_store,
@@ -2500,6 +2536,7 @@ export async function createWorkspaceStore(
 					mode: clip.mode === 'cut' ? 'move' : 'copy',
 				})
 				if (created_ids.length === 0) return
+				await fit_pasted_on_board(this, target_folder_id, ids_before)
 				block_history(this, t('undo.op.paste'))
 
 				this.clear_clipboard()
@@ -2523,6 +2560,7 @@ export async function createWorkspaceStore(
 						)
 						if (moved) insert_index += 1
 					}
+					await fit_pasted_on_board(this, target_folder_id, ids_before, tx)
 				}, { notice: () => entries_label(this, moving, 'undo.moved', 'undo.moved_many') })
 				this.clear_clipboard()
 				this.exit_selection_mode()
@@ -2534,7 +2572,11 @@ export async function createWorkspaceStore(
 				options?.tx,
 				{ folder_id: target_folder_id },
 				() => entries_label(this, clip.entry_ids, 'undo.paste_one', 'undo.paste_many'),
-				tx => copy_entries_into(this, fm, target_folder_id, clip.entry_ids, tx),
+				async (tx) => {
+					const created = await copy_entries_into(this, fm, target_folder_id, clip.entry_ids, tx)
+					await fit_pasted_on_board(this, target_folder_id, ids_before, tx)
+					return created
+				},
 			)
 			if (created_ids.length === 0) return
 

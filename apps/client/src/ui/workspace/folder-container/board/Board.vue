@@ -18,6 +18,7 @@ import { isEmptyBoardPointerTarget } from './isEmptyBoardPointerTarget'
 import { useMoveSelectedWidgets } from '../useMoveSelectedWidgets'
 import BoardMarqueeOverlay from './BoardMarqueeOverlay.vue'
 import EmptyPaneHint from '../EmptyPaneHint.vue'
+import BoardOffEdgeHint from './BoardOffEdgeHint.vue'
 import { useLineDrawMode } from '../useLineDrawMode'
 import { useTextPlaceMode } from '../useTextPlaceMode'
 import { LINE_ARROW_SIZE } from '@/services/board/shapes'
@@ -283,6 +284,7 @@ const boardExtentStyle = computed(() => {
 			</svg>
 		</section>
 		<EmptyPaneHint :empty="children.length === 0" />
+		<BoardOffEdgeHint v-if="!isEmbedded" :folder-id="folderId" :children="children" />
 	</div>
 	</FolderContainerCtxMenu>
 </template>
