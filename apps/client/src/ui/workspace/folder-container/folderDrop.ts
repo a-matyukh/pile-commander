@@ -15,8 +15,20 @@ export type FolderDropOptions = {
 		widgetId: string,
 	) => Position | null
 	onDropSuccess?: (widgetId: string) => void
+	/** The pointer at release (client coords): the folder under it is the target */
+	pointer?: ClientPoint | null
 	/** The gesture's undo record (a canvas drag with ink); without it the drop is one undo of its own */
 	tx?: HistoryTx
+}
+
+export type ClientPoint = { x: number; y: number }
+
+/** Client coords of a mouse, pointer or touch event; null for a touch list that is empty. */
+export function eventClientPoint(event: MouseEvent | TouchEvent | null | undefined): ClientPoint | null {
+	if (!event) return null
+	if ('clientX' in event) return { x: event.clientX, y: event.clientY }
+	const touch = event.changedTouches?.[0] ?? event.touches?.[0]
+	return touch ? { x: touch.clientX, y: touch.clientY } : null
 }
 
 /** Duck-typed so the helper can be unit-tested in node without a DOM. */
@@ -39,10 +51,23 @@ export function isSameBoardFolderDropTarget(
 	return folderBoard === dragBoard
 }
 
-export function findDropFolder(dragged: HTMLElement): HTMLElement | null {
-	const rect = dragged.getBoundingClientRect()
-	const centerX = rect.left + rect.width / 2
-	const centerY = rect.top + rect.height / 2
+/**
+ * The folder the drag would drop into: the one under the pointer, as the
+ * person sees it. Without a pointer, the one under the dragged widget's
+ * centre (a big note's centre can be far from the cursor, so callers that
+ * know the pointer pass it).
+ */
+export function findDropFolder(dragged: HTMLElement, pointer?: ClientPoint | null): HTMLElement | null {
+	let centerX: number
+	let centerY: number
+	if (pointer) {
+		centerX = pointer.x
+		centerY = pointer.y
+	} else {
+		const rect = dragged.getBoundingClientRect()
+		centerX = rect.left + rect.width / 2
+		centerY = rect.top + rect.height / 2
+	}
 	const scope = dragged.closest<HTMLElement>('section[data-path]')
 	if (!scope) return null
 
@@ -108,7 +133,7 @@ export async function tryDropOnFolder(
 	widgetIdOrIds: string | string[],
 	options: FolderDropOptions,
 ): Promise<boolean> {
-	const folder = findDropFolder(dragged)
+	const folder = findDropFolder(dragged, options.pointer)
 	if (!folder) return false
 
 	const ws = options.getWorkspace()

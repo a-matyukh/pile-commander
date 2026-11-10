@@ -1,7 +1,7 @@
 import type { ComputedRef, Ref } from 'vue'
 import type { EdgeMouseEvent, GraphNode, NodeDragEvent, NodeMouseEvent } from '@vue-flow/core'
 import type { Position } from '@/domain/Widget'
-import { findDropFolder } from '../folderDrop'
+import { eventClientPoint, findDropFolder } from '../folderDrop'
 import {
 	snapshotWidgetDragPositions,
 	type CanvasDragPositionSnapshot,
@@ -81,7 +81,7 @@ export function useCanvasNodeInteractions(options: UseCanvasNodeInteractionsOpti
 			return
 		}
 
-		const folder = findDropFolder(el)
+		const folder = findDropFolder(el, eventClientPoint(event.event))
 		if (folder !== highlightedFolder) {
 			clearFolderHighlight()
 			highlightedFolder = folder

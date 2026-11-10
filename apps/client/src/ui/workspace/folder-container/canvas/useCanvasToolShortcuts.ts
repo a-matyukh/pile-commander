@@ -22,8 +22,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
 	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 }
 
-export function toolFromHotkey(key: string): EditorTool | undefined {
-	return TOOL_BY_KEY[key.toLowerCase()]
+/**
+ * The tool for a key press. A Latin letter is taken as typed, so every Latin
+ * layout works by its own letters. Anything else (a Cyrillic layout) goes by
+ * the key's place, which is where these letters are printed on the keyboard.
+ */
+export function toolFromHotkey(key: string, code = ''): EditorTool | undefined {
+	const letter = /^[a-z]$/i.test(key) ? key : code.startsWith('Key') ? code.slice(3) : ''
+	return TOOL_BY_KEY[letter.toLowerCase()]
 }
 
 /**
@@ -43,7 +49,7 @@ export function useCanvasToolShortcuts(options: {
 		if (isTypingTarget(event.target)) return
 		if (options.editingNoteId.value) return
 
-		const tool = toolFromHotkey(event.key)
+		const tool = toolFromHotkey(event.key, event.code)
 		if (!tool) return
 
 		event.preventDefault()

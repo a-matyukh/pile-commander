@@ -5,8 +5,9 @@ import type { FolderContainerWidget, FolderContainerWidgetChild, Position, Size 
 import { board_position, board_size, is_text_widget, text_box_css } from '@/services/board/layout'
 import { applyGroupResizeDelta } from '../board/boardGroupResize'
 import { relativePositionsForFolderDrop } from '../board/boardGroupDrag'
-import { tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
+import { eventClientPoint, tryDropOnFolder, type FolderDropOptions } from '../folderDrop'
 import { clear_live_text_width, set_live_text_width } from '../liveTextWidth'
+import type { CanvasNodeGeometry } from '../injectKeys'
 import { t } from '@/i18n'
 import { record_action, type HistoryTx } from '@/store/history'
 import {
@@ -87,6 +88,8 @@ export function useCanvasNodes(
 	// Text blocks whose side handle was just dragged: they keep the live width and
 	// position until the stored values catch up, or the node jumps between writes.
 	const textResizing = new Set<string>()
+	// A node whose resize just ended: its box stays until size and place are stored.
+	const resizeSettling = new Set<string>()
 
 	function getNodePosition(id: string) {
 		const node = nodes.value.find(n => n.id === id)
@@ -104,7 +107,7 @@ export function useCanvasNodes(
 			return {
 				id: widget.id,
 				type: 'folderWidget' as const,
-				position: prev && textResizing.has(widget.id)
+				position: prev && (textResizing.has(widget.id) || resizeSettling.has(widget.id))
 					? prev.position
 					: board_position(widget, index),
 				draggable: editingNoteId.value !== widget.id,
@@ -114,7 +117,7 @@ export function useCanvasNodes(
 				// the stored size, so a size set elsewhere (another tab, a
 				// collaborator, folder sync) shows at once; a node under the
 				// person's resize handle keeps its live size
-				style: prev && (isBeingResized(widget.id) || textResizing.has(widget.id))
+				style: prev && (isBeingResized(widget.id) || textResizing.has(widget.id) || resizeSettling.has(widget.id))
 					? prev.style
 					: nodeStyle(widget),
 			}
@@ -174,6 +177,7 @@ export function useCanvasNodes(
 				getWorkspace: requireWorkspace,
 				// a drop during a canvas drag belongs to the drag's undo
 				tx,
+				pointer: eventClientPoint(event.event),
 				resolveRelativePosition(_dragged, folder, widgetId) {
 					if (!cachedRelativeById) {
 						const folderPos = getNodePosition(folder.dataset.id ?? '')
@@ -245,19 +249,31 @@ export function useCanvasNodes(
 		return applyGroupResizeDelta(resizeGroup.memberStarts, delta, minNodeSize)
 	}
 
-	function onNodeResizeLive(nodeId: string, size: Size) {
-		// Node style pins width/height — without this the resized node itself
-		// only catches up at resize-end while companions follow live.
-		const primaryNode = nodes.value.find(n => n.id === nodeId)
-		if (primaryNode) {
-			primaryNode.style = {
-				width: `${size.width}px`,
-				height: `${size.height}px`,
-			}
+	/** The node's live box: style pins the size, position follows the left/top handles. */
+	function setNodeGeometry(nodeId: string, geometry: CanvasNodeGeometry) {
+		const index = nodes.value.findIndex(n => n.id === nodeId)
+		if (index === -1) return
+		const node = nodes.value[index]!
+		const next = [...nodes.value]
+		next[index] = {
+			...node,
+			position: { x: geometry.x, y: geometry.y },
+			style: {
+				width: `${geometry.width}px`,
+				height: `${geometry.height}px`,
+			},
 		}
+		nodes.value = next
+	}
+
+	function onNodeResizeLive(nodeId: string, geometry: CanvasNodeGeometry) {
+		// Without this the resized node itself only catches up at resize-end
+		// while companions follow live, and a left/top handle grows the box
+		// from the opposite corner.
+		setNodeGeometry(nodeId, geometry)
 
 		if (!resizeGroup || resizeGroup.primaryId !== nodeId) return
-		for (const [memberId, memberSize] of Object.entries(groupSizes(size))) {
+		for (const [memberId, memberSize] of Object.entries(groupSizes(geometry))) {
 			const node = nodes.value.find(n => n.id === memberId)
 			if (node) {
 				node.style = {
@@ -268,25 +284,35 @@ export function useCanvasNodes(
 		}
 	}
 
-	async function onNodeResizeEnd(nodeId: string, size: Size) {
-		const node = nodes.value.find(n => n.id === nodeId)
-		if (node) {
-			node.style = {
-				width: `${size.width}px`,
-				height: `${size.height}px`,
-			}
-		}
+	async function onNodeResizeEnd(nodeId: string, geometry: CanvasNodeGeometry) {
+		setNodeGeometry(nodeId, geometry)
+		const size = { width: geometry.width, height: geometry.height }
 		const memberSizes = resizeGroup?.primaryId === nodeId ? groupSizes(size) : {}
 		resizeGroup = null
+		// keep the live box until both size and place are stored
+		resizeSettling.add(nodeId)
 
-		const ws = requireWorkspace()
-		// The resized selection is one undo
-		await record_action(ws, { entry_id: nodeId }, t('undo.resize'), async (tx) => {
-			await ws.change_size(nodeId, size, { tx })
-			for (const [memberId, memberSize] of Object.entries(memberSizes)) {
-				await ws.change_size(memberId, memberSize, { tx })
-			}
-		})
+		try {
+			const ws = requireWorkspace()
+			const children = container.value?.children ?? []
+			const index = children.findIndex(child => child.id === nodeId)
+			const child = children[index]
+			const start = child ? board_position(child, index) : null
+			const position = { x: Math.round(geometry.x), y: Math.round(geometry.y) }
+			// The resized selection is one undo
+			await record_action(ws, { entry_id: nodeId }, t('undo.resize'), async (tx) => {
+				await ws.change_size(nodeId, size, { tx })
+				if (start && (position.x !== Math.round(start.x) || position.y !== Math.round(start.y))) {
+					await ws.change_position(nodeId, position, { tx })
+				}
+				for (const [memberId, memberSize] of Object.entries(memberSizes)) {
+					await ws.change_size(memberId, memberSize, { tx })
+				}
+			})
+		} finally {
+			resizeSettling.delete(nodeId)
+			syncNodes()
+		}
 	}
 
 	/** A text block's side handle: only the width (and, from the left handle, x) changes. */

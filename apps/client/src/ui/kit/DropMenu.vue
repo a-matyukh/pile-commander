@@ -9,8 +9,10 @@ withDefaults(
 		side?: 'top' | 'bottom' | 'left' | 'right'
 		align?: 'start' | 'center' | 'end'
 		width?: number
+		/** The gap to the trigger, px: more when the trigger sits inside a panel the menu must clear */
+		offset?: number
 	}>(),
-	{ side: 'bottom', align: 'end', width: 220 },
+	{ side: 'bottom', align: 'end', width: 220, offset: 6 },
 )
 
 provide_menu_kind('dropdown')
@@ -26,7 +28,7 @@ provide_menu_kind('dropdown')
 				class="mn"
 				:side="side"
 				:align="align"
-				:side-offset="6"
+				:side-offset="offset"
 				:collision-padding="8"
 				:style="{ width: width + 'px' }"
 			>

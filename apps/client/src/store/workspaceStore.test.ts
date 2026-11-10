@@ -721,6 +721,44 @@ describe('createWorkspaceStore: clipboard', () => {
 		expect(store.opened_folder.children.some(c => c.id === '/ws/pics/note.txt')).toBe(true)
 	})
 
+	test('a paste onto a board brings what a canvas had off its left edge in, keeping y', async () => {
+		const { fake, store } = await makeStoreWithPreviews()
+		fake.set_xattr('/ws/pics', 'view', 'board')
+		await store.change_position('/ws/note.txt', { x: -300, y: 50 })
+
+		store.cut_entries(['/ws/note.txt'])
+		await store.open_folder('/ws/pics')
+		await store.paste()
+
+		expect(JSON.parse(fake.get_xattr('/ws/pics/note.txt', 'position')!)).toEqual({ x: 20, y: 50 })
+	})
+
+	test('a copy pasted onto a board lands in view too', async () => {
+		const { fake, store } = await makeStoreWithPreviews()
+		fake.set_xattr('/ws/pics', 'view', 'board')
+		await store.change_position('/ws/note.txt', { x: 40, y: -500 })
+
+		store.copy_entries(['/ws/note.txt'])
+		await store.open_folder('/ws/pics')
+		await store.paste()
+
+		const position = JSON.parse(fake.get_xattr('/ws/pics/note.txt', 'position')!)
+		expect(position.y).toBe(20)
+		expect(position.x).toBeGreaterThanOrEqual(40)
+	})
+
+	test('a paste onto a canvas keeps negative coordinates', async () => {
+		const { fake, store } = await makeStoreWithPreviews()
+		fake.set_xattr('/ws/pics', 'view', 'canvas')
+		await store.change_position('/ws/note.txt', { x: -300, y: 50 })
+
+		store.cut_entries(['/ws/note.txt'])
+		await store.open_folder('/ws/pics')
+		await store.paste()
+
+		expect(JSON.parse(fake.get_xattr('/ws/pics/note.txt', 'position')!)).toEqual({ x: -300, y: 50 })
+	})
+
 	test('copy + paste into the source folder creates a unique duplicate', async () => {
 		const { fake, store } = await makeStore()
 

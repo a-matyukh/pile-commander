@@ -251,39 +251,53 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 								},
 							},
 							{
-								label: 'Compact view',
+								// The toolbar along an edge, as before the panel at the bottom center
+								label: 'Classic toolbar',
 								type: 'checkbox' as const,
-								checked: toolbarPrefs.value.compactView,
+								checked: toolbarPrefs.value.classic,
 								onUpdateChecked(checked: boolean) {
-									toolbarPrefs.value = { ...toolbarPrefs.value, compactView: checked }
+									toolbarPrefs.value = { ...toolbarPrefs.value, classic: checked }
 								},
 								onSelect(e: Event) {
 									e.preventDefault()
 								},
 							},
-							{
-								label: 'Side',
-								slot: 'toolbar-side' as const,
-								currentSideLabel: toolbarPrefs.value.side === 'bottom' ? 'Bottom' : 'Top',
-								children: [
-									{
-										label: 'Top',
-										type: 'checkbox' as const,
-										checked: toolbarPrefs.value.side === 'top',
-										onSelect() {
-											toolbarPrefs.value = { ...toolbarPrefs.value, side: 'top' }
-										},
+							// The classic toolbar's own settings
+							...(toolbarPrefs.value.classic
+								? [{
+									label: 'Compact view',
+									type: 'checkbox' as const,
+									checked: toolbarPrefs.value.compactView,
+									onUpdateChecked(checked: boolean) {
+										toolbarPrefs.value = { ...toolbarPrefs.value, compactView: checked }
 									},
-									{
-										label: 'Bottom',
-										type: 'checkbox' as const,
-										checked: toolbarPrefs.value.side === 'bottom',
-										onSelect() {
-											toolbarPrefs.value = { ...toolbarPrefs.value, side: 'bottom' }
-										},
+									onSelect(e: Event) {
+										e.preventDefault()
 									},
-								],
-							},
+								}, {
+									label: 'Side',
+									slot: 'toolbar-side' as const,
+									currentSideLabel: toolbarPrefs.value.side === 'bottom' ? 'Bottom' : 'Top',
+									children: [
+										{
+											label: 'Top',
+											type: 'checkbox' as const,
+											checked: toolbarPrefs.value.side === 'top',
+											onSelect() {
+												toolbarPrefs.value = { ...toolbarPrefs.value, side: 'top' }
+											},
+										},
+										{
+											label: 'Bottom',
+											type: 'checkbox' as const,
+											checked: toolbarPrefs.value.side === 'bottom',
+											onSelect() {
+												toolbarPrefs.value = { ...toolbarPrefs.value, side: 'bottom' }
+											},
+										},
+									],
+								}]
+								: []),
 						],
 					}]
 					: []),

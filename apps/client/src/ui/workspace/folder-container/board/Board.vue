@@ -18,6 +18,8 @@ import { isEmptyBoardPointerTarget } from './isEmptyBoardPointerTarget'
 import { useMoveSelectedWidgets } from '../useMoveSelectedWidgets'
 import BoardMarqueeOverlay from './BoardMarqueeOverlay.vue'
 import EmptyPaneHint from '../EmptyPaneHint.vue'
+import BoardOffEdgeHint from './BoardOffEdgeHint.vue'
+import { useRevealEditingNote } from '../revealEditingNote'
 import { useLineDrawMode } from '../useLineDrawMode'
 import { useTextPlaceMode } from '../useTextPlaceMode'
 import { LINE_ARROW_SIZE } from '@/services/board/shapes'
@@ -180,12 +182,27 @@ function onBoardPaneClick(event: MouseEvent) {
 	void onPaneClick(event)
 }
 
+// A note opened for typing on a phone stays above the keyboard. The board
+// pads its bottom by the keyboard's height, or a note near the end of the
+// content could not scroll up out from under it.
+const keyboardInset = ref(0)
+useRevealEditingNote({
+	editingNoteId,
+	paneElement: () => boardRef.value,
+	pan: (dx, dy) => boardRef.value?.scrollBy({ left: -dx, top: -dy }),
+	enabled: () => !isEmbedded,
+	onKeyboardInset: (inset) => {
+		keyboardInset.value = inset
+	},
+})
+
 const paneFill = useResolvedFill(folderId, () => container.value?.background)
 const boardChromeStyle = computed(() => ({
 	...backgroundStyle(paneFill.value, defaultViewBackground),
 	cursor: lineDraw.cursor.value
 		?? (boardPlacementTemplate.value ? 'crosshair' : undefined)
 		?? (textPlace.armed.value ? 'text' : undefined),
+	...(keyboardInset.value > 0 ? { paddingBottom: `${20 + keyboardInset.value}px` } : {}),
 }))
 
 /** Arrowhead triangle for the live line preview (arrow mode only). */
@@ -283,6 +300,7 @@ const boardExtentStyle = computed(() => {
 			</svg>
 		</section>
 		<EmptyPaneHint :empty="children.length === 0" />
+		<BoardOffEdgeHint v-if="!isEmbedded" :folder-id="folderId" :children="children" />
 	</div>
 	</FolderContainerCtxMenu>
 </template>

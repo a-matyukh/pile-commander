@@ -2,6 +2,16 @@ import { computed, type ComputedRef, type Ref } from 'vue'
 import type { BoardSnapSettings } from '@/services/board/layout'
 import type { EditorTool } from './drawing/types'
 
+/**
+ * Whether a card's edges and corners resize it. Only with the tools that
+ * arrange things. With Connect an edge belongs to its connection point: the
+ * resize zone runs right through the circle and took the press and the
+ * cursor. The pen, the lasso and the eraser use a press for their own work.
+ */
+export function canvas_tool_resizes(tool: EditorTool): boolean {
+	return tool === 'hand' || tool === 'select'
+}
+
 /** Vue Flow interaction flags derived from the active editor tool. */
 export function useCanvasToolFlags(
 	tool: Ref<EditorTool>,

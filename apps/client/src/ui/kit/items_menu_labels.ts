@@ -35,6 +35,7 @@ const ITEMS: Record<string, [key: string, icon: string]> = {
 	'Suggest names': ['suggest_names', 'tabler:wand'],
 	'Toolbar': ['toolbar', 'tabler:tools'],
 	'Hide': ['hide', 'tabler:eye-off'],
+	'Classic toolbar': ['toolbar_classic', 'tabler:layout-navbar'],
 	'Compact view': ['compact', 'tabler:layout-navbar-collapse'],
 	'Compact': ['dashboard_compact', 'tabler:arrows-vertical'],
 	'Column width': ['column_width', 'tabler:columns-3'],

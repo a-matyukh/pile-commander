@@ -29,6 +29,11 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useFolderPaneActions } from '../useFolderPaneActions'
 import FolderContainerCtxMenu from '@/ui/workspace/menu/FolderContainerCtxMenu.vue'
 import CanvasDrawingToolbar from './CanvasDrawingToolbar.vue'
+import CanvasDock from './dock/CanvasDock.vue'
+import type { DockZoomAction } from './dock/canvasDockItems'
+import { default_canvas_tool } from './canvasDefaultTool'
+import { useCanvasSpacePan } from './useCanvasSpacePan'
+import { nextCanvasFlowId } from './canvasFlowId'
 import { useCanvasNodes } from './useCanvasNodes'
 import { useCanvasConnections } from './useCanvasConnections'
 import { useCanvasStrokes } from './useCanvasStrokes'
@@ -57,7 +62,7 @@ import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { t } from '@/i18n'
-import { record_action } from '@/store/history'
+import { history, record_action } from '@/store/history'
 import { setExternalDropPositionResolver } from '../externalDropPosition'
 import {
 	registerPaneEditingNoteSetter,
@@ -69,23 +74,15 @@ import { PEN_CURSOR } from './drawing/cursors'
 import { isCanvasToolAllowed, useCanvasToolbarPrefs } from './useCanvasToolbarPrefs'
 import { clearCanvasToolbarInset, setCanvasToolbarInset } from './canvasToolbarInset'
 import { useHoverClickMenu } from './useHoverClickMenu'
+import { useRevealEditingNote } from '../revealEditingNote'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
 const isMdUp = useMediaQuery('(min-width: 768px)')
 const toolbarCompact = computed(() => isEmbedded || !isMdUp.value)
 const toolbarPrefs = useCanvasToolbarPrefs()
 
-/**
- * Unique per Canvas instance so nested folder previews don't share the parent Vue Flow store.
- * Must be a valid HTML/SVG id: folder paths contain `/` and spaces, and an invalid
- * `url(#pattern-…)` fill paints solid black in WebKit (Tauri) when grid dots remount.
- */
-function toSafeFlowId(id: string): string {
-	const safe = encodeURIComponent(id || 'root').replace(/%/g, '_')
-	return `canvas-${safe}`
-}
-
-const flowId = toSafeFlowId(folderId.value)
+// Its own Vue Flow store: a nested folder preview never shares its parent's
+const flowId = nextCanvasFlowId()
 
 provide(widgetLayoutModeKey, 'canvas')
 
@@ -95,10 +92,34 @@ const flowStore = ref<VueFlowStore | null>(null)
 const flowWrapper = ref<HTMLElement | null>(null)
 const paneEl = ref<HTMLElement | null>(null)
 
-const { tool, penColor, penWidth, hoveredNodeId } = useCanvasToolState()
-
 const workspace = useWorkspace()
 const can_write = computed(() => workspace.value?.can_write !== false)
+const isCoarsePointer = useMediaQuery('(pointer: coarse)')
+
+/** The tool this canvas opens with, and comes back to when its toolbar is shown again */
+function defaultTool(): EditorTool {
+	return default_canvas_tool({
+		can_write: can_write.value,
+		hidden: toolbarPrefs.value.hidden,
+		embedded: isEmbedded,
+		coarse: isCoarsePointer.value,
+	})
+}
+
+const { tool, penColor, penWidth, hoveredNodeId } = useCanvasToolState(defaultTool())
+
+const { held: spaceHeld } = useCanvasSpacePan({
+	enabled: () => !isEmbedded && !toolbarPrefs.value.hidden,
+	area: flowWrapper,
+})
+/** Space is held and there is a tool to step away from: a drag moves the canvas */
+const spacePan = computed(() => spaceHeld.value && tool.value !== 'hand')
+/**
+ * The tool at work: Hand while Space is held. `tool` stays the person's
+ * choice, so what a change of tool resets (the selection) is left alone.
+ */
+const activeTool = computed<EditorTool>(() => (spacePan.value ? 'hand' : tool.value))
+
 const toolbarHost = ref<ComponentPublicInstance | null>(null)
 
 function toolbarElement(): HTMLElement | null {
@@ -108,7 +129,8 @@ function toolbarElement(): HTMLElement | null {
 
 function publishToolbarInset() {
 	const id = folderId.value
-	const onTop = toolbarPrefs.value.side === 'top'
+	const onTop = toolbarPrefs.value.classic
+		&& toolbarPrefs.value.side === 'top'
 		&& !toolbarPrefs.value.hidden
 		&& can_write.value
 	const el = toolbarElement()
@@ -129,7 +151,7 @@ watch(toolbarHost, (host, _, onCleanup) => {
 }, { flush: 'post' })
 
 watch(
-	() => [toolbarPrefs.value.side, toolbarPrefs.value.hidden, can_write.value, folderId.value] as const,
+	() => [toolbarPrefs.value.side, toolbarPrefs.value.hidden, can_write.value, folderId.value, toolbarPrefs.value.classic] as const,
 	(current, previous) => {
 		const prevId = previous?.[3]
 		if (prevId && prevId !== current[3]) clearCanvasToolbarInset(prevId)
@@ -152,7 +174,8 @@ function on_tool_update(next: EditorTool) {
 watch(
 	() => toolbarPrefs.value.hidden,
 	(hidden) => {
-		if (hidden) tool.value = 'hand'
+		// Hidden is always Hand; shown again, the canvas is as it opens
+		tool.value = hidden ? 'hand' : defaultTool()
 	},
 )
 
@@ -181,7 +204,7 @@ useMoveSelectedWidgets({
 
 provideEditingNoteId(editingNoteId)
 provide(boardSnapSettingsKey, boardSnapSettings)
-provide(canvasEditorToolKey, tool)
+provide(canvasEditorToolKey, activeTool)
 
 const showGridDots = computed(() => container.value?.show_grid_dots ?? true)
 const showAxes = computed(() => container.value?.show_axes ?? false)
@@ -327,7 +350,8 @@ const {
 	// shallowRef<Edge[]> (TS2589 shield) → the structural FlowEdgeLike view
 	edges: edges as unknown as Ref<FlowEdgeLike[]>,
 	editingNoteId,
-	tool,
+	tool: activeTool,
+	panOnly: spacePan,
 	boardSnapSettings,
 	deleteStrokes,
 })
@@ -339,11 +363,25 @@ const {
 	removeNodes,
 	setViewport,
 	fitView,
+	zoomIn,
+	zoomOut,
+	zoomTo,
 	userSelectionRect,
 	nodes,
 } = useVueFlow(flowId)
 
 provide(canvasZoomKey, () => viewport.value.zoom || 1)
+
+// A note opened for typing on a phone stays above the keyboard
+useRevealEditingNote({
+	editingNoteId,
+	paneElement: () => flowWrapper.value,
+	pan: (dx, dy) => {
+		const { x, y, zoom } = viewport.value
+		void setViewport({ x: x + dx, y: y + dy, zoom })
+	},
+	enabled: () => !isEmbedded,
+})
 
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
 
@@ -367,6 +405,42 @@ function fitToView() {
 	void fitView({ padding: 0.2 })
 	closeZoomMenuIfCoarse()
 }
+
+function on_dock_zoom(action: DockZoomAction) {
+	if (action === 'in') void zoomIn()
+	else if (action === 'out') void zoomOut()
+	else if (action === 'fit') void fitView({ padding: 0.2 })
+	// Around the middle of what is on screen: the picture stays where it is
+	else void zoomTo(1)
+}
+
+/** A note or a connection's label is being typed */
+const editingText = computed(() => editingNoteId.value !== null || editingEdgeId.value !== null)
+
+/**
+ * The panel's buttons do not take the focus (the next Space must move the
+ * canvas, not press them), so a tool picked there ends the typing itself, as
+ * a click anywhere else does.
+ */
+function on_dock_tool(next: EditorTool) {
+	if (editingText.value && document.activeElement instanceof HTMLElement) document.activeElement.blur()
+	on_tool_update(next)
+}
+
+const canUndo = computed(() => history.can_undo && !editingText.value)
+const canRedo = computed(() => history.can_redo && !editingText.value)
+
+// Text being typed has its own undo: the panel's buttons leave it alone
+function on_undo() {
+	if (!editingText.value) void history.undo()
+}
+
+function on_redo() {
+	if (!editingText.value) void history.redo()
+}
+
+/** A phone's keyboard is up: the panel gets out of the way of what is being typed */
+const dockTucked = computed(() => isCoarsePointer.value && editingText.value)
 
 /** Single screen→flow mapping for drawing, pane clicks, and the context menu. */
 function toFlowCoords(event: { clientX: number; clientY: number }): Position {
@@ -420,25 +494,47 @@ const {
 	resolvePosition: toFlowCoords,
 })
 
-// T arms one text block for the next click on empty pane. Only the hand and
-// select tools click on the pane; with the pen or the lasso a click is a stroke.
+/**
+ * T arms one text block for the next click on empty pane, whatever the tool.
+ * Hand and Select leave a click on the pane free. With the other tools a
+ * click is the tool's own (a stroke, a lasso, a connection), so the canvas
+ * steps to the tool it opens with. Escape or T again brings that tool back;
+ * a placed text does not.
+ */
+let toolBeforeText: EditorTool | null = null
 const textPlace = useTextPlaceMode({
 	isEmbedded,
-	canArm: () => isHandTool.value || isSelectTool.value,
+	beforeArm: () => {
+		if (tool.value === 'hand' || tool.value === 'select') return
+		toolBeforeText = tool.value
+		tool.value = defaultTool()
+	},
 })
 
-// One placement tool at a time: arming a line, picking a shape or switching to
-// another tool drops the text one.
+// One placement tool at a time: arming a line, picking a shape or choosing a
+// tool that uses the click itself drops the text one.
 watch(() => lineDraw.armed.value, (kind) => {
 	if (kind) textPlace.disarm()
 })
 watch(textPlace.armed, (armed) => {
-	if (armed) lineDraw.disarm()
+	if (armed) {
+		lineDraw.disarm()
+		return
+	}
+	// Given up, not placed: back to the tool T stepped away from
+	const back = toolBeforeText
+	toolBeforeText = null
+	if (back) tool.value = back
 })
 watch(boardPlacementTemplate, (template) => {
 	if (template) textPlace.disarm()
 })
-watch(tool, () => textPlace.disarm())
+watch(tool, (next) => {
+	if (next === 'hand' || next === 'select') return
+	// Another tool chosen while T was armed: that choice stands
+	toolBeforeText = null
+	textPlace.disarm()
+})
 
 const viewportSnapshot = computed<BoardViewport>(() => ({
 	x: viewport.value.x,
@@ -450,7 +546,7 @@ const paneFill = useResolvedFill(folderId, () => container.value?.background)
 const canvasStyle = computed(() => backgroundStyle(paneFill.value, defaultViewBackground))
 const flowWrapperStyle = computed(() => ({
 	...canvasStyle.value,
-	...(tool.value === 'pen' && !lineDraw.armed.value ? { cursor: PEN_CURSOR } : {}),
+	...(activeTool.value === 'pen' && !lineDraw.armed.value ? { cursor: PEN_CURSOR } : {}),
 }))
 
 const {
@@ -465,7 +561,7 @@ const {
 	strokeNodes,
 	widgetNodes,
 	edges: edges as unknown as Ref<FlowEdgeLike[]>,
-	tool,
+	tool: activeTool,
 	penColor,
 	penWidth,
 	applyStrokeSelection,
@@ -509,7 +605,7 @@ const {
 	deleteSelectedStrokes,
 } = useCanvasNodeInteractions({
 	folderId,
-	tool,
+	tool: activeTool,
 	hoveredNodeId,
 	isStrokeDragging,
 	isWidgetDragging,
@@ -619,9 +715,13 @@ watch(tool, (next) => {
 
 async function onPaneClick(event: MouseEvent) {
 	if (!pressOnEmptyCanvas) return
+	// Space is held to move the canvas: a click then leaves the selection alone
+	if (spacePan.value) return
 	if (isDrawTool.value || isLassoTool.value) return
 	if (lineDraw.armed.value) return
 	if (textPlace.armed.value) {
+		// Placed: the canvas stays with the tool the text was placed with
+		toolBeforeText = null
 		textPlace.disarm()
 		await createTextAt(event)
 		return
@@ -637,6 +737,7 @@ function isEmptyCanvasTarget(target: Element) {
 	if (target.closest('.vue-flow__controls')) return false
 	if (target.closest('.canvas-zoom-readout')) return false
 	if (target.closest('.canvas-drawing-toolbar')) return false
+	if (target.closest('.canvas-dock')) return false
 	return Boolean(
 		target.closest('.vue-flow__pane')
 		|| target.closest('.vue-flow__background'),
@@ -676,6 +777,7 @@ function onSectionPointerDown(event: PointerEvent) {
 	<FolderContainerCtxMenu :disabled="!can_write" :position="contextMenuPosition">
 		<section
 			class="canvas-section"
+			:class="{ 'canvas-section--embedded': isEmbedded }"
 			:style="canvasStyle"
 			:data-path="folderId"
 			@dblclick="onSectionDblClick"
@@ -684,6 +786,7 @@ function onSectionPointerDown(event: PointerEvent) {
 		>
 			<PileImagePending :folder_id="folderId" role="background" />
 			<CanvasDrawingToolbar
+				v-if="toolbarPrefs.classic"
 				ref="toolbarHost"
 				v-show="!toolbarPrefs.hidden && can_write"
 				:tool="tool"
@@ -704,7 +807,7 @@ function onSectionPointerDown(event: PointerEvent) {
 			<div
 				ref="flowWrapper"
 				class="canvas-flow-wrapper"
-				:class="{ 'canvas-flow-wrapper--pen': tool === 'pen' && !lineDraw.armed.value }"
+				:class="{ 'canvas-flow-wrapper--pen': activeTool === 'pen' && !lineDraw.armed.value }"
 				:style="flowWrapperStyle"
 				@pointerdown.capture="onFlowPointerDown"
 			>
@@ -713,7 +816,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:nodes="flowNodes"
 					v-model:edges="flowEdges"
 					class="canvas-flow"
-					:class="[`canvas-flow--${tool}`, { 'canvas-flow--embedded': isEmbedded, 'canvas-flow--text-place': textPlace.armed.value }]"
+					:class="[`canvas-flow--${activeTool}`, { 'canvas-flow--embedded': isEmbedded, 'canvas-flow--text-place': textPlace.armed.value, 'canvas-flow--space': spacePan }]"
 					:style="{ cursor: lineDraw.cursor.value || undefined }"
 					:node-types="nodeTypes"
 					:edge-types="edgeTypes"
@@ -721,7 +824,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:snap-grid="snapGrid"
 					:zoom-on-double-click="false"
 					:default-edge-options="{ type: 'labeled', interactionWidth: 20 }"
-					:nodes-draggable="(isHandTool || isSelectTool) && can_write"
+					:nodes-draggable="(isHandTool || isSelectTool) && can_write && !spacePan"
 					:select-nodes-on-drag="!isSelectTool"
 					:nodes-selectable="isSelectTool"
 					:elements-selectable="isSelectTool || isHandTool"
@@ -758,6 +861,7 @@ function onSectionPointerDown(event: PointerEvent) {
 						id="grid-dots"
 					/>
 					<div
+						v-if="toolbarPrefs.classic"
 						v-show="!toolbarPrefs.hidden"
 						ref="zoomMenuRef"
 						class="canvas-zoom-readout"
@@ -820,7 +924,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:viewport="viewportSnapshot"
 				/>
 				<DrawingPreview
-					v-if="tool === 'pen' || previewPath"
+					v-if="activeTool === 'pen' || previewPath"
 					:path-d="previewPath"
 					:is-dot="previewPointCount === 1"
 					:color="penColor"
@@ -828,7 +932,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:viewport="viewportSnapshot"
 				/>
 			<LassoPreview
-				v-if="tool === 'lasso' || lassoPath"
+				v-if="activeTool === 'lasso' || lassoPath"
 				:path-d="lassoPath"
 				:viewport="viewportSnapshot"
 			/>
@@ -841,6 +945,30 @@ function onSectionPointerDown(event: PointerEvent) {
 			/>
 			<EmptyPaneHint :empty="isCanvasEmpty" />
 			</div>
+			<CanvasDock
+				v-if="!toolbarPrefs.classic && !toolbarPrefs.hidden"
+				v-show="!dockTucked"
+				:tool="tool"
+				:space-pan="spacePan"
+				:zoom-percent="zoomPercent"
+				:can-write="can_write"
+				:embedded="isEmbedded"
+				:can-undo="canUndo"
+				:can-redo="canRedo"
+				:pen-color="penColor"
+				:pen-width="penWidth"
+				:selected-stroke-count="selectedStrokeCount"
+				:selected-connection="selectedConnection"
+				@update:tool="on_dock_tool"
+				@update:pen-color="penColor = $event"
+				@update:pen-width="penWidth = $event"
+				@delete-selected="deleteSelectedStrokes"
+				@update-connection="on_update_connection"
+				@delete-connection="on_delete_connection"
+				@zoom="on_dock_zoom"
+				@undo="on_undo"
+				@redo="on_redo"
+			/>
 		</section>
 	</FolderContainerCtxMenu>
 </template>
@@ -888,6 +1016,18 @@ function onSectionPointerDown(event: PointerEvent) {
 	cursor: crosshair;
 }
 
+/* What the lasso selected can be dragged at once: the hand says so. A note
+   being typed in keeps its text cursor. */
+.canvas-flow--lasso :deep(.vue-flow__node.selected:not(:has(.is_edit))),
+.canvas-flow--lasso :deep(.vue-flow__node.selected:not(:has(.is_edit)) *) {
+	cursor: grab !important;
+}
+
+.canvas-flow--lasso :deep(.vue-flow__node.selected.dragging),
+.canvas-flow--lasso :deep(.vue-flow__node.selected.dragging *) {
+	cursor: grabbing !important;
+}
+
 .canvas-flow--eraser {
 	cursor: pointer;
 }
@@ -911,6 +1051,29 @@ function onSectionPointerDown(event: PointerEvent) {
 
 .canvas-flow--connect {
 	cursor: crosshair;
+}
+
+/* Space is held: a drag moves the canvas from anywhere, so the hand shows over
+   cards too. The box around a group selection would take the drag otherwise. */
+.canvas-flow--space,
+.canvas-flow--space :deep(*) {
+	cursor: grab !important;
+}
+
+.canvas-flow--space:active,
+.canvas-flow--space:active :deep(*) {
+	cursor: grabbing !important;
+}
+
+/* A press on a card's edge moves the canvas too, it does not resize the card */
+.canvas-flow--space :deep(.vue-flow__resize-control) {
+	pointer-events: none;
+}
+
+/* Both: the rect inside sets its own pointer-events */
+.canvas-flow--space :deep(.vue-flow__nodesselection),
+.canvas-flow--space :deep(.vue-flow__nodesselection-rect) {
+	pointer-events: none;
 }
 
 /* T is armed: the next click on the pane drops a text block. The pane has its
@@ -976,6 +1139,23 @@ function onSectionPointerDown(event: PointerEvent) {
 .canvas-flow :deep(.vue-flow__node:has(.canvas-widget-node--line) .line-endpoint-handle),
 .canvas-flow :deep(.vue-flow__node:has(.canvas-widget-node--line) .canvas-handle) {
 	pointer-events: auto !important;
+}
+
+/* A folder preview shows its panel while the pointer is over it (of nested
+   previews, the innermost one), while its menu is open, and while its tool is
+   not Hand. A touch screen has no hover: there the panel is always shown. */
+@media (hover: hover) and (pointer: fine) {
+	.canvas-section--embedded > .canvas-dock {
+		visibility: hidden;
+		opacity: 0;
+	}
+
+	.canvas-section--embedded:hover:not(:has(.canvas-section:hover)) > .canvas-dock:not(.canvas-dock--unmeasured),
+	.canvas-section--embedded:focus-within:not(:has(.canvas-section:focus-within)) > .canvas-dock:not(.canvas-dock--unmeasured),
+	.canvas-section--embedded > .canvas-dock--pinned:not(.canvas-dock--unmeasured) {
+		visibility: visible;
+		opacity: 1;
+	}
 }
 
 .canvas-zoom-readout {

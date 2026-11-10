@@ -174,7 +174,9 @@ const showWidgetMenu = computed(() => ws.can_write)
  */
 const boardMenuProps = computed(() => ({
 	...props.menuProps,
-	...(isCanvas.value
+	// While a widget is being edited (interactions off), a held finger
+	// selects its text: no menu then either
+	...(isCanvas.value && props.interactionsEnabled
 		? {}
 		: {
 			// Max 32-bit setTimeout delay (~24.8d). Infinity is unreliable in browsers.

@@ -15,6 +15,7 @@ import {
 	canvasZoomKey,
 } from '../injectKeys'
 import type { CanvasNodeData } from './useCanvasNodes'
+import { canvas_tool_resizes } from './useCanvasToolFlags'
 import type { LineEndpointLiveLayout } from '../shape/useLineEndpointDrag'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
 import { is_shape_widget, is_text_widget } from '@/services/board/layout'
@@ -59,13 +60,16 @@ const showLineEndpoints = computed(
 	() => isLine.value && isSelected.value && workspace.value?.can_write !== false,
 )
 const isText = computed(() => is_text_widget(props.data.widget))
+/** No resize zones with Connect and the drawing tools: see canvas_tool_resizes */
+const toolResizes = computed(() => canvas_tool_resizes(tool.value))
 // A text block's height follows its text, so it has no corner and no vertical
 // handle: the left and right handles change the width, once it is selected.
 const showResize = computed(
-	() => !isLine.value && !isText.value && !isEditingThis.value && workspace.value?.can_write !== false,
+	() => toolResizes.value && !isLine.value && !isText.value && !isEditingThis.value && workspace.value?.can_write !== false,
 )
 const showTextResize = computed(
-	() => isText.value
+	() => toolResizes.value
+		&& isText.value
 		&& isSelected.value
 		&& !isEditingThis.value
 		&& workspace.value?.can_write !== false,
@@ -92,6 +96,8 @@ function handleResizeStart({ params }: OnResizeStart) {
 
 function handleResize({ params }: OnResize) {
 	onNodeResizeLive(props.id, {
+		x: params.x,
+		y: params.y,
 		width: params.width,
 		height: params.height,
 	})
@@ -99,6 +105,8 @@ function handleResize({ params }: OnResize) {
 
 function handleResizeEnd({ params }: OnResizeEnd) {
 	onNodeResizeEnd(props.id, {
+		x: params.x,
+		y: params.y,
 		width: params.width,
 		height: params.height,
 	})
@@ -108,6 +116,15 @@ function handleResizeEnd({ params }: OnResizeEnd) {
 function getZoom() {
 	return getCanvasZoom()
 }
+
+/*
+ * The resize hit zones live inside the zoomed node, so their CSS sizes are
+ * divided by the zoom: on screen they stay the same few pixels around the
+ * node's real border at any zoom.
+ */
+const resizeHitStyle = computed(() => ({
+	'--pc-resize-inv-zoom': String(1 / (getCanvasZoom() || 1)),
+}))
 
 function getCanvasPosition() {
 	return { x: props.position.x, y: props.position.y }
@@ -136,6 +153,7 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 			'canvas-widget-node--connect': showConnectHandles,
 			'canvas-widget-node--line': isLine,
 		}"
+		:style="resizeHitStyle"
 	>
 		<Handle
 			id="top-target"
@@ -187,6 +205,7 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 		/>
 		<NodeResizer
 			v-if="showResize"
+			:auto-scale="false"
 			:min-width="100"
 			:min-height="50"
 			:line-style="{ opacity: 0, borderWidth: 0 }"
@@ -312,29 +331,47 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 	background: #dbeafe;
 }
 
+/*
+ * Resize hit zones straddle the node's real border, sized in screen pixels
+ * (see resizeHitStyle): edges resize one side, corners two. The side being
+ * dragged is the side that moves.
+ */
+.canvas-widget-node {
+	--pc-resize-edge: calc(8px * var(--pc-resize-inv-zoom, 1));
+	--pc-resize-corner: calc(14px * var(--pc-resize-inv-zoom, 1));
+}
+
+@media (pointer: coarse) {
+	.canvas-widget-node {
+		--pc-resize-edge: calc(16px * var(--pc-resize-inv-zoom, 1));
+		--pc-resize-corner: calc(28px * var(--pc-resize-inv-zoom, 1));
+	}
+}
+
 .canvas-widget-node :deep(.vue-flow__resize-control.line) {
 	border-color: transparent;
 	z-index: 5;
 	touch-action: none;
 }
 
-/*
- * Large invisible hit targets above widget content so touch can grab them.
- * Bottom-right matches board's 50×50 corner handle.
- */
-.canvas-widget-node :deep(.vue-flow__resize-control.handle) {
-	width: 44px;
-	height: 44px;
+.canvas-widget-node :deep(.vue-flow__resize-control.line.left),
+.canvas-widget-node :deep(.vue-flow__resize-control.line.right) {
+	width: var(--pc-resize-edge);
+}
+
+.canvas-widget-node :deep(.vue-flow__resize-control.line.top),
+.canvas-widget-node :deep(.vue-flow__resize-control.line.bottom) {
+	height: var(--pc-resize-edge);
+}
+
+.canvas-widget-node :deep(.vue-flow__resize-control.handle:not(.text-resize-control)) {
+	width: var(--pc-resize-corner);
+	height: var(--pc-resize-corner);
 	opacity: 0;
 	background: transparent;
 	border-color: transparent;
 	z-index: 6;
 	touch-action: none;
-}
-
-.canvas-widget-node :deep(.vue-flow__resize-control.handle.bottom.right) {
-	width: 50px;
-	height: 50px;
 }
 
 /* A text block's side handles: a visible pill on the edge, in the middle. */
@@ -345,6 +382,8 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 	width: 18px;
 	height: 36px;
 	opacity: 1;
+	background: transparent;
+	border-color: transparent;
 	z-index: 6;
 	touch-action: none;
 }

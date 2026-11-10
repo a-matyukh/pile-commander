@@ -3,6 +3,8 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import {
 	absolute_from_origin,
 	board_content_extent,
+	board_quadrant_shift,
+	off_board_children,
 	board_position,
 	board_size,
 	image_shows_preview,
@@ -356,5 +358,24 @@ describe('snap_position', () => {
 			x: 20,
 			y: 20,
 		})
+	})
+})
+
+describe('off the board', () => {
+	test('board_quadrant_shift moves only the axis that is negative', () => {
+		expect(board_quadrant_shift([{ x: -100, y: 30 }, { x: 50, y: 60 }])).toEqual({ x: 120, y: 0 })
+		expect(board_quadrant_shift([{ x: 0, y: 0 }])).toEqual({ x: 0, y: 0 })
+	})
+
+	test('off_board_children are those left of or above the board', () => {
+		const child = (id: string, position?: { x: number; y: number }) =>
+			({ id, name: id, type: 'file', position }) as FolderContainerWidgetChild
+		const hidden = off_board_children([
+			child('a', { x: -1, y: 10 }),
+			child('b', { x: 10, y: -5 }),
+			child('c', { x: 0, y: 0 }),
+			child('d'),
+		])
+		expect(hidden.map(c => c.id)).toEqual(['a', 'b'])
 	})
 })

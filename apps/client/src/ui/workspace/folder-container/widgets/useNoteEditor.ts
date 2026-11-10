@@ -214,6 +214,7 @@ export function useNoteEditor(
 			lastTapAt = 0
 			event.preventDefault()
 			event.stopPropagation()
+			endMenuHold(event)
 			beginEditFromGesture({ x: event.clientX, y: event.clientY })
 			return
 		}
@@ -221,6 +222,21 @@ export function useNoteEditor(
 		lastTapAt = now
 		lastTapX = event.clientX
 		lastTapY = event.clientY
+	}
+
+	/**
+	 * The second tap's press started the widget menu's touch hold (the canvas
+	 * menu opens after holding a finger down). That hold ends on a pointerup
+	 * nobody stopped, and this one is stopped: without being told, the menu
+	 * would open over the note a moment after it opened for typing.
+	 */
+	function endMenuHold(event: PointerEvent) {
+		const from = event.currentTarget instanceof Element ? event.currentTarget : null
+		from?.dispatchEvent(new PointerEvent('pointercancel', {
+			bubbles: true,
+			pointerId: event.pointerId,
+			pointerType: event.pointerType,
+		}))
 	}
 
 	function onPointerCancel() {
