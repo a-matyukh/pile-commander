@@ -29,6 +29,7 @@ import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useFolderPaneActions } from '../useFolderPaneActions'
 import FolderContainerCtxMenu from '@/ui/workspace/menu/FolderContainerCtxMenu.vue'
 import CanvasDrawingToolbar from './CanvasDrawingToolbar.vue'
+import { nextCanvasFlowId } from './canvasFlowId'
 import { useCanvasNodes } from './useCanvasNodes'
 import { useCanvasConnections } from './useCanvasConnections'
 import { useCanvasStrokes } from './useCanvasStrokes'
@@ -75,17 +76,8 @@ const isMdUp = useMediaQuery('(min-width: 768px)')
 const toolbarCompact = computed(() => isEmbedded || !isMdUp.value)
 const toolbarPrefs = useCanvasToolbarPrefs()
 
-/**
- * Unique per Canvas instance so nested folder previews don't share the parent Vue Flow store.
- * Must be a valid HTML/SVG id: folder paths contain `/` and spaces, and an invalid
- * `url(#pattern-…)` fill paints solid black in WebKit (Tauri) when grid dots remount.
- */
-function toSafeFlowId(id: string): string {
-	const safe = encodeURIComponent(id || 'root').replace(/%/g, '_')
-	return `canvas-${safe}`
-}
-
-const flowId = toSafeFlowId(folderId.value)
+// Its own Vue Flow store: a nested folder preview never shares its parent's
+const flowId = nextCanvasFlowId()
 
 provide(widgetLayoutModeKey, 'canvas')
 
