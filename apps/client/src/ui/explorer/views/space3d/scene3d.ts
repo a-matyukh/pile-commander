@@ -53,6 +53,7 @@ import { create_floor_grid, type FloorGrid } from './floor_grid'
 import { plan_detail, scale_for, start_scale, type FaceState } from './detail'
 import { MIN_HOME_SCALE, px_per_unit, start_frame } from './home'
 import { card_heights } from './stack'
+import { is_interrupted_error, page_visible } from '@/store/helpers/fsErrors'
 import type { LabelSpot, Scene3D, SceneFloor, SceneFrame, SceneItem, SceneOptions } from './types'
 
 /**
@@ -567,9 +568,20 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				spin.scale.setScalar(motion ? 0.001 : 1)
 				invalidate()
 			},
-			() => {
+			error => {
 				if (disposed || live.token !== token) return
 				live.cancel = null
+				// cut off while the page was in the background: the model is loaded again once it is back
+				if (is_interrupted_error(error)) {
+					void page_visible().then(() => {
+						if (disposed || live.token !== token) return
+						const { item, look, base, level } = live
+						remove(live)
+						create(item, look, base, level)
+						invalidate()
+					})
+					return
+				}
 				failed = true
 				share = null
 				later(live, icon_image('tabler:alert-triangle', COLORS.danger), image => {

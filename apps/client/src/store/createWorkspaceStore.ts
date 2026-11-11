@@ -115,7 +115,7 @@ import {
 	refresh_cached_folder,
 	reread_event,
 } from './helpers/refreshCachedFolder'
-import { is_missing_path_error } from './helpers/fsErrors'
+import { is_interrupted_error, is_missing_path_error, page_visible } from './helpers/fsErrors'
 import {
 	batch_fs_update_active,
 	run_batch_fs_update as run_batch_fs_update_impl,
@@ -2516,9 +2516,20 @@ export async function createWorkspaceStore(
 			try {
 				return await fm.read_text_file(id)
 			} catch (error) {
+				// A read the browser cut off (a phone sent the page to the
+				// background) is read again once the page is back: not an
+				// error to show, and an empty text must not stand for the note.
+				if (is_interrupted_error(error)) {
+					await page_visible()
+					try {
+						return await fm.read_text_file(id)
+					} catch (again) {
+						error = again
+					}
+				}
 				// A read that lost the race with a rename/move is benign —
 				// the widget remounts with the new id and re-reads.
-				if (!is_missing_path_error(error)) {
+				if (!is_missing_path_error(error) && !is_interrupted_error(error)) {
 					report_error(this, error)
 				}
 				return ''

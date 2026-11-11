@@ -1,6 +1,7 @@
 import type { WorkspaceStore } from '@/domain/Store'
 import { get_media_kind } from '@/services/board/media'
 import { media_cache_key } from '@/ui/workspace/folder-container/media/mediaSrcCache'
+import { is_interrupted_error, page_visible } from '@/store/helpers/fsErrors'
 
 /**
  * The content of the scene's pictures, models and notes. Pictures and models
@@ -51,8 +52,18 @@ export function create_scene_media(
 					hold.acquired = true
 					on_url(id, entry.url)
 				},
-				() => {
-					if (alive && held.get(id) === hold) on_url(id, false)
+				error => {
+					if (!alive || held.get(id) !== hold) return
+					// cut off while the page was in the background: asked again once it is back
+					if (is_interrupted_error(error)) {
+						void page_visible().then(() => {
+							if (!alive || held.get(id) !== hold) return
+							held.delete(id)
+							want_media(id, name, version)
+						})
+						return
+					}
+					on_url(id, false)
 				},
 			)
 	}

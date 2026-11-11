@@ -77,6 +77,21 @@ describe("the 3D scene's file contents", () => {
 		expect(ws.media_cache.getRefCount(media_cache_key(id, false))).toBe(1)
 	})
 
+	test('a read the browser cut off is asked again, not shown as missing', async () => {
+		const { ws, get_media_src } = workspace()
+		get_media_src.mockImplementationOnce(async () => {
+			throw new Error('resolve failed: /ws/sea.jpg (AbortError: Fetch is aborted)')
+		})
+		const urls: (string | false)[] = []
+		const media = create_scene_media(ws, (_, url) => urls.push(url), () => {})
+		media.want_media('/ws/sea.jpg', 'sea.jpg', 0)
+		await settle()
+		await settle()
+		expect(urls).toHaveLength(1)
+		expect(urls[0]).not.toBe(false)
+		expect(get_media_src).toHaveBeenCalledTimes(2)
+	})
+
 	test('a note changed elsewhere is read again', async () => {
 		const { ws, texts } = workspace()
 		const notes: string[] = []
