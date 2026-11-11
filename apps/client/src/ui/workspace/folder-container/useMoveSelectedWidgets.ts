@@ -22,6 +22,11 @@ type UseMoveSelectedWidgetsOptions = {
 	boardSnapSettings: MaybeRefOrGetter<BoardSnapSettings>
 	/** When false, keyboard handler is inactive (e.g. embedded folder previews). */
 	enabled?: MaybeRefOrGetter<boolean>
+	/**
+	 * The board keeps items in its non-negative quadrant (the default); the
+	 * canvas and 3D have no edge, so an item placed at x = -200 nudges to -201
+	 */
+	bounded?: boolean
 }
 
 const ARROW_DELTAS: Record<string, Position> = {
@@ -41,13 +46,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
 /**
  * Next positions for the selected children moved by (dx, dy) * step.
  * Widgets without a position xattr start from their board fallback slot;
- * results are clamped to the non-negative board quadrant.
+ * on the board (`bounded`) results are clamped to its non-negative quadrant.
  */
 export function compute_nudge_positions(
 	children: FolderContainerWidgetChild[],
 	selectedIds: readonly string[],
 	delta: Position,
 	step: number,
+	bounded = true,
 ): Array<{ id: string; position: Position }> {
 	const selected = new Set(selectedIds)
 	const moves: Array<{ id: string; position: Position }> = []
@@ -57,10 +63,8 @@ export function compute_nudge_positions(
 		if (!selected.has(widget.id)) continue
 
 		const current = board_position(widget, index)
-		const next = clampBoardPosition({
-			x: current.x + delta.x * step,
-			y: current.y + delta.y * step,
-		})
+		const moved = { x: current.x + delta.x * step, y: current.y + delta.y * step }
+		const next = bounded ? clampBoardPosition(moved) : moved
 		if (next.x === current.x && next.y === current.y) continue
 		moves.push({ id: widget.id, position: next })
 	}
@@ -97,6 +101,7 @@ export function useMoveSelectedWidgets(options: UseMoveSelectedWidgetsOptions) {
 			ws.selection,
 			delta,
 			nudgeStep(event),
+			options.bounded ?? true,
 		)
 		if (moves.length === 0) return
 

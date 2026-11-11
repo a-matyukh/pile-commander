@@ -51,6 +51,15 @@ describe('compute_nudge_positions', () => {
 		expect(moves).toEqual([{ id: 'a', position: { x: 0, y: 0 } }])
 	})
 
+	test('on the canvas and in 3D an item keeps going into the negative, and keeps its other coordinate', () => {
+		const left = compute_nudge_positions([widget('a', { x: -200, y: -40 })], ['a'], { x: -1, y: 0 }, 1, false)
+		expect(left).toEqual([{ id: 'a', position: { x: -201, y: -40 } }])
+		const down = compute_nudge_positions([widget('a', { x: -200, y: -40 })], ['a'], { x: 0, y: 1 }, 20, false)
+		expect(down).toEqual([{ id: 'a', position: { x: -200, y: -20 } }])
+		const off_zero = compute_nudge_positions([widget('a', { x: 3, y: 0 })], ['a'], { x: -1, y: -1 }, 20, false)
+		expect(off_zero).toEqual([{ id: 'a', position: { x: -17, y: -20 } }])
+	})
+
 	test('skips widgets already pinned to the moved edge', () => {
 		const moves = compute_nudge_positions(
 			[widget('a', { x: 0, y: 5 })],

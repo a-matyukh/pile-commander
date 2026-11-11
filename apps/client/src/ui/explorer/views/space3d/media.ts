@@ -7,23 +7,35 @@ import { media_cache_key } from '@/ui/workspace/folder-container/media/mediaSrcC
  * come from the workspace's media cache, which the board's tiles share: what
  * a tile loaded is not loaded again. A picture takes its preview (a texture
  * needs no original), a model its original. Each is held while its item is in
- * the scene and released when it leaves.
+ * the scene and released when it leaves. A file whose bytes change under the
+ * same id (saved in another app, replaced in the cloud) is loaded again, as
+ * the board's tiles do.
  */
 export function create_scene_media(
 	ws: WorkspaceStore,
 	on_url: (id: string, url: string | false) => void,
 	on_note: (id: string, text: string) => void,
 ) {
-	const held = new Map<string, { key: string; acquired: boolean }>()
+	/** One hold per file; a newer one replaces it, and the older one's late answer is let go */
+	const held = new Map<string, { key: string; version: number; acquired: boolean }>()
 	const notes = new Map<string, () => void>()
 	let alive = true
 
-	/** A picture's or a model's URL; `false` when it cannot be had */
-	function want_media(id: string, name: string) {
-		if (held.has(id)) return
+	/**
+	 * A picture's or a model's URL; `false` when it cannot be had. `version`
+	 * is the media cache's for the file (`media_cache.version`): when it moves,
+	 * the old URL is let go and the file is loaded again
+	 */
+	function want_media(id: string, name: string, version: number) {
+		const current = held.get(id)
+		if (current?.version === version) return
+		if (current) {
+			held.delete(id)
+			if (current.acquired) ws.media_cache.release(current.key)
+		}
 		const preview = get_media_kind(name) === 'image'
 		const key = media_cache_key(id, preview)
-		const hold = { key, acquired: false }
+		const hold = { key, version, acquired: false }
 		held.set(id, hold)
 		ws.media_cache
 			.acquire(key, async () => {
@@ -45,17 +57,23 @@ export function create_scene_media(
 			)
 	}
 
-	/** A note's text, and again whenever it changes (an edit elsewhere) */
+	function read_note(id: string) {
+		ws.content_caches.notes.get(id, () => ws.read_note_content(id)).then(
+			text => { if (alive && notes.has(id)) on_note(id, text) },
+			() => { /* the card keeps what it showed, or the file's name as its title */ },
+		)
+	}
+
+	/** A note's text, and again whenever it changes: an edit here, or one elsewhere that drops the cached text */
 	function want_note(id: string) {
 		if (notes.has(id)) return
-		const cache = ws.content_caches.notes
-		notes.set(id, cache.subscribe(id, text => {
-			if (alive && text !== undefined) on_note(id, text)
+		notes.set(id, ws.content_caches.notes.subscribe(id, text => {
+			if (!alive) return
+			if (text !== undefined) on_note(id, text)
+			// dropped: the file changed elsewhere, read it again
+			else read_note(id)
 		}))
-		cache.get(id, () => ws.read_note_content(id)).then(
-			text => { if (alive && notes.has(id)) on_note(id, text) },
-			() => { /* the card keeps the file's name as its title */ },
-		)
+		read_note(id)
 	}
 
 	/** Lets go of what items no longer in the folder held */

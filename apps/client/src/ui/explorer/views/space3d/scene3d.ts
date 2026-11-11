@@ -25,6 +25,8 @@ import {
 	WebGLRenderer,
 	type Material,
 	type Object3D,
+	type Skeleton,
+	type SkinnedMesh,
 	type Texture,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -47,7 +49,7 @@ import {
 	type Painter,
 } from './paint'
 import { folder_shape, ring_geometry, rounded_rect, slab } from './shapes'
-import { dispose_tree, fit_model, load_model } from './models'
+import { dispose_tree, fit_model, load_model, release_models, retain_models } from './models'
 import { create_floor_grid, type FloorGrid } from './floor_grid'
 import { plan_detail, scale_for, start_scale, type FaceState } from './detail'
 import { MIN_HOME_SCALE, px_per_unit, start_frame } from './home'
@@ -114,6 +116,8 @@ type Live = {
 	faces: Face[]
 	/** The scale its faces are drawn at when they are made (detail.ts) */
 	level: number
+	/** Stops its model's download when the item is rebuilt or leaves */
+	cancel: (() => void) | null
 	/** Bumped on rebuild and removal, so late loads know they are stale */
 	token: number
 }
@@ -345,6 +349,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			appear: 1,
 			faces: [],
 			level,
+			cancel: null,
 			token: ++token_seq,
 		}
 		place(live)
@@ -360,6 +365,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	function remove(live: Live) {
 		live.token = ++token_seq
+		live.cancel?.()
+		live.cancel = null
 		world.remove(live.root)
 		dispose_live(live.root)
 		live.faces.forEach(f => f.dispose())
@@ -369,9 +376,13 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	/** Frees what an item made for itself; shared textures and materials stay */
 	function dispose_live(root: Object3D) {
+		const skeletons = new Set<Skeleton>()
 		root.traverse(object => {
 			const mesh = object as Mesh
 			if (!mesh.isMesh) return
+			// an animated model's bones live in a texture of their own
+			const skinned = object as SkinnedMesh
+			if (skinned.isSkinnedMesh) skeletons.add(skinned.skeleton)
 			mesh.geometry.dispose()
 			const materials: Material[] = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
 			for (const material of materials) {
@@ -383,6 +394,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				material.dispose()
 			}
 		})
+		for (const skeleton of skeletons) skeleton.dispose()
 	}
 
 	/** A flat card: the face drawn by `painter` on top, `side` around */
@@ -452,7 +464,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				return
 			}
 			const n = ++asked
-			later(live, load_picture(url, fw, fh, () => !disposed && live.token === token), found => {
+			later(live, load_picture(url, fw, fh, () => !disposed && live.token === token && n === asked), found => {
 				if (n !== asked || !found) return
 				picture = found.picture
 				full = found.full
@@ -518,6 +530,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		if (failed || !it.url) return
 		const token = live.token
 		let painted = 0
+		const loading = new AbortController()
+		live.cancel = () => loading.abort()
 		load_model(it.url, value => {
 			if (disposed || live.token !== token) return
 			share = value
@@ -526,12 +540,13 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			painted = now
 			repaint()
 			invalidate()
-		}, () => !disposed && live.token === token).then(
+		}, loading.signal).then(
 			model => {
 				if (disposed || live.token !== token) {
 					dispose_tree(model)
 					return
 				}
+				live.cancel = null
 				const w = it.w * U
 				const d = it.h * U
 				const { holder, size } = fit_model(model, w, d, Math.max(w, d) * 1.5)
@@ -555,6 +570,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			},
 			() => {
 				if (disposed || live.token !== token) return
+				live.cancel = null
 				failed = true
 				share = null
 				later(live, icon_image('tabler:alert-triangle', COLORS.danger), image => {
@@ -1200,6 +1216,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	resize_observer.observe(container)
 	resize()
 	update_floor()
+	// the model decoder lives while some scene does
+	retain_models()
 
 	return {
 		set_items,
@@ -1272,6 +1290,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			renderer.dispose()
 			renderer.forceContextLoss()
 			canvas.remove()
+			release_models()
 		},
 	}
 }

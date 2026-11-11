@@ -49,14 +49,16 @@ const media = create_scene_media(
 	(id, text) => notes.set(id, text),
 )
 
-// Each file's content is asked for once; what leaves the folder is let go
-watch(children, list => {
-	for (const child of list) {
+// Each file's content is asked for once, and again when its bytes change under
+// the same id (the media cache's version, as the board's tiles watch); what
+// leaves the folder is let go
+watch(() => children.value.map(child => [child, props.workspace.media_cache.version(child.id)] as const), list => {
+	for (const [child, version] of list) {
 		if (child.type !== 'file') continue
 		if (is_note_widget(child)) media.want_note(child.id)
-		else if (image_shows_preview(child) || get_media_kind(child.name) === 'model') media.want_media(child.id, child.name)
+		else if (image_shows_preview(child) || get_media_kind(child.name) === 'model') media.want_media(child.id, child.name, version)
 	}
-	media.keep_only(new Set(list.map(child => child.id)))
+	media.keep_only(new Set(list.map(([child]) => child.id)))
 }, { immediate: true })
 
 const scene_items = computed(() => to_scene_items(children.value, child => ({
@@ -147,6 +149,8 @@ useMoveSelectedWidgets({
 	editingNoteId: editing_note,
 	boardSnapSettings: snap,
 	enabled: () => props.workspace.can_write,
+	// 3D has no edge, as the canvas: an item placed in the negative stays there when nudged
+	bounded: false,
 })
 
 const toast = useToast()
