@@ -2,9 +2,11 @@ import {
 	BoxGeometry,
 	CircleGeometry,
 	DirectionalLight,
+	Frustum,
 	Group,
 	HemisphereLight,
 	MOUSE,
+	Matrix4,
 	Mesh,
 	MeshBasicMaterial,
 	MeshStandardMaterial,
@@ -15,6 +17,7 @@ import {
 	PMREMGenerator,
 	Raycaster,
 	Scene,
+	Sphere,
 	Spherical,
 	TOUCH,
 	Vector2,
@@ -29,10 +32,11 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import {
 	COLORS,
 	Face,
-	content_image,
 	darken,
+	fit_picture,
 	icon_image,
 	lighten,
+	load_picture,
 	paint_file,
 	paint_floor,
 	paint_folder,
@@ -45,6 +49,9 @@ import {
 import { folder_shape, ring_geometry, rounded_rect, slab } from './shapes'
 import { dispose_tree, fit_model, load_model } from './models'
 import { create_floor_grid, type FloorGrid } from './floor_grid'
+import { plan_detail, scale_for, start_scale, type FaceState } from './detail'
+import { MIN_HOME_SCALE, px_per_unit, start_frame } from './home'
+import { card_heights } from './stack'
 import type { LabelSpot, Scene3D, SceneFloor, SceneFrame, SceneItem, SceneOptions } from './types'
 
 /**
@@ -64,9 +71,6 @@ const FLY_MS = 650
 const INTO_MS = 420
 const ZOOM_MS = 220
 
-/** Default height of a card; each earlier card it overlaps lifts it one step more (px) */
-const CARD_HEIGHT = 14
-const STACK_STEP = 6
 const MAX_HEIGHT = 900
 /** Lift of a hovered or selected card, units */
 const LIFT = 0.08
@@ -77,6 +81,9 @@ const DEPTH = { note: 0.02, card: 0.03, folder: 0.07, status: 0.015, floor: 0.08
 const FLOOR_MARGIN = 80
 const FLOOR_MIN = { w: 520, h: 360 }
 const GRID_STEP = 40
+
+/** A picture's or a model's name shows under it once it is this wide on screen, CSS px: narrower, the name is cut to nothing */
+const LABEL_MIN = 64
 
 const CLICK_MOVE = 5
 const CLICK_MS = 500
@@ -105,6 +112,8 @@ type Live = {
 	spin: Group | null
 	appear: number
 	faces: Face[]
+	/** The scale its faces are drawn at when they are made (detail.ts) */
+	level: number
 	/** Bumped on rebuild and removal, so late loads know they are stale */
 	token: number
 }
@@ -164,7 +173,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	sun.position.set(3, 8, 5)
 	scene.add(sun)
 
-	const camera = new PerspectiveCamera(35, 16 / 9, 0.05, 400)
+	// the near plane sets how finely depth is told apart: cards a fraction of a px apart must not flicker
+	const camera = new PerspectiveCamera(35, 16 / 9, 0.1, 400)
 	const world = new Group()
 	scene.add(world)
 
@@ -232,7 +242,10 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		else last = 0
 	}
 
-	controls.addEventListener('change', invalidate)
+	controls.addEventListener('change', () => {
+		invalidate()
+		schedule_refine()
+	})
 	controls.addEventListener('start', () => {
 		away = true
 	})
@@ -241,36 +254,22 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	const look_of = (it: SceneItem) =>
 		JSON.stringify([it.kind, it.w, it.h, it.title, it.text, it.footer, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed])
 
-	const overlaps = (a: SceneItem, b: SceneItem) =>
-		Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 4 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 4
-
-	/** Height of an item's bottom: its own, or cards just over the floor and over the cards they cover */
-	function heights(items: SceneItem[]): Map<string, number> {
-		const out = new Map<string, number>()
-		items.forEach((it, i) => {
-			if (it.z !== null) out.set(it.key, it.z)
-			else if (it.kind === 'model') out.set(it.key, 0)
-			else {
-				let under = 0
-				for (let j = 0; j < i; j++) if (items[j].kind !== 'model' && overlaps(items[j], it)) under++
-				out.set(it.key, CARD_HEIGHT + STACK_STEP * under)
-			}
-		})
-		return out
-	}
-
 	function set_items(items: SceneItem[]) {
 		const keys = new Set(items.map(it => it.key))
 		for (const [key, live] of lives) if (!keys.has(key)) remove(live)
-		const base = heights(items)
+		const base = card_heights(items)
+		const fresh = items.filter(it => !lives.has(it.key))
+		const level = start_scale(fresh.reduce((sum, it) => sum + it.w * it.h, 0), texels_total(), BUDGET)
 		for (const it of items) {
 			const height = (base.get(it.key) ?? 0) * U
 			const live = lives.get(it.key)
 			const look = look_of(it)
-			if (!live) create({ ...it }, look, height)
+			if (!live) create({ ...it }, look, height, level)
 			else if (live.look !== look) {
+				// a rebuilt item keeps the sharpness it had: no blur for a frame
+				const kept = live.faces[0]?.s ?? live.level
 				remove(live)
-				create({ ...it }, look, height)
+				create({ ...it }, look, height, kept)
 			} else if (drag?.key !== it.key) {
 				live.item = { ...it }
 				live.base = height
@@ -286,6 +285,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			home(true)
 		}
 		invalidate()
+		schedule_refine()
 	}
 
 	function place(live: Live) {
@@ -293,7 +293,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		live.root.position.set((it.x + it.w / 2) * U, 0, (it.y + it.h / 2) * U)
 	}
 
-	function create(item: SceneItem, look: string, base: number) {
+	function create(item: SceneItem, look: string, base: number, level: number) {
 		const w = item.w * U
 		const h = item.h * U
 		const root = new Group()
@@ -344,6 +344,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			spin: null,
 			appear: 1,
 			faces: [],
+			level,
 			token: ++token_seq,
 		}
 		place(live)
@@ -387,11 +388,13 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	/** A flat card: the face drawn by `painter` on top, `side` around */
 	function card(live: Live, depth: number, radius_px: number, side: string, painter: Painter, transparent = false): Face {
 		const { w, h } = live.item
-		const face = new Face(w, h, anisotropy)
+		const face = new Face(w, h, anisotropy, live.level)
 		face.paint(painter)
 		live.faces.push(face)
+		const top = new MeshBasicMaterial({ map: face.texture, toneMapped: false, transparent })
+		face.bind(top)
 		const mesh = new Mesh(slab(rounded_rect(w * U, h * U, radius_px * U), w * U, h * U, depth), [
-			new MeshBasicMaterial({ map: face.texture, toneMapped: false, transparent }),
+			top,
 			new MeshStandardMaterial({ color: side, roughness: 0.85, transparent, opacity: transparent ? 0.6 : 1 }),
 		])
 		mesh.userData.key = live.item.key
@@ -420,10 +423,44 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	function build_image(live: Live) {
 		const it = live.item
 		const tone = it.tone ?? '#E6F1FB'
-		const face = card(live, DEPTH.card, 9, '#E6E4DF', paint_image({ picture: null, tone, icon: null }))
-		later(live, Promise.all([it.url ? content_image(it.url) : Promise.resolve(null), icon_image('tabler:photo', COLORS.secondary)]), ([picture, icon]) =>
-			face.paint(paint_image({ picture, tone, icon })),
-		)
+		let picture: HTMLCanvasElement | null = null
+		let icon: HTMLImageElement | null = null
+		const face = card(live, DEPTH.card, 9, '#E6E4DF', paint_image({ picture, tone, icon }))
+		const repaint = () => face.paint(paint_image({ picture, tone, icon }))
+		later(live, icon_image('tabler:photo', COLORS.secondary), image => {
+			icon = image
+			if (!picture) repaint()
+		})
+		const url = it.url
+		if (!url) return
+		const token = live.token
+		/** The copy has every pixel of the file: a sharper face cannot get a sharper picture */
+		let full = false
+		let asked = 0
+		// the picture's frame on the face, canvas px (paint_image leaves 5 px around it)
+		const want = () => {
+			const fw = Math.max(1, (it.w - 10) * face.s)
+			const fh = Math.max(1, (it.h - 10) * face.s)
+			if (picture && (full || Math.max(fw / picture.width, fh / picture.height) <= 1.02)) {
+				// sharp enough; a copy far larger than the face now needs gives its memory back
+				const fitted = fit_picture(picture, fw, fh)
+				if (fitted !== picture) {
+					picture = fitted
+					full = false
+					repaint()
+				}
+				return
+			}
+			const n = ++asked
+			later(live, load_picture(url, fw, fh, () => !disposed && live.token === token), found => {
+				if (n !== asked || !found) return
+				picture = found.picture
+				full = found.full
+				repaint()
+			})
+		}
+		face.rescaled = want
+		want()
 	}
 
 	function build_file(live: Live) {
@@ -443,14 +480,16 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		const base = fill ? darken(fill, 0.07) : tint ? lighten(tint, 0.5) : COLORS.folder
 		const flap = fill ?? (tint ? lighten(tint, 0.78) : COLORS.folder_flap)
 		const side = fill ? darken(fill, 0.16) : tint ? lighten(tint, 0.3) : COLORS.folder_side
-		const face = new Face(it.w, it.h, anisotropy)
+		const face = new Face(it.w, it.h, anisotropy, live.level)
 		const name = it.label ?? ''
 		face.paint(paint_folder({ base, flap, icon: null, tab_h: TAB, name, font: options.font }))
 		live.faces.push(face)
 		const w = it.w * U
 		const h = it.h * U
+		const top = new MeshBasicMaterial({ map: face.texture, toneMapped: false })
+		face.bind(top)
 		const mesh = new Mesh(slab(folder_shape(w, h, 0.07, TAB), w, h, DEPTH.folder), [
-			new MeshBasicMaterial({ map: face.texture, toneMapped: false }),
+			top,
 			new MeshStandardMaterial({ color: side, roughness: 0.85 }),
 		])
 		mesh.userData.key = it.key
@@ -487,7 +526,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			painted = now
 			repaint()
 			invalidate()
-		}).then(
+		}, () => !disposed && live.token === token).then(
 			model => {
 				if (disposed || live.token !== token) {
 					dispose_tree(model)
@@ -498,6 +537,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				const { holder, size } = fit_model(model, w, d, Math.max(w, d) * 1.5)
 				live.body.remove(status_mesh)
 				dispose_live(status_mesh)
+				live.faces = live.faces.filter(face => face !== status)
+				status.dispose()
 				const spin = new Group()
 				spin.add(holder)
 				live.body.add(spin)
@@ -621,6 +662,67 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		grid = null
 	}
 
+	// ── Detail: faces as sharp as they are seen (detail.ts) ──────────────
+	/** Canvas pixels all faces may hold together (each 4 bytes, on the GPU and in memory): less on a phone */
+	const BUDGET = window.matchMedia?.('(pointer: coarse)').matches ? 12e6 : 24e6
+	/** A round of redrawing stops after this long, or this many canvas pixels, and lets a frame show them */
+	const SLICE_MS = 10
+	const SLICE_TEXELS = 2e6
+	let refine_timer: ReturnType<typeof setTimeout> | undefined
+	const frustum = new Frustum()
+	const view_projection = new Matrix4()
+	const extent = new Sphere()
+
+	function texels_total(): number {
+		let total = 0
+		for (const live of lives.values()) for (const face of live.faces) total += face.texels
+		return total
+	}
+
+	/** Faces are drawn sharper or coarser once the camera has rested a moment */
+	function schedule_refine(ms = 250) {
+		clearTimeout(refine_timer)
+		refine_timer = setTimeout(refine, ms)
+	}
+
+	/** Device px per board px at `distance` from the camera */
+	function screen_scale(distance: number): number {
+		const px_per_unit = (view_h * renderer.getPixelRatio()) / (2 * Math.tan((camera.fov * DEG) / 2) * Math.max(distance, camera.near))
+		return px_per_unit * U
+	}
+
+	function refine() {
+		refine_timer = undefined
+		// a hidden tab waits for set_active; a flight or a drag, for its end
+		if (disposed || !active) return
+		if (fly || drag?.started) return schedule_refine()
+		camera.updateMatrixWorld()
+		frustum.setFromProjectionMatrix(view_projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+		const faces: (FaceState & { of: Face })[] = []
+		for (const live of lives.values()) {
+			if (!live.faces.length) continue
+			const center = item_center(live)
+			const distance = camera.position.distanceTo(center)
+			extent.set(center, (Math.hypot(live.item.w, live.item.h) * U) / 2)
+			// off screen it is only wanted at the coarsest: it gives way first when room runs out
+			const scale = scale_for(frustum.intersectsSphere(extent) ? screen_scale(distance) : 0)
+			for (const face of live.faces) {
+				faces.push({ of: face, texels: face.texels, texels_at: s => face.texels_at(s), scale: face.s, wanted: face.fit(scale), distance })
+			}
+		}
+		const start = performance.now()
+		let drawn = 0
+		for (const { face, scale } of plan_detail(faces, BUDGET)) {
+			if (drawn && (performance.now() - start > SLICE_MS || drawn > SLICE_TEXELS)) {
+				schedule_refine(16)
+				break
+			}
+			face.of.rescale(scale)
+			drawn += face.of.texels
+		}
+		if (drawn) invalidate()
+	}
+
 	// ── Animation of items ───────────────────────────────────────────────
 	function step_items(dt: number): boolean {
 		let busy = false
@@ -705,6 +807,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			apply_pose(to)
 			controls.update()
 			invalidate()
+			schedule_refine()
 			return Promise.resolve()
 		}
 		return new Promise(done => {
@@ -730,14 +833,26 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			fly = null
 			controls.enabled = true
 			controls.update()
+			schedule_refine()
 			f.done()
 		}
 		return true
 	}
 
+	/** The whole folder from the front; a folder too large for that starts at its top rows (home.ts) */
 	function home(instant = false) {
-		const pose = fit_pose(HOME_PHI)
-		controls.maxDistance = Math.max(8, pose.radius * 3)
+		const whole = fit_pose(HOME_PHI)
+		const b = layout_bounds()
+		controls.maxDistance = Math.max(8, whole.radius * 3)
+		// zoomed out all the way, the farthest corner of a large layout is still drawn
+		camera.far = Math.max(400, controls.maxDistance + Math.hypot(b.x1 - b.x0, b.y1 - b.y0) * U)
+		camera.updateProjectionMatrix()
+		const view = { fov: camera.fov * DEG, aspect: camera.aspect, height: view_h }
+		let pose = whole
+		if (px_per_unit(view, whole.radius) * U < MIN_HOME_SCALE) {
+			const start = start_frame({ x0: b.x0 * U, z0: b.y0 * U, x1: b.x1 * U, z1: b.y1 * U }, view, HOME_PHI, MIN_HOME_SCALE / U)
+			pose = { target: new Vector3(start.x, 0, start.z), radius: start.radius, phi: HOME_PHI, theta: 0 }
+		}
 		void fly_to(pose, FLY_MS, instant).then(() => {
 			away = false
 		})
@@ -1046,7 +1161,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			spot.x = (left.x + right.x) / 2
 			spot.y = Math.max(left.y, right.y)
 			spot.width = Math.abs(right.x - left.x)
-			spot.visible = left.ok && right.ok && spot.width > 34 && spot.x > -40 && spot.x < view_w + 40 && spot.y > -20 && spot.y < view_h + 20
+			spot.visible = left.ok && right.ok && spot.width > LABEL_MIN && spot.x > -40 && spot.x < view_w + 40 && spot.y > -20 && spot.y < view_h + 20
 			spot.covered = spot.visible && hits.length > 0 && covered(live, cx, y, cz + hd, hits)
 		}
 		frame.badge = null
@@ -1079,6 +1194,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			home(true)
 		} else if (homed && !away && !fly) home(true)
 		invalidate()
+		schedule_refine()
 	}
 	const resize_observer = new ResizeObserver(resize)
 	resize_observer.observe(container)
@@ -1112,8 +1228,10 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		fly_into,
 		set_active(on) {
 			active = on
-			if (on) invalidate()
-			else if (raf) {
+			if (on) {
+				invalidate()
+				schedule_refine()
+			} else if (raf) {
 				cancelAnimationFrame(raf)
 				raf = 0
 			}
@@ -1133,6 +1251,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			if (disposed) return
 			disposed = true
 			clearTimeout(long_press)
+			clearTimeout(refine_timer)
 			if (raf) cancelAnimationFrame(raf)
 			resize_observer.disconnect()
 			container.removeEventListener('pointerdown', on_pointer_down, { capture: true })

@@ -2,6 +2,7 @@ import { Box3, Group, Mesh, Vector3, type Material, type Object3D, type Texture 
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
+import { limiter } from './limiter'
 
 /**
  * Loading .glb/.gltf files. The Draco decoder is served from public/draco,
@@ -17,11 +18,19 @@ function gltf_loader(): GLTFLoader {
 	return loader
 }
 
-/** `on_progress` gets the loaded share, or null while the size is unknown */
-export async function load_model(url: string, on_progress: (share: number | null) => void): Promise<Object3D> {
-	const gltf = await gltf_loader().loadAsync(url, event => {
+/** Models loading at once: each takes the network, a decoder and memory; the rest wait their turn */
+const loads = limiter(3)
+
+/**
+ * `on_progress` gets the loaded share, or null while the size is unknown.
+ * `wanted` false skips a model still waiting for its turn (it left the
+ * scene): the promise then rejects
+ */
+export async function load_model(url: string, on_progress: (share: number | null) => void, wanted: () => boolean): Promise<Object3D> {
+	const gltf = await loads(() => gltf_loader().loadAsync(url, event => {
 		on_progress(event.lengthComputable && event.total ? event.loaded / event.total : null)
-	})
+	}), wanted)
+	if (!gltf) throw new Error('the model is no longer wanted')
 	return gltf.scene
 }
 

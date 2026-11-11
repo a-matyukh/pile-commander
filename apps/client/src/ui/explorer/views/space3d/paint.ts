@@ -1,5 +1,6 @@
 import { getIcon } from '@iconify/vue'
-import { CanvasTexture, SRGBColorSpace } from 'three'
+import { CanvasTexture, SRGBColorSpace, type MeshBasicMaterial } from 'three'
+import { limiter } from './limiter'
 
 /**
  * Card faces are drawn on canvases, in board pixels times a scale. Colors
@@ -28,37 +29,111 @@ export const COLORS = {
 
 export type Painter = (ctx: CanvasRenderingContext2D, W: number, H: number, s: number) => void
 
-/** The canvas behind one card face */
+/**
+ * The canvas behind one card face. It keeps what it was drawn with, so it
+ * can be drawn again at another resolution (see detail.ts)
+ */
 export class Face {
-	readonly texture: CanvasTexture
+	texture: CanvasTexture
 	/** Canvas pixels per board pixel */
-	readonly s: number
+	s: number
+	/** Board size of the face */
+	readonly w: number
+	readonly h: number
+	/** Called after the face changed its resolution: a picture on it may want a sharper copy */
+	rescaled: (() => void) | null = null
+	private readonly anisotropy: number
+	private readonly max_side: number
 	private readonly canvas: HTMLCanvasElement
 	private readonly ctx: CanvasRenderingContext2D
+	private painter: Painter | null = null
+	private material: MeshBasicMaterial | null = null
 
 	constructor(w: number, h: number, anisotropy: number, scale = SCALE, max_side = MAX_SIDE) {
-		this.s = Math.min(scale, max_side / Math.max(w, h, 1))
+		this.w = w
+		this.h = h
+		this.anisotropy = anisotropy
+		this.max_side = max_side
+		this.s = this.fit(scale)
 		this.canvas = document.createElement('canvas')
-		this.canvas.width = Math.max(2, Math.round(w * this.s))
-		this.canvas.height = Math.max(2, Math.round(h * this.s))
+		this.canvas.width = this.side(w)
+		this.canvas.height = this.side(h)
 		this.ctx = this.canvas.getContext('2d')!
-		this.texture = new CanvasTexture(this.canvas)
-		this.texture.colorSpace = SRGBColorSpace
-		this.texture.anisotropy = anisotropy
+		this.texture = this.make_texture()
+	}
+
+	/** `scale` as far as this face may go: its longest side stays within the largest canvas */
+	fit(scale: number): number {
+		return Math.min(scale, this.max_side / Math.max(this.w, this.h, 1))
+	}
+
+	/** Canvas pixels the face holds now */
+	get texels(): number {
+		return this.canvas.width * this.canvas.height
+	}
+
+	/** Canvas pixels it would hold at `scale` */
+	texels_at(scale: number): number {
+		const s = this.fit(scale)
+		return Math.max(2, Math.round(this.w * s)) * Math.max(2, Math.round(this.h * s))
+	}
+
+	/** The material that shows the face: it gets the new texture when the resolution changes */
+	bind(material: MeshBasicMaterial) {
+		this.material = material
 	}
 
 	paint(painter: Painter) {
-		const { ctx, canvas } = this
-		ctx.save()
-		ctx.clearRect(0, 0, canvas.width, canvas.height)
-		painter(ctx, canvas.width, canvas.height, this.s)
-		ctx.restore()
-		this.texture.needsUpdate = true
+		this.painter = painter
+		this.draw()
+	}
+
+	/**
+	 * Draws the face again at another resolution. three cannot change the size
+	 * of a texture it has sent to the GPU, so a new texture takes its place
+	 */
+	rescale(scale: number): boolean {
+		const s = this.fit(scale)
+		if (s === this.s) return false
+		this.s = s
+		this.canvas.width = this.side(this.w)
+		this.canvas.height = this.side(this.h)
+		const old = this.texture
+		this.texture = this.make_texture()
+		if (this.material) this.material.map = this.texture
+		old.dispose()
+		this.draw()
+		this.rescaled?.()
+		return true
 	}
 
 	dispose() {
 		this.texture.dispose()
 		this.canvas.width = this.canvas.height = 0
+		this.painter = null
+		this.material = null
+		this.rescaled = null
+	}
+
+	private side(board_px: number): number {
+		return Math.max(2, Math.round(board_px * this.s))
+	}
+
+	private make_texture(): CanvasTexture {
+		const texture = new CanvasTexture(this.canvas)
+		texture.colorSpace = SRGBColorSpace
+		texture.anisotropy = this.anisotropy
+		return texture
+	}
+
+	private draw() {
+		const { ctx, canvas, painter } = this
+		if (!painter) return
+		ctx.save()
+		ctx.clearRect(0, 0, canvas.width, canvas.height)
+		painter(ctx, canvas.width, canvas.height, this.s)
+		ctx.restore()
+		this.texture.needsUpdate = true
 	}
 }
 
@@ -89,16 +164,62 @@ export function icon_image(name: string, color: string): Promise<HTMLImageElemen
 	return image
 }
 
-const pictures = new Map<string, Promise<HTMLImageElement | null>>()
+/** Big photos decoded at once: each takes its full size in memory while it is decoded */
+const decodes = limiter(3)
 
-/** A file's picture, kept for the session */
-export function content_image(url: string): Promise<HTMLImageElement | null> {
-	let image = pictures.get(url)
-	if (!image) {
-		image = load_image(url)
-		pictures.set(url, image)
+/**
+ * A file's picture, only as large as a w×h frame needs it when the picture
+ * fills the frame: a big photo is decoded, copied at that size and let go.
+ * `full`: the copy has all the pixels the file has. null when it cannot be
+ * had: the file is gone or not a picture, or it comes from another site
+ * that does not allow drawing it (a canvas with such a picture cannot go to
+ * the GPU). `wanted` false skips a picture still waiting for its turn
+ */
+export function load_picture(url: string, w: number, h: number, wanted: () => boolean): Promise<{ picture: HTMLCanvasElement; full: boolean } | null> {
+	return decodes(async () => {
+		const image = new Image()
+		image.crossOrigin = 'anonymous'
+		image.decoding = 'async'
+		image.src = url
+		try {
+			await image.decode()
+		} catch {
+			return null
+		}
+		const nw = image.naturalWidth
+		const nh = image.naturalHeight
+		if (!nw || !nh) return null
+		const k = Math.min(1, Math.max(w / nw, h / nh))
+		return { picture: shrink(image, nw, nh, Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))), full: k === 1 }
+	}, wanted).then(found => found ?? null)
+}
+
+/** A smaller copy of a picture that is more than twice as large as a w×h frame needs; the same picture otherwise */
+export function fit_picture(picture: HTMLCanvasElement, w: number, h: number): HTMLCanvasElement {
+	const k = Math.max(w / picture.width, h / picture.height)
+	if (k >= 0.5) return picture
+	return shrink(picture, picture.width, picture.height, Math.max(1, Math.round(picture.width * k)), Math.max(1, Math.round(picture.height * k)))
+}
+
+/** Down to tw×th in halving steps: one big step skips pixels and a photo turns grainy */
+function shrink(source: CanvasImageSource, sw: number, sh: number, tw: number, th: number): HTMLCanvasElement {
+	let from = source
+	while (sw / 2 >= tw && sh / 2 >= th) {
+		sw = Math.round(sw / 2)
+		sh = Math.round(sh / 2)
+		from = draw_at(from, sw, sh)
 	}
-	return image
+	return draw_at(from, tw, th)
+}
+
+function draw_at(source: CanvasImageSource, w: number, h: number): HTMLCanvasElement {
+	const canvas = document.createElement('canvas')
+	canvas.width = w
+	canvas.height = h
+	const ctx = canvas.getContext('2d')!
+	ctx.imageSmoothingQuality = 'high'
+	ctx.drawImage(source, 0, 0, w, h)
+	return canvas
 }
 
 function load_image(src: string): Promise<HTMLImageElement | null> {
@@ -210,7 +331,7 @@ function ellipsis_fit(ctx: CanvasRenderingContext2D, text: string, max_width: nu
 }
 
 /** A photo card: the picture in a thin white frame */
-export function paint_image(o: { picture: HTMLImageElement | null; tone: string; icon: HTMLImageElement | null }): Painter {
+export function paint_image(o: { picture: HTMLCanvasElement | null; tone: string; icon: HTMLImageElement | null }): Painter {
 	return (ctx, W, H, s) => {
 		ctx.fillStyle = COLORS.card
 		ctx.fillRect(0, 0, W, H)
@@ -222,9 +343,9 @@ export function paint_image(o: { picture: HTMLImageElement | null; tone: string;
 		const ih = H - pad * 2
 		if (o.picture) {
 			// cover: fill the frame, cut the overflow
-			const k = Math.max(iw / o.picture.naturalWidth, ih / o.picture.naturalHeight)
-			const dw = o.picture.naturalWidth * k
-			const dh = o.picture.naturalHeight * k
+			const k = Math.max(iw / o.picture.width, ih / o.picture.height)
+			const dw = o.picture.width * k
+			const dh = o.picture.height * k
 			ctx.drawImage(o.picture, pad + (iw - dw) / 2, pad + (ih - dh) / 2, dw, dh)
 		} else {
 			ctx.fillStyle = o.tone

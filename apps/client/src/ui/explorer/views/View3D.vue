@@ -21,7 +21,7 @@ import { use_items } from './use_items'
 import { create_scene3d } from './space3d/scene3d'
 import { create_scene_media } from './space3d/media'
 import { to_scene_items } from './space3d/scene_items'
-import type { Scene3D, SceneFrame } from './space3d/types'
+import type { LabelSpot, Scene3D, SceneFrame } from './space3d/types'
 
 /**
  * "3D": the folder's board lies as a floor in space, its cards float over it
@@ -160,16 +160,50 @@ function label_ref(key: string, el: unknown) {
 	else labels.delete(key)
 }
 
+/** Boxes of the names placed this frame, CSS px */
+const placed: { x0: number; x1: number; y0: number; y1: number }[] = []
+
+/** A name's own width, measured once per text: a box as wide as its card would hide names that do not touch */
+const text_widths = new WeakMap<HTMLElement, { text: string; width: number }>()
+function text_width(el: HTMLElement): number {
+	const text = el.textContent ?? ''
+	const known = text_widths.get(el)
+	if (known?.text === text) return known.width
+	const width = el.scrollWidth
+	text_widths.set(el, { text, width })
+	return width
+}
+
+/**
+ * Names that would overlap (pictures side by side, or lying over each
+ * other on the board's default grid) are not drawn over each other: the
+ * selected one shows first, then the nearer one, lower on screen
+ */
 function on_frame(frame: SceneFrame) {
+	const ws = props.workspace
+	const shown: { el: HTMLElement; spot: LabelSpot; selected: boolean; text: number }[] = []
+	const hidden: HTMLElement[] = []
+	// widths are read before any style is written: one layout, not one per name
 	for (const [key, el] of labels) {
 		const spot = frame.labels.get(key)
-		if (!spot?.visible) {
+		if (spot?.visible) shown.push({ el, spot, selected: ws.is_selected(key), text: text_width(el) })
+		else hidden.push(el)
+	}
+	for (const el of hidden) el.style.visibility = 'hidden'
+	shown.sort((a, b) => Number(b.selected) - Number(a.selected) || b.spot.y - a.spot.y)
+	placed.length = 0
+	for (const { el, spot, selected, text } of shown) {
+		const width = Math.round(Math.max(48, Math.min(200, spot.width + 12)))
+		const half = Math.min(width, text) / 2
+		const box = { x0: spot.x - half, x1: spot.x + half, y0: spot.y + 4, y1: spot.y + 22 }
+		if (placed.some(p => box.x0 < p.x1 && p.x0 < box.x1 && box.y0 < p.y1 && p.y0 < box.y1)) {
 			el.style.visibility = 'hidden'
 			continue
 		}
+		placed.push(box)
 		el.style.visibility = 'visible'
-		el.style.opacity = spot.covered && !props.workspace.is_selected(key) ? '0.22' : ''
-		el.style.maxWidth = Math.round(Math.max(48, Math.min(200, spot.width + 12))) + 'px'
+		el.style.opacity = spot.covered && !selected ? '0.22' : ''
+		el.style.maxWidth = width + 'px'
 		el.style.transform = `translate(${spot.x.toFixed(1)}px, ${(spot.y + 4).toFixed(1)}px) translateX(-50%)`
 	}
 	const b = badge.value
