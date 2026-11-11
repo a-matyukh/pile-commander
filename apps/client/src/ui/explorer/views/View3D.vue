@@ -326,6 +326,11 @@ function open_as_board() {
 	position: absolute;
 	inset: 0;
 	overflow: hidden;
+	/* a double tap opens or focuses, it never selects the page's text (iOS) */
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
 	/* the canvas is transparent: the room around the floor is CSS */
 	background: radial-gradient(ellipse at 50% 32%, var(--ct) 0%, color-mix(in srgb, var(--ct) 93%, #33415c) 100%);
 }
