@@ -2,20 +2,15 @@
 useSeoMeta({
   title: "Vision",
   description:
-    "Long-term directions for Pile Commander: a 3D view of a folder and AI tools.",
+    "Long-term directions for Pile Commander: AI that brings ideas to a folder and sorts a pile.",
   ogTitle: "Vision — Pile Commander",
   ogDescription:
-    "Where the pile is going: a 3D view and AI tools.",
+    "Where the pile is going: AI ideas and sorting.",
   ogImage: "/app-icon.png",
   twitterCard: "summary",
 });
 
 const directions = [
-  {
-    scene: "space",
-    title: "A 3D view of a folder",
-    body: "Look through a folder in space. The same files — another view.",
-  },
   {
     scene: "ai",
     title: "AI: ideas and sorting",
@@ -42,8 +37,7 @@ const directions = [
           class="rounded-2xl border border-[var(--pc-gray-border)] bg-white p-3 sm:p-4"
         >
           <div class="aspect-[16/9] overflow-hidden rounded-xl">
-            <VisionSpace v-if="item.scene === 'space'" />
-            <VisionAi v-else-if="item.scene === 'ai'" />
+            <VisionAi v-if="item.scene === 'ai'" />
           </div>
           <h2 class="mt-4 px-2 text-lg font-semibold text-slate-900 sm:px-3">{{ item.title }}</h2>
           <p class="mt-2 px-2 pb-2 text-sm leading-relaxed text-slate-600 sm:px-3">{{ item.body }}</p>

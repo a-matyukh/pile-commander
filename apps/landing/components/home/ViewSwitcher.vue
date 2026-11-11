@@ -1,5 +1,5 @@
 <script setup lang="ts">
-type ViewId = "list" | "grid" | "board" | "canvas" | "stack" | "masonry" | "slides";
+type ViewId = "list" | "grid" | "board" | "canvas" | "3d" | "stack" | "masonry" | "slides";
 type Kind = "note" | "image" | "folder" | "markdown" | "video" | "model";
 /** x, y, w, h in % of the stage; r is rotation in degrees */
 type Box = { x: number; y: number; w: number; h: number; r?: number; hidden?: boolean };
@@ -20,6 +20,7 @@ const views: { id: ViewId; label: string; icon: string; caption: string }[] = [
   { id: "grid", label: "Gallery", icon: "i-tabler-layout-grid", caption: "Tiles, like any file manager. Folders keep their tab." },
   { id: "board", label: "Board", icon: "i-tabler-template", caption: "Place anything anywhere. Resize, leave space, snap to a grid if you like." },
   { id: "canvas", label: "Canvas", icon: "i-tabler-artboard", caption: "An infinite canvas. Connect things, draw over them, zoom from 20% to 400%." },
+  { id: "3d", label: "3D", icon: "i-tabler-3d-cube-sphere", caption: "The board in space: the same places, plus height. Models stand on it as real objects." },
   { id: "stack", label: "Stack", icon: "i-tabler-layout-rows", caption: "One column you reorder by dragging. Notes and media open inline." },
   { id: "masonry", label: "Masonry", icon: "i-tabler-layout-cards", caption: "A tiled wall. Tiles snap to a grid and can span it." },
   { id: "slides", label: "Slides", icon: "i-tabler-presentation", caption: "One piece at a time. On a cloud workspace, everyone lands on the same slide." },
@@ -27,17 +28,24 @@ const views: { id: ViewId; label: string; icon: string; caption: string }[] = [
 
 const SLIDE: Box = { x: 14, y: 7, w: 72, h: 78 };
 
+const board: Box[] = [
+  { x: 5, y: 8, w: 25, h: 32, r: -2 },
+  { x: 61, y: 6, w: 32, h: 42 },
+  { x: 35, y: 44, w: 19, h: 32 },
+  { x: 7, y: 54, w: 25, h: 38, r: 1.5 },
+  { x: 60, y: 56, w: 27, h: 36 },
+  { x: 36, y: 7, w: 20, h: 30, r: 2 },
+];
+
+/** How high each card floats in 3D, em; the model stands on the table */
+const LIFT = [1.6, 2.4, 1.2, 2, 1.4, 0];
+
 const layouts: Record<Exclude<ViewId, "slides">, Box[]> = {
   list: items.map((_, i) => ({ x: 4, y: 12 + i * 13.5, w: 92, h: 10.5 })),
   grid: items.map((_, i) => ({ x: 7.5 + (i % 3) * 30.5, y: 7 + Math.floor(i / 3) * 46, w: 24.5, h: 40 })),
-  board: [
-    { x: 5, y: 8, w: 25, h: 32, r: -2 },
-    { x: 61, y: 6, w: 32, h: 42 },
-    { x: 35, y: 44, w: 19, h: 32 },
-    { x: 7, y: 54, w: 25, h: 38, r: 1.5 },
-    { x: 60, y: 56, w: 27, h: 36 },
-    { x: 36, y: 7, w: 20, h: 30, r: 2 },
-  ],
+  board,
+  // 3D is the board in space: the very same places
+  "3d": board,
   canvas: [
     { x: 4, y: 38, w: 17, h: 24 },
     { x: 30, y: 8, w: 18, h: 26 },
@@ -94,15 +102,21 @@ function boxFor(i: number): Box {
 
 function styleFor(i: number) {
   const b = boxFor(i);
+  const lift = active.value === "3d" ? LIFT[i]! : 0;
   return {
     left: `${b.x}%`,
     top: `${b.y}%`,
     width: `${b.w}%`,
     height: `${b.h}%`,
-    transform: `rotate(${b.r ?? 0}deg)`,
+    transform: `translateZ(${lift}em) rotate(${b.r ?? 0}deg)`,
     opacity: b.hidden ? 0 : 1,
     transitionDelay: `${i * 35}ms`,
   };
+}
+
+/** In 3D a card's shadow stays on the table, under it */
+function shadowFor(i: number) {
+  return { transform: `translateZ(${-(active.value === "3d" ? LIFT[i]! : 0)}em)` };
 }
 
 function pick(id: ViewId) {
@@ -216,7 +230,13 @@ onMounted(() => {
         :class="active === 'canvas' ? 'home-dots bg-[var(--pc-gray-surface)]' : 'bg-[linear-gradient(160deg,hsl(215_40%_98%)_0%,hsl(210_36%_95%)_100%)]'"
         aria-hidden="true"
       >
-        <div class="home-scale absolute inset-0">
+        <div class="home-scale absolute inset-0" :class="{ 'home-tilt': active === '3d' }">
+        <!-- 3D: the board lies as a table -->
+        <div
+          class="home-table absolute inset-[3%] rounded-[1.2em] transition-opacity duration-500"
+          :class="active === '3d' ? 'opacity-100' : 'opacity-0'"
+        />
+
         <!-- List header -->
         <div
           class="absolute top-[3.5%] right-[4%] left-[4%] flex border-b border-[var(--pc-gray-border)] pb-[0.6em] text-[0.85em] font-medium text-slate-400 transition-opacity duration-300"
@@ -253,9 +273,16 @@ onMounted(() => {
         <div
           v-for="(item, i) in items"
           :key="item.id"
-          class="absolute transition-all duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
+          class="home-item absolute transition-all duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
           :style="styleFor(i)"
         >
+          <!-- 3D: its shadow on the table -->
+          <span
+            class="home-shadow absolute inset-[6%] rounded-[1em] transition-all duration-700"
+            :class="active === '3d' ? 'opacity-100' : 'opacity-0'"
+            :style="shadowFor(i)"
+          />
+
           <!-- Row -->
           <div
             class="absolute inset-0 flex items-center gap-[0.8em] rounded-[0.6em] px-[0.8em] transition-opacity duration-300"
@@ -413,6 +440,35 @@ onMounted(() => {
 /* cqw resolves against the stage, so the mock scales with its box */
 .home-scale {
   font-size: clamp(6px, 1.25cqw, 13px);
+}
+
+/* 3D: the plane tilts back, as the app's camera sees its table */
+.home-scale {
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* moved up and a little left: tilted back, the table's far half shrinks and the turn widens it to the right */
+.home-tilt {
+  transform: perspective(70em) translate(-1.5%, -8%) rotateX(44deg) rotateZ(-8deg) scale(0.82);
+}
+
+.home-item {
+  transform-style: preserve-3d;
+}
+
+.home-table {
+  border: 1px solid #e7e5df;
+  background-color: #fff;
+  background-image:
+    linear-gradient(to right, rgb(15 23 42 / 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(15 23 42 / 0.07) 1px, transparent 1px);
+  background-size: 4% 6.4%;
+  box-shadow: 0 0.5em 0 #e7e5df, 0 2em 3em rgb(15 23 42 / 0.12);
+}
+
+.home-shadow {
+  background: radial-gradient(closest-side, rgb(15 23 42 / 0.22), transparent);
 }
 
 .home-dots {

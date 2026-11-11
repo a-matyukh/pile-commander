@@ -1,7 +1,10 @@
-// The three.js scene behind the "A 3D view of a folder" card on /vision.
-// Plain TS on purpose: this directory is not auto-imported by Nuxt, so three
-// ships only in the lazy chunk that VisionSpace loads on the client.
+// The three.js scene of the home page's 3D block: a folder's board as a
+// table, cards over it and a 3D model standing on it, as the app's 3D view
+// draws them. Plain TS on purpose: this directory is not auto-imported by
+// Nuxt, so three ships only in the lazy chunk that VisionSpace loads on the
+// client.
 import {
+  Box3,
   BoxGeometry,
   BufferGeometry,
   CanvasTexture,
@@ -29,6 +32,10 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+/** Our own model (a plant made of three.js primitives for the app's samples): free to show anywhere */
+const MODEL_URL = "/models/plant.glb";
 
 export interface SpaceSceneOptions {
   reducedMotion: boolean;
@@ -74,6 +81,12 @@ interface Item {
   /** Camera placement when focused on this item. */
   view: { phi: number; radius: number };
   spin?: number;
+  /** A model stands on the table, as in the app: it does not rise on hover */
+  stands?: boolean;
+  /** Height above its base the camera looks at when focused */
+  focusY?: number;
+  /** A model that just loaded grows in, 0 → 1 */
+  appear?: number;
 }
 
 function roundedRect(w: number, h: number, r: number): Shape {
@@ -181,34 +194,39 @@ export function createSpaceScene(container: HTMLElement, options: SpaceSceneOpti
   const BOARD_W = 8;
   const BOARD_H = 4.6;
   const BOARD_D = 0.1;
+  // The app's table: white, a fine neutral grid, light sides, a soft shadow under it
   const gridTex = canvasTexture(BOARD_W, BOARD_H, (ctx, W, H) => {
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = "rgba(33,130,248,0.18)";
+    ctx.strokeStyle = "rgba(15,23,42,0.075)";
     ctx.lineWidth = 3;
-    const cols = 8;
-    const rows = 4.5;
-    for (let i = 1; i < cols; i++) {
-      const x = Math.round((W / cols) * i) + 0.5;
+    const step = W / 20;
+    for (let x = step; x < W - 1; x += step) {
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, H);
+      ctx.moveTo(Math.round(x) + 0.5, 0);
+      ctx.lineTo(Math.round(x) + 0.5, H);
       ctx.stroke();
     }
-    for (let i = 1; i < rows; i++) {
-      const y = Math.round((H / rows) * i) + 0.5;
+    for (let y = step; y < H - 1; y += step) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
+      ctx.moveTo(0, Math.round(y) + 0.5);
+      ctx.lineTo(W, Math.round(y) + 0.5);
       ctx.stroke();
     }
   });
   const board = new Mesh(slabGeometry(BOARD_W, BOARD_H, 0.45, BOARD_D), [
-    new MeshBasicMaterial({ map: gridTex, transparent: true }),
-    new MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, roughness: 0.9 }),
+    new MeshBasicMaterial({ map: gridTex }),
+    new MeshStandardMaterial({ color: "#e7e5df", roughness: 0.9 }),
   ]);
   board.renderOrder = 0;
   rig.add(board);
+  const under = new Mesh(
+    new PlaneGeometry(BOARD_W * 1.16, BOARD_H * 1.3),
+    new MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0.55 }),
+  );
+  under.rotation.x = -Math.PI / 2;
+  under.position.y = -0.01;
+  rig.add(under);
   const deskY = BOARD_D;
 
   // ── Items ────────────────────────────────────────────────────────────
@@ -335,32 +353,68 @@ export function createSpaceScene(container: HTMLElement, options: SpaceSceneOpti
     },
   });
 
-  // The cube — a stand-in for a .glb shown in the folder.
+  // A 3D model standing on the table, as .glb files do in the app's 3D view.
+  // It loads after the first frame; if it cannot, the cube stands in for it.
   {
-    const size = 0.9;
     const group = new Group();
-    group.position.set(2.75, 1.35, -1.15);
-    // BoxGeometry face order: +x, -x, +y, -y, +z, -z (same shades as HomeCube).
-    const mats = ["#0ea5e9", "#0ea5e9", "#bae6fd", "#0369a1", "#7dd3fc", "#7dd3fc"].map(
-      (color) => new MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05 }),
-    );
-    const cube = new Mesh(new BoxGeometry(size, size, size), mats);
-    cube.rotation.y = 35 * DEG;
-    group.add(cube);
+    group.position.set(2.75, deskY, -1.15);
+    // the turning part: the model, or the cube
+    const holder = new Group();
+    group.add(holder);
     rig.add(group);
     const item: Item = {
       group,
-      baseY: 1.35,
-      bob: 0.22,
+      baseY: deskY,
+      bob: 0,
       phase: 0,
       lift: 0,
-      view: { phi: 62 * DEG, radius: 4.2 },
+      view: { phi: 58 * DEG, radius: 4.4 },
       spin: 0,
+      stands: true,
+      focusY: 0.7,
     };
-    cube.userData.item = item;
-    pickables.push(cube);
-    addShadow(item, 1.3, 1.3);
+    // what the pointer hits: an invisible box around the model
+    const proxy = new Mesh(new BoxGeometry(1.3, 1.7, 1.3), new MeshBasicMaterial({ visible: false }));
+    proxy.position.y = 0.85;
+    proxy.userData.item = item;
+    group.add(proxy);
+    pickables.push(proxy);
+    addShadow(item, 1.6, 1.6);
     items.push(item);
+
+    const cube = () => {
+      const size = 0.9;
+      // BoxGeometry face order: +x, -x, +y, -y, +z, -z (same shades as HomeCube).
+      const mats = ["#0ea5e9", "#0ea5e9", "#bae6fd", "#0369a1", "#7dd3fc", "#7dd3fc"].map(
+        (color) => new MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05 }),
+      );
+      const mesh = new Mesh(new BoxGeometry(size, size, size), mats);
+      mesh.position.y = size / 2;
+      mesh.rotation.y = 35 * DEG;
+      return mesh;
+    };
+
+    new GLTFLoader().loadAsync(MODEL_URL).then(
+      (gltf) => {
+        if (disposed) return;
+        // as large as fits a 1.3 × 1.3 spot and 1.7 tall, its bottom on the table
+        const model = gltf.scene;
+        const box = new Box3().setFromObject(model);
+        const size = box.getSize(new Vector3());
+        const center = box.getCenter(new Vector3());
+        const k = Math.min(1.3 / Math.max(size.x, 1e-6), 1.3 / Math.max(size.z, 1e-6), 1.7 / Math.max(size.y, 1e-6));
+        model.position.set(-center.x, -box.min.y, -center.z);
+        const fitted = new Group();
+        fitted.add(model);
+        fitted.scale.setScalar(k);
+        holder.add(fitted);
+        item.appear = reducedMotion ? 1 : 0;
+        holder.scale.setScalar(reducedMotion ? 1 : 0.001);
+      },
+      () => {
+        if (!disposed) holder.add(cube());
+      },
+    );
   }
 
   // ── Camera & controls ────────────────────────────────────────────────
@@ -440,7 +494,7 @@ export function createSpaceScene(container: HTMLElement, options: SpaceSceneOpti
     setAway(true);
     const target = new Vector3();
     item.group.getWorldPosition(target);
-    target.y = rig.localToWorld(new Vector3(0, item.baseY, 0)).y;
+    target.y = rig.localToWorld(new Vector3(0, item.baseY + (item.focusY ?? 0), 0)).y;
     const theta = rig.rotation.y + item.group.rotation.y;
     const position = new Vector3()
       .setFromSpherical(new Spherical(item.view.radius, item.view.phi, theta))
@@ -578,10 +632,14 @@ export function createSpaceScene(container: HTMLElement, options: SpaceSceneOpti
     const t = now / 1000;
 
     for (const item of items) {
-      const liftTarget = item === hovered || item === focused ? 0.22 : 0;
+      const liftTarget = !item.stands && (item === hovered || item === focused) ? 0.22 : 0;
       item.lift += (liftTarget - item.lift) * Math.min(1, dt * 10);
-      const rise = reducedMotion ? 0 : 0.5 - 0.5 * Math.cos((t / BOB_PERIOD) * Math.PI * 2 + item.phase);
+      const rise = reducedMotion || !item.bob ? 0 : 0.5 - 0.5 * Math.cos((t / BOB_PERIOD) * Math.PI * 2 + item.phase);
       item.group.position.y = item.baseY + item.bob * rise + item.lift;
+      if (item.appear !== undefined && item.appear < 1) {
+        item.appear = Math.min(1, item.appear + dt * 3);
+        item.group.children[0]!.scale.setScalar(Math.max(0.001, 1 - (1 - item.appear) ** 3));
+      }
       if (item.shadow) {
         const k = rise + item.lift * 2;
         item.shadow.scale.setScalar(1 - 0.18 * k);
@@ -592,11 +650,11 @@ export function createSpaceScene(container: HTMLElement, options: SpaceSceneOpti
         mat.opacity += ((item === hovered && item !== focused ? 0.9 : 0) - mat.opacity) * Math.min(1, dt * 12);
       }
       if (item.spin !== undefined) {
-        const cube = item.group.children[0]!;
-        // A click spins the cube fast; it settles back to the slow orbit.
+        const turning = item.group.children[0]!;
+        // A click spins the model fast; it settles back to the slow turn.
         item.spin += (0 - item.spin) * Math.min(1, dt * 1.2);
-        const base = reducedMotion ? 0 : (Math.PI * 2) / 9;
-        cube.rotation.y += dt * (base + item.spin * 9);
+        const base = reducedMotion ? 0 : (Math.PI * 2) / 14;
+        turning.rotation.y += dt * (base + item.spin * 6);
       }
     }
 

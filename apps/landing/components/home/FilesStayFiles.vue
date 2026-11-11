@@ -54,6 +54,7 @@ function stopCompare() {
     eyebrow="Files stay files"
     title="Your board is a folder. Your folder is a board."
     lede="In the desktop app you open a real folder on your disk. There is no library to import into and no database to get locked into."
+    muted
   >
     <div class="grid items-stretch gap-4 lg:grid-cols-[1fr_auto_1fr]">
       <!-- The folder, as the OS sees it -->

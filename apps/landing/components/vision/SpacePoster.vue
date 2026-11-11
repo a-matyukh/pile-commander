@@ -21,8 +21,15 @@
         </div>
 
       </div>
-      <div class="cube-float">
-        <HomeCube />
+      <!-- the model the scene loads: a plant in a clay pot, standing on the table -->
+      <div class="plant">
+        <span class="leaf leaf-1" />
+        <span class="leaf leaf-2" />
+        <span class="leaf leaf-3" />
+        <span class="leaf leaf-4" />
+        <span class="leaf leaf-5" />
+        <span class="pot" />
+        <span class="plant-shadow" />
       </div>
     </div>
   </div>
@@ -53,19 +60,20 @@
   transform-origin: 50% 78%;
 }
 
+/* the app's table: white, a fine neutral grid, a light edge */
 .space-floor {
   position: absolute;
   inset: 0;
-  border: 1px solid rgb(255 255 255 / 0.9);
+  border: 1px solid #e7e5df;
   border-radius: 1.1rem;
-  background-color: rgb(255 255 255 / 0.58);
+  background-color: #fff;
   background-image:
-    linear-gradient(to right, rgb(33 130 248 / 0.16) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(33 130 248 / 0.16) 1px, transparent 1px);
-  background-size: 12.5% 22%;
+    linear-gradient(to right, rgb(15 23 42 / 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(15 23 42 / 0.07) 1px, transparent 1px);
+  background-size: 5% 8.7%;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.85),
-    0 1.4rem 2rem rgb(15 23 42 / 0.06);
+    0 0.35rem 0 #e7e5df,
+    0 1.6rem 2.2rem rgb(15 23 42 / 0.1);
 }
 
 
@@ -101,11 +109,60 @@
   transform: translateZ(2px);
 }
 
-.cube-float {
+.plant {
   position: absolute;
-  top: 14%;
-  right: 14%;
-  font-size: clamp(16px, 2.8cqw, 28px);
+  top: 17%;
+  right: 15%;
+  width: 4.4em;
+  height: 5.4em;
+  font-size: clamp(12px, 2.2cqw, 24px);
+}
+
+.pot {
+  position: absolute;
+  bottom: 0;
+  left: 26%;
+  width: 48%;
+  height: 34%;
+  background: linear-gradient(to right, #c04e28, #d85a30 40%, #b44822);
+  clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+}
+
+.pot::before {
+  content: "";
+  position: absolute;
+  inset: 0 -4% auto;
+  height: 16%;
+  background: #c04e28;
+}
+
+.leaf {
+  position: absolute;
+  bottom: 28%;
+  left: 50%;
+  width: 1.05em;
+  height: 2.9em;
+  margin-left: -0.525em;
+  border-radius: 50%;
+  background: linear-gradient(to right, #178a64, #2fb37f);
+  transform-origin: 50% 100%;
+}
+
+.leaf-1 { transform: rotate(-52deg) scale(0.86); }
+.leaf-2 { transform: rotate(-24deg); background: #1d9e75; }
+.leaf-3 { transform: rotate(4deg) scale(1.08); }
+.leaf-4 { transform: rotate(30deg); background: #178a64; }
+.leaf-5 { transform: rotate(56deg) scale(0.84); background: #2fb37f; }
+
+.plant-shadow {
+  position: absolute;
+  bottom: -0.35em;
+  left: 12%;
+  width: 76%;
+  height: 0.8em;
+  border-radius: 50%;
+  background: radial-gradient(rgb(15 23 42 / 0.22), transparent 70%);
+  z-index: -1;
 }
 
 .card {
@@ -165,9 +222,6 @@
     animation-delay: -1.8s;
   }
 
-  .cube-float {
-    animation: cube-bob 5.6s ease-in-out infinite;
-  }
 }
 
 @keyframes space-rise {
@@ -178,17 +232,6 @@
 
   50% {
     transform: translateZ(calc(var(--z) + 3.2cqw)) rotateZ(var(--r, 0deg));
-  }
-}
-
-@keyframes cube-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-0.7em);
   }
 }
 
