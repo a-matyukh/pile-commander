@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { board_position, DEFAULT_SIZE, IMAGE_DEFAULT_SIZE, NOTE_DEFAULT_SIZE } from '@/services/board/layout'
-import { note_face, plain_line, to_scene_items, type ItemLook } from './scene_items'
+import { note_lines, plain_line, to_scene_items, type ItemLook } from './scene_items'
 
 type FileChild = Extract<FolderContainerWidgetChild, { type: 'file' }>
 
@@ -53,10 +53,15 @@ describe('what the 3D scene draws for a folder', () => {
 		expect(odd.fill).toBeNull()
 	})
 
-	test('a note shown on the board is a card with its first lines, on its own color', () => {
+	test('a note shown on the board is a card with its text as the board shows it, on its own color', () => {
 		const note = file('Plan.md', { is_preview: true, background: '#FFF1B8' })
 		const [item] = to_scene_items([note], look({ note: '# Plan for the week\n- buy a lamp\n- call **Anna**' }))
-		expect(item).toMatchObject({ kind: 'note', title: 'Plan for the week', text: 'buy a lamp call Anna', footer: 'Plan.md', paper: '#FFF1B8' })
+		expect(item).toMatchObject({ kind: 'note', paper: '#FFF1B8' })
+		expect(item.lines).toEqual([
+			{ text: 'Plan for the week', level: 1 },
+			{ text: '• buy a lamp', level: 0 },
+			{ text: '• call Anna', level: 0 },
+		])
 		expect({ w: item.w, h: item.h }).toEqual({ w: NOTE_DEFAULT_SIZE.width, h: NOTE_DEFAULT_SIZE.height })
 	})
 
@@ -113,13 +118,22 @@ describe('what the 3D scene draws for a folder', () => {
 })
 
 describe('a note card read from markdown', () => {
-	test('the first line is the title, the next ones one paragraph', () => {
-		expect(note_face('## Trip\nTbilisi, Kazbegi\n\nBatumi', 'trip.md')).toEqual({ title: 'Trip', text: 'Tbilisi, Kazbegi Batumi' })
+	test('lines stay lines: a heading larger, list marks kept, an empty line a gap', () => {
+		expect(note_lines('## Trip\nTbilisi, Kazbegi\n\n\nBatumi\n1. pack\n- [x] tickets\n- [ ] hotel\n> quiet')).toEqual([
+			{ text: 'Trip', level: 2 },
+			{ text: 'Tbilisi, Kazbegi', level: 0 },
+			{ text: '', level: 0, gap: true },
+			{ text: 'Batumi', level: 0 },
+			{ text: '1. pack', level: 0 },
+			{ text: '☑ tickets', level: 0 },
+			{ text: '☐ hotel', level: 0 },
+			{ text: 'quiet', level: 0 },
+		])
 	})
 
-	test('an empty or unread note is titled by its file name', () => {
-		expect(note_face(null, 'Ideas.md')).toEqual({ title: 'Ideas', text: '' })
-		expect(note_face('\n  \n', 'list.txt')).toEqual({ title: 'list', text: '' })
+	test('an empty or unread note is an empty card: no title made from its name', () => {
+		expect(note_lines(null)).toEqual([])
+		expect(note_lines('\n  \n')).toEqual([])
 	})
 
 	test('markdown marks go, links and pictures keep their text', () => {

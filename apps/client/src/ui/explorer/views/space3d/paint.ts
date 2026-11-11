@@ -319,40 +319,41 @@ function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 /** A sticker, like the board's: title, first lines, file name */
-export function paint_note(o: { title: string; text: string; footer: string; paper: string; font: string }): Painter {
+/** Type of a note's line in board px, as the board's note shows it (14 px text, line height 1.5) */
+const NOTE_TYPE = [
+	{ size: 14, weight: 400 },
+	{ size: 20, weight: 600 },
+	{ size: 17, weight: 600 },
+	{ size: 15, weight: 600 },
+]
+
+/** A note: its text as the board shows it, line after line until the card is full */
+export function paint_note(o: { lines: { text: string; level: number; gap?: boolean }[]; paper: string; font: string }): Painter {
 	return (ctx, W, H, s) => {
 		// the whole canvas: the rounded card cuts the corners
 		ctx.fillStyle = o.paper
 		ctx.fillRect(0, 0, W, H)
-		// the board's sticker is 104×96 with 11/10/9 px type: a larger card scales it up
-		const k = Math.max(1, Math.min(W / (104 * s), H / (96 * s))) * s
-		const pad_x = 10 * k
-		let y = 9 * k
+		const pad = 8 * s
+		const width = W - pad * 2
+		let y = pad
 		ctx.textBaseline = 'top'
 		ctx.fillStyle = COLORS.text
-		ctx.font = `600 ${11.5 * k}px ${o.font}`
-		for (const line of wrap(ctx, o.title, W - pad_x * 2, 2)) {
-			ctx.fillText(line, pad_x, y)
-			y += 14.5 * k
+		for (const line of o.lines) {
+			if (line.gap) {
+				y += 7 * s
+				continue
+			}
+			const type = NOTE_TYPE[line.level] ?? NOTE_TYPE[0]
+			const step = type.size * 1.5 * s
+			const room = Math.floor((H - pad - y) / step)
+			if (room <= 0) break
+			ctx.font = `${type.weight} ${type.size * s}px ${o.font}`
+			for (const part of wrap(ctx, line.text, width, room)) {
+				ctx.fillText(part, pad, y + (step - type.size * s) / 2)
+				y += step
+			}
 		}
-		y += 3 * k
-		const footer_h = 16 * k
-		const text_lines = Math.max(0, Math.floor((H - y - footer_h - 6 * k) / (13.5 * k)))
-		ctx.globalAlpha = 0.75
-		ctx.font = `400 ${10 * k}px ${o.font}`
-		for (const line of wrap(ctx, o.text, W - pad_x * 2, text_lines)) {
-			ctx.fillText(line, pad_x, y)
-			y += 13.5 * k
-		}
-		ctx.globalAlpha = 0.5
-		ctx.font = `400 ${9 * k}px ${o.font}`
-		ctx.fillText(ellipsis_fit(ctx, o.footer, W - pad_x * 2), pad_x, H - 8 * k - 9 * k)
-		ctx.globalAlpha = 1
 	}
-}
-
-function ellipsis_fit(ctx: CanvasRenderingContext2D, text: string, max_width: number) {
-	return ctx.measureText(text).width <= max_width ? text : ellipsis(ctx, text, max_width)
 }
 
 /** A photo card: the picture in a thin white frame */

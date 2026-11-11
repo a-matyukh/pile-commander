@@ -3,7 +3,7 @@ import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { board_position, board_size, image_shows_preview, is_note_widget } from '@/services/board/layout'
 import { get_media_kind } from '@/services/board/media'
 import { isImageBackground, resolveWidgetBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
-import type { SceneItem } from './types'
+import type { NoteLine, SceneItem } from './types'
 
 /**
  * What the scene draws for the open folder's items. Places and sizes are the
@@ -30,22 +30,51 @@ const TONES = ['#E6F1FB', '#FAECE7', '#E1F5EE', '#EEEDFE', '#FAEEDA', '#FBEAF0']
 
 const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7)
 
-/** A line of markdown as plain text: no heading, quote or list marks, no emphasis, links as their text */
-export function plain_line(line: string): string {
-	return line
-		.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/, '')
+/** Inline markdown as plain text: no emphasis or code marks, links and pictures as their text */
+function plain_inline(text: string): string {
+	return text
 		.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
 		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
 		.replace(/(\*\*|__|\*|_|~~|`)/g, '')
 		.trim()
 }
 
-/** A note's card: its first line as the title, the next ones as one paragraph */
-export function note_face(text: string | null, name: string): { title: string; text: string } {
-	const fallback = name.replace(/\.(md|txt)$/i, '')
-	const lines = (text ?? '').split('\n').map(plain_line).filter(Boolean)
-	if (!lines.length) return { title: fallback, text: '' }
-	return { title: lines[0].slice(0, 120), text: lines.slice(1).join(' ').slice(0, 400) }
+/** A line of markdown as plain text: no heading, quote or list marks, no emphasis, links as their text */
+export function plain_line(line: string): string {
+	return plain_inline(line.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/, ''))
+}
+
+/**
+ * A note's card, as the board shows the note: its lines as they are, a
+ * heading larger, a list item with its mark, an empty line a gap. No title
+ * is made up and no file name added: an empty note is an empty card
+ */
+export function note_lines(text: string | null, max = 40): NoteLine[] {
+	const out: NoteLine[] = []
+	for (const raw of (text ?? '').split('\n')) {
+		if (out.length >= max) break
+		if (!raw.trim()) {
+			if (out.length && !out[out.length - 1].gap) out.push({ text: '', level: 0, gap: true })
+			continue
+		}
+		const heading = /^\s*(#{1,6})\s+(.*)$/.exec(raw)
+		if (heading) {
+			out.push({ text: plain_inline(heading[2]), level: Math.min(3, heading[1].length) })
+			continue
+		}
+		const task = /^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/.exec(raw)
+		const bullet = /^\s*[-*+]\s+(.*)$/.exec(raw)
+		const ordered = /^\s*(\d+)[.)]\s+(.*)$/.exec(raw)
+		const quote = /^\s*>\s?(.*)$/.exec(raw)
+		const line = task ? `${task[1] === ' ' ? '☐' : '☑'} ${plain_inline(task[2])}`
+			: bullet ? `• ${plain_inline(bullet[1])}`
+			: ordered ? `${ordered[1]}. ${plain_inline(ordered[2])}`
+			: quote ? plain_inline(quote[1])
+			: plain_inline(raw)
+		out.push({ text: line, level: 0 })
+	}
+	while (out.length && out[out.length - 1].gap) out.pop()
+	return out
 }
 
 /** A folder cover's or a note's color; null for none or for a picture (a URL, a pile: token) */
@@ -75,8 +104,7 @@ export function to_scene_items(
 		const label = name ?? child.name
 		if (child.type !== 'file') return { ...base, kind: 'folder', tint: glyph.color ?? null, fill: cover_color(cover), icon: glyph.icon, label }
 		if (is_note_widget(child)) {
-			const face = note_face(note, child.name)
-			return { ...base, kind: 'note', title: face.title, text: face.text, footer: child.name, paper: paper(child) }
+			return { ...base, kind: 'note', lines: note_lines(note), paper: paper(child) }
 		}
 		if (image_shows_preview(child)) {
 			return { ...base, kind: 'image', url: url || null, tone: TONES[hash(child.name) % TONES.length], gif: /\.gif$/i.test(child.name) }

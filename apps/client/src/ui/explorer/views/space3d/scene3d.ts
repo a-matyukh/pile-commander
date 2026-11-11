@@ -256,7 +256,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	// ── Items ────────────────────────────────────────────────────────────
 	const look_of = (it: SceneItem) =>
-		JSON.stringify([it.kind, it.w, it.h, it.title, it.text, it.footer, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed, it.gif])
+		JSON.stringify([it.kind, it.w, it.h, it.lines, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed, it.gif])
 
 	function set_items(items: SceneItem[]) {
 		const keys = new Set(items.map(it => it.key))
@@ -429,7 +429,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	function build_note(live: Live) {
 		const it = live.item
 		const paper = it.paper ?? '#FFF1B8'
-		card(live, DEPTH.note, 6, darken(paper, 0.12), paint_note({ title: it.title ?? '', text: it.text ?? '', footer: it.footer ?? '', paper, font: options.font }))
+		card(live, DEPTH.note, 6, darken(paper, 0.12), paint_note({ lines: it.lines ?? [], paper, font: options.font }))
 	}
 
 	function build_image(live: Live) {

@@ -9,6 +9,9 @@ export type SceneKind = 'note' | 'image' | 'model' | 'folder' | 'file'
 /** A table the size of the layout, or a grid with no edge that fades in the distance */
 export type SceneFloor = 'table' | 'infinite'
 
+/** A line of a note's card: `level` 1–3 is a heading, 0 plain text; `gap` an empty line between paragraphs */
+export type NoteLine = { text: string; level: number; gap?: boolean }
+
 /** One item of the folder, as the scene draws it */
 export type SceneItem = {
 	key: string
@@ -20,10 +23,8 @@ export type SceneItem = {
 	h: number
 	/** Height of the item's bottom above the floor, px; null: the default for its kind */
 	z: number | null
-	/** note: first lines and the file name; `paper` is the note's color */
-	title?: string
-	text?: string
-	footer?: string
+	/** note: its text line by line, as the board shows it; `paper` is the note's color */
+	lines?: NoteLine[]
 	paper?: string
 	/** folder or file: its color, null for a plain one */
 	tint?: string | null
