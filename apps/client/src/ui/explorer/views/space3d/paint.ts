@@ -171,7 +171,7 @@ const decodes = limiter(3)
 
 /**
  * A file's picture, only as large as a w×h frame needs it when the picture
- * fills the frame: a big photo is decoded, copied at that size and let go.
+ * fits whole in the frame: a big photo is decoded, copied at that size and let go.
  * A GIF shows its fullest frame (gif.ts): many animations start empty.
  * `full`: the copy has all the pixels the file has. null when it cannot be
  * had: the file is gone or not a picture, or it comes from another site
@@ -184,7 +184,7 @@ export function load_picture(url: string, w: number, h: number, wanted: () => bo
 		if (!source) return null
 		const nw = source instanceof HTMLImageElement ? source.naturalWidth : source.width
 		const nh = source instanceof HTMLImageElement ? source.naturalHeight : source.height
-		const k = Math.min(1, Math.max(w / nw, h / nh))
+		const k = Math.min(1, w / nw, h / nh)
 		return { picture: shrink(source, nw, nh, Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))), full: k === 1 }
 	}, wanted).then(found => found ?? null)
 }
@@ -221,7 +221,7 @@ async function gif_frame(url: string): Promise<HTMLCanvasElement | null> {
 
 /** A smaller copy of a picture that is more than twice as large as a w×h frame needs; the same picture otherwise */
 export function fit_picture(picture: HTMLCanvasElement, w: number, h: number): HTMLCanvasElement {
-	const k = Math.max(w / picture.width, h / picture.height)
+	const k = Math.min(w / picture.width, h / picture.height)
 	if (k >= 0.5) return picture
 	return shrink(picture, picture.width, picture.height, Math.max(1, Math.round(picture.width * k)), Math.max(1, Math.round(picture.height * k)))
 }
@@ -367,8 +367,8 @@ export function paint_image(o: { picture: HTMLCanvasElement | null; tone: string
 		const iw = W - pad * 2
 		const ih = H - pad * 2
 		if (o.picture) {
-			// cover: fill the frame, cut the overflow
-			const k = Math.max(iw / o.picture.width, ih / o.picture.height)
+			// whole, as the board shows it (object-fit: contain): a picture resized there is not cut here
+			const k = Math.min(iw / o.picture.width, ih / o.picture.height)
 			const dw = o.picture.width * k
 			const dh = o.picture.height * k
 			ctx.drawImage(o.picture, pad + (iw - dw) / 2, pad + (ih - dh) / 2, dw, dh)

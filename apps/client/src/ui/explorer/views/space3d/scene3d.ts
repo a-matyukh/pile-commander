@@ -453,7 +453,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		const want = () => {
 			const fw = Math.max(1, (it.w - 10) * face.s)
 			const fh = Math.max(1, (it.h - 10) * face.s)
-			if (picture && (full || Math.max(fw / picture.width, fh / picture.height) <= 1.02)) {
+			if (picture && (full || Math.min(fw / picture.width, fh / picture.height) <= 1.02)) {
 				// sharp enough; a copy far larger than the face now needs gives its memory back
 				const fitted = fit_picture(picture, fw, fh)
 				if (fitted !== picture) {
