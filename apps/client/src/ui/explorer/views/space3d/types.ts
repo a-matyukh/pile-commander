@@ -6,6 +6,9 @@
 
 export type SceneKind = 'note' | 'image' | 'model' | 'folder' | 'file'
 
+/** A table the size of the layout, or a grid with no edge that fades in the distance */
+export type SceneFloor = 'table' | 'infinite'
+
 /** One item of the folder, as the scene draws it */
 export type SceneItem = {
 	key: string
@@ -53,6 +56,7 @@ export type SceneOptions = {
 	/** CSS font family of the app */
 	font: string
 	motion: boolean
+	floor: SceneFloor
 	/** Items can be dragged (not in a read-only folder) */
 	movable: boolean
 	text: { loading: string; failed: string }
@@ -78,6 +82,7 @@ export interface Scene3D {
 	set_selected(keys: readonly string[]): void
 	set_motion(on: boolean): void
 	set_movable(on: boolean): void
+	set_floor(floor: SceneFloor): void
 	/** The whole folder from the front; `instant` skips the flight */
 	home(instant?: boolean): void
 	/** Straight from above: the board as it is */

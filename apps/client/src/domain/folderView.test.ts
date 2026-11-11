@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { parse_xattr_value } from '@/services/workspace/xattrs'
-import { FOLDER_VIEWS, folder_view_from_stored, stored_folder_view } from './Widget'
+import { FOLDER_VIEWS, floor_3d_from_stored, folder_view_from_stored, stored_folder_view } from './Widget'
 
 describe('a folder view as stored', () => {
 	test('Gallery is stored as "gallery"; other views as their names', () => {
@@ -36,5 +36,16 @@ describe('a folder view as stored', () => {
 	test('none or anything unknown is a list', () => {
 		expect(folder_view_from_stored(undefined)).toBe('list')
 		expect(folder_view_from_stored('nope')).toBe('list')
+	})
+})
+
+describe("a 3D folder's floor as stored", () => {
+	test('the endless floor is "infinite"; none or anything else is the table', () => {
+		expect(floor_3d_from_stored('infinite')).toBe('infinite')
+		expect(floor_3d_from_stored(parse_xattr_value('infinite'))).toBe('infinite')
+		expect(floor_3d_from_stored('table')).toBe('table')
+		expect(floor_3d_from_stored(undefined)).toBe('table')
+		expect(floor_3d_from_stored('endless')).toBe('table')
+		expect(floor_3d_from_stored(1)).toBe('table')
 	})
 })

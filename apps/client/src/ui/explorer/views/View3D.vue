@@ -4,11 +4,12 @@ import { useDocumentVisibility, useEventListener, usePreferredReducedMotion } fr
 import { Icon } from '@iconify/vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
-import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
+import { floor_3d_from_stored, type FolderContainerWidget, type FolderContainerWidgetChild } from '@/domain/Widget'
 import { t } from '@/i18n'
 import { DEFAULT_GRID_SIZE, image_shows_preview, is_note_widget, snap_position } from '@/services/board/layout'
 import { get_media_kind } from '@/services/board/media'
 import { entries_label, record_action } from '@/store/history'
+import { explorer_settings, motion_3d_enabled } from '@/store/explorer/settings'
 import { entry_is_dimmed } from '@/store/hiddenPaths'
 import Button from '@/ui/kit/Button.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
@@ -181,9 +182,11 @@ function on_frame(frame: SceneFrame) {
 
 // ── The scene ────────────────────────────────────────────────────────────
 
-/** Until the setting comes, animations follow the system's reduced motion */
+/** Animations as the setting says: on, off, or as the system's reduced motion */
 const system_motion = usePreferredReducedMotion()
-const motion = computed(() => system_motion.value !== 'reduce')
+const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, system_motion.value === 'reduce'))
+/** The floor this folder has, chosen in the View menu */
+const floor = computed(() => floor_3d_from_stored(props.container.floor_3d))
 
 onMounted(() => {
 	if (!stage.value) return
@@ -191,6 +194,7 @@ onMounted(() => {
 		scene = create_scene3d(stage.value, {
 			font: getComputedStyle(stage.value).getPropertyValue('--font-sans').trim() || 'sans-serif',
 			motion: motion.value,
+			floor: floor.value,
 			movable: props.workspace.can_write,
 			text: { loading: t('v3d.loading'), failed: t('v3d.model_failed') },
 			on_select: select,
@@ -219,6 +223,7 @@ onBeforeUnmount(() => {
 watch(scene_items, list => scene?.set_items(list))
 watch(selected_here, ids => scene?.set_selected(ids))
 watch(motion, on => scene?.set_motion(on))
+watch(floor, mode => scene?.set_floor(mode))
 // a folder that turns read-only (a share taken away) stops moving at once
 watch(() => props.workspace.can_write, on => scene?.set_movable(on))
 

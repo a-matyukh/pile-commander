@@ -1268,6 +1268,27 @@ describe('createWorkspaceStore: watch', () => {
 		expect(store.folder_container.view).toBe('grid')
 	})
 
+	test("change_floor_3d keeps the folder's floor and writes only a change", async () => {
+		const { fake, store } = await makeStore()
+		await store.open_folder('/ws/pics')
+		const writes = vi.spyOn(fake.fm, 'set_xattr')
+
+		await store.change_floor_3d('/ws/pics', 'table')
+		expect(writes).not.toHaveBeenCalled()
+
+		await store.change_floor_3d('/ws/pics', 'infinite')
+		expect(fake.get_xattr('/ws/pics', 'floor_3d')).toBe('infinite')
+		expect(store.folder_container.floor_3d).toBe('infinite')
+
+		await store.change_floor_3d('/ws/pics', 'infinite')
+		expect(writes).toHaveBeenCalledTimes(1)
+
+		await store.change_floor_3d('/ws/pics', 'table')
+		expect(fake.get_xattr('/ws/pics', 'floor_3d')).toBe('table')
+		expect(store.folder_container.floor_3d).toBe('table')
+		writes.mockRestore()
+	})
+
 	test('change_folder_view clears the selection', async () => {
 		const { store } = await makeStore()
 		await store.open_folder('/ws/pics')

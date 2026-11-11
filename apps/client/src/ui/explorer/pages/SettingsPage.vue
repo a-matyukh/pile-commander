@@ -167,6 +167,17 @@ function submit_hidden_path() {
 				<SettingRow :title="t('settings.menu_shadow')" :description="t('settings.menu_shadow_d')">
 					<Switch v-model="explorer_settings.menu_shadow" />
 				</SettingRow>
+				<SettingRow :title="t('settings.motion_3d')" :description="t('settings.motion_3d_d')">
+					<Segmented
+						v-model="explorer_settings.motion_3d"
+						class="seg-row"
+						:options="[
+							{ value: 'system', label: t('settings.motion_system') },
+							{ value: 'on', label: t('settings.motion_on') },
+							{ value: 'off', label: t('settings.motion_off') },
+						]"
+					/>
+				</SettingRow>
 				<SettingRow :title="t('settings.footer')" :description="t('settings.footer_d')">
 					<ViewChoice
 						v-model="explorer_settings.footer_buttons"

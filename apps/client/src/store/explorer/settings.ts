@@ -34,6 +34,8 @@ export type ExplorerSettings = {
 	menu_animation: boolean
 	/** Menus cast a light shadow, as the current app's */
 	menu_shadow: boolean
+	/** The 3D view's camera flights, lifting cards and turning models: as the system's reduced motion says, or always on or off */
+	motion_3d: 'system' | 'on' | 'off'
 }
 
 export const EXPLORER_SETTINGS_KEY = 'pile_commander_explorer_settings'
@@ -57,11 +59,19 @@ export const EXPLORER_SETTINGS_DEFAULTS: ExplorerSettings = {
 	list_row: 32,
 	menu_animation: true,
 	menu_shadow: true,
+	motion_3d: 'system',
 }
 
 export const explorer_settings = toReactive<ExplorerSettings>(
 	useStorage<ExplorerSettings>(EXPLORER_SETTINGS_KEY, { ...EXPLORER_SETTINGS_DEFAULTS }, undefined, { mergeDefaults: true }),
 )
+
+/** Whether the 3D view animates; anything but "on" or "off" follows the system */
+export function motion_3d_enabled(setting: ExplorerSettings['motion_3d'] | undefined, reduced_motion: boolean): boolean {
+	if (setting === 'on') return true
+	if (setting === 'off') return false
+	return !reduced_motion
+}
 
 /** "Updates" is the desktop app's only: the web version updates itself */
 export const SETTINGS_TABS = ['interface', 'ai', 'other', 'updates'] as const

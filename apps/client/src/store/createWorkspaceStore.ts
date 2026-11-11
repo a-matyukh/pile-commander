@@ -82,6 +82,8 @@ import {
 	Connection,
 	FolderContainerWidgetChild,
 	DashboardCell,
+	Floor3D,
+	floor_3d_from_stored,
 	FolderView,
 	ImageBase64,
 	ModelCameraState,
@@ -1493,6 +1495,23 @@ export async function createWorkspaceStore(
 					folder_id,
 					'dashboard_compact',
 					String(compact),
+				)
+			},
+
+			async change_floor_3d(folder_id: string, floor: Floor3D) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+
+				const container = to_folder_container(folder_data, this.preview_folders)
+				if (floor_3d_from_stored(container.floor_3d) === floor) return
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					folder_id,
+					'floor_3d',
+					floor,
 				)
 			},
 

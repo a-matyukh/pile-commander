@@ -44,12 +44,14 @@ import {
 } from './paint'
 import { folder_shape, ring_geometry, rounded_rect, slab } from './shapes'
 import { dispose_tree, fit_model, load_model } from './models'
-import type { LabelSpot, Scene3D, SceneFrame, SceneItem, SceneOptions } from './types'
+import { create_floor_grid, type FloorGrid } from './floor_grid'
+import type { LabelSpot, Scene3D, SceneFloor, SceneFrame, SceneItem, SceneOptions } from './types'
 
 /**
  * The 3D view of a folder: the board lies as a floor, cards float over it
  * and models stand on it. x/y of the board map to x/z of the scene, the
- * item's height to y. A frame is drawn only when something changes.
+ * item's height to y. The floor is a table the size of the layout or an
+ * endless grid. A frame is drawn only when something changes.
  */
 
 /** Scene units per board pixel: 100 px of the board are one unit */
@@ -135,6 +137,7 @@ let height_hint_shown = false
 export function create_scene3d(container: HTMLElement, options: SceneOptions): Scene3D {
 	let motion = options.motion
 	let movable = options.movable
+	let floor_mode: SceneFloor = options.floor
 	let active = true
 	let disposed = false
 
@@ -219,6 +222,10 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		if (hover_at) pick_hover()
 		busy = step_items(dt) || busy
 		if (!fly) busy = controls.update() || busy
+		if (grid) {
+			const distance = camera.position.distanceTo(controls.target)
+			grid.aim(controls.target, distance, camera.far - distance)
+		}
 		renderer.render(scene, camera)
 		emit_frame()
 		if (busy) invalidate()
@@ -521,7 +528,10 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	// ── Floor ────────────────────────────────────────────────────────────
 	type Bounds = { x0: number; y0: number; x1: number; y1: number }
-	let floor: { key: string; group: Group; face: Face } | null = null
+	/** The table under the layout, rebuilt when the layout outgrows it */
+	let table: { key: string; group: Group; face: Face } | null = null
+	/** The endless floor */
+	let grid: FloorGrid | null = null
 
 	function layout_bounds(): Bounds {
 		let x0 = Infinity
@@ -559,14 +569,19 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	}
 
 	function update_floor() {
+		if (floor_mode === 'infinite') {
+			drop_table()
+			if (!grid) {
+				grid = create_floor_grid(GRID_STEP * U, renderer.getPixelRatio())
+				world.add(grid.mesh)
+			}
+			return
+		}
+		drop_grid()
 		const b = layout_bounds()
 		const key = `${b.x0},${b.y0},${b.x1},${b.y1}`
-		if (floor?.key === key) return
-		if (floor) {
-			world.remove(floor.group)
-			dispose_live(floor.group)
-			floor.face.dispose()
-		}
+		if (table?.key === key) return
+		drop_table()
 		const w = b.x1 - b.x0
 		const h = b.y1 - b.y0
 		const face = new Face(w, h, anisotropy, 1.5, 2048)
@@ -588,7 +603,22 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		under.position.y = -DEPTH.floor - 0.01
 		group.add(under)
 		world.add(group)
-		floor = { key, group, face }
+		table = { key, group, face }
+	}
+
+	function drop_table() {
+		if (!table) return
+		world.remove(table.group)
+		dispose_live(table.group)
+		table.face.dispose()
+		table = null
+	}
+
+	function drop_grid() {
+		if (!grid) return
+		world.remove(grid.mesh)
+		grid.dispose()
+		grid = null
 	}
 
 	// ── Animation of items ───────────────────────────────────────────────
@@ -1069,6 +1099,12 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		set_movable(on) {
 			movable = on
 		},
+		set_floor(mode) {
+			if (mode === floor_mode) return
+			floor_mode = mode
+			update_floor()
+			invalidate()
+		},
 		home,
 		top,
 		zoom,
@@ -1107,10 +1143,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			container.removeEventListener('contextmenu', on_context_menu, { capture: true })
 			controls.dispose()
 			for (const live of [...lives.values()]) remove(live)
-			if (floor) {
-				dispose_live(floor.group)
-				floor.face.dispose()
-			}
+			drop_table()
+			drop_grid()
 			shared_shadow.dispose()
 			hidden.dispose()
 			environment.dispose()

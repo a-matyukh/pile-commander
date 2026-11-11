@@ -96,6 +96,12 @@ describe('to_folder_container', () => {
 		expect(by_name['plain.md']).not.toHaveProperty('z')
 	})
 
+	test("reads the folder's 3D floor", () => {
+		const endless = to_folder_container(folder('/ws', 'ws', [], [{ name: 'floor_3d', value: 'infinite' }]))
+		expect(endless.floor_3d).toBe('infinite')
+		expect(to_folder_container(folder('/ws', 'ws', [])).floor_3d).toBeUndefined()
+	})
+
 	test('maps an image title and description onto the file widget', () => {
 		const container = to_folder_container(folder(
 			'/ws',

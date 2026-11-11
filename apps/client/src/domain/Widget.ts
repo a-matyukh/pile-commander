@@ -109,6 +109,17 @@ export function folder_view_from_stored(raw: unknown): FolderView {
 	return (FOLDER_VIEWS as readonly unknown[]).includes(view) ? view as FolderView : 'list'
 }
 
+/**
+ * The floor of the 3D view, per folder: a table the size of the layout, or
+ * an endless floor that fades at the horizon. Items move anywhere on both
+ */
+export type Floor3D = 'table' | 'infinite'
+
+/** Anything but "infinite", or none, is the table */
+export function floor_3d_from_stored(raw: unknown): Floor3D {
+	return raw === 'infinite' ? 'infinite' : 'table'
+}
+
 export function stored_folder_view(view: FolderView): string {
 	return view === 'grid' ? 'gallery' : view
 }
@@ -158,6 +169,8 @@ type FolderContainerXattrs = CommonXattrs & {
 	masonry_column_width: number
 	/** Masonry column cap. Absent or 0 means as many as fit. */
 	masonry_columns: number
+	/** The 3D view's floor. Absent is the table */
+	floor_3d: Floor3D
 }>
 
 ///////////////////////// Widgets
