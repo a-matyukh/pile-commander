@@ -197,7 +197,7 @@ export function to_folder_container(
 		name: folder.name,
 		type: 'folder_container',
 		view,
-		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order', 'snap_to_grid', 'grid_size', 'show_grid_dots', 'show_axes', 'selected_slide_index', 'dashboard_compact', 'masonry_column_width', 'masonry_columns', 'floor_3d']),
+		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order', 'snap_to_grid', 'grid_size', 'show_grid_dots', 'show_axes', 'selected_slide_index', 'dashboard_compact', 'masonry_column_width', 'masonry_columns', 'floor_3d', 'names_3d']),
 		children,
 	}
 }

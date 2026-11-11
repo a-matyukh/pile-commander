@@ -84,6 +84,7 @@ import {
 	DashboardCell,
 	Floor3D,
 	floor_3d_from_stored,
+	Option3D,
 	FolderView,
 	ImageBase64,
 	ModelCameraState,
@@ -1496,6 +1497,15 @@ export async function createWorkspaceStore(
 					'dashboard_compact',
 					String(compact),
 				)
+			},
+
+			async change_option_3d(folder_id: string, option: Option3D, on: boolean) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+				const container = to_folder_container(folder_data, this.preview_folders)
+				if ((container[option] === true) === on) return
+				await persist_workspace_xattr(this, fm, folder_data, folder_id, option, String(on))
 			},
 
 			async change_floor_3d(folder_id: string, floor: Floor3D) {

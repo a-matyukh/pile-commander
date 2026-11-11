@@ -220,6 +220,10 @@ function label_ref(key: string, el: unknown) {
 	else labels.delete(key)
 }
 
+/** Names under pictures and models: the folder's choice in the View menu, off unless turned on */
+const names = computed(() => props.container.names_3d === true)
+watch(names, () => scene?.sync())
+
 /** Boxes of the names placed this frame, CSS px */
 const placed: { x0: number; x1: number; y0: number; y1: number }[] = []
 
@@ -246,7 +250,9 @@ function on_frame(frame: SceneFrame) {
 	// widths are read before any style is written: one layout, not one per name
 	for (const [key, el] of labels) {
 		const spot = frame.labels.get(key)
-		if (spot?.visible) shown.push({ el, spot, selected: ws.is_selected(key), text: text_width(el) })
+		const selected = ws.is_selected(key)
+		// names are the folder's choice; the selected item's always shows, to tell what is selected
+		if (spot?.visible && (names.value || selected)) shown.push({ el, spot, selected, text: text_width(el) })
 		else hidden.push(el)
 	}
 	for (const el of hidden) el.style.visibility = 'hidden'

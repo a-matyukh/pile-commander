@@ -1289,6 +1289,19 @@ describe('createWorkspaceStore: watch', () => {
 		writes.mockRestore()
 	})
 
+	test("change_option_3d keeps a folder's 3D choice, off when absent, and writes only a change", async () => {
+		const { fake, store } = await makeStore()
+		await store.open_folder('/ws/pics')
+		expect(store.folder_container.names_3d).toBeUndefined()
+		const writes = vi.spyOn(fake.fm, 'set_xattr')
+		await store.change_option_3d('/ws/pics', 'names_3d', false)
+		expect(writes).not.toHaveBeenCalled()
+		await store.change_option_3d('/ws/pics', 'names_3d', true)
+		expect(fake.get_xattr('/ws/pics', 'names_3d')).toBe('true')
+		expect(store.folder_container.names_3d).toBe(true)
+		writes.mockRestore()
+	})
+
 	test('change_folder_view clears the selection', async () => {
 		const { store } = await makeStore()
 		await store.open_folder('/ws/pics')

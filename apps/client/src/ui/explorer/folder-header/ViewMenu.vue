@@ -46,6 +46,7 @@ const dashboard_compact = computed(() => folder_attrs.value.dashboard_compact ==
 const floor_3d = computed(() => floor_3d_from_stored(folder_attrs.value.floor_3d))
 /** The folder's grid, the canvas's and 3D's alike; shown unless turned off */
 const grid_shown = computed(() => folder_attrs.value.show_grid_dots !== false)
+const names_shown = computed(() => folder_attrs.value.names_3d === true)
 
 function set_column_width(width: number) {
 	void props.workspace.change_masonry_column_width(props.folder_id, width)
@@ -211,6 +212,13 @@ function set_view(view: FolderView) {
 				:checked="grid_shown"
 				keep_open
 				@select="props.workspace.change_show_grid_dots(props.folder_id, !grid_shown)"
+			/>
+			<MenuItem
+				icon="tabler:tag"
+				:label="t('view_menu.names_3d')"
+				:checked="names_shown"
+				keep_open
+				@select="props.workspace.change_option_3d(props.folder_id, 'names_3d', !names_shown)"
 			/>
 		</template>
 		<template v-if="current === 'dashboard'">

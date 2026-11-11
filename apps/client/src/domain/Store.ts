@@ -4,7 +4,7 @@ import type { ShapeTemplate } from '@/domain/shapes'
 import type { LinePlug, LineAxis } from '@/services/board/shapes'
 import type { EntryContentCaches } from '@/ui/workspace/folder-container/textContentCache'
 import type { MediaSrcCache } from '@/ui/workspace/folder-container/media/mediaSrcCache'
-import { Color, Connection, DashboardCell, Floor3D, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
+import { Color, Connection, DashboardCell, Floor3D, Option3D, FolderContainerWidget, FolderContainerWidgetChild, FolderView, ImageBase64, ModelCameraState, Position, Size, StrokeNode } from './Widget'
 import { FolderWithChildrenXattrs, MediaSrc, FileManager } from '@pile-commander/file-manager'
 import type { CreateStep, DeleteStep, HistoryStoreRef, HistoryTx } from '@/store/history/types'
 
@@ -299,6 +299,8 @@ type WorkspaceStore = {
 	change_dashboard_compact(folder_id: string, compact: boolean): Promise<void>
 	/** The 3D view's floor of a folder: a table or an endless floor */
 	change_floor_3d(folder_id: string, floor: Floor3D): Promise<void>
+	/** A 3D on/off choice of a folder (names under pictures, …) */
+	change_option_3d(folder_id: string, option: Option3D, on: boolean): Promise<void>
 	change_masonry_column_width(folder_id: string, width: number): Promise<void>
 	/** `0` is Auto: as many columns as fit. */
 	change_masonry_columns(folder_id: string, columns: number): Promise<void>
