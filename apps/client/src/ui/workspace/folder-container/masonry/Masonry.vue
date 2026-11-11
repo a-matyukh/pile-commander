@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useClickOutsideEditingNote } from '../widgets/useClickOutsideEditingNote'
@@ -164,7 +165,7 @@ function onSectionClick(event: MouseEvent) {
 	>
 		<PileImagePending :folder_id="folderId" role="background" />
 		<div v-if="children.length === 0" class="masonry-empty">
-			<p class="text-muted">No items</p>
+			<p class="text-muted">{{ t('folder.no_items') }}</p>
 		</div>
 		<div v-else class="masonry-strip" :style="stripStyle">
 			<div

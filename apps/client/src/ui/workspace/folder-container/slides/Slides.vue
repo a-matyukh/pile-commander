@@ -24,6 +24,7 @@ import { use_widget_glyph } from '@/ui/explorer/views/use_widget_glyph'
 import FolderMenu from '@/ui/workspace/menu/FolderMenu.vue'
 import FolderPreview from '../FolderPreview.vue'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
+import { t } from '@/i18n'
 
 const { folderId, container } = useFolderContainerScope()
 const requireWorkspace = useRequireWorkspace()
@@ -205,7 +206,7 @@ function onPreviewDblClick() {
 		</header>
 
 		<div v-if="total === 0" class="slides-empty">
-			<p class="text-muted">No slides</p>
+			<p class="text-muted">{{ t('slides.empty') }}</p>
 		</div>
 
 		<SlidesNote

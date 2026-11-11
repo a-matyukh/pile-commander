@@ -586,6 +586,7 @@ export const ru = {
 	},
 	folder: {
 		empty: 'Папка пустая',
+		no_items: 'Нет элементов',
 		opening: 'Папка открывается…',
 		refreshing: 'Сверяется с облаком…',
 		gone: 'Эту папку удалили или переместили',
@@ -618,6 +619,7 @@ export const ru = {
 		prev: 'Назад',
 		next: 'Дальше',
 		folder_hint: '{count} · двойной клик по превью снизу — открыть',
+		empty: 'Нет слайдов',
 	},
 	canvas: {
 		tools: {

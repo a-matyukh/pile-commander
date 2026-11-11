@@ -589,6 +589,7 @@ export const en: typeof ru = {
 	},
 	folder: {
 		empty: 'This folder is empty',
+		no_items: 'No items',
 		opening: 'Opening the folder…',
 		refreshing: 'Checking with the cloud…',
 		gone: 'This folder was deleted or moved elsewhere',
@@ -620,6 +621,7 @@ export const en: typeof ru = {
 		prev: 'Previous',
 		next: 'Next',
 		folder_hint: '{count} · double-click its thumbnail to open',
+		empty: 'No slides',
 	},
 	canvas: {
 		tools: {

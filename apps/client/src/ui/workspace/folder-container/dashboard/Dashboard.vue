@@ -164,7 +164,7 @@ function onSectionClick(event: MouseEvent) {
 	>
 		<PileImagePending :folder_id="folderId" role="background" />
 		<div v-if="children.length === 0" class="dashboard-empty">
-			<p class="text-muted">No items</p>
+			<p class="text-muted">{{ t('folder.no_items') }}</p>
 		</div>
 		<GridLayout
 			v-else

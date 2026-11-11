@@ -26,6 +26,8 @@ describe('t', () => {
 		expect(t('rename_dialog.title')).toBe('New name')
 		expect(t('board_chrome.combine')).toBe('Combine')
 		expect(t('empty_pane.remembered')).toBe('I remembered')
+		expect(t('slides.empty')).toBe('No slides')
+		expect(t('folder.no_items')).toBe('No items')
 
 		explorer_language.value = 'ru'
 		expect(t('top.back')).toBe('Назад')
@@ -36,6 +38,8 @@ describe('t', () => {
 		expect(t('rename_dialog.title')).toBe('Новое имя')
 		expect(t('board_chrome.combine')).toBe('Объединить в папку')
 		expect(t('empty_pane.remembered')).toBe('Я запомнил')
+		expect(t('slides.empty')).toBe('Нет слайдов')
+		expect(t('folder.no_items')).toBe('Нет элементов')
 	})
 
 	test('returns the key when the dictionary has no such string', () => {
