@@ -246,7 +246,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			grid.aim(controls.target, distance, camera.far - distance)
 		}
 		// the ground reaches just short of the farthest the camera draws: its edge is the horizon
-		ground?.aim(camera.position.x, camera.position.z, camera.far * 0.94)
+		ground?.aim(camera.position.x, camera.position.y, camera.position.z, camera.far * 0.9)
 		renderer.render(scene, camera)
 		emit_frame()
 		if (busy) invalidate()
@@ -657,7 +657,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			grid.mesh.visible = grid_on
 			if (horizon_on && !ground) {
 				ground = create_ground()
-				world.add(ground.mesh)
+				for (const mesh of ground.meshes) world.add(mesh)
 			} else if (!horizon_on) drop_ground()
 			return
 		}
@@ -701,7 +701,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	function drop_ground() {
 		if (!ground) return
-		world.remove(ground.mesh)
+		for (const mesh of ground.meshes) world.remove(mesh)
 		ground.dispose()
 		ground = null
 	}
