@@ -37,7 +37,6 @@ import {
 	darken,
 	fit_picture,
 	icon_image,
-	lighten,
 	load_picture,
 	paint_file,
 	paint_floor,
@@ -256,7 +255,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	// ── Items ────────────────────────────────────────────────────────────
 	const look_of = (it: SceneItem) =>
-		JSON.stringify([it.kind, it.w, it.h, it.title, it.text, it.footer, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed])
+		JSON.stringify([it.kind, it.w, it.h, it.title, it.text, it.footer, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed, it.gif])
 
 	function set_items(items: SceneItem[]) {
 		const keys = new Set(items.map(it => it.key))
@@ -464,7 +463,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				return
 			}
 			const n = ++asked
-			later(live, load_picture(url, fw, fh, () => !disposed && live.token === token && n === asked), found => {
+			later(live, load_picture(url, fw, fh, () => !disposed && live.token === token && n === asked, it.gif === true), found => {
 				if (n !== asked || !found) return
 				picture = found.picture
 				full = found.full
@@ -487,11 +486,11 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	function build_folder(live: Live) {
 		const it = live.item
 		const tint = it.tint ?? null
-		// a cover's color fills the folder, as on the board; else its view's color, lightened
+		// white, or its cover's color, as on the board; its view's color is the icon's
 		const fill = it.fill ?? null
-		const base = fill ? darken(fill, 0.07) : tint ? lighten(tint, 0.5) : COLORS.folder
-		const flap = fill ?? (tint ? lighten(tint, 0.78) : COLORS.folder_flap)
-		const side = fill ? darken(fill, 0.16) : tint ? lighten(tint, 0.3) : COLORS.folder_side
+		const base = fill ? darken(fill, 0.07) : COLORS.folder
+		const flap = fill ?? COLORS.folder_flap
+		const side = fill ? darken(fill, 0.16) : COLORS.folder_side
 		const face = new Face(it.w, it.h, anisotropy, live.level)
 		const name = it.label ?? ''
 		face.paint(paint_folder({ base, flap, icon: null, tab_h: TAB, name, font: options.font }))

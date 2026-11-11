@@ -81,6 +81,9 @@ describe('what the 3D scene draws for a folder', () => {
 		expect({ w: shown.w, h: shown.h }).toEqual({ w: IMAGE_DEFAULT_SIZE.width, h: IMAGE_DEFAULT_SIZE.height })
 		expect(shown.tone).toMatch(/^#[0-9A-F]{6}$/i)
 		expect(hidden).toMatchObject({ kind: 'file', label: 'cat.png' })
+		expect(shown.gif).toBe(false)
+		const [gif] = to_scene_items([file('Celebration.GIF')], look({ url: 'blob:party' }))
+		expect(gif).toMatchObject({ kind: 'image', gif: true })
 	})
 
 	test('a picture whose content could not be had keeps its placeholder', () => {

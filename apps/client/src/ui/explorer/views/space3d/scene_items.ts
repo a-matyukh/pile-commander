@@ -79,7 +79,7 @@ export function to_scene_items(
 			return { ...base, kind: 'note', title: face.title, text: face.text, footer: child.name, paper: paper(child) }
 		}
 		if (image_shows_preview(child)) {
-			return { ...base, kind: 'image', url: url || null, tone: TONES[hash(child.name) % TONES.length] }
+			return { ...base, kind: 'image', url: url || null, tone: TONES[hash(child.name) % TONES.length], gif: /\.gif$/i.test(child.name) }
 		}
 		// a model is always itself in 3D, in its card's size
 		if (get_media_kind(child.name) === 'model') return { ...base, kind: 'model', url: url === false ? null : url, failed: url === false }

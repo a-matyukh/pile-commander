@@ -39,6 +39,8 @@ export type SceneItem = {
 	failed?: boolean
 	/** image without content: placeholder color */
 	tone?: string
+	/** image: a GIF, whose first frame is often empty; the card shows its fullest one */
+	gif?: boolean
 }
 
 /** `covered`: another item stands between the camera and the label's place */

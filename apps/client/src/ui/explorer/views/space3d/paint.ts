@@ -1,6 +1,7 @@
 import { getIcon } from '@iconify/vue'
 import { CanvasTexture, SRGBColorSpace, type MeshBasicMaterial } from 'three'
 import { limiter } from './limiter'
+import { gif_fullest_frame } from './gif'
 
 /**
  * Card faces are drawn on canvases, in board pixels times a scale. Colors
@@ -20,9 +21,10 @@ export const COLORS = {
 	muted: '#9A9893',
 	accent: '#378ADD',
 	danger: '#A32D2D',
-	folder: '#E4E1D8',
-	folder_flap: '#F1EFE9',
-	folder_side: '#CFCBC0',
+	/** A folder without a cover is white, as the board's tile; its back and tab a shade darker */
+	folder: '#EFEDE8',
+	folder_flap: '#FFFFFF',
+	folder_side: '#DDDAD2',
 	floor: '#FFFFFF',
 	floor_side: '#E7E5DF',
 }
@@ -170,28 +172,51 @@ const decodes = limiter(3)
 /**
  * A file's picture, only as large as a w×h frame needs it when the picture
  * fills the frame: a big photo is decoded, copied at that size and let go.
+ * A GIF shows its fullest frame (gif.ts): many animations start empty.
  * `full`: the copy has all the pixels the file has. null when it cannot be
  * had: the file is gone or not a picture, or it comes from another site
  * that does not allow drawing it (a canvas with such a picture cannot go to
  * the GPU). `wanted` false skips a picture still waiting for its turn
  */
-export function load_picture(url: string, w: number, h: number, wanted: () => boolean): Promise<{ picture: HTMLCanvasElement; full: boolean } | null> {
+export function load_picture(url: string, w: number, h: number, wanted: () => boolean, gif = false): Promise<{ picture: HTMLCanvasElement; full: boolean } | null> {
 	return decodes(async () => {
-		const image = new Image()
-		image.crossOrigin = 'anonymous'
-		image.decoding = 'async'
-		image.src = url
-		try {
-			await image.decode()
-		} catch {
-			return null
-		}
-		const nw = image.naturalWidth
-		const nh = image.naturalHeight
-		if (!nw || !nh) return null
+		const source = (gif ? await gif_frame(url) : null) ?? await decode_image(url)
+		if (!source) return null
+		const nw = source instanceof HTMLImageElement ? source.naturalWidth : source.width
+		const nh = source instanceof HTMLImageElement ? source.naturalHeight : source.height
 		const k = Math.min(1, Math.max(w / nw, h / nh))
-		return { picture: shrink(image, nw, nh, Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))), full: k === 1 }
+		return { picture: shrink(source, nw, nh, Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))), full: k === 1 }
 	}, wanted).then(found => found ?? null)
+}
+
+async function decode_image(url: string): Promise<HTMLImageElement | null> {
+	const image = new Image()
+	image.crossOrigin = 'anonymous'
+	image.decoding = 'async'
+	image.src = url
+	try {
+		await image.decode()
+	} catch {
+		return null
+	}
+	return image.naturalWidth && image.naturalHeight ? image : null
+}
+
+/** A GIF's fullest frame on a canvas; null when its bytes cannot be read, and the browser's first frame is used */
+async function gif_frame(url: string): Promise<HTMLCanvasElement | null> {
+	try {
+		const response = await fetch(url)
+		if (!response.ok) return null
+		const frame = gif_fullest_frame(new Uint8Array(await response.arrayBuffer()))
+		if (!frame) return null
+		const canvas = document.createElement('canvas')
+		canvas.width = frame.width
+		canvas.height = frame.height
+		canvas.getContext('2d')!.putImageData(new ImageData(frame.rgba, frame.width, frame.height), 0, 0)
+		return canvas
+	} catch {
+		return null
+	}
 }
 
 /** A smaller copy of a picture that is more than twice as large as a w×h frame needs; the same picture otherwise */
