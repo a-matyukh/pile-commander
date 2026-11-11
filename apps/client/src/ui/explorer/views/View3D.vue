@@ -155,6 +155,13 @@ useMoveSelectedWidgets({
 
 const toast = useToast()
 
+/** The help on gestures: a finger's on a touch screen, the mouse's otherwise; open until closed, per device */
+const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+const tips = computed(() => [1, 2, 3, 4, 5].map(n => t(`v3d.tips_${touch ? 'touch' : 'mouse'}_${n}`)))
+function toggle_tips() {
+	explorer_settings.tips_3d = !explorer_settings.tips_3d
+}
+
 /** A model turned in 3D faces that way on the board too: its kept view turns with it */
 function turn(key: string, yaw: number) {
 	const ws = props.workspace
@@ -377,12 +384,23 @@ function open_as_board() {
 					<ItemMenu :key="primary.id" :items="items" :child="primary" :workspace="workspace" />
 				</span>
 			</div>
+			<div v-if="explorer_settings.tips_3d" class="tips" role="note">
+				<div class="tt">
+					<span>{{ t('v3d.tips') }}</span>
+					<IconButton icon="tabler:x" :icon_size="14" :aria-label="t('dialog.close')" @click="toggle_tips" />
+				</div>
+				<ul>
+					<li v-for="tip in tips" :key="tip">{{ tip }}</li>
+				</ul>
+			</div>
 			<div class="bar">
 				<IconButton icon="tabler:perspective" :data-tip="t('v3d.home')" @click="scene?.home()" />
 				<IconButton icon="tabler:template" :data-tip="t('v3d.top')" @click="scene?.top()" />
 				<div class="vsep" />
 				<IconButton icon="tabler:minus" :data-tip="t('v3d.zoom_out')" @click="scene?.zoom(1.3)" />
 				<IconButton icon="tabler:plus" :data-tip="t('v3d.zoom_in')" @click="scene?.zoom(1 / 1.3)" />
+				<div class="vsep" />
+				<IconButton icon="tabler:help-circle" :active="explorer_settings.tips_3d" :data-tip="t('v3d.tips')" :aria-label="t('v3d.tips')" @click="toggle_tips" />
 			</div>
 		</template>
 		<ItemDialogs :items="items" />
@@ -460,6 +478,34 @@ function open_as_board() {
 	border: 0.5px solid var(--border-strong);
 	border-radius: 8px;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
+}
+/* the help on gestures, above the toolbar */
+.tips {
+	position: absolute;
+	left: 50%;
+	bottom: 64px;
+	transform: translateX(-50%);
+	width: min(340px, calc(100% - 24px));
+	padding: 8px 12px 10px;
+	background: var(--surface-3, #fff);
+	border: 0.5px solid var(--border-strong);
+	border-radius: 10px;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, .08);
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--text-secondary);
+	z-index: 2;
+}
+.tt {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+.tips ul {
+	margin: 4px 0 0;
+	padding-left: 16px;
 }
 /* handles by the "⋯": dragged, not clicked */
 .hd {
