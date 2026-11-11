@@ -157,7 +157,16 @@ const toast = useToast()
 
 /** The help on gestures: a finger's on a touch screen, the mouse's otherwise; open until closed, per device */
 const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
-const tips = computed(() => [1, 2, 3, 4, 5].map(n => t(`v3d.tips_${touch ? 'touch' : 'mouse'}_${n}`)))
+/** Each tip: its gesture, what it does, an icon for the gesture */
+const TIP_ICONS = touch
+	? ['tabler:hand-finger', 'tabler:arrows-move', 'tabler:hand-click', 'tabler:hand-stop', 'tabler:arrows-vertical']
+	: ['tabler:rotate-360', 'tabler:arrows-move', 'tabler:drag-drop', 'tabler:click', 'tabler:keyboard']
+const tips = computed(() => TIP_ICONS.map((icon, i) => {
+	const text = t(`v3d.tips_${touch ? 'touch' : 'mouse'}_${i + 1}`)
+	const cut = text.indexOf(' — ')
+	const action = cut < 0 ? '' : text.slice(cut + 3)
+	return { icon, gesture: cut < 0 ? text : text.slice(0, cut), action: action.charAt(0).toUpperCase() + action.slice(1) }
+}))
 function toggle_tips() {
 	explorer_settings.tips_3d = !explorer_settings.tips_3d
 }
@@ -390,7 +399,13 @@ function open_as_board() {
 					<IconButton icon="tabler:x" :icon_size="14" :aria-label="t('dialog.close')" @click="toggle_tips" />
 				</div>
 				<ul>
-					<li v-for="tip in tips" :key="tip">{{ tip }}</li>
+					<li v-for="tip in tips" :key="tip.gesture">
+						<span class="ti"><Icon :icon="tip.icon" /></span>
+						<span class="tx">
+							<span class="tg">{{ tip.gesture }}</span>
+							<span class="ta">{{ tip.action }}</span>
+						</span>
+					</li>
 				</ul>
 			</div>
 			<div class="bar">
@@ -485,27 +500,63 @@ function open_as_board() {
 	left: 50%;
 	bottom: 64px;
 	transform: translateX(-50%);
-	width: min(340px, calc(100% - 24px));
-	padding: 8px 12px 10px;
+	width: min(360px, calc(100% - 24px));
+	padding: 12px 14px 14px;
 	background: var(--surface-3, #fff);
 	border: 0.5px solid var(--border-strong);
-	border-radius: 10px;
-	box-shadow: 0 4px 14px rgba(0, 0, 0, .08);
-	font-size: 12px;
-	line-height: 1.45;
-	color: var(--text-secondary);
+	border-radius: 14px;
+	box-shadow: 0 10px 30px rgba(15, 23, 42, .10), 0 2px 6px rgba(15, 23, 42, .05);
 	z-index: 2;
 }
 .tt {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	margin-bottom: 8px;
+	font-size: 14px;
 	font-weight: 600;
 	color: var(--text-primary);
 }
 .tips ul {
-	margin: 4px 0 0;
-	padding-left: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.tips li {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.ti {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	border-radius: 9px;
+	background: var(--fill-accent-soft, rgba(55, 138, 221, .10));
+	color: var(--accent, #378add);
+	font-size: 17px;
+}
+.tx {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.tg {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--text-primary);
+}
+.ta {
+	font-size: 12.5px;
+	line-height: 1.35;
+	color: var(--text-secondary);
 }
 /* handles by the "⋯": dragged, not clicked */
 .hd {
