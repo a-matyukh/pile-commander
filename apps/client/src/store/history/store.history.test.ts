@@ -269,8 +269,9 @@ describe('undo of file operations within one store', () => {
 
 	test('a new folder with entries moved into it is one undo: they come back and the folder goes', async () => {
 		const { fake, ws, h, act } = await setup()
+		let folder = ''
 		await act(async (tx) => {
-			const folder = await ws.create_folder('/ws', { x: 0, y: 0 }, { tx })
+			folder = await ws.create_folder('/ws', { x: 0, y: 0 }, { tx })
 			await ws.move('/ws/a.md', folder, 0, '/ws', undefined, { tx })
 			await ws.move('/ws/b.md', folder, 1, '/ws', undefined, { tx })
 		})
@@ -278,7 +279,7 @@ describe('undo of file operations within one store', () => {
 		await h.undo()
 		expect(fake.has('/ws/a.md')).toBe(true)
 		expect(fake.has('/ws/b.md')).toBe(true)
-		expect(fake.has('/ws/New folder 1')).toBe(false)
+		expect(fake.has(folder)).toBe(false)
 	})
 
 	test('an added file goes away and is uploaded again from the same File on redo', async () => {

@@ -7,6 +7,8 @@ import { refresh_cached_folder } from './helpers/refreshCachedFolder'
 import { shape_template_svg, prepare_svg_for_preview } from '@/services/board/shapes'
 import { TEXT_DEFAULT_SIZE } from '@/services/board/layout'
 import { LIVE_UPDATES_UNAVAILABLE } from './helpers/watchSubscribeError'
+import { t } from '@/i18n'
+import { explorer_language } from './explorer/language'
 
 vi.spyOn(console, 'log').mockImplementation(() => {})
 vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -500,7 +502,7 @@ describe('createWorkspaceStore: creation', () => {
 
 		const id = await store.create_folder('/ws', { x: 10, y: 20 })
 
-		expect(id).toBe('/ws/New folder 1')
+		expect(id).toBe(`/ws/${t('add.new_folder_name')} 1`)
 		expect(fake.has(id)).toBe(true)
 		expect(fake.get_xattr(id, 'position')).toBe('{"x":10,"y":20}')
 		expect(fake.get_xattr(id, 'view')).toBe('board')
@@ -513,10 +515,24 @@ describe('createWorkspaceStore: creation', () => {
 
 		const id = await store.create_folder('/ws', undefined, { view: 'board' })
 
-		expect(id).toBe('/ws/New folder 1')
+		expect(id).toBe(`/ws/${t('add.new_folder_name')} 1`)
 		expect(fake.has(id)).toBe(true)
 		expect(fake.get_xattr(id, 'view')).toBe('board')
 		expect(store.opened_folder.children.some(c => c.id === id)).toBe(true)
+	})
+
+	test('create_folder names the folder in the interface language', async () => {
+		const previous = explorer_language.value
+		explorer_language.value = 'ru'
+		try {
+			const { store } = await makeStore()
+			expect(await store.create_folder('/ws')).toBe('/ws/Новая папка 1')
+			expect(await store.create_folder('/ws')).toBe('/ws/Новая папка 2')
+			explorer_language.value = 'en'
+			expect(await store.create_folder('/ws')).toBe('/ws/New folder 1')
+		} finally {
+			explorer_language.value = previous
+		}
 	})
 })
 

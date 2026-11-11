@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createFakeFileManager } from '@pile-commander/file-manager'
 import type { WorkspaceStore } from '@/domain/Store'
 import { gate_pending_entries } from '@/services/cloud/pendingEntries'
+import { t } from '@/i18n'
 import { createWorkspaceStore } from './createWorkspaceStore'
 import { refresh_cached_folder } from './helpers/refreshCachedFolder'
 
@@ -40,8 +41,8 @@ async function cloud_store() {
 }
 
 const names = (store: WorkspaceStore, folder = '/') => (store.folders[folder]?.children ?? []).map(child => child.name).sort()
-/** The name the store gave the new folder ("New folder 1" and so on) */
-const created = (store: WorkspaceStore) => names(store).find(name => name.startsWith('New folder'))
+/** The name the store gave the new folder ("New folder 1", "Новая папка 1", …) */
+const created = (store: WorkspaceStore) => names(store).find(name => name.startsWith(t('add.new_folder_name')))
 
 describe('a cloud folder created or renamed shows at once', () => {
 	test('a new folder is on screen before the cloud answers, and stays once it does', async () => {

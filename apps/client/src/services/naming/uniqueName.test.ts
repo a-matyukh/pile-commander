@@ -29,9 +29,11 @@ describe('uniqueName', () => {
 		expect(resolve_unique_filename('Text 1.md', ['text 1.md'], { ignore_case: true })).toBe('Text 2.md')
 	})
 
-	test('resolve_folder_name skips taken numbers', () => {
-		expect(resolve_folder_name([])).toBe('New folder 1')
-		expect(resolve_folder_name(['New folder 1', 'New folder 2'])).toBe('New folder 3')
+	test('resolve_folder_name skips taken numbers in the given language', () => {
+		expect(resolve_folder_name([], 'New folder')).toBe('New folder 1')
+		expect(resolve_folder_name(['New folder 1', 'New folder 2'], 'New folder')).toBe('New folder 3')
+		expect(resolve_folder_name([], 'Новая папка')).toBe('Новая папка 1')
+		expect(resolve_folder_name(['Новая папка 1', 'New folder 1'], 'Новая папка')).toBe('Новая папка 2')
 	})
 
 	test('resolve_text_file_name skips taken numbers', () => {

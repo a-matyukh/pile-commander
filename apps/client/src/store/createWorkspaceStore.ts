@@ -2723,6 +2723,7 @@ export async function createWorkspaceStore(
 
 				const folder_name = resolve_folder_name(
 					(folder_data.children ?? []).map(c => c.name),
+					t('add.new_folder_name'),
 				)
 
 				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: folder_name }), async (tx) => {

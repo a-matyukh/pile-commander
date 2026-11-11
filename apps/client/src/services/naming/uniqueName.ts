@@ -28,8 +28,9 @@ export function resolve_shape_filename(existing_names: Iterable<string>): string
 	return resolve_numbered_filename('Shape', '.svg', existing_names)
 }
 
-export function resolve_folder_name(existing_names: Iterable<string>): string {
-	return resolve_numbered_filename('New folder', '', existing_names)
+/** Next free name: "New folder N" or "Новая папка N". `prefix` is the current interface language. */
+export function resolve_folder_name(existing_names: Iterable<string>, prefix: string): string {
+	return resolve_numbered_filename(prefix, '', existing_names)
 }
 
 export function resolve_text_file_name(existing_names: Iterable<string>): string {
