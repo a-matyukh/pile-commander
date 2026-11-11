@@ -82,6 +82,8 @@ import {
 	Connection,
 	FolderContainerWidgetChild,
 	DashboardCell,
+	Floor3D,
+	floor_3d_from_stored,
 	FolderView,
 	ImageBase64,
 	ModelCameraState,
@@ -1496,6 +1498,23 @@ export async function createWorkspaceStore(
 				)
 			},
 
+			async change_floor_3d(folder_id: string, floor: Floor3D) {
+				assert_can_write()
+				const folder_data = this.resolve_folder_data(folder_id)
+				if (!folder_data) return
+
+				const container = to_folder_container(folder_data, this.preview_folders)
+				if (floor_3d_from_stored(container.floor_3d) === floor) return
+				await persist_workspace_xattr(
+					this,
+					fm,
+					folder_data,
+					folder_id,
+					'floor_3d',
+					floor,
+				)
+			},
+
 			async change_masonry_column_width(folder_id: string, width: number) {
 				assert_can_write()
 				const folder_data = this.resolve_folder_data(folder_id)
@@ -1997,6 +2016,42 @@ export async function createWorkspaceStore(
 					this.folders[owner_id]!,
 					id,
 					'position',
+					value,
+					{ tx: options?.tx, before },
+				)
+			},
+
+			async change_height(id: string, height: number, options?: HistoryOptions) {
+				assert_can_write()
+				if (!Number.isFinite(height)) return
+				const folder_data = widget_folder_data(this, id)
+				if (!folder_data) return
+
+				const owner_id = folder_data.id
+				const live = this.folders[owner_id] ?? folder_data
+				const value = String(Math.max(0, Math.round(height)))
+				// read before the optimistic update below shows the new height
+				const before = raw_xattr(live, id, 'z')
+				if (before === value) return
+
+				// As change_position: on screen at once, written after
+				upsert_folder_xattr(live, id, 'z', value)
+				notify_entry_xattr_changed(live, id)
+				this.folders[owner_id] = {
+					...live,
+					xattrs: [...live.xattrs],
+					children: live.children?.map(child => ({
+						...child,
+						xattrs: [...child.xattrs],
+					})),
+				}
+
+				await persist_workspace_xattr(
+					this,
+					fm,
+					this.folders[owner_id]!,
+					id,
+					'z',
 					value,
 					{ tx: options?.tx, before },
 				)

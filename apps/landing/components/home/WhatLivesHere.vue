@@ -53,7 +53,6 @@ function stopDemo() {
     eyebrow="What lives on it"
     title="Notes, media, models, shapes — and other folders."
     lede="Drop things in and they show up as themselves, not as a row of filenames."
-    muted
   >
     <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <!-- Notes -->

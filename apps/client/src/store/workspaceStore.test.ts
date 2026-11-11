@@ -798,6 +798,17 @@ describe('createWorkspaceStore: clipboard', () => {
 		expect(store.opened_folder.children.some(c => c.id === '/ws/note (1).txt')).toBe(true)
 	})
 
+	test('a duplicate keeps its 3D height; only its place moves aside', async () => {
+		const { fake, store } = await makeStore()
+		fake.set_xattr('/ws/note.txt', 'position', JSON.stringify({ x: 100, y: 50 }))
+		fake.set_xattr('/ws/note.txt', 'z', '120')
+
+		await store.duplicate_entries(['/ws/note.txt'])
+
+		expect(fake.get_xattr('/ws/note (1).txt', 'z')).toBe('120')
+		expect(fake.get_xattr('/ws/note (1).txt', 'position')).toBe(JSON.stringify({ x: 124, y: 74 }))
+	})
+
 	test('duplicate_entries keeps sidebar order instead of readdir order', async () => {
 		const fake = createFakeFileManager()
 		fake.seed_folder('/ws')
@@ -1255,6 +1266,27 @@ describe('createWorkspaceStore: watch', () => {
 
 		expect(fake.get_xattr('/ws/pics', 'view')).toBe('gallery')
 		expect(store.folder_container.view).toBe('grid')
+	})
+
+	test("change_floor_3d keeps the folder's floor and writes only a change", async () => {
+		const { fake, store } = await makeStore()
+		await store.open_folder('/ws/pics')
+		const writes = vi.spyOn(fake.fm, 'set_xattr')
+
+		await store.change_floor_3d('/ws/pics', 'table')
+		expect(writes).not.toHaveBeenCalled()
+
+		await store.change_floor_3d('/ws/pics', 'infinite')
+		expect(fake.get_xattr('/ws/pics', 'floor_3d')).toBe('infinite')
+		expect(store.folder_container.floor_3d).toBe('infinite')
+
+		await store.change_floor_3d('/ws/pics', 'infinite')
+		expect(writes).toHaveBeenCalledTimes(1)
+
+		await store.change_floor_3d('/ws/pics', 'table')
+		expect(fake.get_xattr('/ws/pics', 'floor_3d')).toBe('table')
+		expect(store.folder_container.floor_3d).toBe('table')
+		writes.mockRestore()
 	})
 
 	test('change_folder_view clears the selection', async () => {

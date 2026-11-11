@@ -12,6 +12,7 @@ export const FOLDER_VIEW_META: Record<FolderView, { icon: string; color: string 
 	grid: { icon: 'tabler:layout-grid', color: '#D4537E', label_key: 'views.gallery' },
 	board: { icon: 'tabler:template', color: '#534AB7', label_key: 'views.board' },
 	canvas: { icon: 'tabler:artboard', color: '#1D9E75', label_key: 'views.canvas' },
+	'3d': { icon: 'tabler:3d-cube-sphere', color: '#0F96A8', label_key: 'views.3d' },
 	stack: { icon: 'tabler:layout-rows', color: '#BA7517', label_key: 'views.stack' },
 	masonry: { icon: 'tabler:layout-cards', color: '#D85A30', label_key: 'views.masonry' },
 	dashboard: { icon: 'tabler:layout-dashboard', color: '#3B6FB6', label_key: 'views.dashboard' },

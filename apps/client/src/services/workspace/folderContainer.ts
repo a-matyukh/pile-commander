@@ -93,7 +93,7 @@ function child_from_entry(
 	const base = {
 		id: entry.id,
 		name: entry.name,
-		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order']),
+		...pick(attrs, ['position', 'size', 'z', 'background', 'is_preview', 'order']),
 		...dashboard_from(attrs),
 	}
 
@@ -113,7 +113,7 @@ function child_from_entry(
 		// not on the nested folder's own xattrs.
 		return {
 			...container,
-			...pick(attrs, ['position', 'size', 'background', 'order', 'is_preview']),
+			...pick(attrs, ['position', 'size', 'z', 'background', 'order', 'is_preview']),
 			...dashboard_from(attrs),
 		}
 	}
@@ -121,7 +121,7 @@ function child_from_entry(
 	return {
 		id: entry.id,
 		name: entry.name,
-		...pick(attrs, ['position', 'size', 'is_preview', 'order', 'cover']),
+		...pick(attrs, ['position', 'size', 'z', 'is_preview', 'order', 'cover']),
 		...dashboard_from(attrs),
 		type: 'folder_cover',
 	}
@@ -197,7 +197,7 @@ export function to_folder_container(
 		name: folder.name,
 		type: 'folder_container',
 		view,
-		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order', 'snap_to_grid', 'grid_size', 'show_grid_dots', 'show_axes', 'selected_slide_index', 'dashboard_compact', 'masonry_column_width', 'masonry_columns']),
+		...pick(attrs, ['position', 'size', 'background', 'is_preview', 'order', 'snap_to_grid', 'grid_size', 'show_grid_dots', 'show_axes', 'selected_slide_index', 'dashboard_compact', 'masonry_column_width', 'masonry_columns', 'floor_3d']),
 		children,
 	}
 }

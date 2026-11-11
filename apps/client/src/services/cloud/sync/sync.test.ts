@@ -1578,6 +1578,17 @@ describe('merge_xattrs', () => {
 		expect(merge.cloud_sets).toEqual({ position: 'moved here', color: 'red' })
 	})
 
+	test("a 3D height goes across like any layout key, and the board's move does not touch it", () => {
+		const merge = merge_xattrs(
+			{ position: 'a', z: '40' },
+			{ position: 'a', z: '120' },
+			{ position: 'moved there', z: '40' },
+		)
+		expect(merge.merged).toEqual({ position: 'moved there', z: '120' })
+		expect(merge.cloud_sets).toEqual({ z: '120' })
+		expect(merge.local_sets).toEqual({ position: 'moved there' })
+	})
+
 	test('sync_kept_hidden is neither downloaded nor uploaded', () => {
 		const merge = merge_xattrs(
 			{ view: 'list' },

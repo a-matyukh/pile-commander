@@ -119,7 +119,7 @@ describe('folder header: view switch', () => {
 	}
 
 	test('the menu lists the views in the plan order, gallery stored as grid', () => {
-		expect(Object.keys(FOLDER_VIEW_META)).toEqual(['list', 'grid', 'board', 'canvas', 'stack', 'masonry', 'dashboard', 'slides'])
+		expect(Object.keys(FOLDER_VIEW_META)).toEqual(['list', 'grid', 'board', 'canvas', '3d', 'stack', 'masonry', 'dashboard', 'slides'])
 		expect(FOLDER_VIEW_META.grid.label_key).toBe('views.gallery')
 	})
 

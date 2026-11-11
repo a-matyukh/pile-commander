@@ -40,6 +40,12 @@ export function dashboard_cell_from_stored(value: unknown): DashboardCell | unde
 type CommonXattrs = Partial<{
 	position: Position
 	size: Size
+	/**
+	 * Height of the item's bottom above the floor in the 3D view, board px.
+	 * Its own attribute, not part of `position`: the board, the canvas and
+	 * older versions write `position` whole and would drop it
+	 */
+	z: number
 	/** Grid cell for the dashboard view. Board and canvas keep using position and size. */
 	dashboard: DashboardCell
 	background: ImageBase64 | Color
@@ -84,6 +90,7 @@ export const FOLDER_VIEWS = [
 	"grid",  // стандартный вид сеткой как в проводнике
 	"board",
 	"canvas",
+	"3d",  // the board in space: the board's and canvas's places, plus height
 	"stack",  // sortable
 	"masonry",
 	"dashboard",
@@ -100,6 +107,17 @@ export type FolderView = (typeof FOLDER_VIEWS)[number]
 export function folder_view_from_stored(raw: unknown): FolderView {
 	const view = raw === 'gallery' ? 'grid' : raw
 	return (FOLDER_VIEWS as readonly unknown[]).includes(view) ? view as FolderView : 'list'
+}
+
+/**
+ * The floor of the 3D view, per folder: a table the size of the layout, or
+ * an endless floor that fades at the horizon. Items move anywhere on both
+ */
+export type Floor3D = 'table' | 'infinite'
+
+/** Anything but "infinite", or none, is the table */
+export function floor_3d_from_stored(raw: unknown): Floor3D {
+	return raw === 'infinite' ? 'infinite' : 'table'
 }
 
 export function stored_folder_view(view: FolderView): string {
@@ -151,6 +169,8 @@ type FolderContainerXattrs = CommonXattrs & {
 	masonry_column_width: number
 	/** Masonry column cap. Absent or 0 means as many as fit. */
 	masonry_columns: number
+	/** The 3D view's floor. Absent is the table */
+	floor_3d: Floor3D
 }>
 
 ///////////////////////// Widgets

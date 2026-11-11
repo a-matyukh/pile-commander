@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import { FOLDER_VIEWS, type FolderView } from '@/domain/Widget'
+import { FOLDER_VIEWS, floor_3d_from_stored, type Floor3D, type FolderView } from '@/domain/Widget'
 import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
 import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
@@ -43,6 +43,7 @@ const masonry_columns = computed(() => {
 	return typeof stored === 'number' ? stored : 0
 })
 const dashboard_compact = computed(() => folder_attrs.value.dashboard_compact === true)
+const floor_3d = computed(() => floor_3d_from_stored(folder_attrs.value.floor_3d))
 
 function set_column_width(width: number) {
 	void props.workspace.change_masonry_column_width(props.folder_id, width)
@@ -52,6 +53,9 @@ function set_columns(count: number) {
 }
 function toggle_compact() {
 	void props.workspace.change_dashboard_compact(props.folder_id, !dashboard_compact.value)
+}
+function set_floor(floor: Floor3D) {
+	void props.workspace.change_floor_3d(props.folder_id, floor)
 }
 
 /** A size slider's way back: a double click on it, or the button by its title */
@@ -179,6 +183,25 @@ function set_view(view: FolderView) {
 				:checked="masonry_columns === count"
 				keep_open
 				@select="set_columns(count)"
+			/>
+		</template>
+		<!-- 3D's own setting: its floor, a table or endless -->
+		<template v-if="current === '3d'">
+			<MenuSeparator />
+			<MenuLabel :label="t('view_menu.floor')" />
+			<MenuItem
+				icon="tabler:square"
+				:label="t('view_menu.floor_table')"
+				:checked="floor_3d === 'table'"
+				keep_open
+				@select="set_floor('table')"
+			/>
+			<MenuItem
+				icon="tabler:infinity"
+				:label="t('view_menu.floor_infinite')"
+				:checked="floor_3d === 'infinite'"
+				keep_open
+				@select="set_floor('infinite')"
 			/>
 		</template>
 		<template v-if="current === 'dashboard'">

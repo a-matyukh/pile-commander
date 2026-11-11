@@ -200,6 +200,8 @@ useMoveSelectedWidgets({
 	editingNoteId,
 	boardSnapSettings,
 	enabled: () => !isEmbedded,
+	// the canvas has no edge: an item dragged into the negative stays there when nudged
+	bounded: false,
 })
 
 provideEditingNoteId(editingNoteId)
