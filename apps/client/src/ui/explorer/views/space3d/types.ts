@@ -64,6 +64,8 @@ export type SceneOptions = {
 	floor: SceneFloor
 	/** Lines on the floor, the table's and the endless one's */
 	grid: boolean
+	/** Endless floor: the ground as far as the camera sees, so a horizon shows */
+	horizon: boolean
 	/** Items can be dragged (not in a read-only folder) */
 	movable: boolean
 	text: { loading: string; failed: string }
@@ -93,6 +95,7 @@ export interface Scene3D {
 	set_movable(on: boolean): void
 	set_floor(floor: SceneFloor): void
 	set_grid(on: boolean): void
+	set_horizon(on: boolean): void
 	/** The whole folder from the front; `instant` skips the flight */
 	home(instant?: boolean): void
 	/** Straight from above: the board as it is */

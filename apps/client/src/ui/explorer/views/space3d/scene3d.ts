@@ -50,6 +50,7 @@ import {
 import { folder_shape, ring_geometry, rounded_rect, slab } from './shapes'
 import { dispose_tree, fit_model, load_model, release_models, retain_models } from './models'
 import { create_floor_grid, type FloorGrid } from './floor_grid'
+import { create_ground, type Ground } from './ground'
 import { plan_detail, scale_for, start_scale, type FaceState } from './detail'
 import { MIN_HOME_SCALE, px_per_unit, start_frame } from './home'
 import { card_heights } from './stack'
@@ -152,6 +153,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let movable = options.movable
 	let floor_mode: SceneFloor = options.floor
 	let grid_on = options.grid
+	let horizon_on = options.horizon
 	let active = true
 	let disposed = false
 
@@ -243,6 +245,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			const distance = camera.position.distanceTo(controls.target)
 			grid.aim(controls.target, distance, camera.far - distance)
 		}
+		// the ground reaches just short of the farthest the camera draws: its edge is the horizon
+		ground?.aim(camera.position.x, camera.position.z, camera.far * 0.94)
 		renderer.render(scene, camera)
 		emit_frame()
 		if (busy) invalidate()
@@ -605,6 +609,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let table: { key: string; group: Group; face: Face } | null = null
 	/** The endless floor */
 	let grid: FloorGrid | null = null
+	/** Its ground to the horizon */
+	let ground: Ground | null = null
 
 	function layout_bounds(): Bounds {
 		let x0 = Infinity
@@ -649,9 +655,14 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				world.add(grid.mesh)
 			}
 			grid.mesh.visible = grid_on
+			if (horizon_on && !ground) {
+				ground = create_ground()
+				world.add(ground.mesh)
+			} else if (!horizon_on) drop_ground()
 			return
 		}
 		drop_grid()
+		drop_ground()
 		const b = layout_bounds()
 		const key = `${b.x0},${b.y0},${b.x1},${b.y1},${grid_on}`
 		if (table?.key === key) return
@@ -686,6 +697,13 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		dispose_live(table.group)
 		table.face.dispose()
 		table = null
+	}
+
+	function drop_ground() {
+		if (!ground) return
+		world.remove(ground.mesh)
+		ground.dispose()
+		ground = null
 	}
 
 	function drop_grid() {
@@ -1281,6 +1299,12 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			}
 			invalidate()
 		},
+		set_horizon(on) {
+			if (on === horizon_on) return
+			horizon_on = on
+			update_floor()
+			invalidate()
+		},
 		set_grid(on) {
 			if (on === grid_on) return
 			grid_on = on
@@ -1336,6 +1360,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			for (const live of [...lives.values()]) remove(live)
 			drop_table()
 			drop_grid()
+			drop_ground()
 			shared_shadow.dispose()
 			hidden.dispose()
 			environment.dispose()

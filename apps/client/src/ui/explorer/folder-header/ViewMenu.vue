@@ -47,6 +47,7 @@ const floor_3d = computed(() => floor_3d_from_stored(folder_attrs.value.floor_3d
 /** The folder's grid, the canvas's and 3D's alike; shown unless turned off */
 const grid_shown = computed(() => folder_attrs.value.show_grid_dots !== false)
 const names_shown = computed(() => folder_attrs.value.names_3d === true)
+const horizon_shown = computed(() => folder_attrs.value.horizon_3d === true)
 
 function set_column_width(width: number) {
 	void props.workspace.change_masonry_column_width(props.folder_id, width)
@@ -219,6 +220,14 @@ function set_view(view: FolderView) {
 				:checked="names_shown"
 				keep_open
 				@select="props.workspace.change_option_3d(props.folder_id, 'names_3d', !names_shown)"
+			/>
+			<MenuItem
+				v-if="floor_3d === 'infinite'"
+				icon="tabler:sunset-2"
+				:label="t('view_menu.horizon_3d')"
+				:checked="horizon_shown"
+				keep_open
+				@select="props.workspace.change_option_3d(props.folder_id, 'horizon_3d', !horizon_shown)"
 			/>
 		</template>
 		<template v-if="current === 'dashboard'">

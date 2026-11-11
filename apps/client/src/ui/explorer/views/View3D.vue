@@ -289,6 +289,8 @@ const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, sys
 const floor = computed(() => floor_3d_from_stored(props.container.floor_3d))
 /** The folder's grid on the floor: the canvas's own setting, shown unless turned off */
 const grid = computed(() => props.container.show_grid_dots !== false)
+/** The ground to the horizon, under the endless floor: the folder's choice, off unless turned on */
+const horizon = computed(() => props.container.horizon_3d === true)
 
 onMounted(() => {
 	if (!stage.value) return
@@ -298,6 +300,7 @@ onMounted(() => {
 			motion: motion.value,
 			floor: floor.value,
 			grid: grid.value,
+			horizon: horizon.value,
 			movable: props.workspace.can_write,
 			text: { loading: t('v3d.loading'), failed: t('v3d.model_failed') },
 			on_select: select,
@@ -329,6 +332,7 @@ watch(selected_here, ids => scene?.set_selected(ids))
 watch(motion, on => scene?.set_motion(on))
 watch(floor, mode => scene?.set_floor(mode))
 watch(grid, on => scene?.set_grid(on))
+watch(horizon, on => scene?.set_horizon(on))
 // a folder that turns read-only (a share taken away) stops moving at once
 watch(() => props.workspace.can_write, on => scene?.set_movable(on))
 

@@ -175,6 +175,7 @@ export const en: typeof ru = {
 		floor_infinite: 'Endless floor',
 		grid_3d: 'Grid',
 		names_3d: 'File names',
+		horizon_3d: 'Horizon',
 		reset_size: 'Default',
 		reset_hint: 'Double-click for the default size',
 	},

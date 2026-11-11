@@ -172,6 +172,7 @@ export const ru = {
 		floor_infinite: 'Бесконечный пол',
 		grid_3d: 'Сетка',
 		names_3d: 'Имена файлов',
+		horizon_3d: 'Горизонт',
 		reset_size: 'Стандартный',
 		reset_hint: 'Двойной клик — стандартный размер',
 	},
