@@ -38,6 +38,8 @@ export type SceneItem = {
 	url?: string | null
 	/** model: its content could not be had (the card says so) */
 	failed?: boolean
+	/** model: its turn about its own axis, radians, as the board's viewer shows it */
+	yaw?: number
 	/** image without content: placeholder color */
 	tone?: string
 	/** image: a GIF, whose first frame is often empty; the card shows its fullest one */
@@ -79,6 +81,8 @@ export type SceneOptions = {
 	on_frame(frame: SceneFrame): void
 	/** The first drag of an item: tell how to change its height */
 	on_hint(): void
+	/** A model was turned with its handle: its turn about its own axis, radians */
+	on_turn(key: string, yaw: number): void
 }
 
 export interface Scene3D {
@@ -101,6 +105,13 @@ export interface Scene3D {
 	fly_into(key: string): Promise<void>
 	/** False pauses rendering (hidden tab) */
 	set_active(active: boolean): void
+	/**
+	 * A handle by the "⋯", dragged `dx`, `dy` CSS px from where it was pressed:
+	 * `height` raises or lowers the item, `turn` turns a model about its axis
+	 */
+	handle(key: string, kind: 'height' | 'turn', dx: number, dy: number): void
+	/** The handle let go: what it changed is kept (`on_move`, `on_turn`), or put back */
+	handle_end(key: string, kind: 'height' | 'turn', keep: boolean): void
 	/** Draws a frame now, so the HTML over the scene (the "⋯") is in place before a menu opens at it */
 	sync(): void
 	/** The camera is not where home() puts it */

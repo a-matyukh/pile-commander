@@ -137,6 +137,8 @@ export const en: typeof ru = {
 		slides: 'Slides',
 	},
 	v3d: {
+		raise: 'Raise or lower: drag up or down',
+		turn: 'Turn: drag left or right',
 		home: 'Default view',
 		top: 'From above',
 		zoom_in: 'Zoom in',

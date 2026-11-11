@@ -215,6 +215,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let homed = false
 	let press: Press | null = null
 	let drag: Drag | null = null
+	/** A handle by the "⋯" being dragged: where the item was when it was pressed */
+	let handling: { key: string; kind: 'height' | 'turn'; base: number; yaw: number } | null = null
 	let last_click: { key: string; t: number } | null = null
 	let long_press: ReturnType<typeof setTimeout> | undefined
 	let view_w = 1
@@ -275,9 +277,10 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				const kept = live.faces[0]?.s ?? live.level
 				remove(live)
 				create({ ...it }, look, height, kept)
-			} else if (drag?.key !== it.key) {
+			} else if (drag?.key !== it.key && handling?.key !== it.key) {
 				live.item = { ...it }
 				live.base = height
+				if (live.spin) live.spin.rotation.y = it.yaw ?? 0
 				place(live)
 			}
 		}
@@ -556,6 +559,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				live.faces = live.faces.filter(face => face !== status)
 				status.dispose()
 				const spin = new Group()
+				spin.rotation.y = it.yaw ?? 0
 				spin.add(holder)
 				live.body.add(spin)
 				live.spin = spin
@@ -759,7 +763,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		for (const live of lives.values()) {
 			const key = live.item.key
 			const card = live.item.kind !== 'model'
-			const dragging = !!drag?.started && drag.key === key
+			const dragging = (!!drag?.started && drag.key === key) || handling?.key === key
 			const lift_to = card && !dragging && (key === hovered || selected.has(key)) && motion ? LIFT : 0
 			live.lift += (lift_to - live.lift) * k
 			if (Math.abs(lift_to - live.lift) > 0.0005) busy = true
@@ -786,10 +790,6 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				live.line.position.y = live.base / 2
 			}
 
-			if (live.spin && motion && key === primary && !dragging) {
-				live.spin.rotation.y += dt * 0.6
-				busy = true
-			}
 			if (live.spin && live.appear < 1) {
 				live.appear = Math.min(1, live.appear + dt * 4)
 				const e = 1 - (1 - live.appear) ** 3
@@ -1245,6 +1245,41 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		},
 		set_movable(on) {
 			movable = on
+		},
+		handle(key, kind, dx, dy) {
+			const live = lives.get(key)
+			if (!live || !movable) return
+			if (handling?.key !== key || handling.kind !== kind) {
+				handling = { key, kind, base: live.base, yaw: live.spin?.rotation.y ?? 0 }
+			}
+			if (kind === 'height') {
+				// as far up as the pointer goes on screen, at the item's distance and the camera's tilt
+				const distance = camera.position.distanceTo(item_center(live))
+				const px_per_unit = view_h / (2 * Math.tan((camera.fov * DEG) / 2) * Math.max(distance, camera.near))
+				const tilt = Math.max(0.35, Math.sin(current_pose().phi))
+				live.base = Math.min(MAX_HEIGHT * U, Math.max(0, handling.base - dy / px_per_unit / tilt))
+				live.item.z = Math.round(live.base / U)
+			} else if (live.spin) {
+				live.spin.rotation.y = handling.yaw + dx * 0.012
+			}
+			invalidate()
+		},
+		handle_end(key, kind, keep) {
+			const h = handling
+			handling = null
+			const live = lives.get(key)
+			if (!h || h.key !== key || !live) return
+			if (kind === 'height') {
+				if (keep && Math.abs(live.base - h.base) > 1e-6) {
+					options.on_move(key, { x: live.item.x, y: live.item.y, z: Math.round(live.base / U) })
+				} else {
+					live.base = h.base
+				}
+			} else if (live.spin) {
+				if (keep && live.spin.rotation.y !== h.yaw) options.on_turn(key, live.spin.rotation.y)
+				else live.spin.rotation.y = h.yaw
+			}
+			invalidate()
 		},
 		set_grid(on) {
 			if (on === grid_on) return

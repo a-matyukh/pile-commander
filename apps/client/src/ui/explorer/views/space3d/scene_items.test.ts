@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { board_position, DEFAULT_SIZE, IMAGE_DEFAULT_SIZE, NOTE_DEFAULT_SIZE } from '@/services/board/layout'
-import { note_lines, plain_line, to_scene_items, type ItemLook } from './scene_items'
+import { note_lines, orbit_theta, plain_line, to_scene_items, with_theta, type ItemLook } from './scene_items'
 
 type FileChild = Extract<FolderContainerWidgetChild, { type: 'file' }>
 
@@ -142,5 +142,23 @@ describe('a note card read from markdown', () => {
 		expect(plain_line('1. first')).toBe('first')
 		expect(plain_line('see [the plan](https://x.y) and ![cover](c.png)')).toBe('see the plan and cover')
 		expect(plain_line('**bold** _it_ ~~old~~ `code`')).toBe('bold it old code')
+	})
+})
+
+describe("a model's turn, shared with the board", () => {
+	test("it faces the 3D camera as it faces the board's viewer", () => {
+		const turned = file('duck.glb', { model_camera: { orbit: '0.5rad 1.2rad 4m', target: 'auto auto auto', fieldOfView: '30deg' } })
+		const [model] = to_scene_items([turned], look({ url: 'blob:duck' }))
+		expect(model.yaw).toBeCloseTo(-0.5)
+		const [plain] = to_scene_items([file('chair.glb')], look({ url: 'blob:chair' }))
+		expect(plain.yaw).toBe(0)
+	})
+
+	test('the board keeps radians or degrees; a turn in 3D writes the angle and keeps the rest', () => {
+		expect(orbit_theta('30deg 75deg 105%')).toBeCloseTo(Math.PI / 6)
+		expect(orbit_theta('-0.25rad 1rad 2m')).toBeCloseTo(-0.25)
+		expect(orbit_theta(undefined)).toBeNull()
+		expect(with_theta({ orbit: '0.5rad 1.2rad 4m', target: '0m 1m 0m', fieldOfView: '30deg' }, 1)).toEqual({ orbit: '1rad 1.2rad 4m', target: '0m 1m 0m', fieldOfView: '30deg' })
+		expect(with_theta(undefined, -0.3)).toEqual({ orbit: '-0.3rad 75deg 105%', target: 'auto auto auto', fieldOfView: 'auto' })
 	})
 })

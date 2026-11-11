@@ -1,5 +1,5 @@
 import { is_pile_image_token } from '@pile-commander/file-manager'
-import type { FolderContainerWidgetChild } from '@/domain/Widget'
+import type { FolderContainerWidgetChild, ModelCameraState } from '@/domain/Widget'
 import { board_position, board_size, image_shows_preview, is_note_widget } from '@/services/board/layout'
 import { get_media_kind } from '@/services/board/media'
 import { isImageBackground, resolveWidgetBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
@@ -91,6 +91,27 @@ function paper(child: FolderContainerWidgetChild): string {
 	return cover_color(background) ?? resolveWidgetBackground(undefined, '#FFFFFF')
 }
 
+/**
+ * The angle the board's viewer looks at a model from, radians (the first
+ * value of model-viewer's camera orbit, "0.52rad 1.2rad 4m" or "30deg …");
+ * null when none is kept
+ */
+export function orbit_theta(orbit: string | undefined): number | null {
+	const match = /^\s*(-?[\d.]+)(rad|deg)?/.exec(orbit ?? '')
+	if (!match) return null
+	const value = Number(match[1])
+	if (!Number.isFinite(value)) return null
+	return match[2] === 'deg' ? (value * Math.PI) / 180 : value
+}
+
+/** The model's kept view with the board's camera turned to `theta` radians; the rest as it was, or the viewer's defaults */
+export function with_theta(state: ModelCameraState | undefined, theta: number): ModelCameraState {
+	const angle = `${Number(theta.toFixed(4))}rad`
+	if (!state) return { orbit: `${angle} 75deg 105%`, target: 'auto auto auto', fieldOfView: 'auto' }
+	const rest = state.orbit.trim().split(/\s+/).slice(1)
+	return { ...state, orbit: [angle, ...(rest.length ? rest : ['75deg', '105%'])].join(' ') }
+}
+
 export function to_scene_items(
 	children: readonly FolderContainerWidgetChild[],
 	look: (child: FolderContainerWidgetChild) => ItemLook,
@@ -110,7 +131,11 @@ export function to_scene_items(
 			return { ...base, kind: 'image', url: url || null, tone: TONES[hash(child.name) % TONES.length], gif: /\.gif$/i.test(child.name) }
 		}
 		// a model is always itself in 3D, in its card's size
-		if (get_media_kind(child.name) === 'model') return { ...base, kind: 'model', url: url === false ? null : url, failed: url === false }
+		if (get_media_kind(child.name) === 'model') {
+			// it faces the camera as it faces the board's viewer: the model turns the other way
+			const theta = orbit_theta(child.model_camera?.orbit)
+			return { ...base, kind: 'model', url: url === false ? null : url, failed: url === false, yaw: theta === null ? 0 : -theta }
+		}
 		return { ...base, kind: 'file', icon: glyph.icon, tint: glyph.color ?? null, label }
 	})
 }

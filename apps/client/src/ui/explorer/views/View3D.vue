@@ -20,7 +20,7 @@ import ItemMenu from './ItemMenu.vue'
 import { use_items } from './use_items'
 import { create_scene3d } from './space3d/scene3d'
 import { create_scene_media } from './space3d/media'
-import { to_scene_items } from './space3d/scene_items'
+import { to_scene_items, with_theta } from './space3d/scene_items'
 import type { LabelSpot, Scene3D, SceneFrame } from './space3d/types'
 
 /**
@@ -155,6 +155,46 @@ useMoveSelectedWidgets({
 
 const toast = useToast()
 
+/** A model turned in 3D faces that way on the board too: its kept view turns with it */
+function turn(key: string, yaw: number) {
+	const ws = props.workspace
+	if (!ws.can_write) return
+	const child = by_id.value.get(key)
+	const kept = child?.type === 'file' ? child.model_camera : undefined
+	void ws.change_model_camera(key, with_theta(kept, -yaw))
+}
+
+// ── Handles by the "⋯": height for any item, a turn for a model; a finger or a mouse alike ──
+
+const primary_is_model = computed(() => primary.value?.type === 'file' && get_media_kind(primary.value.name) === 'model')
+let handle_press: { id: number; key: string; kind: 'height' | 'turn'; x: number; y: number } | null = null
+
+function handle_down(kind: 'height' | 'turn', event: PointerEvent) {
+	const child = primary.value
+	if (!child || !scene) return
+	event.preventDefault()
+	event.stopPropagation()
+	try {
+		;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+	} catch {
+		// a pointer the browser does not track: moves still arrive while over the handle
+	}
+	handle_press = { id: event.pointerId, key: child.id, kind, x: event.clientX, y: event.clientY }
+}
+
+function handle_move(event: PointerEvent) {
+	const h = handle_press
+	if (!h || event.pointerId !== h.id) return
+	scene?.handle(h.key, h.kind, event.clientX - h.x, event.clientY - h.y)
+}
+
+function handle_up(event: PointerEvent, keep: boolean) {
+	const h = handle_press
+	if (!h || event.pointerId !== h.id) return
+	handle_press = null
+	scene?.handle_end(h.key, h.kind, keep)
+}
+
 // ── HTML over the scene ──────────────────────────────────────────────────
 
 // Labels follow the scene every frame straight on the DOM, not through Vue
@@ -244,6 +284,7 @@ onMounted(() => {
 			on_menu: key => void menu(key),
 			on_frame,
 			on_hint: () => toast.add({ title: t('v3d.height_hint') }),
+			on_turn: turn,
 		})
 	} catch (error) {
 		// no WebGL: the folder can still open as a board
@@ -310,6 +351,29 @@ function open_as_board() {
 			</div>
 			<div ref="badge" class="ba">
 				<span v-if="primary" class="bdt">
+					<template v-if="workspace.can_write">
+						<button
+							type="button"
+							class="hd hd-v"
+							:data-tip="t('v3d.raise')"
+							:aria-label="t('v3d.raise')"
+							@pointerdown="handle_down('height', $event)"
+							@pointermove="handle_move"
+							@pointerup="handle_up($event, true)"
+							@pointercancel="handle_up($event, false)"
+						><Icon icon="tabler:arrows-vertical" /></button>
+						<button
+							v-if="primary_is_model"
+							type="button"
+							class="hd hd-h"
+							:data-tip="t('v3d.turn')"
+							:aria-label="t('v3d.turn')"
+							@pointerdown="handle_down('turn', $event)"
+							@pointermove="handle_move"
+							@pointerup="handle_up($event, true)"
+							@pointercancel="handle_up($event, false)"
+						><Icon icon="tabler:rotate-360" /></button>
+					</template>
 					<ItemMenu :key="primary.id" :items="items" :child="primary" :workspace="workspace" />
 				</span>
 			</div>
@@ -396,6 +460,29 @@ function open_as_board() {
 	border: 0.5px solid var(--border-strong);
 	border-radius: 8px;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
+}
+/* handles by the "⋯": dragged, not clicked */
+.hd {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--text-secondary);
+	font-size: 16px;
+	touch-action: none;
+}
+.hd-v {
+	cursor: ns-resize;
+}
+.hd-h {
+	cursor: ew-resize;
+}
+.hd:hover {
+	color: var(--text-primary);
 }
 .bar {
 	position: absolute;
