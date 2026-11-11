@@ -331,8 +331,8 @@ function open_as_board() {
 	-webkit-user-select: none;
 	-webkit-touch-callout: none;
 	-webkit-tap-highlight-color: transparent;
-	/* the canvas is transparent: the room around the floor is CSS */
-	background: radial-gradient(ellipse at 50% 32%, var(--ct) 0%, color-mix(in srgb, var(--ct) 93%, #33415c) 100%);
+	/* the canvas is transparent: around the floor is the folder's own background, as in the other views */
+	background: var(--ct);
 }
 .stage {
 	position: absolute;
