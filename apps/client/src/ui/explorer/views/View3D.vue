@@ -20,7 +20,7 @@ import ItemMenu from './ItemMenu.vue'
 import { use_items } from './use_items'
 import { create_scene3d } from './space3d/scene3d'
 import { create_scene_media } from './space3d/media'
-import { to_scene_items } from './space3d/scene_items'
+import { to_scene_items, with_theta } from './space3d/scene_items'
 import type { LabelSpot, Scene3D, SceneFrame } from './space3d/types'
 
 /**
@@ -155,6 +155,62 @@ useMoveSelectedWidgets({
 
 const toast = useToast()
 
+/** The help on gestures: a finger's on a touch screen, the mouse's otherwise; open until closed, per device */
+const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+/** Each tip: its gesture, what it does, an icon for the gesture */
+const TIP_ICONS = touch
+	? ['tabler:hand-finger', 'tabler:arrows-move', 'tabler:hand-click', 'tabler:hand-stop', 'tabler:arrows-vertical']
+	: ['tabler:rotate-360', 'tabler:arrows-move', 'tabler:drag-drop', 'tabler:click', 'tabler:keyboard']
+const tips = computed(() => TIP_ICONS.map((icon, i) => {
+	const text = t(`v3d.tips_${touch ? 'touch' : 'mouse'}_${i + 1}`)
+	const cut = text.indexOf(' — ')
+	const action = cut < 0 ? '' : text.slice(cut + 3)
+	return { icon, gesture: cut < 0 ? text : text.slice(0, cut), action: action.charAt(0).toUpperCase() + action.slice(1) }
+}))
+function toggle_tips() {
+	explorer_settings.tips_3d = !explorer_settings.tips_3d
+}
+
+/** A model turned in 3D faces that way on the board too: its kept view turns with it */
+function turn(key: string, yaw: number) {
+	const ws = props.workspace
+	if (!ws.can_write) return
+	const child = by_id.value.get(key)
+	const kept = child?.type === 'file' ? child.model_camera : undefined
+	void ws.change_model_camera(key, with_theta(kept, -yaw))
+}
+
+// ── Handles by the "⋯": height for any item, a turn for a model; a finger or a mouse alike ──
+
+const primary_is_model = computed(() => primary.value?.type === 'file' && get_media_kind(primary.value.name) === 'model')
+let handle_press: { id: number; key: string; kind: 'height' | 'turn'; x: number; y: number } | null = null
+
+function handle_down(kind: 'height' | 'turn', event: PointerEvent) {
+	const child = primary.value
+	if (!child || !scene) return
+	event.preventDefault()
+	event.stopPropagation()
+	try {
+		;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+	} catch {
+		// a pointer the browser does not track: moves still arrive while over the handle
+	}
+	handle_press = { id: event.pointerId, key: child.id, kind, x: event.clientX, y: event.clientY }
+}
+
+function handle_move(event: PointerEvent) {
+	const h = handle_press
+	if (!h || event.pointerId !== h.id) return
+	scene?.handle(h.key, h.kind, event.clientX - h.x, event.clientY - h.y)
+}
+
+function handle_up(event: PointerEvent, keep: boolean) {
+	const h = handle_press
+	if (!h || event.pointerId !== h.id) return
+	handle_press = null
+	scene?.handle_end(h.key, h.kind, keep)
+}
+
 // ── HTML over the scene ──────────────────────────────────────────────────
 
 // Labels follow the scene every frame straight on the DOM, not through Vue
@@ -163,6 +219,10 @@ function label_ref(key: string, el: unknown) {
 	if (el instanceof HTMLElement) labels.set(key, el)
 	else labels.delete(key)
 }
+
+/** Names under pictures and models: the folder's choice in the View menu, off unless turned on */
+const names = computed(() => props.container.names_3d === true)
+watch(names, () => scene?.sync())
 
 /** Boxes of the names placed this frame, CSS px */
 const placed: { x0: number; x1: number; y0: number; y1: number }[] = []
@@ -190,7 +250,9 @@ function on_frame(frame: SceneFrame) {
 	// widths are read before any style is written: one layout, not one per name
 	for (const [key, el] of labels) {
 		const spot = frame.labels.get(key)
-		if (spot?.visible) shown.push({ el, spot, selected: ws.is_selected(key), text: text_width(el) })
+		const selected = ws.is_selected(key)
+		// names are the folder's choice; the selected item's always shows, to tell what is selected
+		if (spot?.visible && (names.value || selected)) shown.push({ el, spot, selected, text: text_width(el) })
 		else hidden.push(el)
 	}
 	for (const el of hidden) el.style.visibility = 'hidden'
@@ -225,6 +287,10 @@ const system_motion = usePreferredReducedMotion()
 const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, system_motion.value === 'reduce'))
 /** The floor this folder has, chosen in the View menu */
 const floor = computed(() => floor_3d_from_stored(props.container.floor_3d))
+/** The folder's grid on the floor: the canvas's own setting, shown unless turned off */
+const grid = computed(() => props.container.show_grid_dots !== false)
+/** The ground to the horizon, under the endless floor: the folder's choice, off unless turned on */
+const horizon = computed(() => props.container.horizon_3d === true)
 
 onMounted(() => {
 	if (!stage.value) return
@@ -233,6 +299,8 @@ onMounted(() => {
 			font: getComputedStyle(stage.value).getPropertyValue('--font-sans').trim() || 'sans-serif',
 			motion: motion.value,
 			floor: floor.value,
+			grid: grid.value,
+			horizon: horizon.value,
 			movable: props.workspace.can_write,
 			text: { loading: t('v3d.loading'), failed: t('v3d.model_failed') },
 			on_select: select,
@@ -241,6 +309,7 @@ onMounted(() => {
 			on_menu: key => void menu(key),
 			on_frame,
 			on_hint: () => toast.add({ title: t('v3d.height_hint') }),
+			on_turn: turn,
 		})
 	} catch (error) {
 		// no WebGL: the folder can still open as a board
@@ -262,6 +331,8 @@ watch(scene_items, list => scene?.set_items(list))
 watch(selected_here, ids => scene?.set_selected(ids))
 watch(motion, on => scene?.set_motion(on))
 watch(floor, mode => scene?.set_floor(mode))
+watch(grid, on => scene?.set_grid(on))
+watch(horizon, on => scene?.set_horizon(on))
 // a folder that turns read-only (a share taken away) stops moving at once
 watch(() => props.workspace.can_write, on => scene?.set_movable(on))
 
@@ -306,8 +377,46 @@ function open_as_board() {
 			</div>
 			<div ref="badge" class="ba">
 				<span v-if="primary" class="bdt">
+					<template v-if="workspace.can_write">
+						<button
+							type="button"
+							class="hd hd-v"
+							:data-tip="t('v3d.raise')"
+							:aria-label="t('v3d.raise')"
+							@pointerdown="handle_down('height', $event)"
+							@pointermove="handle_move"
+							@pointerup="handle_up($event, true)"
+							@pointercancel="handle_up($event, false)"
+						><Icon icon="tabler:arrows-vertical" /></button>
+						<button
+							v-if="primary_is_model"
+							type="button"
+							class="hd hd-h"
+							:data-tip="t('v3d.turn')"
+							:aria-label="t('v3d.turn')"
+							@pointerdown="handle_down('turn', $event)"
+							@pointermove="handle_move"
+							@pointerup="handle_up($event, true)"
+							@pointercancel="handle_up($event, false)"
+						><Icon icon="tabler:rotate-360" /></button>
+					</template>
 					<ItemMenu :key="primary.id" :items="items" :child="primary" :workspace="workspace" />
 				</span>
+			</div>
+			<div v-if="explorer_settings.tips_3d" class="tips" role="note">
+				<div class="tt">
+					<span>{{ t('v3d.tips') }}</span>
+					<IconButton icon="tabler:x" :icon_size="14" :aria-label="t('dialog.close')" @click="toggle_tips" />
+				</div>
+				<ul>
+					<li v-for="tip in tips" :key="tip.gesture">
+						<span class="ti"><Icon :icon="tip.icon" /></span>
+						<span class="tx">
+							<span class="tg">{{ tip.gesture }}</span>
+							<span class="ta">{{ tip.action }}</span>
+						</span>
+					</li>
+				</ul>
 			</div>
 			<div class="bar">
 				<IconButton icon="tabler:perspective" :data-tip="t('v3d.home')" @click="scene?.home()" />
@@ -315,6 +424,8 @@ function open_as_board() {
 				<div class="vsep" />
 				<IconButton icon="tabler:minus" :data-tip="t('v3d.zoom_out')" @click="scene?.zoom(1.3)" />
 				<IconButton icon="tabler:plus" :data-tip="t('v3d.zoom_in')" @click="scene?.zoom(1 / 1.3)" />
+				<div class="vsep" />
+				<IconButton icon="tabler:help-circle" :active="explorer_settings.tips_3d" :data-tip="t('v3d.tips')" :aria-label="t('v3d.tips')" @click="toggle_tips" />
 			</div>
 		</template>
 		<ItemDialogs :items="items" />
@@ -326,8 +437,13 @@ function open_as_board() {
 	position: absolute;
 	inset: 0;
 	overflow: hidden;
-	/* the canvas is transparent: the room around the floor is CSS */
-	background: radial-gradient(ellipse at 50% 32%, var(--ct) 0%, color-mix(in srgb, var(--ct) 93%, #33415c) 100%);
+	/* a double tap opens or focuses, it never selects the page's text (iOS) */
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	/* the canvas is transparent: around the floor is the folder's own background, as in the other views */
+	background: var(--ct);
 }
 .stage {
 	position: absolute;
@@ -387,6 +503,93 @@ function open_as_board() {
 	border: 0.5px solid var(--border-strong);
 	border-radius: 8px;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
+}
+/* the help on gestures, above the toolbar */
+.tips {
+	position: absolute;
+	left: 50%;
+	bottom: 64px;
+	transform: translateX(-50%);
+	width: min(360px, calc(100% - 24px));
+	padding: 12px 14px 14px;
+	background: var(--surface-3, #fff);
+	border: 0.5px solid var(--border-strong);
+	border-radius: 14px;
+	box-shadow: 0 10px 30px rgba(15, 23, 42, .10), 0 2px 6px rgba(15, 23, 42, .05);
+	z-index: 2;
+}
+.tt {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+.tips ul {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.tips li {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.ti {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	border-radius: 9px;
+	background: var(--fill-accent-soft, rgba(55, 138, 221, .10));
+	color: var(--accent, #378add);
+	font-size: 17px;
+}
+.tx {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.tg {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--text-primary);
+}
+.ta {
+	font-size: 12.5px;
+	line-height: 1.35;
+	color: var(--text-secondary);
+}
+/* handles by the "⋯": dragged, not clicked */
+.hd {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--text-secondary);
+	font-size: 16px;
+	touch-action: none;
+}
+.hd-v {
+	cursor: ns-resize;
+}
+.hd-h {
+	cursor: ew-resize;
+}
+.hd:hover {
+	color: var(--text-primary);
 }
 .bar {
 	position: absolute;

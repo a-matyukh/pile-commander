@@ -171,7 +171,7 @@ const decodes = limiter(3)
 
 /**
  * A file's picture, only as large as a w×h frame needs it when the picture
- * fills the frame: a big photo is decoded, copied at that size and let go.
+ * fits whole in the frame: a big photo is decoded, copied at that size and let go.
  * A GIF shows its fullest frame (gif.ts): many animations start empty.
  * `full`: the copy has all the pixels the file has. null when it cannot be
  * had: the file is gone or not a picture, or it comes from another site
@@ -184,7 +184,7 @@ export function load_picture(url: string, w: number, h: number, wanted: () => bo
 		if (!source) return null
 		const nw = source instanceof HTMLImageElement ? source.naturalWidth : source.width
 		const nh = source instanceof HTMLImageElement ? source.naturalHeight : source.height
-		const k = Math.min(1, Math.max(w / nw, h / nh))
+		const k = Math.min(1, w / nw, h / nh)
 		return { picture: shrink(source, nw, nh, Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))), full: k === 1 }
 	}, wanted).then(found => found ?? null)
 }
@@ -221,7 +221,7 @@ async function gif_frame(url: string): Promise<HTMLCanvasElement | null> {
 
 /** A smaller copy of a picture that is more than twice as large as a w×h frame needs; the same picture otherwise */
 export function fit_picture(picture: HTMLCanvasElement, w: number, h: number): HTMLCanvasElement {
-	const k = Math.max(w / picture.width, h / picture.height)
+	const k = Math.min(w / picture.width, h / picture.height)
 	if (k >= 0.5) return picture
 	return shrink(picture, picture.width, picture.height, Math.max(1, Math.round(picture.width * k)), Math.max(1, Math.round(picture.height * k)))
 }
@@ -319,40 +319,74 @@ function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 /** A sticker, like the board's: title, first lines, file name */
-export function paint_note(o: { title: string; text: string; footer: string; paper: string; font: string }): Painter {
+/** Type of a note's line in board px, as the board's note shows it (14 px text, line height 1.5) */
+const NOTE_TYPE = [
+	{ size: 14, weight: 400 },
+	{ size: 20, weight: 600 },
+	{ size: 17, weight: 600 },
+	{ size: 15, weight: 600 },
+]
+
+type Run = { text: string; bold?: boolean; italic?: boolean; strike?: boolean; code?: boolean; color?: string; mark?: string }
+
+/** A note: its text as the board shows it, line after line until the card is full, with its colors, highlights and emphasis */
+export function paint_note(o: { lines: { text: string; level: number; gap?: boolean; runs?: Run[] }[]; paper: string; font: string }): Painter {
 	return (ctx, W, H, s) => {
 		// the whole canvas: the rounded card cuts the corners
 		ctx.fillStyle = o.paper
 		ctx.fillRect(0, 0, W, H)
-		// the board's sticker is 104×96 with 11/10/9 px type: a larger card scales it up
-		const k = Math.max(1, Math.min(W / (104 * s), H / (96 * s))) * s
-		const pad_x = 10 * k
-		let y = 9 * k
+		const pad = 8 * s
+		const right = W - pad
+		let y = pad
 		ctx.textBaseline = 'top'
-		ctx.fillStyle = COLORS.text
-		ctx.font = `600 ${11.5 * k}px ${o.font}`
-		for (const line of wrap(ctx, o.title, W - pad_x * 2, 2)) {
-			ctx.fillText(line, pad_x, y)
-			y += 14.5 * k
+		for (const line of o.lines) {
+			if (line.gap) {
+				y += 7 * s
+				continue
+			}
+			const type = NOTE_TYPE[line.level] ?? NOTE_TYPE[0]
+			const size = type.size * s
+			const step = size * 1.5
+			if (y + step > H - pad + 1) break
+			const font = (run: Run) => `${run.italic ? 'italic ' : ''}${run.bold ? 700 : type.weight} ${run.code ? size * 0.88 : size}px ${run.code ? 'ui-monospace, Menlo, monospace' : o.font}`
+			// words, each in its run's style; a line breaks between them
+			const words: { text: string; run: Run; width: number }[] = []
+			for (const run of line.runs ?? [{ text: line.text }]) {
+				ctx.font = font(run)
+				for (const piece of run.text.split(/(\s+)/)) {
+					if (piece) words.push({ text: piece, run, width: ctx.measureText(piece).width })
+				}
+			}
+			let x = pad
+			const top = () => y + (step - size) / 2
+			for (const word of words) {
+				const space = /^\s+$/.test(word.text)
+				if (x + word.width > right && x > pad && !space) {
+					x = pad
+					y += step
+					if (y + step > H - pad + 1) break
+				}
+				if (space && x === pad) continue
+				const r = word.run
+				if (r.mark) {
+					ctx.fillStyle = r.mark
+					ctx.fillRect(x, top() - size * 0.08, word.width, size * 1.2)
+				}
+				if (r.code) {
+					ctx.fillStyle = 'rgba(0, 0, 0, .06)'
+					ctx.fillRect(x, top() - size * 0.08, word.width, size * 1.2)
+				}
+				ctx.font = font(r)
+				ctx.fillStyle = r.color ?? COLORS.text
+				ctx.fillText(word.text, x, top() + (r.code ? size * 0.06 : 0))
+				if (r.strike && !space) {
+					ctx.fillRect(x, top() + size * 0.55, word.width, Math.max(1, size * 0.07))
+				}
+				x += word.width
+			}
+			y += step
 		}
-		y += 3 * k
-		const footer_h = 16 * k
-		const text_lines = Math.max(0, Math.floor((H - y - footer_h - 6 * k) / (13.5 * k)))
-		ctx.globalAlpha = 0.75
-		ctx.font = `400 ${10 * k}px ${o.font}`
-		for (const line of wrap(ctx, o.text, W - pad_x * 2, text_lines)) {
-			ctx.fillText(line, pad_x, y)
-			y += 13.5 * k
-		}
-		ctx.globalAlpha = 0.5
-		ctx.font = `400 ${9 * k}px ${o.font}`
-		ctx.fillText(ellipsis_fit(ctx, o.footer, W - pad_x * 2), pad_x, H - 8 * k - 9 * k)
-		ctx.globalAlpha = 1
 	}
-}
-
-function ellipsis_fit(ctx: CanvasRenderingContext2D, text: string, max_width: number) {
-	return ctx.measureText(text).width <= max_width ? text : ellipsis(ctx, text, max_width)
 }
 
 /** A photo card: the picture in a thin white frame */
@@ -367,8 +401,8 @@ export function paint_image(o: { picture: HTMLCanvasElement | null; tone: string
 		const iw = W - pad * 2
 		const ih = H - pad * 2
 		if (o.picture) {
-			// cover: fill the frame, cut the overflow
-			const k = Math.max(iw / o.picture.width, ih / o.picture.height)
+			// whole, as the board shows it (object-fit: contain): a picture resized there is not cut here
+			const k = Math.min(iw / o.picture.width, ih / o.picture.height)
 			const dw = o.picture.width * k
 			const dh = o.picture.height * k
 			ctx.drawImage(o.picture, pad + (iw - dw) / 2, pad + (ih - dh) / 2, dw, dh)
@@ -473,6 +507,8 @@ export function paint_floor(o: { x0: number; y0: number; step: number }): Painte
 	return (ctx, W, H, s) => {
 		ctx.fillStyle = COLORS.floor
 		ctx.fillRect(0, 0, W, H)
+		// no step: the grid is turned off
+		if (!o.step) return
 		ctx.strokeStyle = 'rgba(0, 0, 0, .055)'
 		ctx.lineWidth = Math.max(1, 1.2 * s)
 		ctx.beginPath()

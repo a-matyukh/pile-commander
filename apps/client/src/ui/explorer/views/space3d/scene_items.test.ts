@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { board_position, DEFAULT_SIZE, IMAGE_DEFAULT_SIZE, NOTE_DEFAULT_SIZE } from '@/services/board/layout'
-import { note_face, plain_line, to_scene_items, type ItemLook } from './scene_items'
+import { note_lines, note_runs, orbit_theta, plain_line, to_scene_items, with_theta, type ItemLook } from './scene_items'
 
 type FileChild = Extract<FolderContainerWidgetChild, { type: 'file' }>
 
@@ -53,10 +53,15 @@ describe('what the 3D scene draws for a folder', () => {
 		expect(odd.fill).toBeNull()
 	})
 
-	test('a note shown on the board is a card with its first lines, on its own color', () => {
+	test('a note shown on the board is a card with its text as the board shows it, on its own color', () => {
 		const note = file('Plan.md', { is_preview: true, background: '#FFF1B8' })
 		const [item] = to_scene_items([note], look({ note: '# Plan for the week\n- buy a lamp\n- call **Anna**' }))
-		expect(item).toMatchObject({ kind: 'note', title: 'Plan for the week', text: 'buy a lamp call Anna', footer: 'Plan.md', paper: '#FFF1B8' })
+		expect(item).toMatchObject({ kind: 'note', paper: '#FFF1B8' })
+		expect(item.lines?.map(({ text, level }) => ({ text, level }))).toEqual([
+			{ text: 'Plan for the week', level: 1 },
+			{ text: '• buy a lamp', level: 0 },
+			{ text: '• call Anna', level: 0 },
+		])
 		expect({ w: item.w, h: item.h }).toEqual({ w: NOTE_DEFAULT_SIZE.width, h: NOTE_DEFAULT_SIZE.height })
 	})
 
@@ -113,13 +118,44 @@ describe('what the 3D scene draws for a folder', () => {
 })
 
 describe('a note card read from markdown', () => {
-	test('the first line is the title, the next ones one paragraph', () => {
-		expect(note_face('## Trip\nTbilisi, Kazbegi\n\nBatumi', 'trip.md')).toEqual({ title: 'Trip', text: 'Tbilisi, Kazbegi Batumi' })
+	test('lines stay lines: a heading larger, list marks kept, an empty line a gap', () => {
+		expect(note_lines('## Trip\nTbilisi, Kazbegi\n\n\nBatumi\n1. pack\n- [x] tickets\n- [ ] hotel\n> quiet').map(({ text, level, gap }) => (gap ? { text, level, gap } : { text, level }))).toEqual([
+			{ text: 'Trip', level: 2 },
+			{ text: 'Tbilisi, Kazbegi', level: 0 },
+			{ text: '', level: 0, gap: true },
+			{ text: 'Batumi', level: 0 },
+			{ text: '1. pack', level: 0 },
+			{ text: '☑ tickets', level: 0 },
+			{ text: '☐ hotel', level: 0 },
+			{ text: 'quiet', level: 0 },
+		])
 	})
 
-	test('an empty or unread note is titled by its file name', () => {
-		expect(note_face(null, 'Ideas.md')).toEqual({ title: 'Ideas', text: '' })
-		expect(note_face('\n  \n', 'list.txt')).toEqual({ title: 'list', text: '' })
+	test('colors and highlights the editor writes as HTML are drawn, not shown as tags', () => {
+		const runs = note_runs('<span style="color: #3b7a1e"><mark style="background-color: #d9e9fb">dsafsdf</mark></span> rest &amp; more')
+		expect(runs).toEqual([
+			{ text: 'dsafsdf', color: '#3b7a1e', mark: '#d9e9fb' },
+			{ text: ' rest & more' },
+		])
+		expect(note_lines('<span style="color: red">a</span>')[0].text).toBe('a')
+	})
+
+	test('markdown emphasis is drawn in its style; snake_case stays as written', () => {
+		expect(note_runs('**bold** and *it* and ~~old~~ and `code` in snake_case_name')).toEqual([
+			{ text: 'bold', bold: true },
+			{ text: ' and ' },
+			{ text: 'it', italic: true },
+			{ text: ' and ' },
+			{ text: 'old', strike: true },
+			{ text: ' and ' },
+			{ text: 'code', code: true },
+			{ text: ' in snake_case_name' },
+		])
+	})
+
+	test('an empty or unread note is an empty card: no title made from its name', () => {
+		expect(note_lines(null)).toEqual([])
+		expect(note_lines('\n  \n')).toEqual([])
 	})
 
 	test('markdown marks go, links and pictures keep their text', () => {
@@ -128,5 +164,23 @@ describe('a note card read from markdown', () => {
 		expect(plain_line('1. first')).toBe('first')
 		expect(plain_line('see [the plan](https://x.y) and ![cover](c.png)')).toBe('see the plan and cover')
 		expect(plain_line('**bold** _it_ ~~old~~ `code`')).toBe('bold it old code')
+	})
+})
+
+describe("a model's turn, shared with the board", () => {
+	test("it faces the 3D camera as it faces the board's viewer", () => {
+		const turned = file('duck.glb', { model_camera: { orbit: '0.5rad 1.2rad 4m', target: 'auto auto auto', fieldOfView: '30deg' } })
+		const [model] = to_scene_items([turned], look({ url: 'blob:duck' }))
+		expect(model.yaw).toBeCloseTo(-0.5)
+		const [plain] = to_scene_items([file('chair.glb')], look({ url: 'blob:chair' }))
+		expect(plain.yaw).toBe(0)
+	})
+
+	test('the board keeps radians or degrees; a turn in 3D writes the angle and keeps the rest', () => {
+		expect(orbit_theta('30deg 75deg 105%')).toBeCloseTo(Math.PI / 6)
+		expect(orbit_theta('-0.25rad 1rad 2m')).toBeCloseTo(-0.25)
+		expect(orbit_theta(undefined)).toBeNull()
+		expect(with_theta({ orbit: '0.5rad 1.2rad 4m', target: '0m 1m 0m', fieldOfView: '30deg' }, 1)).toEqual({ orbit: '1rad 1.2rad 4m', target: '0m 1m 0m', fieldOfView: '30deg' })
+		expect(with_theta(undefined, -0.3)).toEqual({ orbit: '-0.3rad 75deg 105%', target: 'auto auto auto', fieldOfView: 'auto' })
 	})
 })

@@ -116,6 +116,9 @@ export function folder_view_from_stored(raw: unknown): FolderView {
 export type Floor3D = 'table' | 'infinite'
 
 /** Anything but "infinite", or none, is the table */
+/** A folder's on/off choices of the 3D view, kept in its attributes; absent is off */
+export type Option3D = 'names_3d' | 'horizon_3d'
+
 export function floor_3d_from_stored(raw: unknown): Floor3D {
 	return raw === 'infinite' ? 'infinite' : 'table'
 }
@@ -171,6 +174,10 @@ type FolderContainerXattrs = CommonXattrs & {
 	masonry_columns: number
 	/** The 3D view's floor. Absent is the table */
 	floor_3d: Floor3D
+	/** 3D: names under pictures and models. Absent is off */
+	names_3d: boolean
+	/** 3D, endless floor: the ground to the horizon. Absent is off */
+	horizon_3d: boolean
 }>
 
 ///////////////////////// Widgets

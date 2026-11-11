@@ -50,9 +50,11 @@ import {
 import { folder_shape, ring_geometry, rounded_rect, slab } from './shapes'
 import { dispose_tree, fit_model, load_model, release_models, retain_models } from './models'
 import { create_floor_grid, type FloorGrid } from './floor_grid'
+import { create_ground, type Ground } from './ground'
 import { plan_detail, scale_for, start_scale, type FaceState } from './detail'
 import { MIN_HOME_SCALE, px_per_unit, start_frame } from './home'
 import { card_heights } from './stack'
+import { is_interrupted_error, page_visible } from '@/store/helpers/fsErrors'
 import type { LabelSpot, Scene3D, SceneFloor, SceneFrame, SceneItem, SceneOptions } from './types'
 
 /**
@@ -150,6 +152,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let motion = options.motion
 	let movable = options.movable
 	let floor_mode: SceneFloor = options.floor
+	let grid_on = options.grid
+	let horizon_on = options.horizon
 	let active = true
 	let disposed = false
 
@@ -213,6 +217,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let homed = false
 	let press: Press | null = null
 	let drag: Drag | null = null
+	/** A handle by the "⋯" being dragged: where the item was when it was pressed */
+	let handling: { key: string; kind: 'height' | 'turn'; base: number; yaw: number } | null = null
 	let last_click: { key: string; t: number } | null = null
 	let long_press: ReturnType<typeof setTimeout> | undefined
 	let view_w = 1
@@ -239,6 +245,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			const distance = camera.position.distanceTo(controls.target)
 			grid.aim(controls.target, distance, camera.far - distance)
 		}
+		// the ground reaches just short of the farthest the camera draws: its edge is the horizon
+		ground?.aim(camera.position.x, camera.position.y, camera.position.z, camera.far * 0.9)
 		renderer.render(scene, camera)
 		emit_frame()
 		if (busy) invalidate()
@@ -255,7 +263,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 
 	// ── Items ────────────────────────────────────────────────────────────
 	const look_of = (it: SceneItem) =>
-		JSON.stringify([it.kind, it.w, it.h, it.title, it.text, it.footer, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed, it.gif])
+		JSON.stringify([it.kind, it.w, it.h, it.lines, it.paper, it.tint, it.fill, it.icon, it.label, it.url, it.tone, it.failed, it.gif])
 
 	function set_items(items: SceneItem[]) {
 		const keys = new Set(items.map(it => it.key))
@@ -273,9 +281,10 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				const kept = live.faces[0]?.s ?? live.level
 				remove(live)
 				create({ ...it }, look, height, kept)
-			} else if (drag?.key !== it.key) {
+			} else if (drag?.key !== it.key && handling?.key !== it.key) {
 				live.item = { ...it }
 				live.base = height
+				if (live.spin) live.spin.rotation.y = it.yaw ?? 0
 				place(live)
 			}
 		}
@@ -428,7 +437,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	function build_note(live: Live) {
 		const it = live.item
 		const paper = it.paper ?? '#FFF1B8'
-		card(live, DEPTH.note, 6, darken(paper, 0.12), paint_note({ title: it.title ?? '', text: it.text ?? '', footer: it.footer ?? '', paper, font: options.font }))
+		card(live, DEPTH.note, 6, darken(paper, 0.12), paint_note({ lines: it.lines ?? [], paper, font: options.font }))
 	}
 
 	function build_image(live: Live) {
@@ -452,7 +461,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		const want = () => {
 			const fw = Math.max(1, (it.w - 10) * face.s)
 			const fh = Math.max(1, (it.h - 10) * face.s)
-			if (picture && (full || Math.max(fw / picture.width, fh / picture.height) <= 1.02)) {
+			if (picture && (full || Math.min(fw / picture.width, fh / picture.height) <= 1.02)) {
 				// sharp enough; a copy far larger than the face now needs gives its memory back
 				const fitted = fit_picture(picture, fw, fh)
 				if (fitted !== picture) {
@@ -554,6 +563,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				live.faces = live.faces.filter(face => face !== status)
 				status.dispose()
 				const spin = new Group()
+				spin.rotation.y = it.yaw ?? 0
 				spin.add(holder)
 				live.body.add(spin)
 				live.spin = spin
@@ -567,9 +577,20 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				spin.scale.setScalar(motion ? 0.001 : 1)
 				invalidate()
 			},
-			() => {
+			error => {
 				if (disposed || live.token !== token) return
 				live.cancel = null
+				// cut off while the page was in the background: the model is loaded again once it is back
+				if (is_interrupted_error(error)) {
+					void page_visible().then(() => {
+						if (disposed || live.token !== token) return
+						const { item, look, base, level } = live
+						remove(live)
+						create(item, look, base, level)
+						invalidate()
+					})
+					return
+				}
 				failed = true
 				share = null
 				later(live, icon_image('tabler:alert-triangle', COLORS.danger), image => {
@@ -588,6 +609,8 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let table: { key: string; group: Group; face: Face } | null = null
 	/** The endless floor */
 	let grid: FloorGrid | null = null
+	/** Its ground to the horizon */
+	let ground: Ground | null = null
 
 	function layout_bounds(): Bounds {
 		let x0 = Infinity
@@ -631,17 +654,23 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				grid = create_floor_grid(GRID_STEP * U, renderer.getPixelRatio())
 				world.add(grid.mesh)
 			}
+			grid.mesh.visible = grid_on
+			if (horizon_on && !ground) {
+				ground = create_ground()
+				for (const mesh of ground.meshes) world.add(mesh)
+			} else if (!horizon_on) drop_ground()
 			return
 		}
 		drop_grid()
+		drop_ground()
 		const b = layout_bounds()
-		const key = `${b.x0},${b.y0},${b.x1},${b.y1}`
+		const key = `${b.x0},${b.y0},${b.x1},${b.y1},${grid_on}`
 		if (table?.key === key) return
 		drop_table()
 		const w = b.x1 - b.x0
 		const h = b.y1 - b.y0
 		const face = new Face(w, h, anisotropy, 1.5, 2048)
-		face.paint(paint_floor({ x0: b.x0, y0: b.y0, step: GRID_STEP }))
+		face.paint(paint_floor({ x0: b.x0, y0: b.y0, step: grid_on ? GRID_STEP : 0 }))
 		const group = new Group()
 		group.position.set((b.x0 + w / 2) * U, 0, (b.y0 + h / 2) * U)
 		const slab_mesh = new Mesh(slab(rounded_rect(w * U, h * U, 0.18), w * U, h * U, DEPTH.floor), [
@@ -668,6 +697,13 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		dispose_live(table.group)
 		table.face.dispose()
 		table = null
+	}
+
+	function drop_ground() {
+		if (!ground) return
+		for (const mesh of ground.meshes) world.remove(mesh)
+		ground.dispose()
+		ground = null
 	}
 
 	function drop_grid() {
@@ -745,7 +781,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		for (const live of lives.values()) {
 			const key = live.item.key
 			const card = live.item.kind !== 'model'
-			const dragging = !!drag?.started && drag.key === key
+			const dragging = (!!drag?.started && drag.key === key) || handling?.key === key
 			const lift_to = card && !dragging && (key === hovered || selected.has(key)) && motion ? LIFT : 0
 			live.lift += (lift_to - live.lift) * k
 			if (Math.abs(lift_to - live.lift) > 0.0005) busy = true
@@ -772,10 +808,6 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				live.line.position.y = live.base / 2
 			}
 
-			if (live.spin && motion && key === primary && !dragging) {
-				live.spin.rotation.y += dt * 0.6
-				busy = true
-			}
 			if (live.spin && live.appear < 1) {
 				live.appear = Math.min(1, live.appear + dt * 4)
 				const e = 1 - (1 - live.appear) ** 3
@@ -1232,6 +1264,53 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		set_movable(on) {
 			movable = on
 		},
+		handle(key, kind, dx, dy) {
+			const live = lives.get(key)
+			if (!live || !movable) return
+			if (handling?.key !== key || handling.kind !== kind) {
+				handling = { key, kind, base: live.base, yaw: live.spin?.rotation.y ?? 0 }
+			}
+			if (kind === 'height') {
+				// as far up as the pointer goes on screen, at the item's distance and the camera's tilt
+				const distance = camera.position.distanceTo(item_center(live))
+				const px_per_unit = view_h / (2 * Math.tan((camera.fov * DEG) / 2) * Math.max(distance, camera.near))
+				const tilt = Math.max(0.35, Math.sin(current_pose().phi))
+				live.base = Math.min(MAX_HEIGHT * U, Math.max(0, handling.base - dy / px_per_unit / tilt))
+				live.item.z = Math.round(live.base / U)
+			} else if (live.spin) {
+				live.spin.rotation.y = handling.yaw + dx * 0.012
+			}
+			invalidate()
+		},
+		handle_end(key, kind, keep) {
+			const h = handling
+			handling = null
+			const live = lives.get(key)
+			if (!h || h.key !== key || !live) return
+			if (kind === 'height') {
+				if (keep && Math.abs(live.base - h.base) > 1e-6) {
+					options.on_move(key, { x: live.item.x, y: live.item.y, z: Math.round(live.base / U) })
+				} else {
+					live.base = h.base
+				}
+			} else if (live.spin) {
+				if (keep && live.spin.rotation.y !== h.yaw) options.on_turn(key, live.spin.rotation.y)
+				else live.spin.rotation.y = h.yaw
+			}
+			invalidate()
+		},
+		set_horizon(on) {
+			if (on === horizon_on) return
+			horizon_on = on
+			update_floor()
+			invalidate()
+		},
+		set_grid(on) {
+			if (on === grid_on) return
+			grid_on = on
+			update_floor()
+			invalidate()
+		},
 		set_floor(mode) {
 			if (mode === floor_mode) return
 			floor_mode = mode
@@ -1281,6 +1360,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 			for (const live of [...lives.values()]) remove(live)
 			drop_table()
 			drop_grid()
+			drop_ground()
 			shared_shadow.dispose()
 			hidden.dispose()
 			environment.dispose()

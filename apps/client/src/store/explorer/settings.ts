@@ -36,6 +36,8 @@ export type ExplorerSettings = {
 	menu_shadow: boolean
 	/** The 3D view's camera flights, lifting cards and turning models: as the system's reduced motion says, or always on or off */
 	motion_3d: 'system' | 'on' | 'off'
+	/** The 3D view's short help on gestures, opened and closed by its "?" */
+	tips_3d: boolean
 }
 
 export const EXPLORER_SETTINGS_KEY = 'pile_commander_explorer_settings'
@@ -60,6 +62,7 @@ export const EXPLORER_SETTINGS_DEFAULTS: ExplorerSettings = {
 	menu_animation: true,
 	menu_shadow: true,
 	motion_3d: 'system',
+	tips_3d: true,
 }
 
 export const explorer_settings = toReactive<ExplorerSettings>(
