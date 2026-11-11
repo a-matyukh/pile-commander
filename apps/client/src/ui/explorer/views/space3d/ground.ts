@@ -8,9 +8,9 @@ import { BackSide, CircleGeometry, Mesh, ShaderMaterial, SphereGeometry, Vector2
  */
 
 /** sRGB 0–1: the haze at the horizon, the sky overhead, the ground under the camera */
-const HAZE = 'vec3(0.965, 0.969, 0.973)'
-const SKY = 'vec3(0.800, 0.866, 0.945)'
-const NEAR = 'vec3(0.902, 0.898, 0.886)'
+const HAZE = 'vec3(0.975, 0.975, 0.975)'
+const SKY = 'vec3(0.925, 0.925, 0.925)'
+const NEAR = 'vec3(0.945, 0.943, 0.938)'
 
 const GROUND_VERTEX = /* glsl */ `
 varying vec2 v_floor;
