@@ -225,6 +225,8 @@ const system_motion = usePreferredReducedMotion()
 const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, system_motion.value === 'reduce'))
 /** The floor this folder has, chosen in the View menu */
 const floor = computed(() => floor_3d_from_stored(props.container.floor_3d))
+/** The folder's grid on the floor: the canvas's own setting, shown unless turned off */
+const grid = computed(() => props.container.show_grid_dots !== false)
 
 onMounted(() => {
 	if (!stage.value) return
@@ -233,6 +235,7 @@ onMounted(() => {
 			font: getComputedStyle(stage.value).getPropertyValue('--font-sans').trim() || 'sans-serif',
 			motion: motion.value,
 			floor: floor.value,
+			grid: grid.value,
 			movable: props.workspace.can_write,
 			text: { loading: t('v3d.loading'), failed: t('v3d.model_failed') },
 			on_select: select,
@@ -262,6 +265,7 @@ watch(scene_items, list => scene?.set_items(list))
 watch(selected_here, ids => scene?.set_selected(ids))
 watch(motion, on => scene?.set_motion(on))
 watch(floor, mode => scene?.set_floor(mode))
+watch(grid, on => scene?.set_grid(on))
 // a folder that turns read-only (a share taken away) stops moving at once
 watch(() => props.workspace.can_write, on => scene?.set_movable(on))
 

@@ -474,6 +474,8 @@ export function paint_floor(o: { x0: number; y0: number; step: number }): Painte
 	return (ctx, W, H, s) => {
 		ctx.fillStyle = COLORS.floor
 		ctx.fillRect(0, 0, W, H)
+		// no step: the grid is turned off
+		if (!o.step) return
 		ctx.strokeStyle = 'rgba(0, 0, 0, .055)'
 		ctx.lineWidth = Math.max(1, 1.2 * s)
 		ctx.beginPath()

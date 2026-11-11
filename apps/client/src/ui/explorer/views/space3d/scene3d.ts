@@ -151,6 +151,7 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 	let motion = options.motion
 	let movable = options.movable
 	let floor_mode: SceneFloor = options.floor
+	let grid_on = options.grid
 	let active = true
 	let disposed = false
 
@@ -643,17 +644,18 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 				grid = create_floor_grid(GRID_STEP * U, renderer.getPixelRatio())
 				world.add(grid.mesh)
 			}
+			grid.mesh.visible = grid_on
 			return
 		}
 		drop_grid()
 		const b = layout_bounds()
-		const key = `${b.x0},${b.y0},${b.x1},${b.y1}`
+		const key = `${b.x0},${b.y0},${b.x1},${b.y1},${grid_on}`
 		if (table?.key === key) return
 		drop_table()
 		const w = b.x1 - b.x0
 		const h = b.y1 - b.y0
 		const face = new Face(w, h, anisotropy, 1.5, 2048)
-		face.paint(paint_floor({ x0: b.x0, y0: b.y0, step: GRID_STEP }))
+		face.paint(paint_floor({ x0: b.x0, y0: b.y0, step: grid_on ? GRID_STEP : 0 }))
 		const group = new Group()
 		group.position.set((b.x0 + w / 2) * U, 0, (b.y0 + h / 2) * U)
 		const slab_mesh = new Mesh(slab(rounded_rect(w * U, h * U, 0.18), w * U, h * U, DEPTH.floor), [
@@ -1243,6 +1245,12 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		},
 		set_movable(on) {
 			movable = on
+		},
+		set_grid(on) {
+			if (on === grid_on) return
+			grid_on = on
+			update_floor()
+			invalidate()
 		},
 		set_floor(mode) {
 			if (mode === floor_mode) return

@@ -160,6 +160,7 @@ export const en: typeof ru = {
 		floor: 'Floor',
 		floor_table: 'Table',
 		floor_infinite: 'Endless floor',
+		grid_3d: 'Grid',
 		reset_size: 'Default',
 		reset_hint: 'Double-click for the default size',
 	},

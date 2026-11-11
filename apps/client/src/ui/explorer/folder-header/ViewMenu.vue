@@ -44,6 +44,8 @@ const masonry_columns = computed(() => {
 })
 const dashboard_compact = computed(() => folder_attrs.value.dashboard_compact === true)
 const floor_3d = computed(() => floor_3d_from_stored(folder_attrs.value.floor_3d))
+/** The folder's grid, the canvas's and 3D's alike; shown unless turned off */
+const grid_shown = computed(() => folder_attrs.value.show_grid_dots !== false)
 
 function set_column_width(width: number) {
 	void props.workspace.change_masonry_column_width(props.folder_id, width)
@@ -202,6 +204,13 @@ function set_view(view: FolderView) {
 				:checked="floor_3d === 'infinite'"
 				keep_open
 				@select="set_floor('infinite')"
+			/>
+			<MenuItem
+				icon="tabler:grid-4x4"
+				:label="t('view_menu.grid_3d')"
+				:checked="grid_shown"
+				keep_open
+				@select="props.workspace.change_show_grid_dots(props.folder_id, !grid_shown)"
 			/>
 		</template>
 		<template v-if="current === 'dashboard'">

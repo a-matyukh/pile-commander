@@ -157,6 +157,7 @@ export const ru = {
 		floor: 'Пол',
 		floor_table: 'Стол',
 		floor_infinite: 'Бесконечный пол',
+		grid_3d: 'Сетка',
 		reset_size: 'Стандартный',
 		reset_hint: 'Двойной клик — стандартный размер',
 	},
