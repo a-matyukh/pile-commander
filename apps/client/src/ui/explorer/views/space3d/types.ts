@@ -60,8 +60,11 @@ export type SceneOptions = {
 	on_select(key: string | null): void
 	/** Double click: a folder opens, a file gets the camera */
 	on_open(key: string): void
-	/** An item was dragged: new top-left corner and height, board px */
-	on_move(key: string, place: { x: number; y: number; z: number }): void
+	/**
+	 * An item was dragged: its new top-left corner, board px, and its height
+	 * when the drag set one (null: it keeps the default for its kind)
+	 */
+	on_move(key: string, place: { x: number; y: number; z: number | null }): void
 	/** A right click or a long press that did not move: the item's menu; null for empty space */
 	on_menu(key: string | null): void
 	on_frame(frame: SceneFrame): void

@@ -69,7 +69,8 @@ export function to_scene_items(
 	return children.map((child, index) => {
 		const { x, y } = board_position(child, index)
 		const { width: w, height: h } = board_size(child)
-		const base = { key: child.id, x, y, w, h, z: null }
+		const z = typeof child.z === 'number' && Number.isFinite(child.z) ? child.z : null
+		const base = { key: child.id, x, y, w, h, z }
 		const { glyph, url, note, cover, name } = look(child)
 		const label = name ?? child.name
 		if (child.type !== 'file') return { ...base, kind: 'folder', tint: glyph.color ?? null, fill: cover_color(cover), icon: glyph.icon, label }

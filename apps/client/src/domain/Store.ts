@@ -349,6 +349,8 @@ type WorkspaceStore = {
 	): Promise<void>
 	change_cover(id: string, new_cover: Color, options?: HistoryOptions): Promise<void>
 	change_position(id: string, new_position: Position, options?: HistoryOptions): Promise<void>
+	/** Height above the floor in the 3D view (attribute `z`, board px); the board and canvas keep it */
+	change_height(id: string, height: number, options?: HistoryOptions): Promise<void>
 	change_size(id: string, new_size: Size, options?: HistoryOptions): Promise<void>
 	change_model_camera(id: string, state: ModelCameraState): Promise<void>
 	change_is_preview(id: string, is_preview: boolean, options?: HistoryOptions): Promise<void>

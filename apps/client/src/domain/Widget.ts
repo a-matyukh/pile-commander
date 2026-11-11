@@ -40,6 +40,12 @@ export function dashboard_cell_from_stored(value: unknown): DashboardCell | unde
 type CommonXattrs = Partial<{
 	position: Position
 	size: Size
+	/**
+	 * Height of the item's bottom above the floor in the 3D view, board px.
+	 * Its own attribute, not part of `position`: the board, the canvas and
+	 * older versions write `position` whole and would drop it
+	 */
+	z: number
 	/** Grid cell for the dashboard view. Board and canvas keep using position and size. */
 	dashboard: DashboardCell
 	background: ImageBase64 | Color

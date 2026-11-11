@@ -10,8 +10,11 @@ import { explorer_navigation } from '@/store/explorer/navigation'
 import { t } from '@/i18n'
 import { record_action } from '@/store/history'
 
-/** Views where the arrows move the selection; on a board or canvas they move the selected items */
+/** Views where the arrows move the selection; on a board, canvas or 3D they move the selected items */
 const ARROW_VIEWS: FolderView[] = ['list', 'grid', 'stack', 'masonry', 'dashboard']
+
+/** Views where [ and ] change the layer order: in 3D it decides which overlapping card is higher */
+const LAYER_VIEWS: FolderView[] = ['board', 'canvas', '3d']
 
 type Dir = 'up' | 'down' | 'left' | 'right'
 
@@ -147,7 +150,7 @@ export function use_folder_keys(
 
 	function restack(ws: WorkspaceStore, step: ReturnType<typeof layer_step_from_key>): boolean {
 		const folder = container.value
-		if (!step || !folder || (folder.view !== 'board' && folder.view !== 'canvas') || !ws.can_write) return false
+		if (!step || !folder || !LAYER_VIEWS.includes(folder.view) || !ws.can_write) return false
 		const ids = folder.children.map(child => child.id)
 		const moving = ws.selection.filter(id => ids.includes(id))
 		if (!moving.length) return false

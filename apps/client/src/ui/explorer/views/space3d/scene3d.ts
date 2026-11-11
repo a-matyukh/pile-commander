@@ -310,10 +310,11 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		ring.visible = false
 		body.add(ring)
 
-		const line = new Mesh(new BoxGeometry(0.008, 1, 0.008), new MeshBasicMaterial({ color: COLORS.accent, transparent: true, opacity: 0.7 }))
+		// the height guide: a line down to the floor and a dot where the item stands
+		const line = new Mesh(new BoxGeometry(0.016, 1, 0.016), new MeshBasicMaterial({ color: COLORS.accent, transparent: true, opacity: 0.75 }))
 		line.visible = false
 		root.add(line)
-		const dot = new Mesh(new CircleGeometry(0.035, 20), new MeshBasicMaterial({ color: COLORS.accent, transparent: true, opacity: 0.7, depthWrite: false }))
+		const dot = new Mesh(new CircleGeometry(0.05, 24), new MeshBasicMaterial({ color: COLORS.accent, transparent: true, opacity: 0.75, depthWrite: false }))
 		dot.rotation.x = -Math.PI / 2
 		dot.position.y = 0.004
 		dot.visible = false
@@ -895,7 +896,9 @@ export function create_scene3d(container: HTMLElement, options: SceneOptions): S
 		if (!d?.started) return false
 		const it = d.live.item
 		if (commit) {
-			options.on_move(d.key, { x: it.x, y: it.y, z: Math.round(d.live.base / U) })
+			// a height is written once someone sets one; a move along the floor keeps the default
+			const lifted = d.from.z !== null || Math.abs(d.live.base - d.from.base) > 1e-6
+			options.on_move(d.key, { x: it.x, y: it.y, z: lifted ? Math.round(d.live.base / U) : null })
 			update_floor()
 		} else {
 			it.x = d.from.x

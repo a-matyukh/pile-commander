@@ -23,6 +23,16 @@ describe('what the 3D scene draws for a folder', () => {
 		expect({ w: b.w, h: b.h }).toEqual({ w: DEFAULT_SIZE.width, h: DEFAULT_SIZE.height })
 	})
 
+	test('a height set in 3D is the scene\'s; without one the scene picks the default', () => {
+		const [lifted, plain, odd] = to_scene_items(
+			[file('a.pdf', { z: 120 }), file('b.pdf'), file('c.pdf', { z: Number.NaN })],
+			look(),
+		)
+		expect(lifted.z).toBe(120)
+		expect(plain.z).toBeNull()
+		expect(odd.z).toBeNull()
+	})
+
 	test('a folder takes its icon and color from the Explorer', () => {
 		const [item] = to_scene_items([folder('Trips')], look({ glyph: { icon: 'tabler:plane', color: '#D85A30' } }))
 		expect(item).toMatchObject({ kind: 'folder', icon: 'tabler:plane', tint: '#D85A30', label: 'Trips' })

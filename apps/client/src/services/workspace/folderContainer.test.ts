@@ -80,6 +80,22 @@ describe('to_folder_container', () => {
 		})
 	})
 
+	test("reads an item's 3D height onto its widget, files and folders alike", () => {
+		const container = to_folder_container(folder(
+			'/ws',
+			'ws',
+			[
+				entry('/ws/chair.glb', 'chair.glb', 'file', [{ name: 'z', value: '120' }]),
+				entry('/ws/Trips', 'Trips', 'folder', [{ name: 'z', value: '40' }]),
+				entry('/ws/plain.md', 'plain.md', 'file'),
+			],
+		))
+		const by_name = Object.fromEntries(container.children.map(child => [child.name, child]))
+		expect(by_name['chair.glb']).toMatchObject({ z: 120 })
+		expect(by_name.Trips).toMatchObject({ type: 'folder_cover', z: 40 })
+		expect(by_name['plain.md']).not.toHaveProperty('z')
+	})
+
 	test('maps an image title and description onto the file widget', () => {
 		const container = to_folder_container(folder(
 			'/ws',

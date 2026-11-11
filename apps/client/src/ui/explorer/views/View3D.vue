@@ -6,12 +6,14 @@ import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
 import { t } from '@/i18n'
-import { image_shows_preview, is_note_widget } from '@/services/board/layout'
+import { DEFAULT_GRID_SIZE, image_shows_preview, is_note_widget, snap_position } from '@/services/board/layout'
 import { get_media_kind } from '@/services/board/media'
+import { entries_label, record_action } from '@/store/history'
 import { entry_is_dimmed } from '@/store/hiddenPaths'
 import Button from '@/ui/kit/Button.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import { keys_elsewhere } from '@/ui/explorer/folder_keys'
+import { useMoveSelectedWidgets } from '@/ui/workspace/folder-container/useMoveSelectedWidgets'
 import ItemDialogs from './ItemDialogs.vue'
 import ItemMenu from './ItemMenu.vue'
 import { use_items } from './use_items'
@@ -115,6 +117,39 @@ async function menu(key: string | null) {
 	items.open_menu(child)
 }
 
+// ── Moving ───────────────────────────────────────────────────────────────
+
+/** The board's snap: a folder that snaps on the board snaps here too */
+const snap = computed(() => ({
+	snap_to_grid: props.container.snap_to_grid === true,
+	grid_size: props.container.grid_size && props.container.grid_size > 0 ? props.container.grid_size : DEFAULT_GRID_SIZE,
+}))
+
+/**
+ * A drag in 3D is one undo, as on the board: the place it shares with the
+ * board and the canvas, and the height it has only here, together
+ */
+function move(key: string, place: { x: number; y: number; z: number | null }) {
+	const ws = props.workspace
+	if (!ws.can_write) return
+	const position = snap_position({ x: place.x, y: place.y }, { enabled: snap.value.snap_to_grid, size: snap.value.grid_size })
+	void record_action(ws, { entry_id: key }, entries_label(ws, [key], 'undo.move_one', 'undo.move_many'), async (tx) => {
+		await ws.change_position(key, position, { tx })
+		if (place.z !== null) await ws.change_height(key, place.z, { tx })
+	})
+}
+
+// The arrows move the selected items along the floor, as on the board
+const editing_note = ref<string | null>(null)
+useMoveSelectedWidgets({
+	children: () => props.container.children,
+	editingNoteId: editing_note,
+	boardSnapSettings: snap,
+	enabled: () => props.workspace.can_write,
+})
+
+const toast = useToast()
+
 // ── HTML over the scene ──────────────────────────────────────────────────
 
 // Labels follow the scene every frame straight on the DOM, not through Vue
@@ -156,14 +191,14 @@ onMounted(() => {
 		scene = create_scene3d(stage.value, {
 			font: getComputedStyle(stage.value).getPropertyValue('--font-sans').trim() || 'sans-serif',
 			motion: motion.value,
-			movable: false,
+			movable: props.workspace.can_write,
 			text: { loading: t('v3d.loading'), failed: t('v3d.model_failed') },
 			on_select: select,
 			on_open: key => void open(key),
-			on_move: () => {},
+			on_move: move,
 			on_menu: key => void menu(key),
 			on_frame,
-			on_hint: () => {},
+			on_hint: () => toast.add({ title: t('v3d.height_hint') }),
 		})
 	} catch (error) {
 		// no WebGL: the folder can still open as a board
@@ -184,6 +219,8 @@ onBeforeUnmount(() => {
 watch(scene_items, list => scene?.set_items(list))
 watch(selected_here, ids => scene?.set_selected(ids))
 watch(motion, on => scene?.set_motion(on))
+// a folder that turns read-only (a share taken away) stops moving at once
+watch(() => props.workspace.can_write, on => scene?.set_movable(on))
 
 const visibility = useDocumentVisibility()
 watch(visibility, v => scene?.set_active(v === 'visible'))

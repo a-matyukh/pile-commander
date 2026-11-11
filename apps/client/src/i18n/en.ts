@@ -143,6 +143,7 @@ export const en: typeof ru = {
 		zoom_out: 'Zoom out',
 		loading: 'Loading…',
 		model_failed: 'Could not open the model',
+		height_hint: 'Hold ⌥ to raise or lower it',
 		unavailable: '3D is not available on this device',
 		unavailable_d: 'The browser gave no access to WebGL. This folder opens as a board, with everything in the same places.',
 		open_as_board: 'Open as a board',

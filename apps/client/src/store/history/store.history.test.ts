@@ -46,6 +46,34 @@ describe('undo through the workspace store', () => {
 		expect(fake.get_xattr('/ws/a.md', 'position')).toBe(at(50, 60))
 	})
 
+	test('a card moved and lifted in 3D comes back in one undo, and goes again in one redo', async () => {
+		const { fake, ws, h, act } = await setup()
+		await act(async (tx) => {
+			await ws.change_position('/ws/a.md', { x: 40, y: 30 }, { tx })
+			await ws.change_height('/ws/a.md', 120, { tx })
+		})
+		expect(fake.get_xattr('/ws/a.md', 'position')).toBe(at(40, 30))
+		expect(fake.get_xattr('/ws/a.md', 'z')).toBe('120')
+
+		await h.undo()
+		expect(fake.get_xattr('/ws/a.md', 'position')).toBe(at(10, 10))
+		// it had no height of its own: it gets none back, the default again
+		expect(fake.get_xattr('/ws/a.md', 'z')).toBeNull()
+		await h.redo()
+		expect(fake.get_xattr('/ws/a.md', 'position')).toBe(at(40, 30))
+		expect(fake.get_xattr('/ws/a.md', 'z')).toBe('120')
+	})
+
+	test('a height is a whole number of px, never under the floor, and the same one writes nothing', async () => {
+		const { fake, ws, h, act } = await setup()
+		await act(tx => ws.change_height('/ws/a.md', -12.4, { tx }))
+		expect(fake.get_xattr('/ws/a.md', 'z')).toBe('0')
+		await act(tx => ws.change_height('/ws/a.md', 0.2, { tx }))
+		// nothing changed: no second action to undo
+		await h.undo()
+		expect(fake.get_xattr('/ws/a.md', 'z')).toBeNull()
+	})
+
 	test('a card that had no place gets none back', async () => {
 		const { fake, ws, h, act } = await setup()
 		await act(tx => ws.change_position('/ws/b.md', { x: 5, y: 5 }, { tx }))

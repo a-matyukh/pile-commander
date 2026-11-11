@@ -798,6 +798,17 @@ describe('createWorkspaceStore: clipboard', () => {
 		expect(store.opened_folder.children.some(c => c.id === '/ws/note (1).txt')).toBe(true)
 	})
 
+	test('a duplicate keeps its 3D height; only its place moves aside', async () => {
+		const { fake, store } = await makeStore()
+		fake.set_xattr('/ws/note.txt', 'position', JSON.stringify({ x: 100, y: 50 }))
+		fake.set_xattr('/ws/note.txt', 'z', '120')
+
+		await store.duplicate_entries(['/ws/note.txt'])
+
+		expect(fake.get_xattr('/ws/note (1).txt', 'z')).toBe('120')
+		expect(fake.get_xattr('/ws/note (1).txt', 'position')).toBe(JSON.stringify({ x: 124, y: 74 }))
+	})
+
 	test('duplicate_entries keeps sidebar order instead of readdir order', async () => {
 		const fake = createFakeFileManager()
 		fake.seed_folder('/ws')
