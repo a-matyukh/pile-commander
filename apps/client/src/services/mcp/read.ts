@@ -39,7 +39,7 @@ import {
  */
 
 const VIEW_NAMES = new Set<FolderViewName>([
-	'list', 'gallery', 'board', 'canvas', 'stack', 'masonry', 'dashboard', 'slides',
+	'list', 'gallery', 'board', 'canvas', '3d', 'stack', 'masonry', 'dashboard', 'slides',
 ])
 
 export async function get_context(ctx: McpContext): Promise<GetContextResult> {

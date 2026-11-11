@@ -17,7 +17,7 @@ const as_store = (fake: ReturnType<typeof fake_workspace>) => fake as unknown as
 describe('"Add" in the folder header', () => {
 	test('notes and shapes are offered in every view but the list and the gallery', () => {
 		const with_pane = FOLDER_VIEWS.filter(add_menu_has_pane_items)
-		expect(with_pane).toEqual(['board', 'canvas', 'stack', 'masonry', 'dashboard', 'slides'])
+		expect(with_pane).toEqual(['board', 'canvas', '3d', 'stack', 'masonry', 'dashboard', 'slides'])
 	})
 
 	test('"Shape ›" lists the templates of the current menu, the line split into a line and an arrow', () => {

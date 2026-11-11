@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, provide, ref, watch } from 'vue'
 import store from '@/store'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
@@ -15,6 +15,9 @@ import { use_folder_keys } from './folder_keys'
 import FolderPlaceholder from './FolderPlaceholder.vue'
 import ListView from './views/ListView.vue'
 import GalleryView from './views/GalleryView.vue'
+
+/** three.js comes in its own chunk, only when a folder opens in 3D */
+const View3D = defineAsyncComponent(() => import('./views/View3D.vue'))
 
 /**
  * The open folder's content in its current view (step 3.3): the current
@@ -99,6 +102,14 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 		/>
 		<GalleryView
 			v-else-if="scope.container.value?.view === 'grid'"
+			:workspace="workspace"
+			:container="scope.container.value"
+			:location="location"
+		/>
+		<!-- Every folder gets a scene of its own, as the current views get a view each -->
+		<View3D
+			v-else-if="scope.container.value?.view === '3d'"
+			:key="`${location.drive_id}|${location.root_id}|${location.folder_id}`"
 			:workspace="workspace"
 			:container="scope.container.value"
 			:location="location"

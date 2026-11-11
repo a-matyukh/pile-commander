@@ -84,6 +84,7 @@ export const FOLDER_VIEWS = [
 	"grid",  // стандартный вид сеткой как в проводнике
 	"board",
 	"canvas",
+	"3d",  // the board in space: the board's and canvas's places, plus height
 	"stack",  // sortable
 	"masonry",
 	"dashboard",

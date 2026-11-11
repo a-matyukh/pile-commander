@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { folder_view_from_stored, stored_folder_view } from './Widget'
+import { parse_xattr_value } from '@/services/workspace/xattrs'
+import { FOLDER_VIEWS, folder_view_from_stored, stored_folder_view } from './Widget'
 
 describe('a folder view as stored', () => {
 	test('Gallery is stored as "gallery"; other views as their names', () => {
@@ -17,6 +18,19 @@ describe('a folder view as stored', () => {
 	test('dashboard is its own view', () => {
 		expect(folder_view_from_stored('dashboard')).toBe('dashboard')
 		expect(stored_folder_view('dashboard')).toBe('dashboard')
+	})
+
+	test('3D is stored as "3d" and stays a word when an attribute is read', () => {
+		expect(stored_folder_view('3d')).toBe('3d')
+		expect(folder_view_from_stored('3d')).toBe('3d')
+		// xattrs come as strings: "3d" must not turn into a number on the way
+		expect(folder_view_from_stored(parse_xattr_value('3d'))).toBe('3d')
+	})
+
+	test('3D sits right after the canvas: board, canvas and 3D go together in the View menu', () => {
+		const at = FOLDER_VIEWS.indexOf('canvas')
+		expect(FOLDER_VIEWS[at - 1]).toBe('board')
+		expect(FOLDER_VIEWS[at + 1]).toBe('3d')
 	})
 
 	test('none or anything unknown is a list', () => {

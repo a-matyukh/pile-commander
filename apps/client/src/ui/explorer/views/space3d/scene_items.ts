@@ -1,0 +1,87 @@
+import { is_pile_image_token } from '@pile-commander/file-manager'
+import type { FolderContainerWidgetChild } from '@/domain/Widget'
+import { board_position, board_size, image_shows_preview, is_note_widget } from '@/services/board/layout'
+import { get_media_kind } from '@/services/board/media'
+import { isImageBackground, resolveWidgetBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
+import type { SceneItem } from './types'
+
+/**
+ * What the scene draws for the open folder's items. Places and sizes are the
+ * board's (`board_position`, `board_size`), so an item stands where it stands
+ * on the board and the canvas; what a card shows follows the board's rules.
+ */
+
+/** What the view knows about an item beyond its widget */
+export type ItemLook = {
+	/** Its icon and color, as the Explorer draws them */
+	glyph: { icon: string; color?: string }
+	/** A picture's or a model's content: a URL, null while unknown, false when it could not be had */
+	url: string | null | false
+	/** A note's text once read; null until then */
+	note: string | null
+	/** A folder's cover: a color, or a picture (not drawn in 3D yet) */
+	cover?: string
+	/** The name on its card: a system folder's own name; the file name otherwise */
+	name?: string
+}
+
+/** Placeholder colors of pictures whose content is not there */
+const TONES = ['#E6F1FB', '#FAECE7', '#E1F5EE', '#EEEDFE', '#FAEEDA', '#FBEAF0']
+
+const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7)
+
+/** A line of markdown as plain text: no heading, quote or list marks, no emphasis, links as their text */
+export function plain_line(line: string): string {
+	return line
+		.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/, '')
+		.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+		.replace(/(\*\*|__|\*|_|~~|`)/g, '')
+		.trim()
+}
+
+/** A note's card: its first line as the title, the next ones as one paragraph */
+export function note_face(text: string | null, name: string): { title: string; text: string } {
+	const fallback = name.replace(/\.(md|txt)$/i, '')
+	const lines = (text ?? '').split('\n').map(plain_line).filter(Boolean)
+	if (!lines.length) return { title: fallback, text: '' }
+	return { title: lines[0].slice(0, 120), text: lines.slice(1).join(' ').slice(0, 400) }
+}
+
+/** A folder cover's or a note's color; null for none or for a picture (a URL, a pile: token) */
+export function cover_color(cover: string | undefined): string | null {
+	if (!cover || cover === 'none' || isImageBackground(cover) || is_pile_image_token(cover)) return null
+	// whatever else names a place, not a color
+	if (/[:/]/.test(cover.replace(/^(rgb|hsl)a?\(.*\)$/i, ''))) return null
+	return cover
+}
+
+/** A note's paper: its own color, white when it has none or a picture */
+function paper(child: FolderContainerWidgetChild): string {
+	const background = child.type === 'file' ? child.background : undefined
+	return cover_color(background) ?? resolveWidgetBackground(undefined, '#FFFFFF')
+}
+
+export function to_scene_items(
+	children: readonly FolderContainerWidgetChild[],
+	look: (child: FolderContainerWidgetChild) => ItemLook,
+): SceneItem[] {
+	return children.map((child, index) => {
+		const { x, y } = board_position(child, index)
+		const { width: w, height: h } = board_size(child)
+		const base = { key: child.id, x, y, w, h, z: null }
+		const { glyph, url, note, cover, name } = look(child)
+		const label = name ?? child.name
+		if (child.type !== 'file') return { ...base, kind: 'folder', tint: glyph.color ?? null, fill: cover_color(cover), icon: glyph.icon, label }
+		if (is_note_widget(child)) {
+			const face = note_face(note, child.name)
+			return { ...base, kind: 'note', title: face.title, text: face.text, footer: child.name, paper: paper(child) }
+		}
+		if (image_shows_preview(child)) {
+			return { ...base, kind: 'image', url: url || null, tone: TONES[hash(child.name) % TONES.length] }
+		}
+		// a model is always itself in 3D, in its card's size
+		if (get_media_kind(child.name) === 'model') return { ...base, kind: 'model', url: url === false ? null : url, failed: url === false }
+		return { ...base, kind: 'file', icon: glyph.icon, tint: glyph.color ?? null, label }
+	})
+}
