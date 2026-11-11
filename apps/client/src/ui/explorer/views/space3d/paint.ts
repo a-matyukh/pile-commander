@@ -327,31 +327,64 @@ const NOTE_TYPE = [
 	{ size: 15, weight: 600 },
 ]
 
-/** A note: its text as the board shows it, line after line until the card is full */
-export function paint_note(o: { lines: { text: string; level: number; gap?: boolean }[]; paper: string; font: string }): Painter {
+type Run = { text: string; bold?: boolean; italic?: boolean; strike?: boolean; code?: boolean; color?: string; mark?: string }
+
+/** A note: its text as the board shows it, line after line until the card is full, with its colors, highlights and emphasis */
+export function paint_note(o: { lines: { text: string; level: number; gap?: boolean; runs?: Run[] }[]; paper: string; font: string }): Painter {
 	return (ctx, W, H, s) => {
 		// the whole canvas: the rounded card cuts the corners
 		ctx.fillStyle = o.paper
 		ctx.fillRect(0, 0, W, H)
 		const pad = 8 * s
-		const width = W - pad * 2
+		const right = W - pad
 		let y = pad
 		ctx.textBaseline = 'top'
-		ctx.fillStyle = COLORS.text
 		for (const line of o.lines) {
 			if (line.gap) {
 				y += 7 * s
 				continue
 			}
 			const type = NOTE_TYPE[line.level] ?? NOTE_TYPE[0]
-			const step = type.size * 1.5 * s
-			const room = Math.floor((H - pad - y) / step)
-			if (room <= 0) break
-			ctx.font = `${type.weight} ${type.size * s}px ${o.font}`
-			for (const part of wrap(ctx, line.text, width, room)) {
-				ctx.fillText(part, pad, y + (step - type.size * s) / 2)
-				y += step
+			const size = type.size * s
+			const step = size * 1.5
+			if (y + step > H - pad + 1) break
+			const font = (run: Run) => `${run.italic ? 'italic ' : ''}${run.bold ? 700 : type.weight} ${run.code ? size * 0.88 : size}px ${run.code ? 'ui-monospace, Menlo, monospace' : o.font}`
+			// words, each in its run's style; a line breaks between them
+			const words: { text: string; run: Run; width: number }[] = []
+			for (const run of line.runs ?? [{ text: line.text }]) {
+				ctx.font = font(run)
+				for (const piece of run.text.split(/(\s+)/)) {
+					if (piece) words.push({ text: piece, run, width: ctx.measureText(piece).width })
+				}
 			}
+			let x = pad
+			const top = () => y + (step - size) / 2
+			for (const word of words) {
+				const space = /^\s+$/.test(word.text)
+				if (x + word.width > right && x > pad && !space) {
+					x = pad
+					y += step
+					if (y + step > H - pad + 1) break
+				}
+				if (space && x === pad) continue
+				const r = word.run
+				if (r.mark) {
+					ctx.fillStyle = r.mark
+					ctx.fillRect(x, top() - size * 0.08, word.width, size * 1.2)
+				}
+				if (r.code) {
+					ctx.fillStyle = 'rgba(0, 0, 0, .06)'
+					ctx.fillRect(x, top() - size * 0.08, word.width, size * 1.2)
+				}
+				ctx.font = font(r)
+				ctx.fillStyle = r.color ?? COLORS.text
+				ctx.fillText(word.text, x, top() + (r.code ? size * 0.06 : 0))
+				if (r.strike && !space) {
+					ctx.fillRect(x, top() + size * 0.55, word.width, Math.max(1, size * 0.07))
+				}
+				x += word.width
+			}
+			y += step
 		}
 	}
 }

@@ -3,7 +3,7 @@ import type { FolderContainerWidgetChild, ModelCameraState } from '@/domain/Widg
 import { board_position, board_size, image_shows_preview, is_note_widget } from '@/services/board/layout'
 import { get_media_kind } from '@/services/board/media'
 import { isImageBackground, resolveWidgetBackground } from '@/ui/workspace/folder-container/widgets/resolveBackground'
-import type { NoteLine, SceneItem } from './types'
+import type { NoteLine, NoteRun, SceneItem } from './types'
 
 /**
  * What the scene draws for the open folder's items. Places and sizes are the
@@ -44,6 +44,103 @@ export function plain_line(line: string): string {
 	return plain_inline(line.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)/, ''))
 }
 
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" }
+
+/** A safe CSS color from a note's own markup, or nothing */
+function color_of(style: string, prop: string): string | undefined {
+	const match = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style)
+	const value = match?.[1].trim()
+	return value && /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]+)$/i.test(value) ? value : undefined
+}
+
+/**
+ * A line's styled pieces, as the board draws its markdown and the colors
+ * the editor writes as HTML (<span style="color">, <mark>, <b>, <i>, <s>,
+ * <code>); other tags go, entities are read, links keep their text
+ */
+export function note_runs(line: string): NoteRun[] {
+	const runs: NoteRun[] = []
+	const stack: { tag: string; style: Partial<NoteRun> }[] = []
+	const md = { bold: false, italic: false, strike: false, code: false }
+	let buffer = ''
+	const style = (): Partial<NoteRun> => {
+		const out: Partial<NoteRun> = {}
+		for (const frame of stack) Object.assign(out, frame.style)
+		if (md.bold) out.bold = true
+		if (md.italic) out.italic = true
+		if (md.strike) out.strike = true
+		if (md.code) out.code = true
+		return out
+	}
+	const flush = () => {
+		if (!buffer) return
+		const s = style()
+		const last = runs[runs.length - 1]
+		const same = last && last.bold === s.bold && last.italic === s.italic && last.strike === s.strike && last.code === s.code && last.color === s.color && last.mark === s.mark
+		if (same) last.text += buffer
+		else runs.push({ text: buffer, ...s })
+		buffer = ''
+	}
+	const text = line.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+	let i = 0
+	while (i < text.length) {
+		const rest = text.slice(i)
+		const tag = /^<(\/?)([a-z0-9]+)([^>]*)>/i.exec(rest)
+		if (tag) {
+			flush()
+			const [whole, closing, raw_name, attrs] = tag
+			const name = raw_name.toLowerCase()
+			if (closing) {
+				const at = stack.map(f => f.tag).lastIndexOf(name)
+				if (at >= 0) stack.splice(at)
+			} else if (!/\/\s*$/.test(attrs) && name !== 'br' && name !== 'img') {
+				const css = /style\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? ''
+				const s: Partial<NoteRun> = {}
+				if (name === 'b' || name === 'strong') s.bold = true
+				if (name === 'i' || name === 'em') s.italic = true
+				if (name === 's' || name === 'del' || name === 'strike') s.strike = true
+				if (name === 'code') s.code = true
+				if (name === 'mark') s.mark = color_of(css, 'background-color') ?? color_of(css, 'background') ?? '#FFF3A3'
+				const color = color_of(css, 'color')
+				if (color) s.color = color
+				const background = name === 'mark' ? undefined : color_of(css, 'background-color')
+				if (background) s.mark = background
+				stack.push({ tag: name, style: s })
+			}
+			i += whole.length
+			continue
+		}
+		const entity = /^&(#?[a-z0-9]+);/i.exec(rest)
+		if (entity) {
+			const name = entity[1].toLowerCase()
+			buffer += ENTITIES[name] ?? (name.startsWith('#') ? String.fromCodePoint(Number(name.startsWith('#x') ? '0' + name.slice(1) : name.slice(1)) || 32) : entity[0])
+			i += entity[0].length
+			continue
+		}
+		if (!md.code && (rest.startsWith('**') || rest.startsWith('__'))) {
+			flush(); md.bold = !md.bold; i += 2; continue
+		}
+		if (!md.code && rest.startsWith('~~')) {
+			flush(); md.strike = !md.strike; i += 2; continue
+		}
+		if (rest[0] === '`') {
+			flush(); md.code = !md.code; i += 1; continue
+		}
+		const before = text[i - 1] ?? ' '
+		const after = text[i + 1] ?? ' '
+		// * or _ around words, not inside them (snake_case stays as it is)
+		if (!md.code && (rest[0] === '*' || rest[0] === '_') && (md.italic ? /\S/.test(before) && !/\w/.test(after) : !/\w/.test(before) && /\S/.test(after))) {
+			flush(); md.italic = !md.italic; i += 1; continue
+		}
+		buffer += text[i]
+		i += 1
+	}
+	flush()
+	return runs
+}
+
+const runs_line = (runs: NoteRun[], level: number): NoteLine => ({ text: runs.map(r => r.text).join('').trim(), level, runs })
+
 /**
  * A note's card, as the board shows the note: its lines as they are, a
  * heading larger, a list item with its mark, an empty line a gap. No title
@@ -59,19 +156,22 @@ export function note_lines(text: string | null, max = 40): NoteLine[] {
 		}
 		const heading = /^\s*(#{1,6})\s+(.*)$/.exec(raw)
 		if (heading) {
-			out.push({ text: plain_inline(heading[2]), level: Math.min(3, heading[1].length) })
+			out.push(runs_line(note_runs(heading[2]), Math.min(3, heading[1].length)))
 			continue
 		}
 		const task = /^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/.exec(raw)
 		const bullet = /^\s*[-*+]\s+(.*)$/.exec(raw)
 		const ordered = /^\s*(\d+)[.)]\s+(.*)$/.exec(raw)
 		const quote = /^\s*>\s?(.*)$/.exec(raw)
-		const line = task ? `${task[1] === ' ' ? '☐' : '☑'} ${plain_inline(task[2])}`
-			: bullet ? `• ${plain_inline(bullet[1])}`
-			: ordered ? `${ordered[1]}. ${plain_inline(ordered[2])}`
-			: quote ? plain_inline(quote[1])
-			: plain_inline(raw)
-		out.push({ text: line, level: 0 })
+		const [mark, body] = task ? [`${task[1] === ' ' ? '☐' : '☑'} `, task[2]]
+			: bullet ? ['• ', bullet[1]]
+			: ordered ? [`${ordered[1]}. `, ordered[2]]
+			: quote ? ['', quote[1]]
+			: ['', raw]
+		const runs = note_runs(body)
+		if (mark) runs.unshift({ text: mark })
+		const line = runs_line(runs, 0)
+		if (line.text) out.push(line)
 	}
 	while (out.length && out[out.length - 1].gap) out.pop()
 	return out

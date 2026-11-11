@@ -9,8 +9,11 @@ export type SceneKind = 'note' | 'image' | 'model' | 'folder' | 'file'
 /** A table the size of the layout, or a grid with no edge that fades in the distance */
 export type SceneFloor = 'table' | 'infinite'
 
-/** A line of a note's card: `level` 1–3 is a heading, 0 plain text; `gap` an empty line between paragraphs */
-export type NoteLine = { text: string; level: number; gap?: boolean }
+/** A piece of a note's line in one style: as the board draws the note's markdown and its colors */
+export type NoteRun = { text: string; bold?: boolean; italic?: boolean; strike?: boolean; code?: boolean; color?: string; mark?: string }
+
+/** A line of a note's card: `level` 1–3 is a heading, 0 plain text; `gap` an empty line between paragraphs; `text` is its runs' text */
+export type NoteLine = { text: string; level: number; gap?: boolean; runs?: NoteRun[] }
 
 /** One item of the folder, as the scene draws it */
 export type SceneItem = {

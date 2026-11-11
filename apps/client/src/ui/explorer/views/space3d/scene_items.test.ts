@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
 import { board_position, DEFAULT_SIZE, IMAGE_DEFAULT_SIZE, NOTE_DEFAULT_SIZE } from '@/services/board/layout'
-import { note_lines, orbit_theta, plain_line, to_scene_items, with_theta, type ItemLook } from './scene_items'
+import { note_lines, note_runs, orbit_theta, plain_line, to_scene_items, with_theta, type ItemLook } from './scene_items'
 
 type FileChild = Extract<FolderContainerWidgetChild, { type: 'file' }>
 
@@ -57,7 +57,7 @@ describe('what the 3D scene draws for a folder', () => {
 		const note = file('Plan.md', { is_preview: true, background: '#FFF1B8' })
 		const [item] = to_scene_items([note], look({ note: '# Plan for the week\n- buy a lamp\n- call **Anna**' }))
 		expect(item).toMatchObject({ kind: 'note', paper: '#FFF1B8' })
-		expect(item.lines).toEqual([
+		expect(item.lines?.map(({ text, level }) => ({ text, level }))).toEqual([
 			{ text: 'Plan for the week', level: 1 },
 			{ text: '• buy a lamp', level: 0 },
 			{ text: '• call Anna', level: 0 },
@@ -119,7 +119,7 @@ describe('what the 3D scene draws for a folder', () => {
 
 describe('a note card read from markdown', () => {
 	test('lines stay lines: a heading larger, list marks kept, an empty line a gap', () => {
-		expect(note_lines('## Trip\nTbilisi, Kazbegi\n\n\nBatumi\n1. pack\n- [x] tickets\n- [ ] hotel\n> quiet')).toEqual([
+		expect(note_lines('## Trip\nTbilisi, Kazbegi\n\n\nBatumi\n1. pack\n- [x] tickets\n- [ ] hotel\n> quiet').map(({ text, level, gap }) => (gap ? { text, level, gap } : { text, level }))).toEqual([
 			{ text: 'Trip', level: 2 },
 			{ text: 'Tbilisi, Kazbegi', level: 0 },
 			{ text: '', level: 0, gap: true },
@@ -128,6 +128,28 @@ describe('a note card read from markdown', () => {
 			{ text: '☑ tickets', level: 0 },
 			{ text: '☐ hotel', level: 0 },
 			{ text: 'quiet', level: 0 },
+		])
+	})
+
+	test('colors and highlights the editor writes as HTML are drawn, not shown as tags', () => {
+		const runs = note_runs('<span style="color: #3b7a1e"><mark style="background-color: #d9e9fb">dsafsdf</mark></span> rest &amp; more')
+		expect(runs).toEqual([
+			{ text: 'dsafsdf', color: '#3b7a1e', mark: '#d9e9fb' },
+			{ text: ' rest & more' },
+		])
+		expect(note_lines('<span style="color: red">a</span>')[0].text).toBe('a')
+	})
+
+	test('markdown emphasis is drawn in its style; snake_case stays as written', () => {
+		expect(note_runs('**bold** and *it* and ~~old~~ and `code` in snake_case_name')).toEqual([
+			{ text: 'bold', bold: true },
+			{ text: ' and ' },
+			{ text: 'it', italic: true },
+			{ text: ' and ' },
+			{ text: 'old', strike: true },
+			{ text: ' and ' },
+			{ text: 'code', code: true },
+			{ text: ' in snake_case_name' },
 		])
 	})
 
