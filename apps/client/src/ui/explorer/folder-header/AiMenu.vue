@@ -8,6 +8,7 @@ import { to_folder_container } from '@/services/workspace/folderContainer'
 import { ai_available, ai_ready } from '@/store/ai'
 import { open_bulk_rename } from '@/store/aiBulkRename'
 import { open_ideas } from '@/store/aiIdeas'
+import { open_sort } from '@/store/aiSort'
 import { open_summary } from '@/store/aiSummary'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { settings_tab } from '@/store/explorer/settings'
@@ -59,6 +60,17 @@ function suggest_names() {
 	open_bulk_rename(props.workspace, props.folder_id, nameable.value)
 }
 
+function sort_into_folders() {
+	const folder = container.value
+	if (!folder) return
+	open_sort({
+		workspace: props.workspace,
+		folder_id: folder.id,
+		board_name: folder.name,
+		entries: summary_entries(folder.children),
+	})
+}
+
 function generate_ideas() {
 	const folder = container.value
 	if (!folder) return
@@ -104,6 +116,7 @@ function open_settings() {
 				:label="t('ai.folder.rename_by_content')"
 				@select="suggest_names"
 			/>
+			<MenuItem v-if="children.length > 1" icon="tabler:folders" :label="t('ai.folder.tidy')" @select="sort_into_folders" />
 			<MenuItem icon="tabler:bulb" :label="t('ai.folder.ideas')" @select="generate_ideas" />
 		</template>
 	</DropMenu>

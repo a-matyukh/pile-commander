@@ -259,7 +259,7 @@ export const ru = {
 		cancelled: 'Вы вышли до сохранения: последняя картинка или вид папки не сохранились',
 	},
 	folder: {
-			tidy: 'Навести порядок: разложить по папкам',
+			tidy: 'Разложить по папкам',
 			rename_by_content: 'Переименовать файлы по содержимому',
 			duplicates: 'Найти дубликаты',
 			board_from_files: 'Собрать доску из файлов',
@@ -512,6 +512,7 @@ export const ru = {
 		suggest_names: 'Предложить имена',
 		generate_ideas: 'Придумать идеи',
 		generate_ideas_here: 'Придумать идеи здесь',
+		sort_into_folders: 'Разложить по папкам',
 		toolbar: 'Панель инструментов',
 		toolbar_classic: 'Классическая панель',
 		hide: 'Скрыть',

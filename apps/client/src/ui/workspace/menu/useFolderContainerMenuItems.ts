@@ -25,6 +25,7 @@ import { useFolderViewMenuItems } from './useFolderViewMenuItems'
 import { ai_available } from '@/store/ai'
 import { open_summary } from '@/store/aiSummary'
 import { open_ideas } from '@/store/aiIdeas'
+import { open_sort } from '@/store/aiSort'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 type FolderContainerMenuOptions = {
@@ -155,6 +156,19 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 							board_name: container.name,
 							entries: summary_entries(container.children),
 							position: at ?? summary_position(container.children),
+						})
+					},
+				}]
+				: []),
+			...(container.children.length > 1
+				? [{
+					label: 'Sort into folders',
+					onSelect() {
+						open_sort({
+							workspace: ws,
+							folder_id: container.id,
+							board_name: container.name,
+							entries: summary_entries(container.children),
 						})
 					},
 				}]

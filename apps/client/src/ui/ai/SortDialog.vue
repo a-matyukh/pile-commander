@@ -1,33 +1,57 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { count_items, t } from '@/i18n'
+import { ai_chat, explain_chat_error } from '@/services/ai/client'
+import { is_abort_error } from '@/services/ai/errors'
 import { sanitize_suggested_name } from '@/services/ai/naming'
-import { apply_sort_plan } from '@/services/ai/sortApply'
+import { model_label } from '@/services/ai/presets'
+import { build_sort_messages, parse_sort_plan } from '@/services/ai/sort'
+import { apply_sort_plan, type SortGroupPlan } from '@/services/ai/sortApply'
+import { collect_summary_sources, coverage_line } from '@/services/ai/summarize'
 import { signal_agent_proposal } from '@/services/mcp/attention'
 import { basename_of } from '@/services/mcp/path'
 import { close_proposal } from '@/services/mcp/proposal'
 import { confirm_move, type MoveDecision } from '@/services/mcp/propose_move'
 import type { MoveRowResult } from '@/services/mcp/types'
+import { ai_base_check, ai_settings, vision_support } from '@/store/ai'
+import { ensure_ai_consent } from '@/store/aiConsent'
 import { close_sort, sort_session, type SortGroup } from '@/store/aiSort'
 import { record_action } from '@/store/history'
+import AiReachBadge from './AiReachBadge.vue'
 
 /**
  * Sorting before anything moves: folders, new or already there, each with
  * the items going into it, checked. A new folder's name can be changed.
- * "Sort" moves the checked items as one undo; closing moves nothing.
+ * "Sort" moves the checked items as one undo; closing moves nothing. The
+ * plan is an agent's (over MCP), or the app's own model writes it.
  */
 
-type Phase = 'review' | 'applying' | 'done'
+type Phase = 'reading' | 'asking' | 'review' | 'applying' | 'done'
 
 const toast = useToast()
 const phase = ref<Phase>('review')
 const notice = ref<string | null>(null)
+const error = ref<string | null>(null)
+const read = ref(0)
+const coverage = ref<string | null>(null)
+let controller: AbortController | null = null
+let next_key = 0
 
 const groups = computed(() => sort_session.groups)
+const from_model = computed(() => sort_session.source === 'model')
+const busy = computed(() => phase.value === 'reading' || phase.value === 'asking')
 const to_move = computed(() => groups.value.reduce((sum, group) => sum + group.rows.filter(row => row.checked && row.status === 'ready').length, 0))
-const dialog_title = computed(() => sort_session.source === 'agent'
-	? (sort_session.client_name || t('ai_sort.agent'))
-	: t('ai_sort.title', { name: sort_session.board_name }))
+/** The model's plan leaves some items where they are */
+const left = computed(() => {
+	if (!from_model.value || busy.value) return 0
+	const placed = new Set(groups.value.flatMap(group => group.rows.filter(row => row.checked).map(row => row.id)))
+	const targets = new Set(groups.value.map(group => group.existing_id))
+	return sort_session.entries.filter(entry => !placed.has(entry.id) && !targets.has(entry.id)).length
+})
+const dialog_title = computed(() => from_model.value
+	? t('ai_sort.title', { name: sort_session.board_name })
+	: (sort_session.client_name || t('ai_sort.agent')))
+const dialog_description = computed(() => from_model.value ? model_label(ai_settings.value.model) : sort_session.reason)
 
 function group_checked(group: SortGroup): boolean | 'indeterminate' {
 	const ready = group.rows.filter(row => row.status === 'ready')
@@ -49,13 +73,83 @@ function folder_name(group: SortGroup): string {
 }
 
 async function start() {
-	phase.value = 'review'
+	controller?.abort()
+	controller = null
 	notice.value = null
-	if (sort_session.source === 'agent') {
+	error.value = null
+	coverage.value = null
+	if (from_model.value) {
+		void ask_model()
+	} else {
+		phase.value = 'review'
 		const n = groups.value.reduce((sum, group) => sum + group.rows.length, 0)
 		signal_agent_proposal(sort_session.proposal_id, dialog_title.value, t('ai_sort.notify', { n, folder: basename_of(sort_session.folder_id) }))
 	}
 	await sort_session.workspace?.ensure_preview_folder(sort_session.folder_id)
+}
+
+/** Asks the model for a plan: the first time, and again on "Try again". */
+async function ask_model() {
+	const ws = sort_session.workspace
+	if (!ws) return
+	controller?.abort()
+	const own = new AbortController()
+	controller = own
+	const is_current = () => controller === own
+	notice.value = null
+	error.value = null
+	read.value = 0
+	phase.value = 'reading'
+	try {
+		const { base_url, model } = ai_settings.value
+		const sources = await collect_summary_sources(ws, sort_session.entries, {
+			images_refused: vision_support(base_url, model) === false,
+			signal: own.signal,
+			on_progress: (done) => {
+				if (is_current()) read.value = done
+			},
+		})
+		if (!is_current()) return
+		if (own.signal.aborted) {
+			phase.value = 'review'
+			return
+		}
+		coverage.value = coverage_line(sources)
+		if (!(await ensure_ai_consent(ws, { sends_images: sources.images.length > 0 }))) {
+			if (!is_current()) return
+			notice.value = t('ai_sort.nothing_sent')
+			phase.value = 'review'
+			return
+		}
+		if (!is_current() || own.signal.aborted) return
+		phase.value = 'asking'
+		const result = await ai_chat(build_sort_messages(sources, sort_session.board_name), { signal: own.signal })
+		if (!is_current()) return
+		const plan = parse_sort_plan(result.text, sort_session.entries, ai_settings.value.name_style)
+		const by_id = new Map(sort_session.entries.map(entry => [entry.id, entry]))
+		sort_session.groups = plan.map(group => ({
+			key: `sort-${next_key++}`,
+			to: group.name,
+			name: group.name,
+			existing_id: group.existing_id,
+			rows: group.entry_ids.map((id) => {
+				const entry = by_id.get(id)!
+				return { id, name: entry.name, type: entry.type, checked: true, status: 'ready' as const, error: null }
+			}),
+		}))
+		if (!plan.length) error.value = t('ai_sort.none')
+		phase.value = 'review'
+	} catch (failure) {
+		if (!is_current()) return
+		if (!is_abort_error(failure)) error.value = await explain_chat_error(failure)
+		phase.value = 'review'
+	} finally {
+		if (is_current()) controller = null
+	}
+}
+
+function stop() {
+	controller?.abort()
 }
 
 function sorted_text(moved: number): { label?: string; notice?: string } {
@@ -66,7 +160,7 @@ function sorted_text(moved: number): { label?: string; notice?: string } {
 
 async function apply() {
 	const ws = sort_session.workspace
-	if (!ws || !to_move.value) return
+	if (!ws || !to_move.value || busy.value) return
 	const folder_id = sort_session.folder_id
 	const proposal_id = sort_session.proposal_id
 	const run = sort_session.run
@@ -79,26 +173,42 @@ async function apply() {
 		entry_ids: group.rows.filter(row => row.checked && row.status === 'ready').map(row => row.id),
 	}))
 	const existing = new Map(groups.value.map(group => [group.to, group.existing_id]))
-	// What the agent proposed and the person kept is one undo
-	const results: MoveRowResult[] = await record_action(ws, { folder_id }, t('undo.sort', { count: count_items(to_move.value) }), tx => confirm_move(
-		proposal_id,
-		decisions,
-		async (kept) => {
-			const written = await apply_sort_plan(ws, folder_id, kept.map(decision => ({
-				name: decision.name,
-				existing_id: existing.get(decision.to) ?? null,
-				entry_ids: decision.entry_ids,
-			})), tx)
-			return { folders: written.folders.map(folder => ('id' in folder ? folder : { error: folder.error || 'No folder' })), moved: written.moved }
-		},
-	), { describe: rows => sorted_text(rows.filter(row => row.outcome === 'moved').length) })
-	if (sort_session.run !== run) return
-	// The proposal's rows follow the preview's groups and items
+	const plan_of = (kept: readonly MoveDecision[]): SortGroupPlan[] => kept.map(decision => ({
+		name: decision.name,
+		existing_id: existing.get(decision.to) ?? null,
+		entry_ids: decision.entry_ids,
+	}))
+	const label = t('undo.sort', { count: count_items(to_move.value) })
+	// The rows follow the groups and their items, in order
 	const rows = groups.value.flatMap(group => group.rows)
+	let outcomes: (Pick<MoveRowResult, 'outcome' | 'error'> | null)[]
+	if (from_model.value) {
+		// The moves the person kept are one undo
+		const kept = decisions.filter(decision => decision.entry_ids.length > 0)
+		const written = await record_action(ws, { folder_id }, label, tx => apply_sort_plan(ws, folder_id, plan_of(kept), tx), {
+			describe: done => sorted_text([...done.moved.values()].filter(moved => 'id' in moved).length),
+		})
+		outcomes = rows.map((row) => {
+			const moved = written.moved.get(row.id)
+			if (!moved) return null
+			return 'id' in moved ? { outcome: 'moved' } : { outcome: 'failed', error: moved.error }
+		})
+	} else {
+		// What the agent proposed and the person kept is one undo
+		outcomes = await record_action(ws, { folder_id }, label, tx => confirm_move(
+			proposal_id,
+			decisions,
+			async (kept) => {
+				const written = await apply_sort_plan(ws, folder_id, plan_of(kept), tx)
+				return { folders: written.folders.map(folder => ('id' in folder ? folder : { error: folder.error || 'No folder' })), moved: written.moved }
+			},
+		), { describe: done => sorted_text(done.filter(row => row.outcome === 'moved').length) })
+	}
+	if (sort_session.run !== run) return
 	let failed = 0
-	results.forEach((result, index) => {
+	outcomes.forEach((result, index) => {
 		const row = rows[index]
-		if (!row) return
+		if (!row || !result) return
 		if (result.outcome === 'moved') {
 			row.status = 'moved'
 			row.checked = false
@@ -109,20 +219,21 @@ async function apply() {
 			failed++
 		}
 	})
-	const moved = results.filter(row => row.outcome === 'moved').length
+	const moved = outcomes.filter(result => result?.outcome === 'moved').length
 	if (moved && !ws.history_ref) toast.add({ title: t('undo.sorted', { count: count_items(moved) }), color: 'success' })
 	if (failed) {
 		notice.value = t('ai_sort.not_moved', { n: failed })
 		phase.value = 'done'
 		return
 	}
-	close_proposal(proposal_id)
+	if (!from_model.value) close_proposal(proposal_id)
 	close_sort()
 }
 
 function on_open_change(open: boolean) {
 	if (open) return
-	if (sort_session.source === 'agent') close_proposal(sort_session.proposal_id)
+	stop()
+	if (!from_model.value) close_proposal(sort_session.proposal_id)
 	close_sort()
 }
 
@@ -135,14 +246,24 @@ watch(() => sort_session.run, () => {
 	<UModal
 		:open="sort_session.open"
 		:title="dialog_title"
-		:description="sort_session.source === 'agent' ? sort_session.reason : undefined"
+		:description="dialog_description"
 		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
 		@update:open="on_open_change"
 	>
 		<template #body>
 			<div class="flex flex-col gap-3">
-				<p v-if="phase === 'review'" class="text-xs text-muted">{{ t('ai_sort.hint') }}</p>
-				<p v-if="notice" class="text-sm text-error">{{ notice }}</p>
+				<div v-if="from_model" class="flex flex-wrap items-center gap-2 text-xs text-muted">
+					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
+					<span v-if="phase === 'reading'">{{ t('ai_sort.reading', { done: read, total: sort_session.entries.length }) }}</span>
+					<span v-else-if="phase === 'asking'" class="flex items-center gap-1.5">
+						<UIcon name="i-lucide:loader-circle" class="size-3.5 animate-spin" />
+						{{ t('ai_sort.asking', { model: model_label(ai_settings.model) }) }}
+					</span>
+					<span v-if="coverage">{{ coverage }}</span>
+				</div>
+				<p v-if="phase === 'review' && groups.length" class="text-xs text-muted">{{ t('ai_sort.hint') }}</p>
+				<p v-if="error" class="text-sm text-error">{{ error }}</p>
+				<p v-if="notice" class="text-sm text-warning">{{ notice }}</p>
 
 				<ul class="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
 					<li v-for="group in groups" :key="group.key" class="rounded-md border border-default">
@@ -191,10 +312,28 @@ watch(() => sort_session.run, () => {
 
 		<template #footer>
 			<span class="text-xs text-muted">
-				<template v-if="phase === 'review'">{{ t('ai_sort.to_move', { n: to_move }) }}</template>
+				<template v-if="phase === 'review' && groups.length">
+					{{ t('ai_sort.to_move', { n: to_move }) }}<template v-if="left"> · {{ t('ai_sort.left', { n: left }) }}</template>
+				</template>
 			</span>
 			<div class="flex gap-2">
-				<template v-if="phase === 'review'">
+				<UButton
+					v-if="busy"
+					:label="t('ai_sort.stop')"
+					icon="i-lucide:square"
+					color="neutral"
+					variant="outline"
+					@click="stop"
+				/>
+				<template v-else-if="phase === 'review'">
+					<UButton
+						v-if="from_model"
+						:label="t('ai_sort.again')"
+						icon="i-lucide:sparkles"
+						color="neutral"
+						variant="outline"
+						@click="ask_model"
+					/>
 					<UButton :label="t('ai_sort.cancel')" color="neutral" variant="outline" @click="on_open_change(false)" />
 					<UButton :label="t('ai_sort.apply', { n: to_move })" :disabled="!to_move" @click="apply" />
 				</template>
