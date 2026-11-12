@@ -166,7 +166,7 @@ const root_key = computed(() => tree_root_key(props.item.drive.id, props.item.ro
 const is_local = computed(() => props.item.drive.id === 'local')
 /** The synced folder (pile) this row is in, on this computer */
 const pile = computed(() => (is_local.value ? covering_link(normalize_workspace_id(folder_id.value))?.root : undefined))
-/** This row is a synced folder or holds one: it never goes inside another */
+/** This row is a synced folder or holds one: dropped into another, it joins it */
 const holds_pile = computed(() => is_local.value && my_sync_roots().some(root => is_within(root, folder_id.value)))
 const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value, ...(pile.value ? { pile: pile.value } : {}) }))
 
@@ -405,29 +405,32 @@ watchEffect(on_cleanup => {
 .r.sel :deep(.plain) {
 	color: var(--text-accent);
 }
-.g {
-	border-left: 0.5px solid var(--border);
-	margin-left: 13px;
-}
 /*
- * A pile's region: a thin line under the chevron's point (the row's margin
- * and padding plus half the chevron), drawn over the plain guide, so the
- * rows inside do not move
+ * Children's guide: a hairline under the chevron's point (the row's margin
+ * and padding plus half the chevron). Drawn, not a border, so a pile's
+ * thicker line takes the same place and the rows never move
  */
-.g.pile {
+.g {
 	position: relative;
-	border-left-color: transparent;
+	margin-left: 13px;
+	padding-left: 0.5px;
 }
-.g.pile::before {
+.g::before {
 	content: '';
 	position: absolute;
-	left: 4.5px;
+	left: 5px;
 	top: 0;
 	bottom: 0;
+	width: 0.5px;
+	background: var(--border);
+	pointer-events: none;
+}
+/* A pile's region: the same guide, thicker and in the sync's state */
+.g.pile::before {
+	left: 4.5px;
 	width: 1.5px;
 	border-radius: 1px;
 	background: var(--fill-accent);
-	pointer-events: none;
 }
 .g.pile.attention::before {
 	background: var(--fill-warning);
