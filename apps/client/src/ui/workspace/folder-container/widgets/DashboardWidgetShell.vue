@@ -6,6 +6,8 @@ import { backgroundStyle, isImageBackground, isWhiteBackground, resolveShellFill
 import PileImagePending from './PileImagePending.vue'
 import { useResolvedFill } from './useResolvedFill'
 import { useWidgetSelection } from './useWidgetSelection'
+import SelectedItemDots from './SelectedItemDots.vue'
+import { useSelectedItemDots } from './useSelectedItemDots'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 defineOptions({ inheritAttrs: false })
@@ -71,6 +73,7 @@ const shellFill = computed(() => resolveShellFill(props.widget))
 const resolvedFill = useResolvedFill(() => props.widget.id, shellFill)
 
 const { isSelected, isCut, onSelectClick } = useWidgetSelection(() => props.widget.id)
+const showDots = useSelectedItemDots(isSelected, () => props.interactionsEnabled !== false)
 
 const shellClass = computed(() => [
 	'dashboard-widget',
@@ -154,6 +157,12 @@ const style = computed(() => {
 			</div>
 		</component>
 		<PileImagePending v-if="widget.type === 'folder_cover'" :folder_id="widget.id" role="cover" />
+		<SelectedItemDots
+			v-if="showDots"
+			:menu-component="menuComponent"
+			:menu-node="menuNode"
+			:menu-props="menuProps"
+		/>
 	</div>
 </template>
 
@@ -206,6 +215,10 @@ const style = computed(() => {
 	display: flex;
 	align-items: center;
 	opacity: 0.6;
+}
+/* The "⋯" stands left of the drag handle in the same corner */
+.dashboard-widget :deep(.selected-item-dots) {
+	right: 26px;
 }
 .dashboard-widget:hover :deep(.dashboard-drag-handle) {
 	opacity: 1;

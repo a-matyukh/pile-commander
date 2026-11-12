@@ -25,8 +25,8 @@ const tableData = computed(() => container.value?.children ?? [])
 
 function onSelectClick(event: MouseEvent, id: string) {
 	event.stopPropagation()
-	if (!ws.can_select_with_click(event)) return
-	ws.toggle_selection(id)
+	if (event.detail > 1) return
+	ws.click_select(id, event)
 }
 </script>
 

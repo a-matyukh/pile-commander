@@ -11,6 +11,8 @@ import { useNoteEditor } from '../widgets/useNoteEditor'
 import { useMenuNode } from '../widgets/useMenuNode'
 import { useWidgetInteraction } from '../widgets/useWidgetInteraction'
 import { useWidgetSelection } from '../widgets/useWidgetSelection'
+import SelectedItemDots from '../widgets/SelectedItemDots.vue'
+import { useSelectedItemDots } from '../widgets/useSelectedItemDots'
 import { splitFileName } from '../widgets/fileNameParts'
 import { is_pile_image_token } from '@pile-commander/file-manager'
 import CoverCaption from '../widgets/CoverCaption.vue'
@@ -97,6 +99,7 @@ const {
 	onBlur,
 } = useNoteEditor(() => props.widget.id, () => props.widget.name)
 const fileOpen = useWidgetInteraction(() => props.widget, 'open')
+const showDots = useSelectedItemDots(isSelected, () => !(isNote.value && isEditing.value))
 
 function onDblClick(event: MouseEvent) {
 	if (isNote.value) onNoteDblClick(event)
@@ -174,6 +177,12 @@ function onDblClick(event: MouseEvent) {
 				<CoverCaption v-else :name="widget.name" />
 				</div>
 			</template>
+			<SelectedItemDots
+				v-if="showDots"
+				:menu-component="menuComponent"
+				:menu-node="menuNode"
+				:menu-props="menuProps"
+			/>
 		</div>
 	</component>
 </template>
@@ -242,6 +251,10 @@ function onDblClick(event: MouseEvent) {
 }
 .masonry-folder-card.pc-selected::after {
 	content: none;
+}
+/* A folder's "⋯" sits on its body, under the tab (TAB_H) */
+.masonry-folder-card :deep(.selected-item-dots) {
+	top: 16px;
 }
 .masonry-tab {
 	flex: none;

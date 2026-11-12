@@ -420,8 +420,11 @@ export interface SelectionStore {
 	toggle_selection(id: string): void
 	enter_selection_mode(): void
 	exit_selection_mode(): void
-	can_select_with_click(event?: { shiftKey?: boolean }): boolean
+	/** A click on an item: picks it alone; with Shift, ⌘, Ctrl or in Select mode adds or takes it away */
+	click_select(id: string, event?: SelectClick): void
 }
+
+export type SelectClick = { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }
 
 export type ClipboardMode = 'copy' | 'cut'
 

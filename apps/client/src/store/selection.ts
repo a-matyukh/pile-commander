@@ -1,4 +1,4 @@
-import type { SelectionStore } from '@/domain/Store'
+import type { SelectClick, SelectionStore } from '@/domain/Store'
 
 export default function makeSelection(): SelectionStore {
 	return {
@@ -42,8 +42,15 @@ export default function makeSelection(): SelectionStore {
 			this.selection_mode = false
 			this.clear_selection()
 		},
-		can_select_with_click(event?: { shiftKey?: boolean }): boolean {
-			return this.selection_mode || !!event?.shiftKey
+		click_select(id: string, event?: SelectClick) {
+			// Shift, ⌘ or Ctrl, and the touch Select mode, add and take away
+			if (this.selection_mode || event?.shiftKey || event?.metaKey || event?.ctrlKey) {
+				this.toggle_selection(id)
+				return
+			}
+			// A plain click picks one item; a second click on it lets it go, as in 3D and the Gallery
+			if (this.selection.length === 1 && this.selection[0] === id) this.clear_selection()
+			else this.set_selection([id])
 		},
 	}
 }

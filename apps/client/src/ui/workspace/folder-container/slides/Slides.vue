@@ -131,10 +131,10 @@ const isWidgetCut = computed(() => {
 function onSelectClick(event: MouseEvent) {
 	event.stopPropagation()
 	if (editingNoteId.value) return
-	if (!ws.can_select_with_click(event)) return
+	if (event.detail > 1) return
 	const id = widget.value?.id
 	if (!id) return
-	ws.toggle_selection(id)
+	ws.click_select(id, event)
 }
 
 // Leaving a note slide while editing should exit edit (save via exit handler).

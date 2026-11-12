@@ -12,6 +12,8 @@ import PileImagePending from './PileImagePending.vue'
 import { useResolvedFill } from './useResolvedFill'
 import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWidgetSelection } from './useWidgetSelection'
+import SelectedItemDots from './SelectedItemDots.vue'
+import { useSelectedItemDots } from './useSelectedItemDots'
 import { layer_peek_id } from '../layerPeek'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 
@@ -184,6 +186,9 @@ const boardMenuProps = computed(() => ({
 		}),
 }))
 
+/** Lines have their endpoints instead; a widget being edited keeps its text clear */
+const showDots = useSelectedItemDots(isSelected, () => props.interactionsEnabled && !isLineShape.value)
+
 const widgetMenuIs = computed(() =>
 	showWidgetMenu.value ? props.menuComponent : 'span',
 )
@@ -213,13 +218,13 @@ const { setRootRef, style } = useBoardWidget({
 	ignoreFrom: props.ignoreFrom,
 	minSize: props.minSize,
 	interactionsEnabled: computed(() => props.interactionsEnabled && ws.can_write),
-	onTap: () => {
+	onTap: (event) => {
 		if (canvasSelectionOwnsClick.value) return
 		if (isLineShape.value) {
 			ws.set_selection([props.widget.id])
 			return
 		}
-		toggleSelection()
+		toggleSelection(event)
 	},
 	extraStyle: computed(() => {
 		if (isShapeWidget.value) {
@@ -304,6 +309,12 @@ const { setRootRef, style } = useBoardWidget({
 				v-if="showLineEndpoints"
 				:widget="widget"
 				mode="board"
+			/>
+			<SelectedItemDots
+				v-if="showDots"
+				:menu-component="menuComponent"
+				:menu-node="menuNode"
+				:menu-props="menuProps"
 			/>
 			<span v-if="showBoardResize" class="resize-handle">
 				<ResizeHandleIcon />

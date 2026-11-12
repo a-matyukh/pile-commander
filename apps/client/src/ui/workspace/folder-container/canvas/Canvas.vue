@@ -93,6 +93,8 @@ const paneEl = ref<HTMLElement | null>(null)
 const workspace = useWorkspace()
 const can_write = computed(() => workspace.value?.can_write !== false)
 const isCoarsePointer = useMediaQuery('(pointer: coarse)')
+/** Select tool: a click picks one element; these keys add and take away, as in FigJam */
+const MULTI_SELECT_KEYS = ['Shift', 'Meta', 'Control']
 
 /** The tool this canvas opens with, and comes back to when its toolbar is shown again */
 function defaultTool(): EditorTool {
@@ -773,7 +775,7 @@ function onSectionPointerDown(event: PointerEvent) {
 					:nodes-connectable="isConnectTool && can_write"
 					:pan-on-drag="panOnDrag"
 					:selection-key-code="isSelectTool ? true : null"
-					:multi-selection-key-code="isSelectTool ? true : null"
+					:multi-selection-key-code="isSelectTool ? MULTI_SELECT_KEYS : null"
 					:selection-mode="SelectionMode.Partial"
 					:pan-on-scroll="true"
 					:pan-on-scroll-speed="0.85"
