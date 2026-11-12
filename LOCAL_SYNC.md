@@ -95,15 +95,24 @@ refuses a parent inside a synced folder before it makes anything there).
 Inside a synced folder the sync menu says "Part of …", opens the synced
 folder, and has no Stop of its own. A folder that holds synced folders
 says so in its menu and offers **Sync the whole folder**: when its copy
-finishes, `link_folder` unlinks the links inside it (their cloud copies
-stay in the cloud) and links the whole folder.
+finishes, `link_folder` links the whole folder and takes in the links
+inside it (their old cloud copies: see below).
 
 Moving, though, works as in any file browser. A synced folder (or one
 holding some) moved into another synced folder **joins** it: `move_link`
 sees the new place is inside another link, drops its own link and link
-file (`absorb_link`), and the outer folder syncs it as part of itself. Its
-old cloud copy stays in the cloud. The tree's drag ghost says so before the
-drop ("Becomes part of …"). The same happens when such a move made in
+file (`absorb_link`), and the outer folder syncs it as part of itself. The
+tree's drag ghost says so before the drop ("Becomes part of …").
+
+Its old cloud copy is then a leftover: it goes to the cloud trash, and a
+toast offers **Restore** (`settle_old_copy`, `SyncJoinedToast.vue`). It
+stays, and the toast says why and offers **Open**, when someone else relies
+on it or the cloud holds what this Mac never got (`old_copy_verdict`, first
+reason wins): this account does not own it; it has members or pending
+invites; it is published or on the Hub; another computer syncs it; a cloud
+file is new or changed since the link's base snapshot; or the link file or
+the listing could not be read. **Sync the whole folder** settles the
+copies of the links it takes in the same way. The same happens when such a move made in
 Finder is found: opening the folder, **Find…**, or by itself at launch.
 A link that pauses as `folder_missing` looks once per session inside this
 account's other synced folders (`look_for_joined`, `find_moved_folder_in`:

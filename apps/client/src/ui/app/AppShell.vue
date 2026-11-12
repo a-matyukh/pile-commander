@@ -29,6 +29,7 @@ import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import UpdateBanner from '@/ui/app/UpdateBanner.vue'
 import SyncKeptHiddenToast from '@/ui/workspace/sidebar/SyncKeptHiddenToast.vue'
+import SyncJoinedToast from '@/ui/workspace/sidebar/SyncJoinedToast.vue'
 import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
 import AiConsentDialog from '@/ui/ai/AiConsentDialog.vue'
 import BulkRenameDialog from '@/ui/ai/BulkRenameDialog.vue'
@@ -240,6 +241,7 @@ onUnmounted(() => {
 			</div>
 		</Teleport>
 		<SyncKeptHiddenToast />
+		<SyncJoinedToast />
 		<!-- The Explorer, or the invitation and missing-publication screen in its place. -->
 		<ExplorerShell v-if="!explorer_public_open" />
 		<PublicScreen v-else />

@@ -7,6 +7,7 @@ import {
 	forget_sync_device,
 	list_workspace_connections,
 	list_workspace_entries,
+	trash_workspace,
 	list_workspace_strokes,
 	purge_entry_id,
 	restore_entry_id,
@@ -25,6 +26,7 @@ import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStat
 import { download_scratch_dir, join_local, relative_of } from '@/services/cloud/sync/paths'
 import { choose_sync_folder } from '@/services/cloud/sync/syncToFolder'
 import { find_moved_folder_in } from '@/services/cloud/sync/findMoved'
+import { old_copy_verdict, type OldCopyVerdict } from '@/services/cloud/sync/joinedCopy'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { pile_root_name } from '@/services/workspace/pack'
 import type { LocalWriter } from '@/services/cloud/sync/syncPass'
@@ -324,11 +326,15 @@ export async function link_folder(input: {
 	const outer = covering_link(input.root, user.id)
 	if (outer && outer.root !== input.root) throw new Error(t('sync.inside_synced', { name: outer.name }))
 	// …and a synced folder inside this one now syncs as part of it (the menu said so)
-	for (const inner of links_inside(input.root, user.id)) await unlink_folder(inner.root)
+	// (their old cloud copies are settled as for a folder moved in: `absorb_link`)
+	const inner_links = links_inside(input.root, user.id)
+	for (const inner of inner_links) stop_engine(inner.root)
 	stop_engine(input.root)
 	const link: SyncLink = { root: input.root, name: input.name, workspace_id: input.workspace_id, user_id: user.id }
 	await save_state(link, new_sync_state(owner_of(link), { exclude: input.exclude, adopt_before: input.adopt_before }))
 	links.value = { ...links.value, [input.root]: link }
+	// after the whole folder is linked: the old copies' toasts name it
+	for (const inner of inner_links) await absorb_link(inner, inner.root)
 	start_engine(link)
 	// at once: the first pass of a large workspace can take a while
 	stamp_sync_device(link, { now: true })
@@ -483,11 +489,71 @@ function look_for_joined(link: SyncLink): void {
 }
 
 async function absorb_link(link: SyncLink, root: string): Promise<void> {
+	// the base snapshot tells what the cloud copy holds that this Mac never got
+	let state: SyncState | null = null
+	try {
+		state = parse_sync_state(await (await fs()).readTextFile(sync_state_path(root)), owner_of(link))
+	} catch {
+		// no link file left
+	}
 	forget_sync_record(link)
 	const next = { ...links.value }
 	delete next[link.root]
 	links.value = next
 	await remove_state(root)
+	void settle_old_copy(link, root, state)
+		.catch((error: unknown) => console.warn('[sync] could not settle the old cloud copy', error))
+}
+
+/** What became of the old cloud copy of a synced folder that joined another, for a toast */
+export type JoinedNotice = {
+	id: number
+	workspace_id: string
+	name: string
+	/** The synced folder it joined */
+	into: string
+	verdict: OldCopyVerdict
+}
+
+/** Toasts to show, oldest first: the app shell takes them */
+export const joined_notices: JoinedNotice[] = reactive([])
+let joined_notice_id = 0
+
+/**
+ * The old cloud copy is a leftover once the outer folder syncs it: to the
+ * cloud trash (the toast offers "Restore"), unless someone else relies on
+ * it or the cloud holds what this Mac never got (`old_copy_verdict`)
+ */
+async function settle_old_copy(link: SyncLink, root: string, state: SyncState | null): Promise<void> {
+	if (cloud.user?.id !== link.user_id) return
+	const id = link.workspace_id
+	const into = covering_link(root, link.user_id)?.name ?? ''
+	await cloud.fetch_workspaces()
+	if (!cloud.workspaces.some(ws => ws.id === id)) return
+	let rows: CloudEntry[] | null = null
+	try {
+		rows = (await list_workspace_entries(require_supabase(), id)).map(cloud_entry)
+	} catch {
+		// unknown: kept
+	}
+	let verdict = old_copy_verdict({
+		owner: cloud.roles[id] === 'owner',
+		shared: !!cloud.shared_out[id],
+		published: !!(cloud.published_slugs[id] || cloud.hub_listed[id] || cloud.hub_hidden[id]),
+		other_computers: cloud.synced_on[id]?.devices ?? 0,
+		state,
+		cloud: rows,
+	})
+	if (verdict === 'trash') {
+		try {
+			await trash_workspace(require_supabase(), id)
+			await cloud.fetch_workspaces()
+		} catch (error) {
+			console.warn('[sync] could not trash the old cloud copy', error)
+			verdict = 'unknown'
+		}
+	}
+	joined_notices.push({ id: ++joined_notice_id, workspace_id: id, name: link.name, into, verdict })
 }
 
 async function folder_exists(path: string): Promise<boolean> {
