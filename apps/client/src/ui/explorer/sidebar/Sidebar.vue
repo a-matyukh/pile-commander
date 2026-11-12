@@ -21,7 +21,7 @@ import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
 import { cloud_source_opens_page, source_tree_visible } from './source_open'
-import { CLOUD_ROOT_DROP_KEY, is_drop_target, pile_crossing, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, pile_crossing, tree_drag, tree_root_key, type PileCrossing } from './tree_drag'
 
 /**
  * `drawer` — a phone: the sidebar covers the content and a tap outside closes it.
@@ -36,6 +36,12 @@ const drives = computed(() => explorer_drives.drives())
 /** The dragged folder leaves a pile or goes into one: the ghost says so */
 const crossing = computed(() => (tree_drag.source ? pile_crossing(tree_drag.source, tree_drag.target) : null))
 const base_name = (path: string) => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+const crossing_icon = { leaves: 'tabler:cloud-off', enters: 'tabler:cloud-up', joins: 'tabler:cloud-plus' } as const
+function crossing_text(crossing: PileCrossing): string {
+	if (crossing.way === 'leaves') return t('tree.leaves_cloud')
+	const name = base_name(crossing.pile)
+	return crossing.way === 'joins' ? t('tree.joins_pile', { name }) : t('tree.enters_cloud', { name })
+}
 /** The account or settings page is open: its footer button shows it */
 function page_open(page: 'account' | 'settings' | 'trash' | 'cloud') {
 	const location = explorer_navigation.location
@@ -347,8 +353,8 @@ watchEffect(() => {
 			<Icon icon="tabler:folder" />
 			<span class="gn">{{ tree_drag.source.name }}</span>
 			<span v-if="crossing" class="gx" :class="crossing.way">
-				<Icon :icon="crossing.way === 'leaves' ? 'tabler:cloud-off' : 'tabler:cloud-up'" />
-				{{ crossing.way === 'leaves' ? t('tree.leaves_cloud') : t('tree.enters_cloud', { name: base_name(crossing.pile) }) }}
+				<Icon :icon="crossing_icon[crossing.way]" />
+				{{ crossing_text(crossing) }}
 			</span>
 		</div>
 	</aside>

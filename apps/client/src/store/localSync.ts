@@ -415,6 +415,14 @@ export function follow_moved_folder(from: FolderRef, to: FolderRef): void {
 
 async function move_link(link: SyncLink, root: string): Promise<void> {
 	stop_engine(link.root)
+	// moved into another synced folder: it becomes part of that one, as a
+	// folder dropped into a synced folder in Finder would. One file, one link
+	const outer = Object.values(links.value).find(other =>
+		other.root !== link.root && other.user_id === link.user_id && relative_of(other.root, root) !== null)
+	if (outer) {
+		await absorb_link(link, root)
+		return
+	}
 	const moved: SyncLink = { ...link, root }
 	try {
 		let state: SyncState | null = null
@@ -433,6 +441,18 @@ async function move_link(link: SyncLink, root: string): Promise<void> {
 	next[root] = moved
 	links.value = next
 	if (moved.user_id === cloud.user?.id) start_engine(moved)
+}
+
+/**
+ * A synced folder now inside another one syncs as part of it: its own link
+ * goes, with its link file (now at `root`). Its cloud copy stays in the cloud
+ */
+async function absorb_link(link: SyncLink, root: string): Promise<void> {
+	forget_sync_record(link)
+	const next = { ...links.value }
+	delete next[link.root]
+	links.value = next
+	await remove_state(root)
 }
 
 async function folder_exists(path: string): Promise<boolean> {

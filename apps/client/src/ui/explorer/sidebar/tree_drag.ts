@@ -25,7 +25,7 @@ export type TreeDragSource = TreeDropSpot & {
 	name: string
 	/** The folder it sits in now: dropping there would change nothing */
 	parent_id: string
-	/** It is a synced folder, or holds one: it never goes inside another */
+	/** It is a synced folder, or holds one: dropped into another, it joins it */
 	holds_pile?: boolean
 }
 
@@ -71,22 +71,26 @@ const drive_of = (root_key: string) => root_key.slice(0, root_key.indexOf('\0'))
 export function can_drop(source: TreeDragSource, spot: TreeDropSpot): boolean {
 	// A cloud root can move into another root, but cannot become a new root itself
 	if (spot.root_key === CLOUD_ROOT_DROP_KEY && source.folder_id === source.parent_id) return false
-	// one file, one link: a synced folder never lands inside another
-	if (source.holds_pile && spot.pile) return false
 	if (spot.root_key !== source.root_key) return drive_of(spot.root_key) === drive_of(source.root_key)
 	return !is_within(spot.folder_id, source.folder_id)
 		&& spot.folder_id !== source.parent_id
 }
 
 /**
- * A drop that crosses a pile's border: the folder leaves the cloud, or goes
- * into a synced folder (another one's included). `pile` is the region to
- * light up. A synced folder moved whole takes its link along: no crossing
+ * A drop that crosses a pile's border: the folder leaves the cloud, goes
+ * into a synced folder, or (a synced folder, or one holding some) joins
+ * another synced folder and syncs as part of it from then on. `pile` is the
+ * region to light up. A synced folder moved whole elsewhere takes its link
+ * along: no crossing
  */
-export type PileCrossing = { pile: string; way: 'leaves' | 'enters' }
+export type PileCrossing = { pile: string; way: 'leaves' | 'enters' | 'joins' }
 
 export function pile_crossing(source: TreeDragSource, target: TreeDropSpot | null): PileCrossing | null {
-	if (!target || source.pile === source.folder_id || source.pile === target.pile) return null
+	if (!target) return null
+	if (source.holds_pile) {
+		return target.pile && target.pile !== source.pile ? { pile: target.pile, way: 'joins' } : null
+	}
+	if (source.pile === target.pile) return null
 	if (target.pile) return { pile: target.pile, way: 'enters' }
 	return source.pile ? { pile: source.pile, way: 'leaves' } : null
 }

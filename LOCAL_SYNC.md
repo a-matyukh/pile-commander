@@ -96,8 +96,15 @@ Inside a synced folder the sync menu says "Part of …", opens the synced
 folder, and has no Stop of its own. A folder that holds synced folders
 says so in its menu and offers **Sync the whole folder**: when its copy
 finishes, `link_folder` unlinks the links inside it (their cloud copies
-stay in the cloud) and links the whole folder. The tree never drops a
-synced folder, or a folder holding one, inside another synced folder.
+stay in the cloud) and links the whole folder.
+
+Moving, though, works as in any file browser. A synced folder (or one
+holding some) moved into another synced folder **joins** it: `move_link`
+sees the new place is inside another link, drops its own link and link
+file (`absorb_link`), and the outer folder syncs it as part of itself. Its
+old cloud copy stays in the cloud. The tree's drag ghost says so before the
+drop ("Becomes part of …"). The same happens when such a move made in
+Finder is found (opening the folder, or **Find…**).
 `sync.json` never syncs (`is_pile_carry_relative`), so an inner link file
 is never uploaded.
 
