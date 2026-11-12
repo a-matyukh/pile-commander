@@ -85,6 +85,31 @@ export type ReadTextArgs = { folder: FolderAddress; path: string }
 
 export type ReadTextResult = { path: string; text: string; truncated: boolean }
 
+/** What an agent's preview proposes. One slot holds one proposal of any kind. */
+export type ProposalKind = 'rename'
+
+export type ProposalStatus = 'pending' | 'accepted' | 'dismissed'
+
+export type RenameRowResult = {
+	name: string
+	to: string
+	outcome: 'pending' | 'renamed' | 'skipped' | 'failed'
+	/** Set when outcome is `renamed`. May differ from `to` by a ` (1)` suffix. */
+	written_name?: string
+	error?: string
+}
+
+/** The kind's own part of `get_proposal`. */
+export type ProposalBody = { kind: 'rename'; rows: RenameRowResult[] }
+
+export type GetProposalResult = {
+	proposal_id: string
+	status: ProposalStatus
+	client_name: string
+	reason: string
+	folder: FolderAddress
+} & ProposalBody
+
 /** What the four read functions need from the running app. No MCP types. */
 export type McpContext = {
 	enabled: boolean

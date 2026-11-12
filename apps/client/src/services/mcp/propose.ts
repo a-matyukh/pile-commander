@@ -1,16 +1,26 @@
 import { planned_names, type BulkRow } from '@/services/ai/bulkRename'
 import { name_is_hidden } from './path'
+import {
+	hold_proposal,
+	held_proposal,
+	refuse_if_busy,
+	require_enabled,
+	require_file_name,
+	require_reason,
+	type HeldProposal,
+} from './proposal'
 import { granted_path, load_granted_folder } from './read'
-import { McpError, type FolderAddress, type McpContext } from './types'
+import { McpError, type FolderAddress, type McpContext, type RenameRowResult } from './types'
 
 /**
  * Rename proposals for a local agent. Nothing is written until the person
- * confirms. The MCP server only registers these functions.
+ * confirms. The slot, `get_proposal` and closing are shared with the other
+ * kinds (`proposal.ts`); the MCP server only registers these functions.
  */
 
-/** `entries_name_check`: one segment, at most 255 characters. */
-export const NAME_CHAR_LIMIT = 255
-export const REASON_CHAR_LIMIT = 500
+export { NAME_CHAR_LIMIT, REASON_CHAR_LIMIT, close_proposal, forget_proposals, get_proposal } from './proposal'
+export type { GetProposalResult } from './types'
+
 export const RENAME_ROW_LIMIT = 100
 
 export type ProposeRenameArgs = {
@@ -24,23 +34,7 @@ export type ProposeRenameResult = {
 	status: 'pending'
 }
 
-export type ProposalRowResult = {
-	name: string
-	to: string
-	outcome: 'pending' | 'renamed' | 'skipped' | 'failed'
-	/** Set when outcome is `renamed`. May differ from `to` by a ` (1)` suffix. */
-	written_name?: string
-	error?: string
-}
-
-export type GetProposalResult = {
-	proposal_id: string
-	status: 'pending' | 'accepted' | 'dismissed'
-	client_name: string
-	reason: string
-	folder: FolderAddress
-	rows: ProposalRowResult[]
-}
+export type ProposalRowResult = RenameRowResult
 
 export type ProposalEntry = {
 	id: string
@@ -77,19 +71,16 @@ type StoredRow = {
 	error?: string
 }
 
-type Proposal = {
-	id: string
-	status: GetProposalResult['status']
-	confirmed: boolean
-	client_name: string
-	reason: string
-	folder: FolderAddress
+type RenameProposal = HeldProposal & {
+	readonly kind: 'rename'
 	rows: StoredRow[]
 }
 
-let current: Proposal | null = null
-
-const CONTROL = /[\u0000-\u001f\u007f]/
+/** The held proposal when it is this rename. */
+function held_rename(id: string): RenameProposal | null {
+	const proposal = held_proposal()
+	return proposal && proposal.id === id && proposal.kind === 'rename' ? proposal as RenameProposal : null
+}
 
 /** Rows the agent dialog shows: already decided, checkboxes on, no model call. */
 export function ready_proposal_rows(entries: readonly ProposalEntry[]): BulkRow[] {
@@ -126,7 +117,7 @@ export async function propose_rename(
 	args: ProposeRenameArgs,
 	client_name: string,
 	open: ProposalOpener,
-	/** The suggest dialog holds the one slot. No proposal id in that case. */
+	/** The person's own AI session holds the one slot. No proposal id in that case. */
 	dialog_busy: () => boolean = () => false,
 ): Promise<ProposeRenameResult> {
 	require_enabled(ctx)
@@ -141,8 +132,9 @@ export async function propose_rename(
 		await granted_path(ctx, loaded.folder.drive_id, loaded.folder.root_id, relative)
 	}
 	refuse_if_busy(dialog_busy)
-	const proposal: Proposal = {
+	const proposal: RenameProposal = {
 		id: crypto.randomUUID(),
+		kind: 'rename',
 		status: 'pending',
 		confirmed: false,
 		client_name,
@@ -154,37 +146,21 @@ export async function propose_rename(
 			to: row.to,
 			outcome: 'pending',
 		})),
+		view: () => ({ kind: 'rename', rows: public_rows(proposal) }),
+		skip_rows: () => {
+			for (const row of proposal.rows) row.outcome = 'skipped'
+		},
 	}
-	const previous = current
-	current = proposal
-	try {
-		await open({
-			proposal_id: proposal.id,
-			client_name,
-			reason,
-			drive_id: loaded.folder.drive_id,
-			root_id: loaded.folder.root_id,
-			folder_id: loaded.id,
-			rows,
-		})
-	} catch (error) {
-		if (current === proposal) current = previous
-		throw error
-	}
+	await hold_proposal(proposal, () => open({
+		proposal_id: proposal.id,
+		client_name,
+		reason,
+		drive_id: loaded.folder.drive_id,
+		root_id: loaded.folder.root_id,
+		folder_id: loaded.id,
+		rows,
+	}))
 	return { proposal_id: proposal.id, status: 'pending' }
-}
-
-export function get_proposal(ctx: McpContext, proposal_id: string): GetProposalResult {
-	require_enabled(ctx)
-	if (!current || current.id !== proposal_id) throw new McpError('proposal_not_found')
-	return {
-		proposal_id: current.id,
-		status: current.status,
-		client_name: current.client_name,
-		reason: current.reason,
-		folder: current.folder,
-		rows: public_rows(current),
-	}
 }
 
 /**
@@ -197,14 +173,14 @@ export async function confirm_proposal(
 	decisions: readonly ProposalDecision[],
 	rename: (entry_id: string, name: string) => Promise<string | null>,
 ): Promise<ProposalRowResult[]> {
-	const proposal = current
-	if (!proposal || proposal.id !== id || proposal.status !== 'pending' || proposal.confirmed) {
-		return proposal && proposal.id === id ? public_rows(proposal) : []
+	const proposal = held_rename(id)
+	if (!proposal || proposal.status !== 'pending' || proposal.confirmed) {
+		return proposal ? public_rows(proposal) : []
 	}
 	proposal.confirmed = true
 	const by_name = new Map(decisions.map(decision => [decision.name, decision]))
 	for (const row of proposal.rows) {
-		if (current !== proposal) break
+		if (held_proposal() !== proposal) break
 		const decision = by_name.get(row.name)
 		const written = decision?.written_name ?? row.to
 		if (!decision?.checked || written === row.name) {
@@ -217,7 +193,7 @@ export async function confirm_proposal(
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : String(caught)
 		}
-		if (current !== proposal) break
+		if (held_proposal() !== proposal) break
 		if (error) {
 			row.outcome = 'failed'
 			row.error = error
@@ -227,40 +203,6 @@ export async function confirm_proposal(
 		}
 	}
 	return public_rows(proposal)
-}
-
-/** The dialog closed. Confirmed → `accepted`. Not confirmed → `dismissed`, nothing written. */
-export function close_proposal(id: string) {
-	const proposal = current
-	if (!proposal || proposal.id !== id || proposal.status !== 'pending') return
-	if (proposal.confirmed) {
-		proposal.status = 'accepted'
-		return
-	}
-	proposal.status = 'dismissed'
-	for (const row of proposal.rows) row.outcome = 'skipped'
-}
-
-/** Access off, or the app is done with the slot. The next id is `proposal_not_found`. */
-export function forget_proposals() {
-	current = null
-}
-
-function refuse_if_busy(dialog_busy: () => boolean) {
-	if (current?.status === 'pending') throw new McpError('busy', current.id)
-	if (dialog_busy()) throw new McpError('busy')
-}
-
-function require_enabled(ctx: McpContext) {
-	if (ctx.enabled) return
-	current = null
-	throw new McpError('mcp_disabled')
-}
-
-function require_reason(reason: string): string {
-	const text = reason.trim()
-	if (text === '' || [...text].length > REASON_CHAR_LIMIT) throw new McpError('bad_request')
-	return text
 }
 
 function require_batch(renames: { name: string; to: string }[], show_hidden: boolean) {
@@ -277,18 +219,6 @@ function require_batch(renames: { name: string; to: string }[], show_hidden: boo
 	}
 }
 
-function require_file_name(name: string) {
-	if (
-		name === ''
-		|| name === '.'
-		|| name === '..'
-		|| name.includes('/')
-		|| name.includes('\\')
-		|| CONTROL.test(name)
-		|| [...name].length > NAME_CHAR_LIMIT
-	) throw new McpError('bad_request')
-}
-
 function match_children(
 	children: readonly { id: string; name: string; type: 'file' | 'folder' }[],
 	renames: readonly { name: string; to: string }[],
@@ -300,7 +230,7 @@ function match_children(
 	})
 }
 
-function public_rows(proposal: Proposal): ProposalRowResult[] {
+function public_rows(proposal: RenameProposal): ProposalRowResult[] {
 	return proposal.rows.map(row => {
 		const result: ProposalRowResult = { name: row.name, to: row.to, outcome: row.outcome }
 		if (row.outcome === 'renamed' && row.written_name) result.written_name = row.written_name

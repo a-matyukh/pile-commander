@@ -3,6 +3,7 @@ import { createFakeFileManager } from '@pile-commander/file-manager'
 import type { DriveKind, FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
 import { bulk_rename_request, close_bulk_rename, open_bulk_rename, open_proposed_rename, suggest_dialog_open } from '@/store/aiBulkRename'
+import { close_agent_previews, own_ai_session_open } from '@/store/aiSession'
 import { get_folder } from './read'
 import {
 	NAME_CHAR_LIMIT,
@@ -360,6 +361,52 @@ describe('mcp propose_rename', () => {
 		}, 'Claude', (preview) => { opened.push(preview) }, suggest_dialog_open)
 		expect(second.status).toBe('pending')
 		expect(opened).toHaveLength(1)
+	})
+
+	test('get_proposal says which kind it is', async () => {
+		const { fake, ctx } = world()
+		seed_pair(fake)
+		const result = await propose_rename(ctx, {
+			folder: root,
+			reason: 'Clearer names',
+			renames: pair,
+		}, 'Claude', () => {})
+		expect(get_proposal(ctx, result.proposal_id).kind).toBe('rename')
+	})
+
+	test('the shared session check makes an agent busy while suggest names is open', async () => {
+		const { fake, ctx } = world()
+		seed_pair(fake)
+		expect(own_ai_session_open()).toBe(false)
+		open_bulk_rename({} as WorkspaceStore, `${HOME}/kept`, [{ id: `${HOME}/kept/a.txt`, name: 'a.txt', type: 'file' }])
+		expect(own_ai_session_open()).toBe(true)
+		const error = await code_of(propose_rename(ctx, {
+			folder: root,
+			reason: 'Clearer names',
+			renames: pair,
+		}, 'Claude', () => {}, own_ai_session_open))
+		expect(error.code).toBe('busy')
+		close_bulk_rename()
+		expect(own_ai_session_open()).toBe(false)
+	})
+
+	test('closing agent previews dismisses a waiting rename and closes its dialog', async () => {
+		const { fake, ctx } = world()
+		seed_pair(fake)
+		const workspace = {} as WorkspaceStore
+		const first = await propose_rename(ctx, {
+			folder: root,
+			reason: 'Clearer names',
+			renames: pair,
+		}, 'Claude', (preview) => { open_proposed_rename(workspace, preview) }, own_ai_session_open)
+		expect(bulk_rename_request.open).toBe(true)
+		// An agent's preview is not the person's own session
+		expect(own_ai_session_open()).toBe(false)
+
+		close_agent_previews()
+		expect(bulk_rename_request.open).toBe(false)
+		expect(get_proposal(ctx, first.proposal_id).status).toBe('dismissed')
+		expect(await names_of(fake)).toEqual(['a.txt', 'b.txt'])
 	})
 
 	test('a bookmark folder can propose a nested file', async () => {
