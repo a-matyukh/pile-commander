@@ -5,7 +5,7 @@ import { t } from '@/i18n'
 import { name_target_kind } from '@/services/ai/naming'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
 import { to_folder_container } from '@/services/workspace/folderContainer'
-import { ai_available, ai_ready } from '@/store/ai'
+import { ai_available, ai_base_check, ai_ready } from '@/store/ai'
 import { open_bulk_rename } from '@/store/aiBulkRename'
 import { open_ideas } from '@/store/aiIdeas'
 import { open_sort } from '@/store/aiSort'
@@ -104,7 +104,8 @@ function open_settings() {
 		</template>
 		<MenuLabel :label="t('ai.folder_title', { name })" />
 		<template v-if="!ai_ready">
-			<p class="hint">{{ t('ai.setup_hint') }}</p>
+			<!-- What is missing, exactly: often only the model -->
+			<p class="hint">{{ ai_base_check.ok ? t('ai.setup_model_hint') : t('ai.setup_hint') }}</p>
 			<MenuItem icon="tabler:settings" :label="t('ai.open_settings')" @select="open_settings" />
 		</template>
 		<p v-else-if="!usable" class="hint">{{ t('ai.read_only') }}</p>
