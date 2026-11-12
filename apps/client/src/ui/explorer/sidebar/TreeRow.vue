@@ -20,7 +20,7 @@ import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
-import { pile_line_state, shows_synced, sync_status_of, synced_tip } from '@/store/explorer/share'
+import { pile_line_state, shows_synced, sync_badge, sync_status_of, synced_tip } from '@/store/explorer/share'
 import { folder_icon_of, standard_folder_icon, system_folder } from '@/store/explorer/folder_cover'
 import { shown_icon } from '@/store/explorer/icon_catalog'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
@@ -175,7 +175,10 @@ const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.va
  * children's guide becomes a line in the sync's state. Folders inside it
  * keep the plain guide, so the region reads as one
  */
-const pile_line = computed(() => pile_line_state(shows_synced(row_ref.value), sync_status_of(row_ref.value)))
+const sync_status = computed(() => sync_status_of(row_ref.value))
+const pile_line = computed(() => pile_line_state(shows_synced(row_ref.value), sync_status.value))
+/** The cloud badge says what the sync does now, as the sync menu's button */
+const badge = computed(() => sync_badge(sync_status.value))
 /** A drag leaves this pile or goes into it: its region lights up */
 const pile_lit = computed(() => {
 	if (!pile_line.value || !tree_drag.source) return false
@@ -281,7 +284,7 @@ watchEffect(on_cleanup => {
 		<Icon :icon="glyph.icon" :class="glyph.plain ? 'plain' : 'vw'" :style="{ color: glyph.color }" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
-			<span v-if="shows_synced(row_ref)" class="bdg" :data-tip="synced_tip(row_ref)"><Icon icon="tabler:cloud-check" /></span>
+			<span v-if="pile_line" class="bdg" :class="{ spin: badge.spin }" :data-tip="badge.tip ? t(badge.tip) : synced_tip(row_ref)"><Icon :icon="badge.icon" /></span>
 			<span v-if="is_bookmarked(row_ref)" class="bdg" :data-tip="t('badge.bookmarked')"><Icon icon="tabler:bookmark" /></span>
 			<!-- A publication or the demo is not one of the user's places: no folder menu -->
 			<FolderMenu
@@ -378,6 +381,9 @@ watchEffect(on_cleanup => {
 	display: flex;
 	color: var(--text-muted);
 	font-size: 13px;
+}
+.bdg.spin :deep(svg) {
+	animation: spin 1s linear infinite;
 }
 .r.sel .bdg {
 	color: var(--text-accent);

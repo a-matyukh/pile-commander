@@ -128,7 +128,9 @@ the chevron's point, the whole height of its children, in the sync's state
 (`pile_line_state`): blue in sync, a dark run travelling down a lighter
 line while syncing (always, it is a status), amber when paused or failed.
 Folders inside keep the plain guide, so the region reads as one. A cloud
-folder synced on another computer has no status here: blue. The badge stays: a collapsed folder shows no line.
+folder synced on another computer has no status here: blue. The badge stays (a collapsed folder shows no line) and
+shows the same state as the sync menu's button (`sync_badge`): a turning
+arrow while syncing, pause, failed, some files failed, or synced.
 
 Dragging a folder in the tree across a pile's border (`pile_crossing`)
 lights up that pile's region, and the drag ghost says "Leaves the cloud"

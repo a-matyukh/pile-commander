@@ -17,7 +17,7 @@ import { bridge_door_for, open_share_window, type ShareWindow } from '@/store/ex
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
 import { root_folder_id } from './folder_header'
-export { pile_line_state } from './pile_line'
+export { pile_line_state, sync_badge } from './pile_line'
 
 /**
  * "Share" and "Sync" in the folder header, as in the prototype. A cloud
