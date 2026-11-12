@@ -4,15 +4,15 @@ type SceneId = "names" | "summary" | "ideas" | "sort";
 const scenes: { id: SceneId; label: string; icon: string; caption: string }[] = [
   {
     id: "names",
-    label: "Rename files",
+    label: "Rename files by content",
     icon: "i-lucide-tag",
     caption: "Select files and get names from what is inside them: notes are read, images looked at. A list of old and new, each with a checkbox.",
   },
   {
     id: "summary",
-    label: "Summarize a board",
+    label: "Summarize this folder",
     icon: "i-lucide-file-text",
-    caption: "Summarize turns a board, or what is selected on it, into a short note right next to it.",
+    caption: "A short note about what the folder holds, or what is selected in it, lands right next to it.",
   },
   {
     id: "ideas",
@@ -69,7 +69,7 @@ const notes = [
     eyebrow="AI tools"
     badge="New"
     title="AI that tidies the pile you already have."
-    lede="Four things a model does with a folder: names files by what is in them, sums up a board in a note, brings ideas as cards on the board, and sorts a pile into folders. You see every change before it happens."
+    lede="Four things a model does with a folder: names files by what is in them, sums up a folder in a note, brings ideas as cards on the board, and sorts a pile into folders. You see every change before it happens."
     muted
   >
     <div class="-mx-5 overflow-x-auto px-5 pb-4 sm:mx-0 sm:px-0">
