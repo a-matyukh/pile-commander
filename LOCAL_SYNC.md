@@ -101,6 +101,14 @@ synced folder, or a folder holding one, inside another synced folder.
 `sync.json` never syncs (`is_pile_carry_relative`), so an inner link file
 is never uploaded.
 
+**The pile's line in the tree.** A synced folder is a pile, a region. At
+its top folder (where the cloud badge is) the tree draws its children's
+guide as a 2px line in the sync's state (`pile_line_state`): blue in sync,
+a light running down it while syncing (only when the motion setting is
+on), amber when paused or failed. Folders inside keep the plain guide, so
+the region reads as one. A cloud folder synced on another computer has no
+status here: blue. The badge stays: a collapsed folder shows no line.
+
 **Engine (`syncEngine.ts`).** One per linked folder. Passes never overlap; a
 change during a pass queues one more. A pass runs:
 - at start;

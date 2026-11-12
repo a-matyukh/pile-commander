@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
+import { usePreferredReducedMotion } from '@vueuse/core'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { t } from '@/i18n'
 import { entry_is_dimmed } from '@/store/hiddenPaths'
@@ -20,13 +21,13 @@ import { FOLDER_VIEW_META } from '@/store/explorer/folder_header'
 import { show_hidden_files } from '@/store/showHiddenFiles'
 import cloud from '@/store/cloud'
 import { is_bookmarked } from '@/store/explorer/bookmarks'
-import { shows_synced, synced_tip } from '@/store/explorer/share'
+import { pile_line_state, shows_synced, sync_status_of, synced_tip } from '@/store/explorer/share'
 import { folder_icon_of, standard_folder_icon, system_folder } from '@/store/explorer/folder_cover'
 import { shown_icon } from '@/store/explorer/icon_catalog'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
-import { explorer_settings } from '@/store/explorer/settings'
+import { explorer_settings, motion_3d_enabled } from '@/store/explorer/settings'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
@@ -169,6 +170,15 @@ const pile = computed(() => (is_local.value ? covering_link(normalize_workspace_
 /** This row is a synced folder or holds one: it never goes inside another */
 const holds_pile = computed(() => is_local.value && my_sync_roots().some(root => is_within(root, folder_id.value)))
 const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value, ...(pile.value ? { pile: pile.value } : {}) }))
+
+const system_motion = usePreferredReducedMotion()
+const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, system_motion.value === 'reduce'))
+/**
+ * The top folder of a pile (a synced folder) draws its whole region: its
+ * children's guide becomes a line in the sync's state. Folders inside it
+ * keep the plain guide, so the region reads as one
+ */
+const pile_line = computed(() => pile_line_state(shows_synced(row_ref.value), sync_status_of(row_ref.value)))
 const drop_target = computed(() => is_drop_target(spot.value))
 const dragged = computed(() => tree_drag.source?.root_key === root_key.value
 	&& tree_drag.source.folder_id === folder_id.value)
@@ -287,7 +297,11 @@ watchEffect(on_cleanup => {
 			</FolderMenu>
 		</span>
 	</div>
-	<div v-if="expanded && (children.length || loading)" class="g">
+	<div
+		v-if="expanded && (children.length || loading)"
+		class="g"
+		:class="pile_line && ['pile', pile_line, { flow: motion }]"
+	>
 		<TreeRow v-for="child in children" :key="child.id" :item="item" :node="child" />
 	</div>
 	<Modal
@@ -392,6 +406,36 @@ watchEffect(on_cleanup => {
 .g {
 	border-left: 0.5px solid var(--border);
 	margin-left: 13px;
+}
+/* A pile's region: 2px wide, its centre where the plain guide's is */
+.g.pile {
+	position: relative;
+	border-left: 2px solid var(--fill-accent);
+	margin-left: 12.25px;
+}
+.g.pile.attention {
+	border-left-color: var(--fill-warning);
+}
+/* Syncing: a light runs down the line, when motion is on */
+.g.pile.syncing.flow::before {
+	content: '';
+	position: absolute;
+	left: -2px;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: linear-gradient(to bottom, transparent 0%, var(--border-accent) 50%, transparent 100%) no-repeat;
+	background-size: 100% 40%;
+	animation: pile-flow 1.4s linear infinite;
+	pointer-events: none;
+}
+@keyframes pile-flow {
+	from {
+		background-position: 0 -150%;
+	}
+	to {
+		background-position: 0 250%;
+	}
 }
 .spin {
 	animation: spin 1s linear infinite;

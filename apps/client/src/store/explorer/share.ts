@@ -11,12 +11,13 @@ import { pile_archive_name, run_pile_export } from './exportPile'
 import store from '@/store'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
-import type { SyncNowOptions } from '@/services/cloud/sync/syncEngine'
-import { find_moved_folder, type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
+import type { SyncNowOptions, SyncStatus } from '@/services/cloud/sync/syncEngine'
+import { find_moved_folder, type SyncLink, sync_link_of, sync_now, sync_statuses, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
 import { bridge_door_for, open_share_window, type ShareWindow } from '@/store/explorer/sharePublishPanel'
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
 import { root_folder_id } from './folder_header'
+export { pile_line_state } from './pile_line'
 
 /**
  * "Share" and "Sync" in the folder header, as in the prototype. A cloud
@@ -164,6 +165,12 @@ export function synced_elsewhere(ref: FolderRef): SyncedOn | null {
 export function shows_synced(ref: FolderRef): boolean {
 	if (ref.drive_id === 'cloud' && ref.folder_id !== '/') return false
 	return sync_link_for(ref) !== null || synced_elsewhere(ref) !== null
+}
+
+/** The sync status of the link this folder is the top of, on this computer; null elsewhere */
+export function sync_status_of(ref: FolderRef): SyncStatus | null {
+	const link = sync_link_for(ref)
+	return link ? sync_statuses[link.root] ?? null : null
 }
 
 /** "just now", "5 min ago", then the date and time */
