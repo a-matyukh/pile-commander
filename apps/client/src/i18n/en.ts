@@ -57,7 +57,7 @@ export const en: typeof ru = {
 		move_to_trash_description: 'The folder and everything in it can be restored from the trash.',
 		trash_workspace_audience: 'Members lose access, and the Hub listing is removed.',
 		move_root_warning_title: 'Move shared folder?',
-		joins_pile: 'Becomes part of "{name}" and syncs with it',
+		joins_pile: 'Becomes part of "{name}" and syncs with it. Its old cloud copy stays in the cloud.',
 		leaves_cloud: 'Leaves the cloud',
 		enters_cloud: 'Goes to the cloud: "{name}"',
 		move_root_warning_description: 'The shared access, public link and Hub listing of “{name}” will be lost.',

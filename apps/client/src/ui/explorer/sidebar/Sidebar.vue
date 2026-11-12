@@ -350,11 +350,14 @@ watchEffect(() => {
 			class="gh"
 			:style="{ left: tree_drag.x + 12 + 'px', top: tree_drag.y + 8 + 'px' }"
 		>
-			<Icon icon="tabler:folder" />
-			<span class="gn">{{ tree_drag.source.name }}</span>
+			<span class="gt">
+				<Icon icon="tabler:folder" />
+				<span class="gn">{{ tree_drag.source.name }}</span>
+			</span>
+			<!-- under the name, wrapping: the explanation is read whole -->
 			<span v-if="crossing" class="gx" :class="crossing.way">
-				<Icon :icon="crossing_icon[crossing.way]" />
-				{{ crossing_text(crossing) }}
+				<Icon :icon="crossing_icon[crossing.way]" class="gi" />
+				<span>{{ crossing_text(crossing) }}</span>
 			</span>
 		</div>
 	</aside>
@@ -425,18 +428,22 @@ watchEffect(() => {
 	position: fixed;
 	z-index: 50;
 	display: flex;
-	align-items: center;
-	gap: 6px;
-	max-width: 360px;
+	flex-direction: column;
+	gap: 4px;
+	max-width: 260px;
 	padding: 4px 8px;
 	border-radius: 6px;
 	background: var(--surface-2);
 	box-shadow: 0 2px 10px rgba(0, 0, 0, .15);
 	font-size: 12px;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
 	pointer-events: none;
+}
+.gt {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	white-space: nowrap;
 }
 .gn {
 	min-width: 0;
@@ -445,12 +452,16 @@ watchEffect(() => {
 }
 .gx {
 	display: flex;
-	flex-shrink: 0;
-	align-items: center;
-	gap: 4px;
-	padding-left: 6px;
-	border-left: 0.5px solid var(--border);
+	align-items: flex-start;
+	gap: 6px;
+	padding-top: 4px;
+	border-top: 0.5px solid var(--border);
+	line-height: 1.35;
 	color: var(--text-accent);
+}
+.gi {
+	flex: none;
+	margin-top: 1px;
 }
 .gx.leaves {
 	color: var(--text-primary);
