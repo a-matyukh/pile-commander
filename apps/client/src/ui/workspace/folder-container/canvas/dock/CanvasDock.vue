@@ -263,7 +263,7 @@ const vars = computed(() => ({
 	left: 8px;
 	right: 8px;
 	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-	/* Above the folder actions panel (z-index 20), as the classic toolbar */
+	/* Above the folder actions panel (z-index 20) */
 	z-index: 30;
 	display: flex;
 	flex-direction: column;

@@ -13,7 +13,6 @@ import { useFolderContainerScope } from './useFolderContainerScope'
 import { useDeleteSelectedWidgets } from './useDeleteSelectedWidgets'
 import { useRenameSelected } from './useRenameSelected'
 import { useCombineSelectedWidgets } from './useCombineSelectedWidgets'
-import { canvasToolbarInset } from './canvas/canvasToolbarInset'
 import { t } from '@/i18n'
 
 defineProps<{
@@ -27,7 +26,6 @@ const children = computed(() => container.value?.children ?? [])
 const view = computed(() => container.value?.view ?? 'list')
 const editingNoteId = ref<string | null>(null)
 const isCoarsePointer = useMediaQuery('(pointer: coarse)')
-const toolbarInset = canvasToolbarInset(folderId)
 
 const publicMode = computed(() => !!cloud.publication_view || !!cloud.public_not_found)
 
@@ -69,12 +67,6 @@ const shown = computed(() =>
 	|| showBulkRemoveButton.value
 	|| showClipboard.value,
 )
-
-const panelStyle = computed(() => {
-	const inset = toolbarInset.value
-	if (inset <= 0) return undefined
-	return { top: `${inset + 8}px` }
-})
 </script>
 
 <template>
@@ -82,7 +74,6 @@ const panelStyle = computed(() => {
 		<div
 			v-if="shown"
 			class="folder-actions-panel board-no-drag nodrag nopan"
-			:style="panelStyle"
 			@click.stop
 			@dblclick.stop
 			@pointerdown.stop

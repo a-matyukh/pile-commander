@@ -35,13 +35,13 @@ const emit = defineEmits<{
 	'delete-connection': []
 }>()
 
-/** The classic toolbar's colors */
+/** The pen's colors */
 const PEN_PALETTE = ['#111827', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899']
 const PEN_WIDTHS = [2, 4, 8, 16]
 
 const same_color = (color: string) => color.toLowerCase() === props.penColor.toLowerCase()
 const custom_color = computed(() => !PEN_PALETTE.some(same_color))
-/** Any width between the presets, as the classic toolbar's slider gives */
+/** Any width between the presets, as a slider gives */
 const custom_width = computed(() => !PEN_WIDTHS.includes(props.penWidth))
 
 /**
@@ -73,7 +73,7 @@ const strokes_label = computed(() =>
 )
 
 /**
- * A delete acts on the press, as the classic toolbar's: by the click the
+ * A delete acts on the press: by the click the
  * selection it is about may be gone. A click without a press is the keyboard.
  */
 function on_press(event: PointerEvent, what: 'delete-selected' | 'delete-connection') {

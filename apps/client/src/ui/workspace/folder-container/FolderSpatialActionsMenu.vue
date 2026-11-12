@@ -45,7 +45,6 @@ const {
 			/>
 		</template>
 		<template #view-trailing="{ item }">{{ view_label((item as { currentViewLabel?: string }).currentViewLabel) }}</template>
-		<template #toolbar-side-trailing="{ item }">{{ item_look((item as { currentSideLabel?: string }).currentSideLabel ?? '').label }}</template>
 		<template #grid-size-trailing>
 			<UInput
 				:model-value="gridSize"

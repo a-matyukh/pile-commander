@@ -13,37 +13,17 @@ describe('mergeCanvasToolbarPrefs', () => {
 		expect(mergeCanvasToolbarPrefs([])).toEqual(DEFAULT_CANVAS_TOOLBAR_PREFS)
 	})
 
-	test('keeps valid fields and fills the rest from defaults', () => {
-		expect(mergeCanvasToolbarPrefs({ hidden: true })).toEqual({
-			hidden: true,
-			classic: false,
-			compactView: false,
-			side: 'top',
-		})
-		expect(mergeCanvasToolbarPrefs({
-			hidden: true,
-			classic: true,
-			compactView: true,
-			side: 'bottom',
-		})).toEqual({
-			hidden: true,
-			classic: true,
-			compactView: true,
-			side: 'bottom',
-		})
+	test('keeps a valid hidden flag', () => {
+		expect(mergeCanvasToolbarPrefs({ hidden: true })).toEqual({ hidden: true })
 	})
 
-	test('settings saved before the bottom panel open with it, not with the classic toolbar', () => {
-		expect(mergeCanvasToolbarPrefs({ hidden: false, compactView: true, side: 'bottom' }).classic).toBe(false)
+	test('settings saved with the old toolbar keep only whether the panel is hidden', () => {
+		expect(mergeCanvasToolbarPrefs({ hidden: false, classic: true, compactView: true, side: 'bottom' }))
+			.toEqual({ hidden: false })
 	})
 
 	test('drops invalid field types', () => {
-		expect(mergeCanvasToolbarPrefs({
-			hidden: 'yes',
-			classic: 1,
-			compactView: 1,
-			side: 'left',
-		})).toEqual(DEFAULT_CANVAS_TOOLBAR_PREFS)
+		expect(mergeCanvasToolbarPrefs({ hidden: 'yes' })).toEqual(DEFAULT_CANVAS_TOOLBAR_PREFS)
 	})
 })
 

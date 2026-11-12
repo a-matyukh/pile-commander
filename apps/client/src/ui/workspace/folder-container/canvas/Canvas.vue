@@ -7,7 +7,7 @@ import {
 	type EdgeMouseEvent,
 	type NodeDragEvent,
 } from '@vue-flow/core'
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance, type Ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type Ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
@@ -28,7 +28,6 @@ import {
 import { provideEditingNoteId } from '../widgets/useEditingNoteId'
 import { useFolderPaneActions } from '../useFolderPaneActions'
 import FolderContainerCtxMenu from '@/ui/workspace/menu/FolderContainerCtxMenu.vue'
-import CanvasDrawingToolbar from './CanvasDrawingToolbar.vue'
 import CanvasDock from './dock/CanvasDock.vue'
 import type { DockZoomAction } from './dock/canvasDockItems'
 import { default_canvas_tool } from './canvasDefaultTool'
@@ -72,16 +71,12 @@ import type { BoardViewport } from './drawing/types'
 import { ZOOM_MAX, ZOOM_MIN, type EditorTool } from './drawing/types'
 import { PEN_CURSOR } from './drawing/cursors'
 import { isCanvasToolAllowed, useCanvasToolbarPrefs } from './useCanvasToolbarPrefs'
-import { clearCanvasToolbarInset, setCanvasToolbarInset } from './canvasToolbarInset'
-import { useHoverClickMenu } from './useHoverClickMenu'
 import { useRevealEditingNote } from '../revealEditingNote'
 import { show_spatial_folder } from '@/store/aiIdeas'
 import IdeaGhosts from '@/ui/ai/IdeaGhosts.vue'
 import IdeasBar from '@/ui/ai/IdeasBar.vue'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
-const isMdUp = useMediaQuery('(min-width: 768px)')
-const toolbarCompact = computed(() => isEmbedded || !isMdUp.value)
 const toolbarPrefs = useCanvasToolbarPrefs()
 
 // Its own Vue Flow store: a nested folder preview never shares its parent's
@@ -122,47 +117,6 @@ const spacePan = computed(() => spaceHeld.value && tool.value !== 'hand')
  * choice, so what a change of tool resets (the selection) is left alone.
  */
 const activeTool = computed<EditorTool>(() => (spacePan.value ? 'hand' : tool.value))
-
-const toolbarHost = ref<ComponentPublicInstance | null>(null)
-
-function toolbarElement(): HTMLElement | null {
-	const el = toolbarHost.value?.$el
-	return el instanceof HTMLElement ? el : null
-}
-
-function publishToolbarInset() {
-	const id = folderId.value
-	const onTop = toolbarPrefs.value.classic
-		&& toolbarPrefs.value.side === 'top'
-		&& !toolbarPrefs.value.hidden
-		&& can_write.value
-	const el = toolbarElement()
-	if (!onTop || !el) {
-		setCanvasToolbarInset(id, 0)
-		return
-	}
-	setCanvasToolbarInset(id, el.offsetHeight)
-}
-
-watch(toolbarHost, (host, _, onCleanup) => {
-	const el = host?.$el
-	if (!(el instanceof HTMLElement)) return
-	const observer = new ResizeObserver(() => publishToolbarInset())
-	observer.observe(el)
-	publishToolbarInset()
-	onCleanup(() => observer.disconnect())
-}, { flush: 'post' })
-
-watch(
-	() => [toolbarPrefs.value.side, toolbarPrefs.value.hidden, can_write.value, folderId.value, toolbarPrefs.value.classic] as const,
-	(current, previous) => {
-		const prevId = previous?.[3]
-		if (prevId && prevId !== current[3]) clearCanvasToolbarInset(prevId)
-		publishToolbarInset()
-	},
-)
-
-onUnmounted(() => clearCanvasToolbarInset(folderId.value))
 
 /** Read-only access keeps viewing tools (hand/select) but blocks mutating ones. */
 const READONLY_BLOCKED_TOOLS = new Set<EditorTool>(['pen', 'eraser', 'lasso', 'connect', 'disconnect'])
@@ -414,27 +368,6 @@ useRevealEditingNote({
 })
 
 const zoomPercent = computed(() => Math.round(viewport.value.zoom * 100))
-
-const {
-	menuRef: zoomMenuRef,
-	open: zoomMenuOpen,
-	openIfFine: openZoomMenuIfFine,
-	closeIfFine: closeZoomMenuIfFine,
-	onFocusOut: onZoomMenuFocusOut,
-	toggleIfCoarse: toggleZoomMenuIfCoarse,
-	closeIfCoarse: closeZoomMenuIfCoarse,
-} = useHoverClickMenu()
-
-function resetZoom() {
-	const { x, y } = viewport.value
-	void setViewport({ x, y, zoom: 1 })
-	closeZoomMenuIfCoarse()
-}
-
-function fitToView() {
-	void fitView({ padding: 0.2 })
-	closeZoomMenuIfCoarse()
-}
 
 function on_dock_zoom(action: DockZoomAction) {
 	if (action === 'in') void zoomIn()
@@ -765,8 +698,6 @@ function isEmptyCanvasTarget(target: Element) {
 	if (target.closest('.vue-flow__edge-labels')) return false
 	if (target.closest('.canvas-edge-label')) return false
 	if (target.closest('.vue-flow__controls')) return false
-	if (target.closest('.canvas-zoom-readout')) return false
-	if (target.closest('.canvas-drawing-toolbar')) return false
 	if (target.closest('.canvas-dock')) return false
 	return Boolean(
 		target.closest('.vue-flow__pane')
@@ -815,25 +746,6 @@ function onSectionPointerDown(event: PointerEvent) {
 			@pointerdown.capture="onSectionPointerDown"
 		>
 			<PileImagePending :folder_id="folderId" role="background" />
-			<CanvasDrawingToolbar
-				v-if="toolbarPrefs.classic"
-				ref="toolbarHost"
-				v-show="!toolbarPrefs.hidden && can_write"
-				:tool="tool"
-				:pen-color="penColor"
-				:pen-width="penWidth"
-				:selected-stroke-count="selectedStrokeCount"
-				:selected-connection="selectedConnection"
-				:compact="toolbarCompact"
-				:compact-view="toolbarPrefs.compactView"
-				:side="toolbarPrefs.side"
-				@update:tool="on_tool_update"
-				@update:pen-color="penColor = $event"
-				@update:pen-width="penWidth = $event"
-				@delete-selected="deleteSelectedStrokes"
-				@update-connection="on_update_connection"
-				@delete-connection="on_delete_connection"
-			/>
 			<div
 				ref="flowWrapper"
 				class="canvas-flow-wrapper"
@@ -890,64 +802,6 @@ function onSectionPointerDown(event: PointerEvent) {
 						v-show="showGridDots"
 						id="grid-dots"
 					/>
-					<div
-						v-if="toolbarPrefs.classic"
-						v-show="!toolbarPrefs.hidden"
-						ref="zoomMenuRef"
-						class="canvas-zoom-readout"
-						@pointerdown.stop
-						@mouseenter="openZoomMenuIfFine"
-						@mouseleave="closeZoomMenuIfFine"
-						@focusin="openZoomMenuIfFine"
-						@focusout="onZoomMenuFocusOut"
-						@keydown.escape="zoomMenuOpen = false"
-					>
-						<button
-							type="button"
-							class="canvas-zoom-readout__trigger"
-							:aria-expanded="zoomMenuOpen"
-							aria-haspopup="true"
-							:aria-controls="`${flowId}-zoom-menu`"
-							:title="`Zoom ${zoomPercent}%`"
-							:aria-label="`Zoom ${zoomPercent}%, canvas zoom options`"
-							@click="toggleZoomMenuIfCoarse"
-						>
-							<span class="canvas-zoom-readout__value" aria-live="polite">
-								{{ zoomPercent }}%
-							</span>
-							<UIcon
-								name="i-lucide-chevron-up"
-								class="canvas-zoom-readout__chevron"
-								:class="{ 'canvas-zoom-readout__chevron--open': zoomMenuOpen }"
-							/>
-						</button>
-						<div
-							v-show="zoomMenuOpen"
-							:id="`${flowId}-zoom-menu`"
-							class="canvas-zoom-readout__panel"
-							role="menu"
-							aria-label="Canvas zoom"
-						>
-							<button
-								type="button"
-								class="canvas-zoom-readout__action"
-								role="menuitem"
-								@click="fitToView"
-							>
-								<UIcon name="i-lucide-scan" class="canvas-zoom-readout__icon" />
-								Fit To View
-							</button>
-							<button
-								type="button"
-								class="canvas-zoom-readout__action"
-								role="menuitem"
-								@click="resetZoom"
-							>
-								<UIcon name="i-lucide-rotate-ccw" class="canvas-zoom-readout__icon" />
-								Reset Zoom
-							</button>
-						</div>
-					</div>
 				</VueFlow>
 				<CanvasAxes
 					v-if="showAxes"
@@ -978,7 +832,7 @@ function onSectionPointerDown(event: PointerEvent) {
 			<IdeasBar v-if="!isEmbedded" :folder-id="folderId" :bottom="84" />
 			</div>
 			<CanvasDock
-				v-if="!toolbarPrefs.classic && !toolbarPrefs.hidden"
+				v-if="!toolbarPrefs.hidden"
 				v-show="!dockTucked"
 				:tool="tool"
 				:space-pan="spacePan"
@@ -1037,11 +891,6 @@ function onSectionPointerDown(event: PointerEvent) {
 
 .canvas-flow-wrapper--pen :deep(*) {
 	cursor: inherit !important;
-}
-
-.canvas-flow-wrapper--pen :deep(.canvas-zoom-readout),
-.canvas-flow-wrapper--pen :deep(.canvas-zoom-readout *) {
-	cursor: pointer !important;
 }
 
 .canvas-flow--lasso {
@@ -1190,106 +1039,4 @@ function onSectionPointerDown(event: PointerEvent) {
 	}
 }
 
-.canvas-zoom-readout {
-	position: absolute;
-	bottom: 10px;
-	right: 10px;
-	left: auto;
-	z-index: 5;
-}
-
-.canvas-zoom-readout__trigger {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.125rem;
-	padding: 0.25rem 0.375rem;
-	border: 1px solid rgba(0, 0, 0, 0.1);
-	border-radius: 0.375rem;
-	background: #fefefe;
-	color: #111827;
-	font-size: 12px;
-	line-height: 1;
-	cursor: pointer;
-}
-
-.canvas-zoom-readout__trigger:hover {
-	background: #f9fafb;
-}
-
-.canvas-zoom-readout__trigger:focus-visible,
-.canvas-zoom-readout__action:focus-visible {
-	outline: 2px solid #2563eb;
-	outline-offset: 1px;
-}
-
-.canvas-zoom-readout__value {
-	min-width: 2.75rem;
-	text-align: center;
-	font-variant-numeric: tabular-nums;
-	user-select: none;
-}
-
-.canvas-zoom-readout__chevron {
-	width: 14px;
-	height: 14px;
-	flex-shrink: 0;
-	color: #6b7280;
-	transition: transform 0.15s ease;
-}
-
-.canvas-zoom-readout__chevron--open {
-	transform: rotate(180deg);
-}
-
-.canvas-zoom-readout__panel {
-	position: absolute;
-	bottom: calc(100% + 4px);
-	right: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.125rem;
-	min-width: 10.5rem;
-	padding: 0.375rem;
-	border: 1px solid rgba(0, 0, 0, 0.1);
-	border-radius: 0.375rem;
-	background: #fefefe;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.canvas-zoom-readout__panel::after {
-	content: '';
-	position: absolute;
-	top: 100%;
-	right: 0;
-	left: 0;
-	height: 6px;
-}
-
-.canvas-zoom-readout__action {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.5rem;
-	width: 100%;
-	min-height: 36px;
-	padding: 0.375rem 0.5rem;
-	border: none;
-	border-radius: 0.25rem;
-	background: transparent;
-	color: #111827;
-	font-size: 12px;
-	text-align: left;
-	cursor: pointer;
-	white-space: nowrap;
-}
-
-.canvas-zoom-readout__action:hover {
-	background: var(--pc-gray-muted);
-}
-
-.canvas-zoom-readout__icon {
-	width: 14px;
-	height: 14px;
-	flex-shrink: 0;
-	color: #374151;
-}
 </style>

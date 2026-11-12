@@ -22,7 +22,7 @@ export type DockTool = {
 	hotkey: string
 }
 
-/** The tools in the panel's order, the same as the classic toolbar's */
+/** The tools in the panel's order */
 export const DOCK_TOOLS: DockTool[] = [
 	{ id: 'hand', icon: 'tabler:hand-stop', label_key: 'canvas_dock.hand', hotkey: CANVAS_TOOL_HOTKEYS.hand },
 	{ id: 'select', icon: 'tabler:pointer', label_key: 'canvas_dock.select', hotkey: CANVAS_TOOL_HOTKEYS.select },

@@ -14,6 +14,7 @@ import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import { EXPLORER_SETTINGS_DEFAULTS, explorer_settings } from '@/store/explorer/settings'
 import { xattrs_map } from '@/services/workspace/xattrs'
 import { MASONRY_COLUMN_PRESETS, masonryColumnWidth } from '@/ui/workspace/folder-container/masonry/masonryLayout'
+import { useCanvasToolbarPrefs } from '@/ui/workspace/folder-container/canvas/useCanvasToolbarPrefs'
 
 const MASONRY_COLUMN_COUNTS = [2, 3, 4, 5, 6] as const
 
@@ -48,6 +49,11 @@ const floor_3d = computed(() => floor_3d_from_stored(folder_attrs.value.floor_3d
 const grid_shown = computed(() => folder_attrs.value.show_grid_dots !== false)
 const names_shown = computed(() => folder_attrs.value.names_3d === true)
 const horizon_shown = computed(() => folder_attrs.value.horizon_3d === true)
+/** The canvas's panel at the bottom center; one choice for every canvas */
+const canvas_toolbar = useCanvasToolbarPrefs()
+function toggle_canvas_toolbar() {
+	canvas_toolbar.value = { ...canvas_toolbar.value, hidden: !canvas_toolbar.value.hidden }
+}
 
 function set_column_width(width: number) {
 	void props.workspace.change_masonry_column_width(props.folder_id, width)
@@ -228,6 +234,17 @@ function set_view(view: FolderView) {
 				:checked="horizon_shown"
 				keep_open
 				@select="props.workspace.change_option_3d(props.folder_id, 'horizon_3d', !horizon_shown)"
+			/>
+		</template>
+		<!-- Canvas's own setting: its panel of tools -->
+		<template v-if="current === 'canvas'">
+			<MenuSeparator />
+			<MenuItem
+				icon="tabler:tools"
+				:label="t('view_menu.toolbar')"
+				:checked="!canvas_toolbar.hidden"
+				keep_open
+				@select="toggle_canvas_toolbar"
 			/>
 		</template>
 		<template v-if="current === 'dashboard'">
