@@ -80,6 +80,15 @@ starts over with `adopt_before`, adopting what the cloud holds at the same
 paths. Reports of one move from the store and the tree run one after the
 other; the second finds nothing left to move.
 
+A folder moved **outside** the app (Finder) is found by its link file: when
+the app opens a folder whose `sync.json` is this copy's, for this account,
+at another `root_path` that has a link here and nothing left at that path,
+the link quietly follows (`follow_moved_away`, `moved_away_link`). If the
+old path is still there, the opened folder is a copy and stays a plain
+folder. Until then the link pauses as `folder_missing`, and the sync menu
+says so and offers **Find…**: the person points at the folder, and the link
+follows when that folder's link file is this link's (`find_moved_folder`).
+
 **Engine (`syncEngine.ts`).** One per linked folder. Passes never overlap; a
 change during a pass queues one more. A pass runs:
 - at start;
@@ -280,7 +289,8 @@ decided one by one.
 - **A missing root pauses.** The folder was moved, deleted, or the disk is
   unplugged: the engine pauses as `folder_missing` and does not run a pass.
   That is not a mass delete and not an error that retries the pass. The link
-  stays. The interval looks again and syncs once the folder is back.
+  stays. The interval looks again and syncs once the folder is back Or
+  it is found elsewhere: see "A moved folder".
 - **A missing cloud root pauses.** If the cloud listing has no `/` entry,
   the pass does not reconcile and does not trash local files, however few
   there are. `workspace_state` says why: `trashed` pauses as

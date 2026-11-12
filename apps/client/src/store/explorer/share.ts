@@ -12,7 +12,7 @@ import store from '@/store'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
 import type { SyncNowOptions } from '@/services/cloud/sync/syncEngine'
-import { type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
+import { find_moved_folder, type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
 import { bridge_door_for, open_share_window, type ShareWindow } from '@/store/explorer/sharePublishPanel'
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
@@ -212,6 +212,15 @@ export async function start_sync(ref: FolderRef, name: string): Promise<void> {
 export async function continue_sync_here(ref: FolderRef, name: string): Promise<void> {
 	try {
 		await take_over_link(normalize_workspace_id(ref.folder_id), name)
+	} catch (error) {
+		report(error)
+	}
+}
+
+/** "Find…": the person points at a synced folder that is not where it was */
+export async function find_sync_folder(link: SyncLink): Promise<void> {
+	try {
+		await find_moved_folder(link)
 	} catch (error) {
 		report(error)
 	}

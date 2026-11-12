@@ -409,6 +409,10 @@ export const en: typeof ru = {
 		sync_now: 'Sync now',
 		open_cloud_copy: 'Open cloud copy',
 		open_disk_copy: 'Open folder on this Mac',
+		folder_missing: 'This folder is not on this computer: it was moved, deleted, or its disk is unplugged.',
+		find: 'Find…',
+		find_title: 'Where is "{name}" now?',
+		find_wrong_folder: 'This folder does not sync "{name}". Choose the very folder that was moved.',
 	},
 	menu: {
 		open: 'Open',

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { moved_root, moved_state, new_sync_state, other_copy_link, parse_sync_state, take_over_state } from './stateFile'
+import { moved_away_link, moved_root, moved_state, new_sync_state, other_copy_link, parse_sync_state, take_over_state } from './stateFile'
 
 const ROOT = '/Users/me/Desktop/Folder views'
 const ME = 'user-me'
@@ -56,5 +56,20 @@ describe('a synced folder the app moves or renames', () => {
 		expect(Object.keys(moved?.entries ?? {})).toEqual(['note.md'])
 		expect(parse_sync_state(JSON.stringify(moved), { ...owner, root_path: to })).not.toBeNull()
 		expect(moved_state(file_from(THERE), owner, to)).toBeNull()
+	})
+})
+
+describe('a synced folder moved outside the app', () => {
+	const here = { root_path: '/Users/me/Projects/Folder views', user_id: ME, device_id: HERE }
+
+	test('this copy\'s link file at another path names the old place', () => {
+		expect(moved_away_link(file_from(HERE), here)).toEqual({ workspace_id: WS, root_path: ROOT })
+	})
+
+	test('the same place, another copy of the app, another account, or no link file: never', () => {
+		expect(moved_away_link(file_from(HERE), { ...here, root_path: ROOT })).toBeNull()
+		expect(moved_away_link(file_from(THERE), here)).toBeNull()
+		expect(moved_away_link(file_from(HERE, { user_id: 'someone-else' }), here)).toBeNull()
+		expect(moved_away_link('not json', here)).toBeNull()
 	})
 })

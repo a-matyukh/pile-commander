@@ -114,6 +114,30 @@ export function moved_state(text: string, owner: SyncLinkOwner, root: string): S
 	return state ? { ...state, root_path: root } : null
 }
 
+/**
+ * The link file of a folder this copy of the app syncs at another path, for
+ * this account: the folder was moved outside the app (Finder), or it is a
+ * copy of it. The caller tells the two apart by whether the old path is
+ * still there. Null for anything else
+ */
+export function moved_away_link(
+	text: string,
+	here: { root_path: string; user_id: string; device_id: string },
+): { workspace_id: string; root_path: string } | null {
+	let raw: unknown
+	try {
+		raw = JSON.parse(text)
+	} catch {
+		return null
+	}
+	if (!raw || typeof raw !== 'object') return null
+	const file = raw as Partial<SyncState>
+	if (typeof file.workspace_id !== 'string' || typeof file.root_path !== 'string') return null
+	if (file.root_path === here.root_path) return null
+	const state = parse_sync_state(text, { ...here, root_path: file.root_path, workspace_id: file.workspace_id })
+	return state ? { workspace_id: state.workspace_id, root_path: state.root_path } : null
+}
+
 export function new_sync_state(owner: SyncLinkOwner, options: { exclude?: string[]; adopt_before?: number } = {}): SyncState {
 	return {
 		version: SYNC_STATE_VERSION,

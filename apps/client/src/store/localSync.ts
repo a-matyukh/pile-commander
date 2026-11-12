@@ -16,6 +16,7 @@ import {
 	type FileManager,
 } from '@pile-commander/file-manager'
 import type { FolderRef } from '@/domain/Drive'
+import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import { require_supabase } from '@/services/cloud/client'
@@ -28,6 +29,7 @@ import { pile_root_name } from '@/services/workspace/pack'
 import type { LocalWriter } from '@/services/cloud/sync/syncPass'
 import {
 	is_sync_state_path,
+	moved_away_link,
 	moved_root,
 	moved_state,
 	new_sync_state,
@@ -235,14 +237,7 @@ function start_engine(link: SyncLink): void {
 		}),
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,
 		workspace_state: () => workspace_state(require_supabase(), link.workspace_id),
-		root_present: async () => {
-			try {
-				const info = await (await fs()).stat(link.root)
-				return info.isDirectory
-			} catch {
-				return false
-			}
-		},
+		root_present: () => folder_exists(link.root),
 		// joins the workspace's realtime channels itself, board open or not
 		watch_cloud: on_change => cloud_fm.watch_workspace(on_change),
 		watch: async (on_change) => {
@@ -414,6 +409,60 @@ async function move_link(link: SyncLink, root: string): Promise<void> {
 	next[root] = moved
 	links.value = next
 	if (moved.user_id === cloud.user?.id) start_engine(moved)
+}
+
+async function folder_exists(path: string): Promise<boolean> {
+	try {
+		return (await (await fs()).stat(path)).isDirectory
+	} catch {
+		return false
+	}
+}
+
+/**
+ * The link a folder's link file names when the folder was moved outside the
+ * app: this copy, this account, a link at the old path, and nothing left at
+ * the old path. Still there: the folder is a copy, a plain folder
+ */
+async function moved_away_link_of(root: string): Promise<SyncLink | null> {
+	const user = cloud.user
+	if (!is_desktop || !user || links.value[root]) return null
+	let text: string
+	try {
+		text = await (await fs()).readTextFile(sync_state_path(root))
+	} catch {
+		return null
+	}
+	const found = moved_away_link(text, { root_path: root, user_id: user.id, device_id: client_instance_id() })
+	if (!found) return null
+	const link = links.value[found.root_path]
+	if (!link || link.workspace_id !== found.workspace_id || link.user_id !== user.id) return null
+	return (await folder_exists(link.root)) ? null : link
+}
+
+/**
+ * A synced folder moved in Finder is opened at its new place: its link
+ * follows, quietly. True when it did
+ */
+export async function follow_moved_away(root: string): Promise<boolean> {
+	const link = await moved_away_link_of(root)
+	if (!link) return false
+	await retarget_sync_links(link.root, root)
+	return true
+}
+
+/**
+ * "Find…" for a synced folder that is not where it was: the person points at
+ * it, and the link follows when the folder's link file is this link's
+ */
+export async function find_moved_folder(link: SyncLink): Promise<void> {
+	const picked = (await create_window_manager().pick_folder({ title: t('sync.find_title', { name: link.name }) }))?.folder_id
+	if (!picked) return
+	const root = normalize_workspace_id(picked)
+	if (root === link.root) return
+	const found = await moved_away_link_of(root)
+	if (found?.root !== link.root) throw new Error(t('sync.find_wrong_folder', { name: link.name }))
+	await retarget_sync_links(link.root, root)
 }
 
 /** A folder this account syncs from another copy of the app (its link file is not this copy's) */
