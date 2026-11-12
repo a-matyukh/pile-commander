@@ -24,6 +24,7 @@ import { useCreateChildItems } from './useCreateChildItems'
 import { useFolderViewMenuItems } from './useFolderViewMenuItems'
 import { ai_available } from '@/store/ai'
 import { open_summary } from '@/store/aiSummary'
+import { open_ideas } from '@/store/aiIdeas'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 type FolderContainerMenuOptions = {
@@ -134,23 +135,43 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 		void ws.change_grid_size(scope.folderId.value, parsed)
 	}
 
-	/** The whole board; the note goes where the menu was opened. */
+	/**
+	 * The whole board: its summary, and ideas as new notes (an empty board
+	 * too). Both go where the menu was opened.
+	 */
 	const summarizeItems = computed<DropdownMenuItem[]>(() => {
 		const ws = workspace.value
 		const container = scope.container.value
-		if (!ws || !container?.children.length || !ai_available(ws) || toValue(options?.loading)) return []
-		return [{
-			label: 'Summarize board',
-			onSelect() {
-				open_summary({
-					workspace: ws,
-					folder_id: container.id,
-					board_name: container.name,
-					entries: summary_entries(container.children),
-					position: toValue(options?.position) ?? summary_position(container.children),
-				})
+		if (!ws || !container || !ai_available(ws) || toValue(options?.loading)) return []
+		const at = toValue(options?.position) ?? null
+		return [
+			...(container.children.length
+				? [{
+					label: 'Summarize board',
+					onSelect() {
+						open_summary({
+							workspace: ws,
+							folder_id: container.id,
+							board_name: container.name,
+							entries: summary_entries(container.children),
+							position: at ?? summary_position(container.children),
+						})
+					},
+				}]
+				: []),
+			{
+				label: at ? 'Generate ideas here' : 'Generate ideas',
+				onSelect() {
+					open_ideas({
+						workspace: ws,
+						folder_id: container.id,
+						board_name: container.name,
+						entries: summary_entries(container.children),
+						anchor: at,
+					})
+				},
 			},
-		}]
+		]
 	})
 
 	const isMdUp = useMediaQuery('(min-width: 768px)')

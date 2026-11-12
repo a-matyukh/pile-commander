@@ -33,6 +33,8 @@ const ITEMS: Record<string, [key: string, icon: string]> = {
 	'Summarize board': ['summarize_board', 'tabler:sparkles'],
 	'Summarize': ['summarize', 'tabler:sparkles'],
 	'Suggest names': ['suggest_names', 'tabler:wand'],
+	'Generate ideas': ['generate_ideas', 'tabler:bulb'],
+	'Generate ideas here': ['generate_ideas_here', 'tabler:bulb'],
 	'Toolbar': ['toolbar', 'tabler:tools'],
 	'Hide': ['hide', 'tabler:eye-off'],
 	'Classic toolbar': ['toolbar_classic', 'tabler:layout-navbar'],
