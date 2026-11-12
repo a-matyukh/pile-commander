@@ -22,6 +22,15 @@ describe('tree drag', () => {
 		expect(can_drop(source, { root_key: HOME, folder_id: '/Users/me/Projects' })).toBe(false)
 	})
 
+	test('a synced folder, or one holding it, never lands inside another synced folder', () => {
+		const pile = '/Users/me/pc backlog'
+		const synced: TreeDragSource = { ...source, holds_pile: true }
+		expect(can_drop(synced, { root_key: HOME, folder_id: `${pile}/inbox`, pile })).toBe(false)
+		expect(can_drop(synced, { root_key: HOME, folder_id: '/Users/me/Archive' })).toBe(true)
+		// a plain folder may go in: it syncs as part of the pile
+		expect(can_drop(source, { root_key: HOME, folder_id: `${pile}/inbox`, pile })).toBe(true)
+	})
+
 	test('a sibling whose name only starts the same is a valid target', () => {
 		expect(can_drop(source, { root_key: HOME, folder_id: '/Users/me/Projects/app-old' })).toBe(true)
 	})

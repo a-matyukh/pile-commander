@@ -106,6 +106,21 @@ export function sync_link_roots(): string[] {
 	return Object.keys(links.value)
 }
 
+/** This account's links at `path` or around it (its own synced folder): one file, one link */
+export function covering_link(path: string, user_id = cloud.user?.id): SyncLink | null {
+	return Object.values(links.value).find(link => link.user_id === user_id && relative_of(link.root, path) !== null) ?? null
+}
+
+/** This account's links strictly inside `root` */
+export function links_inside(root: string, user_id = cloud.user?.id): SyncLink[] {
+	return Object.values(links.value).filter(link => link.user_id === user_id && link.root !== root && relative_of(root, link.root) !== null)
+}
+
+/** Paths of the folders this account syncs on this device */
+export function my_sync_roots(user_id = cloud.user?.id): string[] {
+	return Object.values(links.value).filter(link => link.user_id === user_id).map(link => link.root)
+}
+
 /** The folder this account syncs with a cloud workspace on this device, if any. */
 export function synced_folder_of(workspace_id: string, user_id = cloud.user?.id): SyncLink | null {
 	return Object.values(links.value).find(link => link.workspace_id === workspace_id && link.user_id === user_id) ?? null
@@ -303,6 +318,11 @@ export async function link_folder(input: {
 	if (other && other.root !== input.root) {
 		throw new Error(`This cloud workspace already syncs with ${other.root} on this computer.`)
 	}
+	// one file, one link: never inside a synced folder…
+	const outer = covering_link(input.root, user.id)
+	if (outer && outer.root !== input.root) throw new Error(t('sync.inside_synced', { name: outer.name }))
+	// …and a synced folder inside this one now syncs as part of it (the menu said so)
+	for (const inner of links_inside(input.root, user.id)) await unlink_folder(inner.root)
 	stop_engine(input.root)
 	const link: SyncLink = { root: input.root, name: input.name, workspace_id: input.workspace_id, user_id: user.id }
 	await save_state(link, new_sync_state(owner_of(link), { exclude: input.exclude, adopt_before: input.adopt_before }))
@@ -333,6 +353,10 @@ export async function sync_workspace_to_folder(workspace: { id: string; name: st
 			title: `Choose where "${folder_name}" syncs on this computer`,
 			default_path,
 		}))?.folder_id ?? null,
+		refuse_parent: (parent) => {
+			const outer = covering_link(normalize_workspace_id(parent))
+			return outer ? t('sync.parent_inside_synced', { name: outer.name }) : null
+		},
 		join,
 		is_free: async (path) => {
 			try {

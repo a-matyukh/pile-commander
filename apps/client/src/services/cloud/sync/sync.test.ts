@@ -1828,6 +1828,13 @@ describe('choose_sync_folder', () => {
 		expect(await choose_sync_folder(folder_deps(null).deps, 'Harbor')).toBeNull()
 		await expect(choose_sync_folder(folder_deps('/Volumes/USB').deps, 'Harbor')).rejects.toThrow('inside your home folder')
 	})
+
+	test('never inside a synced folder: nothing is made there', async () => {
+		const { deps, made } = folder_deps('/Users/me/pc backlog')
+		deps.refuse_parent = parent => (parent.startsWith('/Users/me/pc backlog') ? 'inside pc backlog' : null)
+		await expect(choose_sync_folder(deps, 'Harbor')).rejects.toThrow('inside pc backlog')
+		expect(made).toEqual(['/Users/me/Pile Commander'])
+	})
 })
 
 describe('pile image files', () => {

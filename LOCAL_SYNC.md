@@ -89,6 +89,18 @@ folder. Until then the link pauses as `folder_missing`, and the sync menu
 says so and offers **Find…**: the person points at the folder, and the link
 follows when that folder's link file is this link's (`find_moved_folder`).
 
+**One file, one link.** A link never starts inside another link of the
+same account (`link_folder` refuses, and "Sync to a folder on this Mac"
+refuses a parent inside a synced folder before it makes anything there).
+Inside a synced folder the sync menu says "Part of …", opens the synced
+folder, and has no Stop of its own. A folder that holds synced folders
+says so in its menu and offers **Sync the whole folder**: when its copy
+finishes, `link_folder` unlinks the links inside it (their cloud copies
+stay in the cloud) and links the whole folder. The tree never drops a
+synced folder, or a folder holding one, inside another synced folder.
+`sync.json` never syncs (`is_pile_carry_relative`), so an inner link file
+is never uploaded.
+
 **Engine (`syncEngine.ts`).** One per linked folder. Passes never overlap; a
 change during a pass queues one more. A pass runs:
 - at start;

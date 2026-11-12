@@ -17,12 +17,16 @@ export type TreeDropSpot = {
 	/** `${drive_id}\0${root_id}` */
 	root_key: string
 	folder_id: string
+	/** The synced folder (pile) on this computer the spot is in, if any */
+	pile?: string
 }
 
 export type TreeDragSource = TreeDropSpot & {
 	name: string
 	/** The folder it sits in now: dropping there would change nothing */
 	parent_id: string
+	/** It is a synced folder, or holds one: it never goes inside another */
+	holds_pile?: boolean
 }
 
 /** Pointer travel before a press becomes a drag */
@@ -67,6 +71,8 @@ const drive_of = (root_key: string) => root_key.slice(0, root_key.indexOf('\0'))
 export function can_drop(source: TreeDragSource, spot: TreeDropSpot): boolean {
 	// A cloud root can move into another root, but cannot become a new root itself
 	if (spot.root_key === CLOUD_ROOT_DROP_KEY && source.folder_id === source.parent_id) return false
+	// one file, one link: a synced folder never lands inside another
+	if (source.holds_pile && spot.pile) return false
 	if (spot.root_key !== source.root_key) return drive_of(spot.root_key) === drive_of(source.root_key)
 	return !is_within(spot.folder_id, source.folder_id)
 		&& spot.folder_id !== source.parent_id
@@ -94,7 +100,8 @@ function spot_at(x: number, y: number): TreeDropSpot | null {
 	const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drop-root]')
 	const root_key = element?.dataset.dropRoot
 	const folder_id = element?.dataset.dropFolder
-	return root_key && folder_id ? { root_key, folder_id } : null
+	const pile = element?.dataset.dropPile
+	return root_key && folder_id ? { root_key, folder_id, ...(pile ? { pile } : {}) } : null
 }
 
 /**

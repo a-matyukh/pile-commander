@@ -413,6 +413,12 @@ export const en: typeof ru = {
 		find: 'Find…',
 		find_title: 'Where is "{name}" now?',
 		find_wrong_folder: 'This folder does not sync "{name}". Choose the very folder that was moved.',
+		inside_synced: 'This folder already syncs as part of "{name}".',
+		parent_inside_synced: 'This place is inside the synced folder "{name}". Choose a place outside it.',
+		part_of: 'Part of "{name}"',
+		open_pile: 'Open "{name}"',
+		holds_synced: 'Already syncing on its own inside: {names}. Syncing the whole folder stops that, and their cloud copies stay in the cloud.',
+		sync_whole: 'Sync the whole folder',
 	},
 	menu: {
 		open: 'Open',

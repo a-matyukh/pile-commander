@@ -217,6 +217,15 @@ export async function continue_sync_here(ref: FolderRef, name: string): Promise<
 	}
 }
 
+/** Opens the synced folder a folder on this Mac syncs as part of */
+export async function open_sync_root(link: SyncLink): Promise<void> {
+	try {
+		await explorer_navigation.open_local_path(link.root)
+	} catch (error) {
+		report(error)
+	}
+}
+
 /** "Find…": the person points at a synced folder that is not where it was */
 export async function find_sync_folder(link: SyncLink): Promise<void> {
 	try {

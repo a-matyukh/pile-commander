@@ -5,7 +5,9 @@ import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { t } from '@/i18n'
 import { entry_is_dimmed } from '@/store/hiddenPaths'
 import { is_hidden_entry_name } from '@/services/workspace/hiddenName'
-import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
+import { normalize_workspace_id, parent_folder_id_from_node_id } from '@/services/workspace/paths'
+import { covering_link, my_sync_roots } from '@/store/localSync'
+import { is_within } from '@/store/explorer/drives'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import {
 	explorer_tree,
@@ -161,7 +163,12 @@ const glyph = computed(() => {
 const row_ref = computed(() => ({ drive_id: props.item.drive.id, root_id: props.item.root.id, folder_id: folder_id.value }))
 
 const root_key = computed(() => tree_root_key(props.item.drive.id, props.item.root.id))
-const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value }))
+const is_local = computed(() => props.item.drive.id === 'local')
+/** The synced folder (pile) this row is in, on this computer */
+const pile = computed(() => (is_local.value ? covering_link(normalize_workspace_id(folder_id.value))?.root : undefined))
+/** This row is a synced folder or holds one: it never goes inside another */
+const holds_pile = computed(() => is_local.value && my_sync_roots().some(root => is_within(root, folder_id.value)))
+const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value, ...(pile.value ? { pile: pile.value } : {}) }))
 const drop_target = computed(() => is_drop_target(spot.value))
 const dragged = computed(() => tree_drag.source?.root_key === root_key.value
 	&& tree_drag.source.folder_id === folder_id.value)
@@ -204,6 +211,7 @@ function press(event: PointerEvent) {
 	event.preventDefault()
 	press_tree_row(event, {
 		...spot.value,
+		holds_pile: holds_pile.value,
 		name: name.value,
 		parent_id: node
 			? parent_folder_id_from_node_id(node.id, tree_root_folder_id(props.item))
@@ -242,6 +250,7 @@ watchEffect(on_cleanup => {
 		:data-root-id="item.root.id"
 		:data-drop-root="can_write ? root_key : undefined"
 		:data-drop-folder="can_write ? folder_id : undefined"
+		:data-drop-pile="can_write ? pile : undefined"
 		@pointerdown="press"
 		@click="explorer_tree.open_folder(item, folder_id)"
 	>
