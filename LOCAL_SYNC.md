@@ -109,6 +109,11 @@ on), amber when paused or failed. Folders inside keep the plain guide, so
 the region reads as one. A cloud folder synced on another computer has no
 status here: blue. The badge stays: a collapsed folder shows no line.
 
+Dragging a folder in the tree across a pile's border (`pile_crossing`)
+lights up that pile's region, and the drag ghost says "Leaves the cloud"
+or "Goes to the cloud: …". Moving a synced folder whole crosses nothing:
+its link follows it.
+
 **Engine (`syncEngine.ts`).** One per linked folder. Passes never overlap; a
 change during a pass queues one more. A pass runs:
 - at start;

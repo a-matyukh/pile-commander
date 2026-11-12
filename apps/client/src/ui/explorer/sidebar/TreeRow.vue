@@ -31,7 +31,7 @@ import { explorer_settings, motion_3d_enabled } from '@/store/explorer/settings'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
-import { CLOUD_ROOT_DROP_KEY, is_drop_target, press_tree_row, register_drop_opener, row_can_drag, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, pile_crossing, press_tree_row, register_drop_opener, row_can_drag, tree_drag, tree_root_key } from './tree_drag'
 
 const props = defineProps<{
 	item: ExplorerTreeRoot
@@ -179,6 +179,11 @@ const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, sys
  * keep the plain guide, so the region reads as one
  */
 const pile_line = computed(() => pile_line_state(shows_synced(row_ref.value), sync_status_of(row_ref.value)))
+/** A drag leaves this pile or goes into it: its region lights up */
+const pile_lit = computed(() => {
+	if (!pile_line.value || !tree_drag.source) return false
+	return pile_crossing(tree_drag.source, tree_drag.target)?.pile === normalize_workspace_id(folder_id.value)
+})
 const drop_target = computed(() => is_drop_target(spot.value))
 const dragged = computed(() => tree_drag.source?.root_key === root_key.value
 	&& tree_drag.source.folder_id === folder_id.value)
@@ -300,7 +305,7 @@ watchEffect(on_cleanup => {
 	<div
 		v-if="expanded && (children.length || loading)"
 		class="g"
-		:class="pile_line && ['pile', pile_line, { flow: motion }]"
+		:class="pile_line && ['pile', pile_line, { flow: motion, lit: pile_lit }]"
 	>
 		<TreeRow v-for="child in children" :key="child.id" :item="item" :node="child" />
 	</div>
@@ -412,6 +417,10 @@ watchEffect(on_cleanup => {
 	position: relative;
 	border-left: 2px solid var(--fill-accent);
 	margin-left: 12.25px;
+}
+.g.pile.lit {
+	background: var(--bg-accent);
+	border-left-color: var(--text-accent);
 }
 .g.pile.attention {
 	border-left-color: var(--fill-warning);

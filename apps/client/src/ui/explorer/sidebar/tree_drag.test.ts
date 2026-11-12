@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { CLOUD_ROOT_DROP_KEY, can_drop, press_tree_row, row_can_drag, tree_drag, tree_root_key, type TreeDragSource } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, can_drop, pile_crossing, press_tree_row, row_can_drag, tree_drag, tree_root_key, type TreeDragSource } from './tree_drag'
 
 const HOME = tree_root_key('local', '/Users/me')
 const source: TreeDragSource = {
@@ -29,6 +29,21 @@ describe('tree drag', () => {
 		expect(can_drop(synced, { root_key: HOME, folder_id: '/Users/me/Archive' })).toBe(true)
 		// a plain folder may go in: it syncs as part of the pile
 		expect(can_drop(source, { root_key: HOME, folder_id: `${pile}/inbox`, pile })).toBe(true)
+	})
+
+	test('crossing a pile\'s border: out of the cloud, or into it', () => {
+		const pile = '/Users/me/pc backlog'
+		const inside: TreeDragSource = { ...source, folder_id: `${pile}/notes`, parent_id: pile, pile }
+		expect(pile_crossing(inside, { root_key: HOME, folder_id: '/Users/me/Archive' })).toEqual({ pile, way: 'leaves' })
+		expect(pile_crossing(source, { root_key: HOME, folder_id: `${pile}/inbox`, pile })).toEqual({ pile, way: 'enters' })
+		const other = '/Users/me/Trips'
+		expect(pile_crossing(inside, { root_key: HOME, folder_id: other, pile: other })).toEqual({ pile: other, way: 'enters' })
+		// within one pile, outside any, no target, or the synced folder itself (its link follows)
+		expect(pile_crossing(inside, { root_key: HOME, folder_id: `${pile}/inbox`, pile })).toBeNull()
+		expect(pile_crossing(source, { root_key: HOME, folder_id: '/Users/me/Archive' })).toBeNull()
+		expect(pile_crossing(inside, null)).toBeNull()
+		const whole: TreeDragSource = { ...source, folder_id: pile, parent_id: '/Users/me', pile, holds_pile: true }
+		expect(pile_crossing(whole, { root_key: HOME, folder_id: '/Users/me/Archive' })).toBeNull()
 	})
 
 	test('a sibling whose name only starts the same is a valid target', () => {

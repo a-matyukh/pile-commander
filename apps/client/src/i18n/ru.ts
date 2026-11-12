@@ -54,6 +54,8 @@ export const ru = {
 		move_to_trash_description: 'Папку со всем содержимым можно будет вернуть из корзины.',
 		trash_workspace_audience: 'Участники теряют доступ, публикация в Hub снимается.',
 		move_root_warning_title: 'Перенести общую папку?',
+		leaves_cloud: 'Уйдёт из облака',
+		enters_cloud: 'Попадёт в облако: «{name}»',
 		move_root_warning_description: 'У папки «{name}» пропадут общий доступ, публичная ссылка и публикация в Хабе.',
 		move_root_warning_confirm: 'Перенести',
 		nothing_found: 'Ничего не найдено',

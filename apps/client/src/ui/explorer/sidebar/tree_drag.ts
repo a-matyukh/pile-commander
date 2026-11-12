@@ -78,6 +78,19 @@ export function can_drop(source: TreeDragSource, spot: TreeDropSpot): boolean {
 		&& spot.folder_id !== source.parent_id
 }
 
+/**
+ * A drop that crosses a pile's border: the folder leaves the cloud, or goes
+ * into a synced folder (another one's included). `pile` is the region to
+ * light up. A synced folder moved whole takes its link along: no crossing
+ */
+export type PileCrossing = { pile: string; way: 'leaves' | 'enters' }
+
+export function pile_crossing(source: TreeDragSource, target: TreeDropSpot | null): PileCrossing | null {
+	if (!target || source.pile === source.folder_id || source.pile === target.pile) return null
+	if (target.pile) return { pile: target.pile, way: 'enters' }
+	return source.pile ? { pile: source.pile, way: 'leaves' } : null
+}
+
 export const is_drop_target = (spot: TreeDropSpot) =>
 	tree_drag.target !== null
 	&& tree_drag.target.root_key === spot.root_key

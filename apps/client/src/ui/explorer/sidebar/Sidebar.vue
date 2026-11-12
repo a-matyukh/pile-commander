@@ -21,7 +21,7 @@ import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
 import { cloud_source_opens_page, source_tree_visible } from './source_open'
-import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, pile_crossing, tree_drag, tree_root_key } from './tree_drag'
 
 /**
  * `drawer` — a phone: the sidebar covers the content and a tap outside closes it.
@@ -33,6 +33,9 @@ import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from '.
 defineProps<{ drawer?: boolean, overlay?: boolean, shown?: boolean }>()
 
 const drives = computed(() => explorer_drives.drives())
+/** The dragged folder leaves a pile or goes into one: the ghost says so */
+const crossing = computed(() => (tree_drag.source ? pile_crossing(tree_drag.source, tree_drag.target) : null))
+const base_name = (path: string) => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
 /** The account or settings page is open: its footer button shows it */
 function page_open(page: 'account' | 'settings' | 'trash' | 'cloud') {
 	const location = explorer_navigation.location
@@ -342,7 +345,11 @@ watchEffect(() => {
 			:style="{ left: tree_drag.x + 12 + 'px', top: tree_drag.y + 8 + 'px' }"
 		>
 			<Icon icon="tabler:folder" />
-			<span>{{ tree_drag.source.name }}</span>
+			<span class="gn">{{ tree_drag.source.name }}</span>
+			<span v-if="crossing" class="gx" :class="crossing.way">
+				<Icon :icon="crossing.way === 'leaves' ? 'tabler:cloud-off' : 'tabler:cloud-up'" />
+				{{ crossing.way === 'leaves' ? t('tree.leaves_cloud') : t('tree.enters_cloud', { name: base_name(crossing.pile) }) }}
+			</span>
 		</div>
 	</aside>
 </template>
@@ -414,7 +421,7 @@ watchEffect(() => {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	max-width: 220px;
+	max-width: 360px;
 	padding: 4px 8px;
 	border-radius: 6px;
 	background: var(--surface-2);
@@ -424,6 +431,23 @@ watchEffect(() => {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	pointer-events: none;
+}
+.gn {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.gx {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 4px;
+	padding-left: 6px;
+	border-left: 0.5px solid var(--border);
+	color: var(--text-accent);
+}
+.gx.leaves {
+	color: var(--text-primary);
 }
 :global(body.tree-dragging) {
 	cursor: grabbing;
