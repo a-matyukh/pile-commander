@@ -33,6 +33,7 @@ import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialo
 import AiConsentDialog from '@/ui/ai/AiConsentDialog.vue'
 import BulkRenameDialog from '@/ui/ai/BulkRenameDialog.vue'
 import IdeasDialog from '@/ui/ai/IdeasDialog.vue'
+import SortDialog from '@/ui/ai/SortDialog.vue'
 import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 
 // OS-level drop and open events live here: the shell never unmounts.
@@ -246,6 +247,7 @@ onUnmounted(() => {
 		<PasswordDialog />
 		<BulkRenameDialog />
 		<IdeasDialog />
+		<SortDialog />
 		<SummaryDialog />
 		<AiConsentDialog />
 		<UpdateBanner />

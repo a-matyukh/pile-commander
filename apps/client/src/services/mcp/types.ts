@@ -86,7 +86,7 @@ export type ReadTextArgs = { folder: FolderAddress; path: string }
 export type ReadTextResult = { path: string; text: string; truncated: boolean }
 
 /** What an agent's preview proposes. One slot holds one proposal of any kind. */
-export type ProposalKind = 'rename' | 'create'
+export type ProposalKind = 'rename' | 'create' | 'move'
 
 export type ProposalStatus = 'pending' | 'accepted' | 'dismissed'
 
@@ -110,10 +110,30 @@ export type CreateRowResult = {
 	error?: string
 }
 
+export type MoveRowResult = {
+	name: string
+	/** The folder asked for, directly inside the proposal's folder. */
+	to: string
+	outcome: 'pending' | 'moved' | 'skipped' | 'failed'
+	/** Set when outcome is `moved`: the new path, relative to the drive root (a move changes it). */
+	path?: string
+	error?: string
+}
+
+export type MovedFolderResult = {
+	/** The folder asked for. */
+	name: string
+	/** True when the proposal made it; false for a folder that was already there. */
+	created: boolean
+	/** Relative to the drive root, with the name it got (a new one renamed in the preview, or numbered). */
+	path: string
+}
+
 /** The kind's own part of `get_proposal`. */
 export type ProposalBody =
 	| { kind: 'rename'; rows: RenameRowResult[] }
 	| { kind: 'create'; rows: CreateRowResult[] }
+	| { kind: 'move'; rows: MoveRowResult[]; folders: MovedFolderResult[] }
 
 export type GetProposalResult = {
 	proposal_id: string
