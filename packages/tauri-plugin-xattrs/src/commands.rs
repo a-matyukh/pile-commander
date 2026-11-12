@@ -63,18 +63,27 @@ fn folder_with_children_xattrs_at(folder_path: &str) -> io::Result<FolderWithChi
 
     let mut children = Vec::new();
     for entry in fs::read_dir(folder)? {
-        let entry = entry?;
-        if entry.file_name() == PILE_DIR_NAME || entry.file_name() == DS_STORE_NAME {
-            continue;
+        // A child can vanish between the listing and reading it (a temp file
+        // another app writes and renames away, e.g. in ~). It is simply not
+        // part of the folder any more: skip it instead of failing the folder
+        let child = entry.and_then(|entry| {
+            if entry.file_name() == PILE_DIR_NAME || entry.file_name() == DS_STORE_NAME {
+                return Ok(None);
+            }
+            let path = entry.path();
+            let entry_type = if entry.file_type()?.is_dir() {
+                "folder"
+            } else {
+                "file"
+            };
+            path_xattrs_entry(&path, entry_type).map(Some)
+        });
+        match child {
+            Ok(Some(child)) => children.push(child),
+            Ok(None) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
         }
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-        let entry_type = if file_type.is_dir() {
-            "folder"
-        } else {
-            "file"
-        };
-        children.push(path_xattrs_entry(&path, entry_type)?);
     }
 
     children.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
@@ -227,6 +236,26 @@ mod tests {
         remove_xattr_at(&root_str, "root_tag").unwrap();
         remove_xattr_at(&sub_str, "sub_tag").unwrap();
         remove_xattr_at(&file_str, "file_tag").unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A child that is gone by the time its attributes are read (here a
+    /// symlink to nothing: reading through it says NotFound, as a temp file
+    /// renamed away mid-listing does) is left out; the folder still reads
+    #[cfg(unix)]
+    #[test]
+    fn folder_with_children_xattrs_skips_child_gone_mid_read() {
+        let root = std::env::temp_dir().join("tauri-plugin-xattrs-vanished-test");
+        fs::remove_dir_all(&root).ok();
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("note.md");
+        fs::write(&file, b"content").unwrap();
+        std::os::unix::fs::symlink(root.join("missing.tmp"), root.join("gone.tmp")).unwrap();
+
+        let result = folder_with_children_xattrs_at(&root.to_string_lossy()).unwrap();
+
+        assert_eq!(result.children.len(), 1);
+        assert_eq!(result.children[0].path, file.to_string_lossy());
         fs::remove_dir_all(&root).unwrap();
     }
 
