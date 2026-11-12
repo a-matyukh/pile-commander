@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { show_spatial_folder } from '@/store/aiIdeas'
+import IdeaGhosts from '@/ui/ai/IdeaGhosts.vue'
+import IdeasBar from '@/ui/ai/IdeasBar.vue'
 import type { Position, Size } from '@/domain/Widget'
 import { useFolderContainerScope } from '../useFolderContainerScope'
 import { useBoardSnapSettings } from '../useBoardSnapSettings'
@@ -64,6 +67,8 @@ function boardClickPosition(event: { clientX: number; clientY: number }): Positi
 	}
 }
 
+let release_ideas: (() => void) | null = null
+
 onMounted(() => {
 	lineDraw.bind(boardRef.value)
 	registerPanePositionResolver(folderId.value, (clientX, clientY) =>
@@ -76,6 +81,8 @@ onMounted(() => {
 	setExternalDropPositionResolver((clientX, clientY) =>
 		boardClickPosition({ clientX, clientY }),
 	)
+	// Ideas for this folder show on this board as cards, not in a dialog
+	release_ideas = show_spatial_folder(folderId.value)
 })
 
 onUnmounted(() => {
@@ -84,6 +91,7 @@ onUnmounted(() => {
 	registerPaneEditingNoteSetter(folderId.value, null)
 	if (isEmbedded) return
 	setExternalDropPositionResolver(null)
+	release_ideas?.()
 })
 
 const {
@@ -280,6 +288,7 @@ const boardExtentStyle = computed(() => {
 				:widget="widget"
 				:index="index"
 			/>
+			<IdeaGhosts v-if="!isEmbedded" :folder-id="folderId" />
 			<BoardMarqueeOverlay :rect-style="marqueeStyle" />
 			<svg
 				v-if="lineDraw.preview.value"
@@ -301,6 +310,7 @@ const boardExtentStyle = computed(() => {
 		</section>
 		<EmptyPaneHint :empty="children.length === 0" />
 		<BoardOffEdgeHint v-if="!isEmbedded" :folder-id="folderId" :children="children" />
+		<IdeasBar v-if="!isEmbedded" :folder-id="folderId" />
 	</div>
 	</FolderContainerCtxMenu>
 </template>

@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import type { Position } from '@/domain/Widget'
 import { close_proposal } from '@/services/mcp/proposal'
@@ -120,3 +120,26 @@ export function open_ideas(input: {
 export function close_ideas() {
 	ideas_session.open = false
 }
+
+/** Folders shown right now as a Board or a Canvas, by how many such views show them. */
+const spatial_folders = reactive(new Map<string, number>())
+
+/**
+ * A Board or a Canvas (not one embedded in a card) shows `folder_id` until
+ * the returned function runs: while one does, that folder's ideas show on it
+ * as cards instead of in a dialog.
+ */
+export function show_spatial_folder(folder_id: string): () => void {
+	spatial_folders.set(folder_id, (spatial_folders.get(folder_id) ?? 0) + 1)
+	let released = false
+	return () => {
+		if (released) return
+		released = true
+		const left = (spatial_folders.get(folder_id) ?? 1) - 1
+		if (left > 0) spatial_folders.set(folder_id, left)
+		else spatial_folders.delete(folder_id)
+	}
+}
+
+/** The open session's ideas show on its folder's Board or Canvas. */
+export const ideas_on_board = computed(() => ideas_session.open && (spatial_folders.get(ideas_session.folder_id) ?? 0) > 0)

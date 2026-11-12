@@ -1,6 +1,6 @@
 import type { WorkspaceStore } from '@/domain/Store'
-import type { FolderContainerWidgetChild, Position } from '@/domain/Widget'
-import { board_size, NOTE_DEFAULT_SIZE } from '@/services/board/layout'
+import type { FolderContainerWidgetChild, Position, Size } from '@/domain/Widget'
+import { board_size } from '@/services/board/layout'
 import { resolve_unique_filename } from '@/services/naming/uniqueName'
 import type { HistoryTx } from '@/store/history/types'
 import { strip_think, untrusted_markdown } from './text'
@@ -11,6 +11,11 @@ import { strip_think, untrusted_markdown } from './text'
  */
 
 const NOTE_GAP = 24
+/**
+ * A new note placed on a board is a little larger than a blank one, so its
+ * title and a few sentences show; its card in the preview has this size too.
+ */
+export const NEW_NOTE_SIZE: Size = { width: 240, height: 150 }
 /** Notes per row when several are placed together. */
 const NOTES_PER_ROW = 3
 
@@ -62,8 +67,8 @@ export function new_note_positions(
 	}
 	const origin = start
 	return Array.from({ length: count }, (_, index) => ({
-		x: origin.x + (index % NOTES_PER_ROW) * (NOTE_DEFAULT_SIZE.width + NOTE_GAP),
-		y: origin.y + Math.floor(index / NOTES_PER_ROW) * (NOTE_DEFAULT_SIZE.height + NOTE_GAP),
+		x: origin.x + (index % NOTES_PER_ROW) * (NEW_NOTE_SIZE.width + NOTE_GAP),
+		y: origin.y + Math.floor(index / NOTES_PER_ROW) * (NEW_NOTE_SIZE.height + NOTE_GAP),
 	}))
 }
 
@@ -73,6 +78,8 @@ export type NewNote = {
 	/** Markdown. Untrusted: reasoning is dropped, HTML escaped, images become their alt text. */
 	text: string
 	position: Position | null
+	/** Set on a board, with the position: `NEW_NOTE_SIZE`. */
+	size?: Size | null
 }
 
 export type NewNoteOutcome = {
@@ -83,7 +90,7 @@ export type NewNoteOutcome = {
 	error?: string
 }
 
-type NoteWrites = Pick<WorkspaceStore, 'create_note' | 'save_note_content' | 'resolve_folder_data' | 'rename' | 'content_caches'>
+type NoteWrites = Pick<WorkspaceStore, 'create_note' | 'change_size' | 'save_note_content' | 'resolve_folder_data' | 'rename' | 'content_caches'>
 
 /**
  * Writes the notes: all are created where asked, then filled, then named.
@@ -105,6 +112,7 @@ export async function add_new_notes(
 		try {
 			const id = await workspace.create_note(folder_id, note.position ?? undefined, { tx })
 			if (!id) outcomes[index] = { error: 'The note could not be created' }
+			else if (note.size) await workspace.change_size(id, note.size, { tx })
 			ids.push(id || null)
 		} catch (error) {
 			outcomes[index] = { error: message_of(error) }

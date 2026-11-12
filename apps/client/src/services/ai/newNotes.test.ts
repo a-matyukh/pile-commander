@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { FolderContainerWidgetChild } from '@/domain/Widget'
-import { NOTE_DEFAULT_SIZE } from '@/services/board/layout'
-import { add_new_notes, new_note_positions, note_file_name, planned_note_names, type NewNote } from './newNotes'
+import { add_new_notes, NEW_NOTE_SIZE, new_note_positions, note_file_name, planned_note_names, type NewNote } from './newNotes'
 
 describe('note_file_name', () => {
 	test('keeps .md, adds it when there is no extension, refuses another one', () => {
@@ -32,8 +31,8 @@ describe('new_note_positions', () => {
 			child('a', { x: 20, y: 40 }, { width: 200, height: 200 }),
 			child('b', { x: 300, y: 10 }, { width: 100, height: 100 }),
 		], 4)
-		const step_x = NOTE_DEFAULT_SIZE.width + 24
-		const step_y = NOTE_DEFAULT_SIZE.height + 24
+		const step_x = NEW_NOTE_SIZE.width + 24
+		const step_y = NEW_NOTE_SIZE.height + 24
 		expect(spots).toEqual([
 			{ x: 424, y: 10 },
 			{ x: 424 + step_x, y: 10 },
@@ -72,6 +71,9 @@ describe('add_new_notes', () => {
 					calls.push(`create ${JSON.stringify(position ?? null)}${opts?.tx ? ' tx' : ''}`)
 					return id
 				},
+				async change_size(id: string, size: { width: number; height: number }, opts?: { tx?: unknown }) {
+					calls.push(`size ${id} ${size.width}x${size.height}${opts?.tx ? ' tx' : ''}`)
+				},
 				async save_note_content(id: string, text: string, opts?: { tx?: unknown; before?: string }) {
 					calls.push(`save ${id} ${JSON.stringify(text)}${opts?.tx ? ' tx' : ''} before=${JSON.stringify(opts?.before)}`)
 					return true
@@ -91,7 +93,7 @@ describe('add_new_notes', () => {
 	}
 
 	const notes: NewNote[] = [
-		{ name: 'Sea.md', text: '# Sea\n\nCalm <b>water</b> ![x](http://e/x.png)', position: { x: 1, y: 2 } },
+		{ name: 'Sea.md', text: '# Sea\n\nCalm <b>water</b> ![x](http://e/x.png)', position: { x: 1, y: 2 }, size: NEW_NOTE_SIZE },
 		{ name: 'Fog.md', text: '<think>hmm</think>Fog', position: null },
 		{ name: 'Rope.md', text: 'Rope', position: { x: 3, y: 4 } },
 	]
@@ -108,6 +110,7 @@ describe('add_new_notes', () => {
 		])
 		expect(calls.filter(call => !call.startsWith('invalidate'))).toEqual([
 			'create {"x":1,"y":2} tx',
+			'size /f/Note 1.md 240x150 tx',
 			'create null tx',
 			'create {"x":3,"y":4} tx',
 			'save /f/Note 1.md "# Sea\\n\\nCalm &lt;b>water&lt;/b> x\\n" tx before=""',
