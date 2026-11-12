@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
-import { usePreferredReducedMotion } from '@vueuse/core'
 import type { WorkspaceTreeNode } from '@/domain/WorkspaceTree'
 import { t } from '@/i18n'
 import { entry_is_dimmed } from '@/store/hiddenPaths'
@@ -27,7 +26,7 @@ import { shown_icon } from '@/store/explorer/icon_catalog'
 import { use_home } from '@/ui/explorer/folder-header/use_folder_place'
 import { is_transient_drive } from '@/store/explorer/public_roots'
 import { explorer_folder_clipboard } from '@/store/explorer/folder_clipboard'
-import { explorer_settings, motion_3d_enabled } from '@/store/explorer/settings'
+import { explorer_settings } from '@/store/explorer/settings'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import FolderMenu from '@/ui/explorer/folder-header/FolderMenu.vue'
@@ -171,8 +170,6 @@ const pile = computed(() => (is_local.value ? covering_link(normalize_workspace_
 const holds_pile = computed(() => is_local.value && my_sync_roots().some(root => is_within(root, folder_id.value)))
 const spot = computed(() => ({ root_key: root_key.value, folder_id: folder_id.value, ...(pile.value ? { pile: pile.value } : {}) }))
 
-const system_motion = usePreferredReducedMotion()
-const motion = computed(() => motion_3d_enabled(explorer_settings.motion_3d, system_motion.value === 'reduce'))
 /**
  * The top folder of a pile (a synced folder) draws its whole region: its
  * children's guide becomes a line in the sync's state. Folders inside it
@@ -305,7 +302,7 @@ watchEffect(on_cleanup => {
 	<div
 		v-if="expanded && (children.length || loading)"
 		class="g"
-		:class="pile_line && ['pile', pile_line, { flow: motion, lit: pile_lit }]"
+		:class="pile_line && ['pile', pile_line, { lit: pile_lit }]"
 	>
 		<TreeRow v-for="child in children" :key="child.id" :item="item" :node="child" />
 	</div>
@@ -412,38 +409,49 @@ watchEffect(on_cleanup => {
 	border-left: 0.5px solid var(--border);
 	margin-left: 13px;
 }
-/* A pile's region: 2px wide, its centre where the plain guide's is */
+/*
+ * A pile's region: a thin line under the chevron's point (the row's margin
+ * and padding plus half the chevron), drawn over the plain guide, so the
+ * rows inside do not move
+ */
 .g.pile {
 	position: relative;
-	border-left: 2px solid var(--fill-accent);
-	margin-left: 12.25px;
+	border-left-color: transparent;
+}
+.g.pile::before {
+	content: '';
+	position: absolute;
+	left: 4.5px;
+	top: 0;
+	bottom: 0;
+	width: 1.5px;
+	border-radius: 1px;
+	background: var(--fill-accent);
+	pointer-events: none;
+}
+.g.pile.attention::before {
+	background: var(--fill-warning);
 }
 .g.pile.lit {
 	background: var(--bg-accent);
-	border-left-color: var(--text-accent);
 }
-.g.pile.attention {
-	border-left-color: var(--fill-warning);
+.g.pile.lit::before {
+	background: var(--text-accent);
 }
-/* Syncing: a light runs down the line, when motion is on */
-.g.pile.syncing.flow::before {
-	content: '';
-	position: absolute;
-	left: -2px;
-	top: 0;
-	bottom: 0;
-	width: 2px;
-	background: linear-gradient(to bottom, transparent 0%, var(--border-accent) 50%, transparent 100%) no-repeat;
-	background-size: 100% 40%;
-	animation: pile-flow 1.4s linear infinite;
-	pointer-events: none;
+/* Syncing: a dark run travels down a lighter line */
+.g.pile.syncing::before {
+	background:
+		linear-gradient(to bottom, transparent, var(--text-accent) 50%, transparent) no-repeat,
+		var(--border-accent);
+	background-size: 100% 35%, 100% 100%;
+	animation: pile-flow 1.1s linear infinite;
 }
 @keyframes pile-flow {
 	from {
-		background-position: 0 -150%;
+		background-position: 0 -55%, 0 0;
 	}
 	to {
-		background-position: 0 250%;
+		background-position: 0 155%, 0 0;
 	}
 }
 .spin {

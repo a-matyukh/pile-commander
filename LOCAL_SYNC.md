@@ -102,12 +102,12 @@ synced folder, or a folder holding one, inside another synced folder.
 is never uploaded.
 
 **The pile's line in the tree.** A synced folder is a pile, a region. At
-its top folder (where the cloud badge is) the tree draws its children's
-guide as a 2px line in the sync's state (`pile_line_state`): blue in sync,
-a light running down it while syncing (only when the motion setting is
-on), amber when paused or failed. Folders inside keep the plain guide, so
-the region reads as one. A cloud folder synced on another computer has no
-status here: blue. The badge stays: a collapsed folder shows no line.
+its top folder (where the cloud badge is) the tree draws a thin line under
+the chevron's point, the whole height of its children, in the sync's state
+(`pile_line_state`): blue in sync, a dark run travelling down a lighter
+line while syncing (always, it is a status), amber when paused or failed.
+Folders inside keep the plain guide, so the region reads as one. A cloud
+folder synced on another computer has no status here: blue. The badge stays: a collapsed folder shows no line.
 
 Dragging a folder in the tree across a pile's border (`pile_crossing`)
 lights up that pile's region, and the drag ghost says "Leaves the cloud"
