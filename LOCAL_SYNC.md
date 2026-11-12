@@ -307,7 +307,9 @@ decided one by one.
   - a folder created in the cloud by a pass carries its xattrs from the
     start (view, icon…), so the cloud never shows it as a plain folder
     until the layout step; only a cover or background waits for its file
-    (`folder_xattrs_to_create`). Files still get theirs in the layout step.
+    (`xattrs_to_create`). A new file gets its own (position, size) right
+    after its upload, in the same action: the backend's finalize takes no
+    xattrs. A miss there is left to the layout step.
 - **Ink.** By cloud id; the base maps it to its id here.
   - Ink drawn here goes up as `derived_uuid(workspace_id, local id)`.
   - Ink that came down keeps its cloud id here, so it is never re-hashed

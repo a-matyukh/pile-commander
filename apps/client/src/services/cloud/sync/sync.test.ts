@@ -1860,6 +1860,39 @@ describe('a new folder goes up', () => {
 		expect(cloud.fake.get_xattr('/poem', 'cover')).toBe('pile:cover-abcdef01.webp')
 		expect(first.state.entries['poem']?.xattrs).toEqual({ view: 'board', icon: 'feather', cover: 'pile:cover-abcdef01.webp' })
 	})
+
+	test('a new file takes its place on the board right after its upload, not at the layout step', async () => {
+		const { local, stat } = make_local()
+		const cloud = make_cloud()
+		cloud.fake.seed_folder('/')
+		const { deps } = make_deps(local, stat, cloud)
+		const calls: string[] = []
+		const upload = cloud.fm.upload_file.bind(cloud.fm)
+		vi.spyOn(cloud.fm, 'upload_file').mockImplementation(async (...args) => {
+			calls.push(`upload ${args[1]}`)
+			return upload(...args)
+		})
+		const set_xattrs = cloud.fm.set_xattrs.bind(cloud.fm)
+		vi.spyOn(cloud.fm, 'set_xattrs').mockImplementation(async (items) => {
+			for (const item of items) calls.push(`xattrs ${item.id} ${Object.keys(item.xattrs).join(',')}`)
+			return set_xattrs(items)
+		})
+
+		local.seed_file('/ws/a.md', 'hello')
+		local.seed_file('/ws/b.png', 'png')
+		local.set_xattr('/ws/a.md', 'position', '{"x":1,"y":2}')
+		local.set_xattr('/ws/b.png', 'position', '{"x":3,"y":4}')
+
+		const first = await cloud_pass(deps, new_state())
+		expect(calls.slice(0, 4)).toEqual([
+			'upload a.md', 'xattrs /a.md position',
+			'upload b.png', 'xattrs /b.png position',
+		])
+		// the layout step finds both sides equal: nothing more goes up
+		expect(calls).toHaveLength(4)
+		expect(cloud.fake.get_xattr('/b.png', 'position')).toBe('{"x":3,"y":4}')
+		expect(first.state.entries['b.png']?.xattrs).toEqual({ position: '{"x":3,"y":4}' })
+	})
 })
 
 describe('pile image files', () => {
