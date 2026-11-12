@@ -104,7 +104,12 @@ sees the new place is inside another link, drops its own link and link
 file (`absorb_link`), and the outer folder syncs it as part of itself. Its
 old cloud copy stays in the cloud. The tree's drag ghost says so before the
 drop ("Becomes part of …"). The same happens when such a move made in
-Finder is found (opening the folder, or **Find…**).
+Finder is found: opening the folder, **Find…**, or by itself at launch.
+A link that pauses as `folder_missing` looks once per session inside this
+account's other synced folders (`look_for_joined`, `find_moved_folder_in`:
+breadth first, hidden folders and symlinks skipped, at most 5000 folders,
+only folders with `.pile` read) for a folder whose link file is its own,
+and joins it there.
 `sync.json` never syncs (`is_pile_carry_relative`), so an inner link file
 is never uploaded.
 

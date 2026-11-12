@@ -24,6 +24,7 @@ import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager
 import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStatus } from '@/services/cloud/sync/syncEngine'
 import { download_scratch_dir, join_local, relative_of } from '@/services/cloud/sync/paths'
 import { choose_sync_folder } from '@/services/cloud/sync/syncToFolder'
+import { find_moved_folder_in } from '@/services/cloud/sync/findMoved'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { pile_root_name } from '@/services/workspace/pack'
 import type { LocalWriter } from '@/services/cloud/sync/syncPass'
@@ -273,6 +274,7 @@ function start_engine(link: SyncLink): void {
 			// The whole status, including folders kept for hidden files.
 			sync_statuses[link.root] = status
 			if (status.phase === 'idle' && status.last_synced_at) stamp_sync_device(link)
+			if (status.reason === 'folder_missing') look_for_joined(link)
 		},
 	})
 	engines.set(link.root, engine)
@@ -447,6 +449,39 @@ async function move_link(link: SyncLink, root: string): Promise<void> {
  * A synced folder now inside another one syncs as part of it: its own link
  * goes, with its link file (now at `root`). Its cloud copy stays in the cloud
  */
+/** Missing links already looked for in this session */
+const looked_for = new Set<string>()
+
+/**
+ * A synced folder missing at launch may have been moved in Finder into
+ * another synced folder while the app was closed. That one syncs it as part
+ * of itself already; found by its link file, it joins it for good (as a move
+ * in the app would), instead of waiting as "not found". Once per session
+ */
+function look_for_joined(link: SyncLink): void {
+	const key = `${link.user_id}\0${link.root}`
+	if (looked_for.has(key)) return
+	looked_for.add(key)
+	link_moves = link_moves.then(async () => {
+		if (links.value[link.root]?.workspace_id !== link.workspace_id) return
+		const roots = my_sync_roots(link.user_id).filter(root => root !== link.root)
+		if (!roots.length) return
+		const { readDir, readTextFile } = await fs()
+		const device_id = client_instance_id()
+		const found = await find_moved_folder_in(roots, {
+			list: folder => readDir(folder),
+			read_link_file: folder => readTextFile(sync_state_path(folder)).catch(() => null),
+			matches: (folder, text) => {
+				const named = moved_away_link(text, { root_path: folder, user_id: link.user_id, device_id })
+				return named?.root_path === link.root && named.workspace_id === link.workspace_id
+			},
+		})
+		if (!found || await folder_exists(link.root)) return
+		stop_engine(link.root)
+		await absorb_link(link, found)
+	}).catch((error: unknown) => console.warn('[sync] could not look for a moved folder', error))
+}
+
 async function absorb_link(link: SyncLink, root: string): Promise<void> {
 	forget_sync_record(link)
 	const next = { ...links.value }
