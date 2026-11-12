@@ -304,6 +304,10 @@ decided one by one.
   - a removed key is removed on the other side;
   - with no base yet, keys are united and the local value wins where the
     two differ.
+  - a folder created in the cloud by a pass carries its xattrs from the
+    start (view, icon…), so the cloud never shows it as a plain folder
+    until the layout step; only a cover or background waits for its file
+    (`folder_xattrs_to_create`). Files still get theirs in the layout step.
 - **Ink.** By cloud id; the base maps it to its id here.
   - Ink drawn here goes up as `derived_uuid(workspace_id, local id)`.
   - Ink that came down keeps its cloud id here, so it is never re-hashed

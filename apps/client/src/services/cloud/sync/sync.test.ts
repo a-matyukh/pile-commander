@@ -1837,6 +1837,31 @@ describe('choose_sync_folder', () => {
 	})
 })
 
+describe('a new folder goes up', () => {
+	test('with its view and icon at once, its cover after its file', async () => {
+		const { local, stat } = make_local()
+		const cloud = make_cloud()
+		cloud.fake.seed_folder('/')
+		const { deps } = make_deps(local, stat, cloud)
+		const create = vi.spyOn(cloud.fm, 'create_folder')
+
+		local.seed_folder('/ws/poem')
+		local.seed_folder('/ws/poem/.pile')
+		local.seed_file('/ws/poem/.pile/cover-abcdef01.webp', 'webp')
+		local.set_xattr('/ws/poem', 'view', 'board')
+		local.set_xattr('/ws/poem', 'icon', 'feather')
+		local.set_xattr('/ws/poem', 'cover', 'pile:cover-abcdef01.webp')
+
+		const first = await cloud_pass(deps, new_state())
+		const call = create.mock.calls.find(([, name]) => name === 'poem')
+		expect(call?.[2]).toEqual({ xattrs: { view: 'board', icon: 'feather' } })
+		// the layout step adds the cover; nothing else differs
+		expect(cloud.fake.get_xattr('/poem', 'view')).toBe('board')
+		expect(cloud.fake.get_xattr('/poem', 'cover')).toBe('pile:cover-abcdef01.webp')
+		expect(first.state.entries['poem']?.xattrs).toEqual({ view: 'board', icon: 'feather', cover: 'pile:cover-abcdef01.webp' })
+	})
+})
+
 describe('pile image files', () => {
 	test('a cover file is uploaded and downloaded, and replacing it is not a delete', async () => {
 		const { local, stat } = make_local()

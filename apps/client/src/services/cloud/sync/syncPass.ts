@@ -1,5 +1,5 @@
 import type { ConnectionRow, FileManager, FolderConnection, FolderStroke, PlanLimitInfo, StrokeRow } from '@pile-commander/file-manager'
-import { MAX_TEXT_CONTENT_BYTES, PILE_DIR_NAME, PlanLimitError, decode_text_content, is_text_mime } from '@pile-commander/file-manager'
+import { MAX_TEXT_CONTENT_BYTES, PILE_DIR_NAME, PlanLimitError, decode_text_content, is_pile_image_token, is_text_mime } from '@pile-commander/file-manager'
 import { read_entry_blob, upload_mime } from '@/services/workspace/entryBytes'
 import { hash_value } from './hash'
 import {
@@ -25,6 +25,21 @@ import { SYNC_STATE_VERSION, type BaseEntry, type BaseFolderLayout, type CloudEn
  * The real one lives in store/localSync.ts (plugin-fs, the `trash_path`
  * command); tests use a fake
  */
+
+/**
+ * The xattrs a new cloud folder is created with: the folder's own here,
+ * except a cover or background picture, whose file in `.pile` goes up later
+ * in the same pass (the layout step adds those)
+ */
+export function folder_xattrs_to_create(local: Readonly<Record<string, string>>): Record<string, string> {
+	const xattrs: Record<string, string> = {}
+	for (const [name, value] of Object.entries(local)) {
+		if (is_pile_image_token(value)) continue
+		xattrs[name] = value
+	}
+	return xattrs
+}
+
 export type LocalWriter = {
 	/**
 	 * Writes `data` as `name` in `folder` without a half-written file ever
@@ -399,10 +414,15 @@ class PassRun {
 			case 'create_folder': {
 				const parent = this.parent_path(action.relative)
 				const kept = this.kept_for_hidden.has(action.relative)
+				// Its view, icon and the rest go up with it: never a plain folder
+				// in the cloud until the layout step. The layout merge then finds
+				// both sides equal. A cover or background waits for its file
+				const xattrs = folder_xattrs_to_create(await this.local_xattrs(this.absolute(action.relative)))
+				if (kept) xattrs[SYNC_KEPT_HIDDEN] = sync_kept_hidden_value(this.now)
 				const created = await this.deps.cloud_fm.create_folder(
 					parent,
 					base_name(action.relative),
-					kept ? { xattrs: { [SYNC_KEPT_HIDDEN]: sync_kept_hidden_value(this.now) } } : undefined,
+					Object.keys(xattrs).length > 0 ? { xattrs } : undefined,
 				)
 				if (kept) this.report.kept_for_hidden.push(action.relative)
 				this.landed(action.relative, created.id)
