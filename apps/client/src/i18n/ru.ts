@@ -959,6 +959,7 @@ export const ru = {
 		model: 'Модель',
 		model_d: 'Название модели у провайдера',
 		model_placeholder: 'например, gemma3 или openai/gpt-4o-mini',
+		model_missing: 'Выберите модель — после этого появятся действия ИИ.',
 		model_pick: 'Выбрать из списка',
 		model_test_first: 'Проверьте подключение, чтобы увидеть модели',
 		agent_access: 'Доступ для агентов',

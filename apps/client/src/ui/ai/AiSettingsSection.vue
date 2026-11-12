@@ -356,7 +356,8 @@ if (props.part !== 'mcp') {
 
 				<div class="fld">
 					<span class="lb">{{ caption('model', 'Model') }}</span>
-					<div class="combo">
+					<!-- No model yet: the one field left is marked, calmly -->
+					<div class="combo" :class="{ 'combo--missing': !ai_settings.model.trim() }">
 						<TextField
 							v-model="model_text"
 							:placeholder="caption('model_placeholder', 'e.g. gemma3 or openai/gpt-4o-mini')"
@@ -382,6 +383,9 @@ if (props.part !== 'mcp') {
 							/>
 						</DropMenu>
 					</div>
+					<p v-if="!ai_settings.model.trim()" class="note note--missing">
+						{{ caption('model_missing', 'Pick a model: AI actions appear once it is set.') }}
+					</p>
 				</div>
 
 				<div class="fld">
@@ -533,6 +537,17 @@ if (props.part !== 'mcp') {
 	background: var(--surface-2);
 	color: var(--text-muted);
 	cursor: pointer;
+}
+.combo--missing :deep(.tf),
+.combo--missing .pick {
+	border-color: rgb(245 158 11 / 0.6);
+	background: rgb(255 247 237);
+}
+.combo--missing :deep(.tf) {
+	box-shadow: 0 0 0 3px rgb(245 158 11 / 0.12);
+}
+.note--missing {
+	color: rgb(180 83 9);
 }
 .pick :deep(svg) {
 	font-size: 15px;

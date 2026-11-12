@@ -961,6 +961,7 @@ export const en: typeof ru = {
 		model: 'Model',
 		model_d: 'The model name at the provider',
 		model_placeholder: 'e.g. gemma3 or openai/gpt-4o-mini',
+		model_missing: 'Pick a model: AI actions appear once it is set.',
 		model_pick: 'Pick from the list',
 		model_test_first: 'Test the connection to see models',
 		agent_access: 'Agent access',
