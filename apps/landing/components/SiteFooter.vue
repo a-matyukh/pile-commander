@@ -12,9 +12,6 @@ const { clientUrl } = useAppLinks();
         <NuxtLink to="/" class="text-slate-600 no-underline hover:text-slate-900">
           Home
         </NuxtLink>
-        <NuxtLink to="/vision" class="text-slate-600 no-underline hover:text-slate-900">
-          Vision
-        </NuxtLink>
         <NuxtLink to="/pricing" class="text-slate-600 no-underline hover:text-slate-900">
           Pricing
         </NuxtLink>

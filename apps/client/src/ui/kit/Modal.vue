@@ -3,18 +3,22 @@ import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRo
 
 const open = defineModel<boolean>('open', { required: true })
 
-defineProps<{ title: string; description?: string }>()
+/** `width`: the dialog's width in px (400 by default); a list of files or a preview wants more */
+defineProps<{ title: string; description?: string; width?: number }>()
 </script>
 
 <template>
 	<DialogRoot v-model:open="open">
 		<DialogPortal to=".explorer">
 			<DialogOverlay class="ov" />
-			<DialogContent class="dlg" v-bind="description ? {} : { 'aria-describedby': undefined }">
+			<DialogContent class="dlg" :style="width ? { width: `min(${width}px, calc(100vw - 32px))` } : undefined" v-bind="description ? {} : { 'aria-describedby': undefined }">
 				<DialogTitle class="dt">{{ title }}</DialogTitle>
 				<DialogDescription v-if="description" class="dd">{{ description }}</DialogDescription>
 				<slot />
-				<div v-if="$slots.footer" class="ft"><slot name="footer" /></div>
+				<div v-if="$slots.footer" class="ft">
+					<span v-if="$slots.aside" class="aside"><slot name="aside" /></span>
+					<slot name="footer" />
+				</div>
 			</DialogContent>
 		</DialogPortal>
 	</DialogRoot>
@@ -58,9 +62,18 @@ defineProps<{ title: string; description?: string }>()
 }
 .ft {
 	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
 	justify-content: flex-end;
 	gap: 8px;
 	margin-top: 6px;
+}
+/* What the footer says on its left: how many will change */
+.aside {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: 12px;
+	color: var(--text-secondary);
 }
 .explorer.lg .dt {
 	font-size: 17px;

@@ -5,8 +5,10 @@ import { t } from '@/i18n'
 import { name_target_kind } from '@/services/ai/naming'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
 import { to_folder_container } from '@/services/workspace/folderContainer'
-import { ai_available, ai_ready } from '@/store/ai'
+import { ai_available, ai_base_check, ai_ready } from '@/store/ai'
 import { open_bulk_rename } from '@/store/aiBulkRename'
+import { open_ideas } from '@/store/aiIdeas'
+import { open_sort } from '@/store/aiSort'
 import { open_summary } from '@/store/aiSummary'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { settings_tab } from '@/store/explorer/settings'
@@ -17,9 +19,10 @@ import MenuLabel from '@/ui/kit/MenuLabel.vue'
 
 /**
  * "AI", as in the prototype, with the current app's AI actions: a summary
- * of the folder ("Summarize board") and names by content ("Suggest names").
- * The button is always there: without a provider and a model the menu says
- * so and leads to the AI settings
+ * of the folder ("Summarize board"), names by content ("Suggest names") and
+ * ideas as new notes ("Generate ideas", an empty folder too: the person can
+ * say what about). The button is always there: without a provider and a
+ * model the menu says so and leads to the AI settings
  */
 const props = defineProps<{ workspace: WorkspaceStore; folder_id: string; name: string; align: 'start' | 'end' }>()
 
@@ -57,6 +60,29 @@ function suggest_names() {
 	open_bulk_rename(props.workspace, props.folder_id, nameable.value)
 }
 
+function sort_into_folders() {
+	const folder = container.value
+	if (!folder) return
+	open_sort({
+		workspace: props.workspace,
+		folder_id: folder.id,
+		board_name: folder.name,
+		entries: summary_entries(folder.children),
+	})
+}
+
+function generate_ideas() {
+	const folder = container.value
+	if (!folder) return
+	open_ideas({
+		workspace: props.workspace,
+		folder_id: folder.id,
+		board_name: folder.name,
+		entries: summary_entries(folder.children),
+		anchor: null,
+	})
+}
+
 /** The settings page, on its AI tab */
 function open_settings() {
 	settings_tab.value = 'ai'
@@ -78,19 +104,21 @@ function open_settings() {
 		</template>
 		<MenuLabel :label="t('ai.folder_title', { name })" />
 		<template v-if="!ai_ready">
-			<p class="hint">{{ t('ai.setup_hint') }}</p>
+			<!-- What is missing, exactly: often only the model -->
+			<p class="hint">{{ ai_base_check.ok ? t('ai.setup_model_hint') : t('ai.setup_hint') }}</p>
 			<MenuItem icon="tabler:settings" :label="t('ai.open_settings')" @select="open_settings" />
 		</template>
 		<p v-else-if="!usable" class="hint">{{ t('ai.read_only') }}</p>
-		<p v-else-if="!children.length" class="hint">{{ t('ai.empty') }}</p>
 		<template v-else>
-			<MenuItem icon="tabler:file-description" :label="t('ai.folder.about_folder')" @select="summarize" />
+			<MenuItem v-if="children.length" icon="tabler:file-description" :label="t('ai.folder.about_folder')" @select="summarize" />
 			<MenuItem
 				v-if="nameable.length"
 				icon="tabler:forms"
 				:label="t('ai.folder.rename_by_content')"
 				@select="suggest_names"
 			/>
+			<MenuItem v-if="children.length > 1" icon="tabler:folders" :label="t('ai.folder.tidy')" @select="sort_into_folders" />
+			<MenuItem icon="tabler:bulb" :label="t('ai.folder.ideas')" @select="generate_ideas" />
 		</template>
 	</DropMenu>
 </template>

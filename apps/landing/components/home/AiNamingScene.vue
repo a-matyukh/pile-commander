@@ -1,8 +1,12 @@
-<!-- AI tools as they ship: files picked on the board get names from a model
-     (a was → now list to accept), then the board gets a summary. Generate
-     ideas and Sort into folders are chips marked Soon.
+<!-- Names or a summary, one scene per tab: in "names" files picked on the
+     board get names from a model (a was → now list to accept); in
+     "summary" the board gets a short note next to it. Emits "done" at the
+     end of each loop, so the AI block can move to the next tab.
      SSR, no-JS and reduced motion get the finished frame. -->
 <script setup lang="ts">
+const props = defineProps<{ mode: "names" | "summary" }>();
+const emit = defineEmits<{ done: [] }>();
+
 const files = [
   { key: "harbor", kind: "photo", was: "IMG_4823.jpg", now: "Harbor at noon.jpg" },
   { key: "mood", kind: "note", was: "Note 3.md", now: "Warm light.md" },
@@ -21,14 +25,15 @@ const summary = [
 type Panel = "none" | "names" | "summary";
 
 const root = ref<HTMLElement>();
-// The finished frame; the loop rewinds it on the client.
+// The finished frame: the dialog of this mode, filled. The loop rewinds it on the client.
 const selected = ref(false);
-const panel = ref<Panel>("names");
+const panel = ref<Panel>(props.mode);
 const answered = ref(files.length);
 const applying = ref(false);
-const renamed = ref(true);
-const lines = ref(0);
+const renamed = ref(props.mode === "summary");
+const lines = ref(summary.length);
 const adding = ref(false);
+const added = ref(false);
 const fading = ref(false);
 
 let timers: ReturnType<typeof setTimeout>[] = [];
@@ -45,34 +50,49 @@ function stop() {
   timers = [];
 }
 
-function cycle() {
+function reset() {
   selected.value = false;
   panel.value = "none";
   answered.value = 0;
   applying.value = false;
-  renamed.value = false;
+  renamed.value = props.mode === "summary";
   lines.value = 0;
   adding.value = false;
+  added.value = false;
   fading.value = false;
+}
 
-  // Pick the files, ask for names.
-  at(700, () => (selected.value = true));
-  at(1500, () => (panel.value = "names"));
-  const asked = 2100;
-  files.forEach((_, i) => at(asked + i * 550, () => (answered.value = i + 1)));
-
-  // Accept: the cards take the new names.
-  const accept = asked + files.length * 550 + 900;
-  at(accept, () => (applying.value = true));
-  at(accept + 450, () => {
-    panel.value = "none";
-    applying.value = false;
-    renamed.value = true;
-    selected.value = false;
+/** The end of a loop: the block may move on; if it does not, the scene plays again. */
+function finish(after: number) {
+  at(after, () => (fading.value = true));
+  at(after + 800, () => {
+    emit("done");
+    cycle();
   });
+}
 
-  // Summarize the board.
-  const summarize = accept + 2000;
+function cycle() {
+  reset();
+  if (props.mode === "names") {
+    // Pick the files, ask for names
+    at(700, () => (selected.value = true));
+    at(1500, () => (panel.value = "names"));
+    const asked = 2100;
+    files.forEach((_, i) => at(asked + i * 550, () => (answered.value = i + 1)));
+    // Accept: the cards take the new names
+    const accept = asked + files.length * 550 + 900;
+    at(accept, () => (applying.value = true));
+    at(accept + 450, () => {
+      panel.value = "none";
+      applying.value = false;
+      renamed.value = true;
+      selected.value = false;
+    });
+    finish(accept + 2800);
+    return;
+  }
+  // Summarize the board; the summary lands as a note next to it
+  const summarize = 900;
   at(summarize, () => (panel.value = "summary"));
   summary.forEach((_, i) => at(summarize + 900 + i * 700, () => (lines.value = i + 1)));
   const add = summarize + 900 + summary.length * 700 + 900;
@@ -80,10 +100,9 @@ function cycle() {
   at(add + 450, () => {
     panel.value = "none";
     adding.value = false;
+    added.value = true;
   });
-
-  at(add + 2600, () => (fading.value = true));
-  at(add + 3400, cycle);
+  finish(add + 3000);
 }
 
 function start() {
@@ -111,7 +130,7 @@ onBeforeUnmount(() => {
   <div
     ref="root"
     class="ai"
-    :class="{ 'is-selected': selected, 'is-renamed': renamed, 'is-fading': fading }"
+    :class="{ 'is-selected': selected, 'is-renamed': renamed, 'is-added': added, 'is-fading': fading }"
     aria-hidden="true"
   >
     <p class="folder">
@@ -119,18 +138,6 @@ onBeforeUnmount(() => {
       Harbor moodboard
     </p>
 
-    <ul class="actions">
-      <li class="action" :class="{ 'is-on': panel === 'names' }">
-        <UIcon name="i-lucide-sparkles" class="size-[1em]" />
-        Name files
-      </li>
-      <li class="action" :class="{ 'is-on': panel === 'summary' }">
-        <UIcon name="i-lucide-sparkles" class="size-[1em]" />
-        Summarize
-      </li>
-      <li class="action action-soon">Generate ideas <span class="soon">Soon</span></li>
-      <li class="action action-soon">Sort into folders <span class="soon">Soon</span></li>
-    </ul>
 
     <article
       v-for="(file, i) in files"
@@ -157,7 +164,16 @@ onBeforeUnmount(() => {
       </p>
     </article>
 
-    <!-- The dialog: names to review, then the summary preview -->
+    <!-- The summary, added: an ordinary note next to what it sums up -->
+    <article class="summary-note">
+      <p class="summary-note-title">A quiet harbor</p>
+      <ul>
+        <li v-for="line in summary.slice(0, 2)" :key="line">{{ line }}</li>
+      </ul>
+      <p class="summary-note-name">Summary.md</p>
+    </article>
+
+    <!-- The dialog: names to review, or the summary preview -->
     <div class="panel" :class="{ 'is-open': panel !== 'none' }">
       <div class="panel-head">
         <p class="panel-title">{{ panel === "summary" ? "Summarize “Harbor moodboard”" : "Suggest names" }}</p>
@@ -224,6 +240,48 @@ p {
   margin: 0;
 }
 
+/* ── The summary note ────────────────────────────────── */
+
+.summary-note {
+  position: absolute;
+  top: 66%;
+  left: 4%;
+  width: 34%;
+  border: 1px solid rgb(252 211 77 / 0.9);
+  border-radius: 0.8em;
+  background: #fff7d6;
+  padding: 0.6em 0.8em;
+  color: rgb(120 53 15 / 0.85);
+  box-shadow: 0 0.7em 1.4em -0.8em rgb(15 23 42 / 0.4);
+  opacity: 0;
+  scale: 0.9;
+  transition:
+    opacity 0.4s ease,
+    scale 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.is-added .summary-note {
+  opacity: 1;
+  scale: 1;
+}
+
+.summary-note-title {
+  font-weight: 700;
+}
+
+.summary-note ul {
+  margin: 0.25em 0 0;
+  padding-left: 1.1em;
+  line-height: 1.35;
+}
+
+.summary-note-name {
+  margin-top: 0.35em;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: rgb(120 53 15 / 0.6);
+}
+
 .folder {
   position: absolute;
   top: 6%;
@@ -239,58 +297,11 @@ p {
   color: #475569;
 }
 
-/* ── Actions ─────────────────────────────────────────── */
 
-.actions {
-  position: absolute;
-  top: 6%;
-  right: 4%;
-  display: flex;
-  gap: 0.45em;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  white-space: nowrap;
-}
 
-.action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  border: 1px solid var(--color-pc-200);
-  border-radius: 999px;
-  background: white;
-  padding: 0.3em 0.75em;
-  font-weight: 600;
-  color: var(--color-pc-700);
-  transition:
-    background-color 0.25s ease,
-    color 0.25s ease,
-    border-color 0.25s ease;
-}
 
-.action.is-on {
-  border-color: var(--color-pc-500);
-  background: var(--color-pc-500);
-  color: white;
-}
 
-.action-soon {
-  border-color: var(--pc-gray-border);
-  background: rgb(255 255 255 / 0.7);
-  color: #94a3b8;
-}
 
-.soon {
-  border-radius: 999px;
-  background: hsl(213 40% 93%);
-  padding: 0.05em 0.45em;
-  font-size: 0.75em;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #64748b;
-}
 
 /* ── Files ───────────────────────────────────────────── */
 
@@ -617,15 +628,11 @@ p {
 
 /* Narrow cards: fewer things, same story. */
 @container (max-width: 520px) {
-  .action-soon,
   .file-rope,
   .row-rope {
     display: none;
   }
 
-  .actions {
-    font-size: 0.9em;
-  }
 
   .file-harbor {
     top: 22%;

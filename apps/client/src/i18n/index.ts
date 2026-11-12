@@ -42,3 +42,8 @@ export function plural_form(n: number): 'one' | 'few' | 'many' {
 export function count_items(n: number): string {
 	return t(`plural.items.${plural_form(n)}`, { n })
 }
+
+/** "1 заметка / 3 заметки / 5 заметок", "1 note / 5 notes" */
+export function count_notes(n: number): string {
+	return t(`plural.notes.${plural_form(n)}`, { n })
+}

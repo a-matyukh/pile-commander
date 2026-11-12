@@ -1,0 +1,124 @@
+/*
+ * The AI dialogs (names, summary, ideas, sorting) on the kit's Modal: the
+ * same status line, lists and notes in each. Not scoped: the Modal's portal
+ * sits in `.explorer`, so the shell's tokens apply.
+ */
+.aid {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-height: 0;
+	font-size: 13px;
+}
+.aid-status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.aid-hint {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.aid-error {
+	margin: 0;
+	color: var(--text-danger);
+}
+.aid-warn {
+	margin: 0;
+	font-size: 12px;
+	color: #854F0B;
+}
+.aid-spin {
+	flex: none;
+	animation: aid-spin 1s linear infinite;
+}
+@keyframes aid-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.aid-list {
+	display: flex;
+	flex-direction: column;
+	max-height: 50vh;
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	list-style: none;
+	border: 0.5px solid var(--border-strong);
+	border-radius: 8px;
+}
+.aid-list > li + li {
+	border-top: 0.5px solid var(--border);
+}
+.aid-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 34px;
+	padding: 4px 10px;
+}
+.aid-cell {
+	flex: 1 1 0;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.aid-muted {
+	color: var(--text-secondary);
+}
+.aid-dim {
+	color: var(--text-muted);
+}
+.aid-struck {
+	color: var(--text-muted);
+	text-decoration: line-through;
+}
+.aid-icon {
+	flex: none;
+	font-size: 15px;
+	color: var(--text-muted);
+}
+.aid-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-height: 55vh;
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	list-style: none;
+}
+.aid-card {
+	border: 0.5px solid var(--border-strong);
+	border-radius: 8px;
+	overflow: hidden;
+}
+.aid-preview {
+	max-height: 50vh;
+	overflow-y: auto;
+	padding: 12px;
+	border: 0.5px solid var(--border-strong);
+	border-radius: 8px;
+}
+.aid-tag {
+	flex: none;
+	padding: 1px 7px;
+	border-radius: 6px;
+	font-size: 11px;
+	font-weight: 500;
+	background: var(--surface-1);
+	color: var(--text-secondary);
+}
+.aid-tag--new {
+	background: var(--bg-accent);
+	color: var(--text-accent);
+}
+.aid-success {
+	color: var(--text-success);
+}

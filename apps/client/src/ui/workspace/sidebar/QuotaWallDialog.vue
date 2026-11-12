@@ -5,6 +5,10 @@ import {
 	update_quota_wall_event,
 } from '@pile-commander/file-manager'
 import { format_bytes } from '@/utils/format_bytes'
+import { t } from '@/i18n'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
+import Textarea from '@/ui/kit/Textarea.vue'
 import { require_supabase } from '@/services/cloud/client'
 import cloud from '@/store/cloud'
 import quota_wall, { close_quota_wall } from '@/store/quotaWall'
@@ -16,11 +20,11 @@ const is_saving = ref(false)
 const title = computed(() => {
 	switch (quota_wall.payload?.kind) {
 		case 'file_size':
-			return 'This file is too large'
+			return t('quota_wall.file_size_title')
 		case 'hub_limit':
-			return 'Hub listing limit'
+			return t('quota_wall.hub_limit_title')
 		default:
-			return 'Cloud storage is full'
+			return t('quota_wall.storage_title')
 	}
 })
 
@@ -28,20 +32,21 @@ const summary = computed(() => {
 	const p = quota_wall.payload
 	if (!p) return ''
 	if (p.kind === 'file_size') {
-		const size = p.file_bytes != null ? format_bytes(p.file_bytes) : 'this file'
-		const cap = p.max_file_bytes != null ? format_bytes(p.max_file_bytes) : 'the plan limit'
+		const size = p.file_bytes != null ? format_bytes(p.file_bytes) : t('quota_wall.this_file')
+		const cap = p.max_file_bytes != null ? format_bytes(p.max_file_bytes) : t('quota_wall.plan_limit')
 		const mime = quota_wall.file_mime ? ` (${quota_wall.file_mime})` : ''
-		return `${size}${mime} is over the ${cap} limit for one original.`
+		return t('quota_wall.file_size', { size, mime, cap })
 	}
 	if (p.kind === 'hub_limit') {
-		const used = p.used_bytes ?? 0
-		const max = p.quota_bytes ?? 3
-		return `Free can list ${max} workspaces on the Hub. You already have ${used}.`
+		return t('quota_wall.hub_limit', { max: p.quota_bytes ?? 3, used: p.used_bytes ?? 0 })
 	}
-	const used = p.used_bytes != null ? format_bytes(p.used_bytes) : 'your cloud'
-	const quota = p.quota_bytes != null ? format_bytes(p.quota_bytes) : 'your plan'
-	const extra = p.needed_bytes != null ? ` This add needs ${format_bytes(p.needed_bytes)}.` : ''
-	return `${used} of ${quota} is used.${extra} Delete files or empty trash to free space.`
+	const parts: string[] = []
+	if (p.used_bytes != null && p.quota_bytes != null) {
+		parts.push(t('quota_wall.storage', { used: format_bytes(p.used_bytes), quota: format_bytes(p.quota_bytes) }))
+	}
+	if (p.needed_bytes != null) parts.push(t('quota_wall.needs', { size: format_bytes(p.needed_bytes) }))
+	parts.push(t('quota_wall.free_space'))
+	return parts.join(' ')
 })
 
 watch(
@@ -90,30 +95,26 @@ async function submit_answer() {
 </script>
 
 <template>
-	<UModal
-		:open="quota_wall.open"
-		:title="title"
-		:ui="{ footer: 'justify-end' }"
-		@update:open="(value: boolean) => { if (!value) close_quota_wall() }"
-	>
-		<template #body>
-			<p class="mb-4 text-sm text-muted">{{ summary }}</p>
-			<p class="mb-2 text-sm">What are you collecting, and how much space do you need?</p>
-			<UTextarea
-				v-model="answer"
-				placeholder="Optional — photos, video, notes…"
-				:rows="3"
-				class="w-full"
-			/>
-		</template>
+	<Modal :open="quota_wall.open" :title="title" :description="summary" @update:open="(value: boolean) => { if (!value) close_quota_wall() }">
+		<div class="qw">
+			<p class="qw-question">{{ t('quota_wall.question') }}</p>
+			<Textarea v-model="answer" :placeholder="t('quota_wall.placeholder')" :rows="3" />
+		</div>
 		<template #footer>
-			<UButton color="neutral" variant="ghost" label="Close" @click="close_quota_wall" />
-			<UButton
-				label="Send"
-				:loading="is_saving"
-				:disabled="!answer.trim()"
-				@click="submit_answer"
-			/>
+			<Button @click="close_quota_wall">{{ t('dialog.close') }}</Button>
+			<Button variant="primary" :loading="is_saving" :disabled="!answer.trim()" @click="submit_answer">{{ t('quota_wall.send') }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>
+
+<style scoped>
+.qw {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.qw-question {
+	margin: 0;
+	font-size: 13px;
+}
+</style>

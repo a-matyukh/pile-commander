@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import type { WorkspaceStore } from '@/domain/Store'
 import { close_proposal, type ProposalPreview } from '@/services/mcp/propose'
 import type { NameEntry } from '@/services/ai/suggestName'
+import { close_agent_previews, register_ai_session_kind } from './aiSession'
 
 export type BulkRenameRequest = {
 	open: boolean
@@ -38,11 +39,19 @@ export function suggest_dialog_open(): boolean {
 	return bulk_rename_request.open && bulk_rename_request.source === 'suggest'
 }
 
+register_ai_session_kind({
+	own_open: suggest_dialog_open,
+	close_agent_preview() {
+		if (!bulk_rename_request.open || bulk_rename_request.source !== 'proposal') return
+		close_proposal(bulk_rename_request.proposal_id)
+		bulk_rename_request.open = false
+	},
+})
+
 export function open_bulk_rename(workspace: WorkspaceStore, folder_id: string, entries: NameEntry[]) {
 	if (!entries.length) return
-	if (bulk_rename_request.open && bulk_rename_request.source === 'proposal') {
-		close_proposal(bulk_rename_request.proposal_id)
-	}
+	// The person's action wins: an agent preview that waits closes, dismissed
+	close_agent_previews()
 	bulk_rename_request.source = 'suggest'
 	bulk_rename_request.client_name = ''
 	bulk_rename_request.reason = ''

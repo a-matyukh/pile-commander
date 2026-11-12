@@ -52,6 +52,10 @@ export default defineNuxtConfig({
       allowIndexing: false,
     },
   },
+  // The roadmap page is gone: its last direction, AI, now ships on the home page
+  routeRules: {
+    "/vision": { redirect: "/" },
+  },
   app: {
     head: {
       htmlAttrs: { lang: "en", "data-color-mode-forced": "light" },

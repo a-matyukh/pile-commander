@@ -4,13 +4,15 @@ import { Icon } from '@iconify/vue'
 const props = defineProps<{
 	disabled?: boolean
 	label?: string
+	/** Some of a group checked: a dash, and a click checks them all */
+	indeterminate?: boolean
 }>()
 
 const model = defineModel<boolean>({ required: true })
 
 function toggle() {
 	if (props.disabled) return
-	model.value = !model.value
+	model.value = props.indeterminate ? true : !model.value
 }
 </script>
 
@@ -19,13 +21,14 @@ function toggle() {
 		type="button"
 		role="checkbox"
 		class="cb"
-		:class="{ on: model, off: disabled }"
-		:aria-checked="model"
+		:class="{ on: model || indeterminate, off: disabled }"
+		:aria-checked="indeterminate ? 'mixed' : model"
 		:aria-label="label"
 		:disabled="disabled"
 		@click="toggle"
 	>
-		<Icon v-if="model" icon="tabler:check" />
+		<Icon v-if="indeterminate" icon="tabler:minus" />
+		<Icon v-else-if="model" icon="tabler:check" />
 	</button>
 </template>
 

@@ -75,6 +75,9 @@ import { isCanvasToolAllowed, useCanvasToolbarPrefs } from './useCanvasToolbarPr
 import { clearCanvasToolbarInset, setCanvasToolbarInset } from './canvasToolbarInset'
 import { useHoverClickMenu } from './useHoverClickMenu'
 import { useRevealEditingNote } from '../revealEditingNote'
+import { show_spatial_folder } from '@/store/aiIdeas'
+import IdeaGhosts from '@/ui/ai/IdeaGhosts.vue'
+import IdeasBar from '@/ui/ai/IdeasBar.vue'
 
 const { folderId, container, isEmbedded } = useFolderContainerScope()
 const isMdUp = useMediaQuery('(min-width: 768px)')
@@ -373,6 +376,31 @@ const {
 } = useVueFlow(flowId)
 
 provide(canvasZoomKey, () => viewport.value.zoom || 1)
+
+// Ideas for this folder show on this canvas as cards, not in a dialog
+let release_ideas: (() => void) | null = null
+onMounted(() => {
+	if (!isEmbedded) release_ideas = show_spatial_folder(folderId.value)
+})
+onUnmounted(() => release_ideas?.())
+
+/** Brings proposed cards into view, at the same zoom, when they are outside it. */
+function reveal_rect(rect: { x: number; y: number; width: number; height: number }) {
+	const wrapper = flowWrapper.value
+	if (!wrapper) return
+	const { x, y, zoom } = viewport.value
+	const scale = zoom || 1
+	const left = -x / scale
+	const top = -y / scale
+	const right = left + wrapper.clientWidth / scale
+	const bottom = top + wrapper.clientHeight / scale
+	if (rect.x >= left && rect.y >= top && rect.x + rect.width <= right && rect.y + rect.height <= bottom) return
+	void setViewport({
+		x: wrapper.clientWidth / 2 - (rect.x + rect.width / 2) * scale,
+		y: wrapper.clientHeight / 2 - (rect.y + rect.height / 2) * scale,
+		zoom: scale,
+	}, { duration: 300 })
+}
 
 // A note opened for typing on a phone stays above the keyboard
 useRevealEditingNote({
@@ -946,6 +974,8 @@ function onSectionPointerDown(event: PointerEvent) {
 				:viewport="viewportSnapshot"
 			/>
 			<EmptyPaneHint :empty="isCanvasEmpty" />
+			<IdeaGhosts v-if="!isEmbedded" :folder-id="folderId" :viewport="viewportSnapshot" @reveal="reveal_rect" />
+			<IdeasBar v-if="!isEmbedded" :folder-id="folderId" :bottom="84" />
 			</div>
 			<CanvasDock
 				v-if="!toolbarPrefs.classic && !toolbarPrefs.hidden"

@@ -13,6 +13,50 @@ export function strip_think(text: string): string {
 }
 
 /**
+ * The first JSON object in a model answer, or null. The reasoning block is
+ * dropped first and a fenced block (```json) is tried before the rest, so
+ * prose around the answer does not matter. A brace inside a string does not
+ * end the object; an object that does not parse is passed over.
+ */
+export function extract_json(text: string): unknown {
+	const clean = strip_think(text)
+	const fence = /```(?:json)?[^\S\n]*\n?([\s\S]*?)```/i.exec(clean)
+	for (const candidate of fence ? [fence[1]!, clean] : [clean]) {
+		const found = first_object(candidate)
+		if (found !== undefined) return found
+	}
+	return null
+}
+
+/** A balanced `{…}` that parses, from the first one that does. */
+function first_object(text: string): unknown {
+	for (let start = text.indexOf('{'); start !== -1; start = text.indexOf('{', start + 1)) {
+		let depth = 0
+		let in_string = false
+		let escaped = false
+		for (let at = start; at < text.length; at++) {
+			const ch = text[at]
+			if (in_string) {
+				if (escaped) escaped = false
+				else if (ch === '\\') escaped = true
+				else if (ch === '"') in_string = false
+				continue
+			}
+			if (ch === '"') in_string = true
+			else if (ch === '{') depth++
+			else if (ch === '}' && --depth === 0) {
+				try {
+					return JSON.parse(text.slice(start, at + 1))
+				} catch {
+					break
+				}
+			}
+		}
+	}
+	return undefined
+}
+
+/**
  * Model text is untrusted, and a summary has no use for HTML. Every `<` is
  * escaped, so marked shows any tag as text: a `video` poster, a `picture`
  * source, a CSS background, an unclosed tag at the end of a stream. Markdown

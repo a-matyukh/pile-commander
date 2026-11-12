@@ -27,7 +27,7 @@ const notes = [
   >
     <div class="rounded-2xl border border-[var(--pc-gray-border)] bg-[var(--pc-gray-surface)] p-3 sm:p-4">
       <div class="aspect-[16/9] overflow-hidden rounded-xl">
-        <VisionSpace />
+        <HomeSpaceScene />
       </div>
     </div>
 

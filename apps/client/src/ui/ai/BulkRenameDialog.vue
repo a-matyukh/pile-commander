@@ -1,25 +1,26 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window'
+import { Icon } from '@iconify/vue'
 import { count_items, t } from '@/i18n'
-import { is_desktop } from '@/isDesktop'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { bulk_rename_request, close_bulk_rename } from '@/store/aiBulkRename'
 import { new_row, planned_names, rename_entry, type BulkRow } from '@/services/ai/bulkRename'
 import { suggest_batch } from '@/services/ai/bulkSuggest'
-import { notify_proposal, signal_unfocused_proposal } from '@/services/mcp/attention'
+import { signal_agent_proposal } from '@/services/mcp/attention'
 import { basename_of } from '@/services/mcp/path'
 import { close_proposal, confirm_proposal, proposal_decisions, ready_proposal_rows } from '@/services/mcp/propose'
 import { record_action } from '@/store/history'
+import Button from '@/ui/kit/Button.vue'
+import Checkbox from '@/ui/kit/Checkbox.vue'
+import Modal from '@/ui/kit/Modal.vue'
 import AiReachBadge from './AiReachBadge.vue'
+import './aiDialog.css'
 
 type Phase = 'working' | 'review' | 'applying' | 'done'
 
 const toast = useToast()
-/** Proposal id that already bounced the Dock and posted its notification. */
-let signaled_proposal: string | null = null
 
 const rows = ref<BulkRow[]>([])
 const phase = ref<Phase>('working')
@@ -36,10 +37,10 @@ function sibling_names(): string[] {
 const is_proposal = computed(() => bulk_rename_request.source === 'proposal')
 const dialog_title = computed(() => is_proposal.value
 	? (bulk_rename_request.client_name || t('bulk_rename.agent'))
-	: 'Suggest names')
+	: t('bulk_rename.title'))
 const dialog_description = computed(() => is_proposal.value
 	? bulk_rename_request.reason
-	: `${rows.value.length} ${rows.value.length === 1 ? 'item' : 'items'} · ${model_label(ai_settings.value.model)}`)
+	: t('bulk_rename.description', { items: count_items(rows.value.length), model: model_label(ai_settings.value.model) }))
 
 const planned = computed(() => planned_names(rows.value, sibling_names()))
 const to_rename = computed(() => rows.value.filter((row) => {
@@ -51,29 +52,12 @@ const answered = computed(() => rows.value.filter(row => !['waiting', 'preparing
 const prepared = ref<number | null>(0)
 
 function signal_proposal() {
-	if (!is_desktop) return
-	const id = bulk_rename_request.proposal_id
-	if (!id || signaled_proposal === id) return
-	signaled_proposal = id
 	const title = bulk_rename_request.client_name || t('bulk_rename.agent')
 	const body = t('bulk_rename.notify', {
 		n: bulk_rename_request.entries.length,
 		folder: basename_of(bulk_rename_request.folder_id),
 	})
-	void (async () => {
-		try {
-			const win = getCurrentWindow()
-			const focused = await win.isFocused()
-			await signal_unfocused_proposal({
-				focused,
-				already: false,
-				bounce: () => win.requestUserAttention(UserAttentionType.Informational),
-				notify: () => notify_proposal(title, body),
-			})
-		} catch (error) {
-			console.error('[mcp] proposal attention', error)
-		}
-	})()
+	signal_agent_proposal(bulk_rename_request.proposal_id, title, body)
 }
 
 async function start() {
@@ -117,8 +101,8 @@ async function start() {
 	})
 	if (controller !== own) return
 	controller = null
-	if (!outcome.consented) notice.value = 'Nothing was sent.'
-	else if (outcome.stop_reason) notice.value = `Stopped: ${outcome.stop_reason}`
+	if (!outcome.consented) notice.value = t('bulk_rename.nothing_sent')
+	else if (outcome.stop_reason) notice.value = t('bulk_rename.stopped_because', { reason: outcome.stop_reason })
 	phase.value = 'review'
 }
 
@@ -185,7 +169,7 @@ async function apply() {
 	report_batch(renamed, batch.length)
 	if (failed) {
 		rows.value = rows.value.filter(row => row.status === 'rename_failed')
-		notice.value = `${failed} ${failed === 1 ? 'file was' : 'files were'} not renamed.`
+		notice.value = t('bulk_rename.not_renamed', { n: failed })
 		phase.value = 'done'
 	} else {
 		close_bulk_rename()
@@ -252,12 +236,12 @@ function on_open_change(open: boolean) {
 
 function status_text(row: BulkRow): string {
 	switch (row.status) {
-		case 'waiting': return 'Waiting…'
-		case 'preparing': return 'Reading…'
-		case 'asking': return 'Asking…'
-		case 'same': return 'Keeps its name'
-		case 'stopped': return row.reason ?? 'Stopped'
-		case 'renamed': return 'Renamed'
+		case 'waiting': return t('bulk_rename.waiting')
+		case 'preparing': return t('bulk_rename.reading')
+		case 'asking': return t('bulk_rename.asking')
+		case 'same': return t('bulk_rename.same')
+		case 'stopped': return row.reason ?? t('bulk_rename.stopped')
+		case 'renamed': return t('bulk_rename.done')
 		default: return row.reason ?? ''
 	}
 }
@@ -268,91 +252,64 @@ watch(() => bulk_rename_request.run, () => {
 </script>
 
 <template>
-	<UModal
+	<Modal
 		:open="bulk_rename_request.open"
 		:title="dialog_title"
 		:description="dialog_description"
-		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
+		:width="640"
 		@update:open="on_open_change"
 	>
-		<template #body>
-			<div class="flex flex-col gap-3">
-				<div class="flex items-center gap-2 text-xs text-muted">
-					<AiReachBadge v-if="!is_proposal && ai_base_check.ok" :reach="ai_base_check.reach" />
-					<template v-if="!is_proposal">
-						<span v-if="phase === 'working' && prepared !== null">Preparing {{ prepared }} of {{ rows.length }}…</span>
-						<span v-else-if="phase === 'working'">{{ answered }} of {{ rows.length }} answered</span>
-						<span v-else-if="phase === 'review'">Uncheck what to keep. Nothing is renamed until you confirm.</span>
-					</template>
-					<span v-else-if="phase === 'review'">{{ t('bulk_rename.hint') }}</span>
-				</div>
-
-				<p v-if="notice" class="text-sm text-error">{{ notice }}</p>
-
-				<ul class="flex max-h-[50vh] flex-col divide-y divide-default overflow-y-auto rounded-md border border-default">
-					<li v-for="row in rows" :key="row.entry.id" class="flex items-center gap-2 px-2.5 py-1.5 text-sm">
-						<UCheckbox
-							v-model="row.checked"
-							:disabled="row.status !== 'ready' || phase !== 'review'"
-							:aria-label="`Rename ${row.entry.name}`"
-						/>
-						<span class="min-w-0 flex-1 truncate text-muted" :title="row.entry.name">{{ row.entry.name }}</span>
-						<UIcon name="i-lucide:arrow-right" class="size-3.5 shrink-0 text-dimmed" />
-						<span
-							v-if="row.status === 'ready'"
-							class="min-w-0 flex-1 truncate"
-							:class="row.checked ? 'text-default' : 'text-dimmed line-through'"
-							:title="planned.get(row.entry.id) ?? row.suggestion ?? ''"
-						>{{ planned.get(row.entry.id) ?? row.suggestion }}</span>
-						<span
-							v-else
-							class="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs"
-							:class="['failed', 'rename_failed'].includes(row.status) ? 'text-error' : 'text-muted'"
-							:title="status_text(row)"
-						>
-							<UIcon v-if="row.status === 'asking' || row.status === 'preparing'" name="i-lucide:loader-circle" class="size-3.5 shrink-0 animate-spin" />
-							{{ status_text(row) }}
-						</span>
-					</li>
-				</ul>
+		<div class="aid">
+			<div class="aid-status">
+				<AiReachBadge v-if="!is_proposal && ai_base_check.ok" :reach="ai_base_check.reach" />
+				<template v-if="!is_proposal && phase === 'working'">
+					<span v-if="prepared !== null">{{ t('bulk_rename.preparing', { done: prepared, total: rows.length }) }}</span>
+					<span v-else>{{ t('bulk_rename.answered', { done: answered, total: rows.length }) }}</span>
+				</template>
+				<span v-else-if="phase === 'review'">{{ t('bulk_rename.hint') }}</span>
 			</div>
-		</template>
 
+			<p v-if="notice" class="aid-error">{{ notice }}</p>
+
+			<ul class="aid-list">
+				<li v-for="row in rows" :key="row.entry.id" class="aid-row">
+					<Checkbox
+						v-model="row.checked"
+						:disabled="row.status !== 'ready' || phase !== 'review'"
+						:label="t('bulk_rename.check', { name: row.entry.name })"
+					/>
+					<span class="aid-cell aid-muted" :title="row.entry.name">{{ row.entry.name }}</span>
+					<Icon icon="tabler:arrow-right" class="aid-icon" />
+					<span
+						v-if="row.status === 'ready'"
+						class="aid-cell"
+						:class="{ 'aid-struck': !row.checked }"
+						:title="planned.get(row.entry.id) ?? row.suggestion ?? ''"
+					>{{ planned.get(row.entry.id) ?? row.suggestion }}</span>
+					<span
+						v-else
+						class="aid-cell aid-status"
+						:class="{ 'aid-error': ['failed', 'rename_failed'].includes(row.status) }"
+						:title="status_text(row)"
+					>
+						<Icon v-if="row.status === 'asking' || row.status === 'preparing'" icon="tabler:loader-2" class="aid-spin" />
+						{{ status_text(row) }}
+					</span>
+				</li>
+			</ul>
+		</div>
+
+		<template #aside>
+			<template v-if="phase === 'review'">{{ t('bulk_rename.to_rename', { n: to_rename.length }) }}</template>
+		</template>
 		<template #footer>
-			<span class="text-xs text-muted">
-				<template v-if="phase === 'review'">
-					{{ is_proposal ? t('bulk_rename.to_rename', { n: to_rename.length }) : `${to_rename.length} to rename` }}
-				</template>
-			</span>
-			<div class="flex gap-2">
-				<template v-if="phase === 'working'">
-					<UButton label="Stop" icon="i-lucide:square" color="neutral" variant="outline" @click="stop" />
-				</template>
-				<template v-else-if="phase === 'review'">
-					<UButton
-						:label="is_proposal ? t('bulk_rename.cancel') : 'Cancel'"
-						color="neutral"
-						variant="outline"
-						@click="on_open_change(false)"
-					/>
-					<UButton
-						:label="is_proposal ? t('bulk_rename.rename', { n: to_rename.length }) : `Rename ${to_rename.length}`"
-						:disabled="!to_rename.length"
-						@click="apply"
-					/>
-				</template>
-				<template v-else-if="phase === 'applying'">
-					<UButton :label="is_proposal ? t('bulk_rename.renaming') : 'Renaming…'" loading disabled />
-				</template>
-				<template v-else>
-					<UButton
-						:label="is_proposal ? t('bulk_rename.close') : 'Close'"
-						color="neutral"
-						variant="outline"
-						@click="on_open_change(false)"
-					/>
-				</template>
-			</div>
+			<Button v-if="phase === 'working'" icon="tabler:player-stop" @click="stop">{{ t('bulk_rename.stop') }}</Button>
+			<template v-else-if="phase === 'review'">
+				<Button @click="on_open_change(false)">{{ t('bulk_rename.cancel') }}</Button>
+				<Button variant="primary" :disabled="!to_rename.length" @click="apply">{{ t('bulk_rename.rename', { n: to_rename.length }) }}</Button>
+			</template>
+			<Button v-else-if="phase === 'applying'" variant="primary" loading>{{ t('bulk_rename.renaming') }}</Button>
+			<Button v-else @click="on_open_change(false)">{{ t('bulk_rename.close') }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>

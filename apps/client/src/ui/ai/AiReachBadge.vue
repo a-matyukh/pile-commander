@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
+import { t } from '@/i18n'
 import type { AiReach } from '@/services/ai/locality'
 
-/** `label`: the caption in the interface language; the English one without it */
+/** `label`: another caption; the reach's own name in the interface language without it */
 const props = defineProps<{ reach: AiReach; label?: string }>()
 
-const BADGES: Record<AiReach, { label: string; icon: string }> = {
-	local: { label: 'This computer', icon: 'tabler:lock' },
-	network: { label: 'Local network', icon: 'tabler:home' },
-	cloud: { label: 'Cloud', icon: 'tabler:cloud' },
+const ICONS: Record<AiReach, string> = {
+	local: 'tabler:lock',
+	network: 'tabler:home',
+	cloud: 'tabler:cloud',
 }
 
-const badge = computed(() => BADGES[props.reach])
+const badge = computed(() => ({ icon: ICONS[props.reach], label: t(`ai_reach.${props.reach}`) }))
 </script>
 
 <template>

@@ -1,44 +1,64 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Icon } from '@iconify/vue'
+import { t } from '@/i18n'
 import { ai_consent_request, answer_ai_consent } from '@/store/aiConsent'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
 
-// The modal is raised (z-[60]): it opens over the dialog that asked for it,
-// whose portal sits later in <body> and would otherwise cover it.
+// Opened later than the dialog that asked for it, so its portal comes
+// later in the Explorer and stands over that dialog.
+
+const open = computed({
+	get: () => ai_consent_request.open,
+	set: (value: boolean) => {
+		if (!value) answer_ai_consent(false)
+	},
+})
+
+const ICONS = { cloud: 'tabler:cloud', images: 'tabler:photo', shared: 'tabler:users' } as const
 
 const lines = computed(() => {
 	const host = ai_consent_request.host
-	return ai_consent_request.needs.map((need) => {
-		switch (need) {
-			case 'cloud':
-				return { icon: 'i-lucide:cloud', text: `File names and note text will be sent to ${host} to answer the request.` }
-			case 'images':
-				return { icon: 'i-lucide:image', text: `Images will be sent to ${host}, reduced to 512 px.` }
-			case 'shared':
-				return { icon: 'i-lucide:users', text: 'This workspace is shared: files by other members will be sent too.' }
-		}
-	})
+	return ai_consent_request.needs.map(need => ({ need, icon: ICONS[need], text: t(`ai_consent.${need}`, { host }) }))
 })
 </script>
 
 <template>
-	<UModal
-		:open="ai_consent_request.open"
-		:title="`Send to ${ai_consent_request.host}?`"
-		description="The provider is in the cloud. You'll be asked once for each of these."
-		:ui="{ overlay: 'z-[60]', content: 'z-[60]', footer: 'justify-end' }"
-		@update:open="(value: boolean) => { if (!value) answer_ai_consent(false) }"
-	>
-		<template #body>
-			<ul class="flex flex-col gap-2 text-sm">
-				<li v-for="line in lines" :key="line.icon" class="flex items-start gap-2">
-					<UIcon :name="line.icon" class="mt-0.5 size-4 shrink-0 text-muted" />
-					<span>{{ line.text }}</span>
-				</li>
-			</ul>
-		</template>
+	<Modal v-model:open="open" :title="t('ai_consent.title', { host: ai_consent_request.host })" :description="t('ai_consent.description')">
+		<ul class="lines">
+			<li v-for="line in lines" :key="line.need" class="line">
+				<Icon :icon="line.icon" class="icon" />
+				<span>{{ line.text }}</span>
+			</li>
+		</ul>
 		<template #footer>
-			<UButton label="Cancel" color="neutral" variant="outline" @click="answer_ai_consent(false)" />
-			<UButton label="Send" @click="answer_ai_consent(true)" />
+			<Button @click="answer_ai_consent(false)">{{ t('ai_consent.cancel') }}</Button>
+			<Button variant="primary" @click="answer_ai_consent(true)">{{ t('ai_consent.send') }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>
+
+<style scoped>
+.lines {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 2px 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: 13px;
+	line-height: 1.45;
+}
+.line {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+.icon {
+	flex-shrink: 0;
+	margin-top: 1px;
+	font-size: 16px;
+	color: var(--text-muted);
+}
+</style>

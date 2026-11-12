@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { watchDebounced } from '@vueuse/core'
 import { invoke } from '@tauri-apps/api/core'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { agent_access, set_agent_access } from '@/store/agentAccess'
-import { ai_base_check, ai_settings } from '@/store/ai'
+import { ai_base_check, ai_settings, connection_check, forget_connection_checks, record_connection_check } from '@/store/ai'
 import { ai_transport } from '@/services/ai/client'
 import { explain_ai_error } from '@/services/ai/errors'
 import { may_carry_key } from '@/services/ai/locality'
@@ -85,7 +85,28 @@ const model_items = computed(() => {
 	return ids.map(id => ({ label: model_label(id), value: id }))
 })
 const testing = ref(false)
-const test_result = ref<{ ok: boolean; text: string } | null>(null)
+/** The last check of this address + model, kept across restarts */
+const test_result = computed(() => connection_check(ai_settings.value.base_url, ai_settings.value.model))
+/**
+ * The setup as numbered steps, each with how it stands. Provider, address
+ * and model are needed; the key and the test are optional (a model on
+ * this computer needs no key). The first needed step not done is current.
+ */
+type StepState = 'done' | 'current' | 'todo' | 'optional' | 'error'
+const step_states = computed<Record<'provider' | 'address' | 'key' | 'test' | 'model', StepState>>(() => {
+	const address_ok = ai_base_check.value.ok
+	const model_ok = !!ai_settings.value.model.trim()
+	const needed: [string, boolean][] = [['provider', !!ai_settings.value.preset], ['address', address_ok], ['model', model_ok]]
+	const current = needed.find(([, done]) => !done)?.[0]
+	const state_of = (id: string, done: boolean): StepState => (done ? 'done' : id === current ? 'current' : 'todo')
+	return {
+		provider: state_of('provider', !!ai_settings.value.preset),
+		address: ai_settings.value.base_url && !address_ok ? 'error' : state_of('address', address_ok),
+		key: has_key.value ? 'done' : key_error.value ? 'error' : 'optional',
+		test: test_result.value ? (test_result.value.ok ? 'done' : 'error') : 'optional',
+		model: state_of('model', model_ok),
+	}
+})
 const agent_busy = ref(false)
 const agent_error = ref<string | null>(null)
 const is_dev = import.meta.env.DEV
@@ -188,6 +209,7 @@ async function save_key() {
 		await transport.set_key(ai_settings.value.base_url, key_input.value)
 		key_input.value = ''
 		has_key.value = true
+		forget_connection_checks(ai_settings.value.base_url)
 	} catch (error) {
 		key_error.value = explain_ai_error(error, { base_url: ai_settings.value.base_url, operation: 'models' })
 	} finally {
@@ -202,6 +224,7 @@ async function remove_key() {
 	try {
 		await transport.delete_key(ai_settings.value.base_url)
 		has_key.value = false
+		forget_connection_checks(ai_settings.value.base_url)
 	} catch (error) {
 		key_error.value = explain_ai_error(error, { base_url: ai_settings.value.base_url, operation: 'models' })
 	} finally {
@@ -212,22 +235,22 @@ async function remove_key() {
 async function test_connection() {
 	if (!ai_base_check.value.ok) return
 	testing.value = true
-	test_result.value = null
 	const base_url = ai_settings.value.base_url
+	record_connection_check(base_url, ai_settings.value.model, null)
 	try {
 		const ids = await transport.list_models(base_url)
 		models.value = ids
 		const model = ai_settings.value.model
 		if (!model && ids.length === 1) set_model(ids[0])
 		const missing = model && ids.length && !ids.includes(model)
-		test_result.value = {
+		record_connection_check(base_url, ai_settings.value.model, {
 			ok: !missing,
 			text: missing
 				? caption('test_missing', `Connected, but “${model_label(model)}” isn't among the ${ids.length} models of this provider.`, { model: model_label(model), n: ids.length })
 				: caption('test_ok', `Connected: ${ids.length} ${ids.length === 1 ? 'model' : 'models'} available.`, { n: ids.length }),
-		}
+		})
 	} catch (error) {
-		test_result.value = {
+		record_connection_check(base_url, ai_settings.value.model, {
 			ok: false,
 			text: explain_ai_error(error, {
 				base_url,
@@ -236,7 +259,7 @@ async function test_connection() {
 				has_key: has_key.value,
 				web: !is_desktop,
 			}),
-		}
+		})
 	} finally {
 		testing.value = false
 	}
@@ -247,15 +270,10 @@ if (props.part !== 'mcp') {
 		() => ai_settings.value.base_url,
 		() => {
 			models.value = []
-			test_result.value = null
 			void refresh_key_status()
 		},
 		{ debounce: 400, immediate: true },
 	)
-
-	watch(() => ai_settings.value.model, () => {
-		test_result.value = null
-	})
 }
 </script>
 
@@ -274,7 +292,12 @@ if (props.part !== 'mcp') {
 						: 'Suggest names and summarize boards with a model you choose. Results are plain files and names; nothing changes without your OK.' }}
 				</p>
 
-				<div class="fld">
+				<div class="fld step">
+					<span class="mark" :class="`mark--${step_states.provider}`" aria-hidden="true">
+						<Icon v-if="step_states.provider === 'done'" icon="tabler:check" />
+						<Icon v-else-if="step_states.provider === 'error'" icon="tabler:exclamation-mark" />
+						<template v-else>1</template>
+					</span>
 					<span class="lb">{{ caption('provider', 'Provider') }}</span>
 					<div class="line">
 						<div class="grow">
@@ -292,7 +315,12 @@ if (props.part !== 'mcp') {
 					</div>
 				</div>
 
-				<div class="fld">
+				<div class="fld step">
+					<span class="mark" :class="`mark--${step_states.address}`" aria-hidden="true">
+						<Icon v-if="step_states.address === 'done'" icon="tabler:check" />
+						<Icon v-else-if="step_states.address === 'error'" icon="tabler:exclamation-mark" />
+						<template v-else>2</template>
+					</span>
 					<span class="lb">{{ caption('address', 'Address') }}</span>
 					<TextField
 						v-model="base_url_text"
@@ -303,7 +331,12 @@ if (props.part !== 'mcp') {
 					<p v-if="ai_settings.base_url && !ai_base_check.ok" class="err">{{ ai_base_check.message }}</p>
 				</div>
 
-				<div class="fld">
+				<div class="fld step">
+					<span class="mark" :class="`mark--${step_states.key}`" aria-hidden="true">
+						<Icon v-if="step_states.key === 'done'" icon="tabler:check" />
+						<Icon v-else-if="step_states.key === 'error'" icon="tabler:exclamation-mark" />
+						<template v-else>3</template>
+					</span>
 					<span class="lb">
 						{{ caption('key', 'API key') }}
 						<span class="aside">{{ has_key ? caption('key_saved', 'Saved') : caption('key_optional', 'Optional') }}</span>
@@ -337,12 +370,17 @@ if (props.part !== 'mcp') {
 						{{ caption('key_plain_http', 'A key is never sent over plain http on the network.') }}
 					</p>
 					<p v-else-if="key_hint" class="note">{{ key_hint }}</p>
+					<p v-if="!is_desktop" class="note">
+						{{ caption('key_tab_only', 'In the browser the key is kept for this tab only and never stored.') }}
+					</p>
 				</div>
-				<p v-if="!is_desktop" class="note">
-					{{ caption('key_tab_only', 'In the browser the key is kept for this tab only and never stored.') }}
-				</p>
 
-				<div class="fld">
+				<div class="fld step">
+					<span class="mark" :class="`mark--${step_states.test}`" aria-hidden="true">
+						<Icon v-if="step_states.test === 'done'" icon="tabler:check" />
+						<Icon v-else-if="step_states.test === 'error'" icon="tabler:exclamation-mark" />
+						<template v-else>4</template>
+					</span>
 					<Button
 						icon="tabler:plug"
 						:loading="testing"
@@ -354,9 +392,15 @@ if (props.part !== 'mcp') {
 					<p v-if="test_result" class="note" :class="test_result.ok ? 'ok' : 'err'">{{ test_result.text }}</p>
 				</div>
 
-				<div class="fld">
+				<div class="fld step step--last">
+					<span class="mark" :class="`mark--${step_states.model}`" aria-hidden="true">
+						<Icon v-if="step_states.model === 'done'" icon="tabler:check" />
+						<Icon v-else-if="step_states.model === 'error'" icon="tabler:exclamation-mark" />
+						<template v-else>5</template>
+					</span>
 					<span class="lb">{{ caption('model', 'Model') }}</span>
-					<div class="combo">
+					<!-- No model yet: the one field left is marked, calmly -->
+					<div class="combo" :class="{ 'combo--missing': !ai_settings.model.trim() }">
 						<TextField
 							v-model="model_text"
 							:placeholder="caption('model_placeholder', 'e.g. gemma3 or openai/gpt-4o-mini')"
@@ -382,6 +426,9 @@ if (props.part !== 'mcp') {
 							/>
 						</DropMenu>
 					</div>
+					<p v-if="!ai_settings.model.trim()" class="note note--missing">
+						{{ caption('model_missing', 'Pick a model: AI actions appear once it is set.') }}
+					</p>
 				</div>
 
 				<div class="fld">
@@ -468,6 +515,58 @@ if (props.part !== 'mcp') {
 	align-items: stretch;
 	gap: 6px;
 }
+/* Setup steps: a numbered mark left of each field, a line down to the next */
+.step {
+	position: relative;
+	padding-left: 34px;
+}
+.step:not(.step--last)::before {
+	content: '';
+	position: absolute;
+	top: 26px;
+	bottom: -12px;
+	left: 10.5px;
+	width: 1px;
+	background: var(--border);
+}
+.mark {
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	box-sizing: border-box;
+	border-radius: 50%;
+	border: 1px solid var(--border-strong);
+	background: var(--surface-1, white);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+}
+.mark :deep(svg) {
+	font-size: 13px;
+}
+.mark--done {
+	border-color: rgb(34 197 94);
+	background: rgb(34 197 94);
+	color: white;
+}
+.mark--current {
+	border-color: rgb(245 158 11);
+	background: rgb(255 247 237);
+	color: rgb(180 83 9);
+	box-shadow: 0 0 0 3px rgb(245 158 11 / 0.15);
+}
+.mark--optional {
+	border-style: dashed;
+}
+.mark--error {
+	border-color: var(--text-danger);
+	background: var(--text-danger);
+	color: white;
+}
 .fld :deep(.btn) {
 	align-self: flex-start;
 }
@@ -533,6 +632,17 @@ if (props.part !== 'mcp') {
 	background: var(--surface-2);
 	color: var(--text-muted);
 	cursor: pointer;
+}
+.combo--missing :deep(.tf),
+.combo--missing .pick {
+	border-color: rgb(245 158 11 / 0.6);
+	background: rgb(255 247 237);
+}
+.combo--missing :deep(.tf) {
+	box-shadow: 0 0 0 3px rgb(245 158 11 / 0.12);
+}
+.note--missing {
+	color: rgb(180 83 9);
 }
 .pick :deep(svg) {
 	font-size: 15px;

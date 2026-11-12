@@ -16,6 +16,8 @@ import { open_bulk_rename } from '@/store/aiBulkRename'
 import { name_target_kind } from '@/services/ai/naming'
 import { layer_order, type LayerStep } from '@/services/board/layerOrder'
 import { open_summary } from '@/store/aiSummary'
+import { open_ideas } from '@/store/aiIdeas'
+import { open_sort } from '@/store/aiSort'
 import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 function toBulkItem(widget: FolderContainerWidgetChild): BulkRemoveItem {
@@ -173,6 +175,32 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		})
 	}
 
+	/** Ideas from what is selected, placed to its right. */
+	function openIdeas() {
+		const ws = workspace.value
+		const container = scope.container.value
+		if (!ws || !container) return
+		const selected = new Set(selectedIds.value)
+		const widgets = container.children.filter(child => selected.has(child.id))
+		open_ideas({
+			workspace: ws,
+			folder_id: container.id,
+			board_name: container.name,
+			entries: summary_entries(widgets),
+			anchor: summary_position(widgets),
+		})
+	}
+
+	/** What is selected, sorted into folders inside this one. */
+	function openSort() {
+		const ws = workspace.value
+		const container = scope.container.value
+		if (!ws || !container) return
+		const selected = new Set(selectedIds.value)
+		const widgets = container.children.filter(child => selected.has(child.id))
+		open_sort({ workspace: ws, folder_id: container.id, board_name: container.name, entries: summary_entries(widgets) })
+	}
+
 	const spatial = computed(() => {
 		const view = scope.container.value?.view
 		return view === 'board' || view === 'canvas'
@@ -228,6 +256,8 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		return [
 			...(nameableEntries.value.length > 0 ? [{ label: 'Suggest names', onSelect: openBulkRename }] : []),
 			{ label: 'Summarize', onSelect: openSummary },
+			{ label: 'Generate ideas', onSelect: openIdeas },
+			...(selectedChildren.value.length > 1 ? [{ label: 'Sort into folders', onSelect: openSort }] : []),
 		]
 	})
 
