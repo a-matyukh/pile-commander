@@ -5,8 +5,8 @@ import { t } from '@/i18n'
 import { normalize_workspace_id } from '@/services/workspace/paths'
 import bridge, { dismiss_bridge } from '@/store/bridge'
 import { BRIDGE_PANEL_WIDTH, bridge_hidden_tip, bridge_in_sync_menu, bridge_title } from '@/store/bridgePanel'
-import { continue_sync_here, copy_to_cloud, open_other_side, start_sync, stop_sync, sync_ago, sync_link_now, use_sync_link } from '@/store/explorer/share'
-import { other_copy_link_of, sync_statuses, type OtherCopyLink } from '@/store/localSync'
+import { continue_sync_here, copy_to_cloud, find_sync_folder, open_other_side, open_sync_root, start_sync, stop_sync, sync_ago, sync_link_now, use_sync_link } from '@/store/explorer/share'
+import { follow_moved_away, links_inside, other_copy_link_of, sync_statuses, type OtherCopyLink } from '@/store/localSync'
 import BridgeBody from './BridgeBody.vue'
 import PanelFrame from './PanelFrame.vue'
 import DropMenu from '@/ui/kit/DropMenu.vue'
@@ -34,7 +34,10 @@ const other = ref<OtherCopyLink | null>(null)
 let other_check = 0
 watch([() => props.folder.folder_id, () => props.folder.drive_id, () => link.value?.root, open], async () => {
 	const check = ++other_check
-	const found = in_cloud.value || link.value ? null : await other_copy_link_of(normalize_workspace_id(props.folder.folder_id))
+	const root = normalize_workspace_id(props.folder.folder_id)
+	// a synced folder moved in Finder, opened at its new place: its link follows
+	if (!in_cloud.value && !link.value && await follow_moved_away(root).catch(() => false)) return
+	const found = in_cloud.value || link.value ? null : await other_copy_link_of(root)
 	if (check === other_check) other.value = found
 }, { immediate: true })
 const status = computed(() => (link.value ? sync_statuses[link.value.root] ?? null : null))
@@ -102,8 +105,14 @@ const tip = computed(() => hidden_tip.value ?? (link.value ? title.value : other
 const cloud_pause = computed(() => {
 	if (status.value?.reason === 'workspace_trashed') return t('sync.workspace_trashed')
 	if (status.value?.reason === 'workspace_missing') return t('sync.workspace_missing')
+	if (status.value?.reason === 'folder_missing') return t('sync.folder_missing')
 	return ''
 })
+const folder_missing = computed(() => status.value?.reason === 'folder_missing')
+/** A folder inside a synced folder syncs as part of it: no link of its own */
+const part_of = computed(() => (!in_cloud.value && link.value && link.value.root !== source_id.value ? link.value : null))
+/** Synced folders inside this one: syncing it whole takes them in */
+const inner_names = computed(() => (in_cloud.value || link.value ? '' : links_inside(source_id.value).map(inner => inner.name).join(', ')))
 </script>
 
 <template>
@@ -133,10 +142,13 @@ const cloud_pause = computed(() => {
 		</template>
 		<template v-else-if="!link">
 			<MenuLabel :label="in_cloud ? t('sync.cloud_only') : t('sync.local_only')" />
+			<div v-if="inner_names" class="st" role="status">
+				<p>{{ t('sync.holds_synced', { names: inner_names }) }}</p>
+			</div>
 			<MenuItem v-if="!in_cloud" icon="tabler:cloud-plus" :label="t('sync.copy_to_cloud')" keep_open @select="copy_to_cloud(folder, name, 'device')" />
 			<MenuItem
 				:icon="in_cloud ? 'tabler:cloud-down' : 'tabler:cloud-up'"
-				:label="in_cloud ? t('sync.sync_with_disk') : t('sync.sync_with_cloud')"
+				:label="in_cloud ? t('sync.sync_with_disk') : inner_names ? t('sync.sync_whole') : t('sync.sync_with_cloud')"
 				:keep_open="!in_cloud"
 				@select="start_sync(folder, name)"
 			/>
@@ -144,6 +156,7 @@ const cloud_pause = computed(() => {
 		<template v-else>
 			<div class="st" role="status" aria-live="polite">
 				<p class="tt">{{ title }}</p>
+				<p v-if="part_of">{{ t('sync.part_of', { name: part_of.name }) }}</p>
 				<p class="mu one" :title="subtitle">{{ subtitle }}</p>
 				<p class="mu">{{ t('sync.both_ways') }}</p>
 				<p v-if="cloud_pause">{{ cloud_pause }}</p>
@@ -176,17 +189,31 @@ const cloud_pause = computed(() => {
 				@select="sync_link_now(link, { allow_local_deletes: true })"
 			/>
 			<MenuItem
-				v-if="status?.phase !== 'syncing'"
+				v-if="part_of"
+				icon="tabler:folder-up"
+				:label="t('sync.open_pile', { name: part_of.name })"
+				@select="open_sync_root(part_of)"
+			/>
+			<MenuItem
+				v-if="folder_missing"
+				icon="tabler:folder-search"
+				:label="t('sync.find')"
+				@select="find_sync_folder(link)"
+			/>
+			<MenuItem
+				v-if="status?.phase !== 'syncing' && !folder_missing"
 				icon="tabler:refresh"
 				:label="t('sync.sync_now')"
 				@select="sync_link_now(link)"
 			/>
 			<MenuItem
+				v-if="!folder_missing"
 				:icon="in_cloud ? 'tabler:device-laptop' : 'tabler:cloud'"
 				:label="in_cloud ? t('sync.open_disk_copy') : t('sync.open_cloud_copy')"
 				@select="open_other_side(folder, link)"
 			/>
-			<MenuItem icon="tabler:cloud-off" :label="t('sync.stop')" @select="stop_sync(link)" />
+			<!-- inside a synced folder: stopping is the synced folder's own choice -->
+			<MenuItem v-if="!part_of" icon="tabler:cloud-off" :label="t('sync.stop')" @select="stop_sync(link)" />
 		</template>
 	</DropMenu>
 </template>

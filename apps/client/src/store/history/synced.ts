@@ -23,6 +23,8 @@ export type SyncedFolders = {
 	restore_row(cloud_id: string): Promise<void>
 	/** The cloud copy of a just-made entry, for good, while it holds what was made */
 	remove_copy(entry: SyncedEntry, expect: UntouchedExpect): Promise<void>
+	/** A local folder was renamed or moved: links at it or inside it follow (LOCAL_SYNC.md, "A moved folder") */
+	moved(from: string, to: string): Promise<void>
 }
 
 let synced: SyncedFolders | null = null

@@ -11,6 +11,8 @@ export type SyncFolderDeps = {
 	/** The folder is missing or empty: a new link may start in it. */
 	is_free(path: string): Promise<boolean>
 	mkdir(path: string): Promise<void>
+	/** Why the parent cannot hold a new link (it is inside a synced folder), or null */
+	refuse_parent?(parent: string): string | null
 }
 
 /**
@@ -27,6 +29,8 @@ export async function choose_sync_folder(deps: SyncFolderDeps, folder_name: stri
 	if (relative_of(deps.home, parent) === null) {
 		throw new Error('Choose a folder inside your home folder.')
 	}
+	const refused = deps.refuse_parent?.(parent)
+	if (refused) throw new Error(refused)
 	for (let n = 1; ; n++) {
 		const candidate = await deps.join(parent, n === 1 ? folder_name : `${folder_name} (${n})`)
 		if (await deps.is_free(candidate)) {

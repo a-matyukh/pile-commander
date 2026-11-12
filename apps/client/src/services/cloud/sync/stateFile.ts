@@ -1,5 +1,5 @@
 import { PILE_DIR_NAME } from '@pile-commander/file-manager'
-import { join_local } from './paths'
+import { join_local, relative_of } from './paths'
 import { SYNC_STATE_VERSION, type SyncState } from './types'
 
 export const SYNC_STATE_FILE = 'sync.json'
@@ -91,6 +91,51 @@ export function other_copy_link(
 export function take_over_state(text: string, owner: SyncLinkOwner, from_device: string): SyncState | null {
 	const state = parse_sync_state(text, { ...owner, device_id: from_device })
 	return state ? { ...state, device_id: owner.device_id } : null
+}
+
+/**
+ * Where a linked folder is after a folder moved from `from` to `to`: the
+ * folder itself, or one inside it (its parent moved). Null when the move
+ * did not touch it
+ */
+export function moved_root(root: string, from: string, to: string): string | null {
+	const relative = relative_of(from, root)
+	if (relative === null) return null
+	return join_local(to, relative)
+}
+
+/**
+ * The link file of a folder the app moved: the same state (its base snapshot
+ * keeps deletes and conflicts right), now at the new path. Null when the
+ * file is not this link's
+ */
+export function moved_state(text: string, owner: SyncLinkOwner, root: string): SyncState | null {
+	const state = parse_sync_state(text, owner)
+	return state ? { ...state, root_path: root } : null
+}
+
+/**
+ * The link file of a folder this copy of the app syncs at another path, for
+ * this account: the folder was moved outside the app (Finder), or it is a
+ * copy of it. The caller tells the two apart by whether the old path is
+ * still there. Null for anything else
+ */
+export function moved_away_link(
+	text: string,
+	here: { root_path: string; user_id: string; device_id: string },
+): { workspace_id: string; root_path: string } | null {
+	let raw: unknown
+	try {
+		raw = JSON.parse(text)
+	} catch {
+		return null
+	}
+	if (!raw || typeof raw !== 'object') return null
+	const file = raw as Partial<SyncState>
+	if (typeof file.workspace_id !== 'string' || typeof file.root_path !== 'string') return null
+	if (file.root_path === here.root_path) return null
+	const state = parse_sync_state(text, { ...here, root_path: file.root_path, workspace_id: file.workspace_id })
+	return state ? { workspace_id: state.workspace_id, root_path: state.root_path } : null
 }
 
 export function new_sync_state(owner: SyncLinkOwner, options: { exclude?: string[]; adopt_before?: number } = {}): SyncState {

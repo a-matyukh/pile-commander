@@ -17,12 +17,16 @@ export type TreeDropSpot = {
 	/** `${drive_id}\0${root_id}` */
 	root_key: string
 	folder_id: string
+	/** The synced folder (pile) on this computer the spot is in, if any */
+	pile?: string
 }
 
 export type TreeDragSource = TreeDropSpot & {
 	name: string
 	/** The folder it sits in now: dropping there would change nothing */
 	parent_id: string
+	/** It is a synced folder, or holds one: dropped into another, it joins it */
+	holds_pile?: boolean
 }
 
 /** Pointer travel before a press becomes a drag */
@@ -72,6 +76,25 @@ export function can_drop(source: TreeDragSource, spot: TreeDropSpot): boolean {
 		&& spot.folder_id !== source.parent_id
 }
 
+/**
+ * A drop that crosses a pile's border: the folder leaves the cloud, goes
+ * into a synced folder, or (a synced folder, or one holding some) joins
+ * another synced folder and syncs as part of it from then on. `pile` is the
+ * region to light up. A synced folder moved whole elsewhere takes its link
+ * along: no crossing
+ */
+export type PileCrossing = { pile: string; way: 'leaves' | 'enters' | 'joins' }
+
+export function pile_crossing(source: TreeDragSource, target: TreeDropSpot | null): PileCrossing | null {
+	if (!target) return null
+	if (source.holds_pile) {
+		return target.pile && target.pile !== source.pile ? { pile: target.pile, way: 'joins' } : null
+	}
+	if (source.pile === target.pile) return null
+	if (target.pile) return { pile: target.pile, way: 'enters' }
+	return source.pile ? { pile: source.pile, way: 'leaves' } : null
+}
+
 export const is_drop_target = (spot: TreeDropSpot) =>
 	tree_drag.target !== null
 	&& tree_drag.target.root_key === spot.root_key
@@ -94,7 +117,8 @@ function spot_at(x: number, y: number): TreeDropSpot | null {
 	const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drop-root]')
 	const root_key = element?.dataset.dropRoot
 	const folder_id = element?.dataset.dropFolder
-	return root_key && folder_id ? { root_key, folder_id } : null
+	const pile = element?.dataset.dropPile
+	return root_key && folder_id ? { root_key, folder_id, ...(pile ? { pile } : {}) } : null
 }
 
 /**

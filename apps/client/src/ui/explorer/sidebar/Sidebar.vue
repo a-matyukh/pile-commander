@@ -21,7 +21,7 @@ import SidebarResizer from './SidebarResizer.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
 import { cloud_source_opens_page, source_tree_visible } from './source_open'
-import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from './tree_drag'
+import { CLOUD_ROOT_DROP_KEY, is_drop_target, pile_crossing, tree_drag, tree_root_key, type PileCrossing } from './tree_drag'
 
 /**
  * `drawer` — a phone: the sidebar covers the content and a tap outside closes it.
@@ -33,6 +33,15 @@ import { CLOUD_ROOT_DROP_KEY, is_drop_target, tree_drag, tree_root_key } from '.
 defineProps<{ drawer?: boolean, overlay?: boolean, shown?: boolean }>()
 
 const drives = computed(() => explorer_drives.drives())
+/** The dragged folder leaves a pile or goes into one: the ghost says so */
+const crossing = computed(() => (tree_drag.source ? pile_crossing(tree_drag.source, tree_drag.target) : null))
+const base_name = (path: string) => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+const crossing_icon = { leaves: 'tabler:cloud-off', enters: 'tabler:cloud-up', joins: 'tabler:cloud-plus' } as const
+function crossing_text(crossing: PileCrossing): string {
+	if (crossing.way === 'leaves') return t('tree.leaves_cloud')
+	const name = base_name(crossing.pile)
+	return crossing.way === 'joins' ? t('tree.joins_pile', { name }) : t('tree.enters_cloud', { name })
+}
 /** The account or settings page is open: its footer button shows it */
 function page_open(page: 'account' | 'settings' | 'trash' | 'cloud') {
 	const location = explorer_navigation.location
@@ -341,8 +350,15 @@ watchEffect(() => {
 			class="gh"
 			:style="{ left: tree_drag.x + 12 + 'px', top: tree_drag.y + 8 + 'px' }"
 		>
-			<Icon icon="tabler:folder" />
-			<span>{{ tree_drag.source.name }}</span>
+			<span class="gt">
+				<Icon icon="tabler:folder" />
+				<span class="gn">{{ tree_drag.source.name }}</span>
+			</span>
+			<!-- under the name, wrapping: the explanation is read whole -->
+			<span v-if="crossing" class="gx" :class="crossing.way">
+				<Icon :icon="crossing_icon[crossing.way]" class="gi" />
+				<span>{{ crossing_text(crossing) }}</span>
+			</span>
 		</div>
 	</aside>
 </template>
@@ -412,18 +428,43 @@ watchEffect(() => {
 	position: fixed;
 	z-index: 50;
 	display: flex;
-	align-items: center;
-	gap: 6px;
-	max-width: 220px;
+	flex-direction: column;
+	gap: 4px;
+	max-width: 260px;
 	padding: 4px 8px;
 	border-radius: 6px;
 	background: var(--surface-2);
 	box-shadow: 0 2px 10px rgba(0, 0, 0, .15);
 	font-size: 12px;
+	pointer-events: none;
+}
+.gt {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
 	white-space: nowrap;
+}
+.gn {
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	pointer-events: none;
+}
+.gx {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding-top: 4px;
+	border-top: 0.5px solid var(--border);
+	line-height: 1.35;
+	color: var(--text-accent);
+}
+.gi {
+	flex: none;
+	margin-top: 1px;
+}
+.gx.leaves {
+	color: var(--text-primary);
 }
 :global(body.tree-dragging) {
 	cursor: grabbing;

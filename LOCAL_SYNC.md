@@ -68,6 +68,75 @@ link in localStorage (`local_sync_links`, by folder path).
 - One cloud workspace syncs with one folder per account on a device; a
   second link is refused.
 
+**A moved folder.** A synced folder is like a briefcase: wherever it goes,
+it keeps syncing. When the app renames or moves a folder on this computer
+(the tree, the folder view, AI sort, undo — all through the store's
+`rename`/`move`, plus the tree's move between `~` and a folder outside it),
+`retarget_sync_links(from, to)` moves every link at it or inside it (its
+parent moved): the engine stops, the link file gets the new `root_path`
+and keeps its base snapshot (`moved_state`), the link is re-keyed and the
+engine starts again. A move that copied the folder without its link file
+starts over with `adopt_before`, adopting what the cloud holds at the same
+paths. Reports of one move from the store and the tree run one after the
+other; the second finds nothing left to move.
+
+A folder moved **outside** the app (Finder) is found by its link file: when
+the app opens a folder whose `sync.json` is this copy's, for this account,
+at another `root_path` that has a link here and nothing left at that path,
+the link quietly follows (`follow_moved_away`, `moved_away_link`). If the
+old path is still there, the opened folder is a copy and stays a plain
+folder. Until then the link pauses as `folder_missing`, and the sync menu
+says so and offers **Find…**: the person points at the folder, and the link
+follows when that folder's link file is this link's (`find_moved_folder`).
+
+**One file, one link.** A link never starts inside another link of the
+same account (`link_folder` refuses, and "Sync to a folder on this Mac"
+refuses a parent inside a synced folder before it makes anything there).
+Inside a synced folder the sync menu says "Part of …", opens the synced
+folder, and has no Stop of its own. A folder that holds synced folders
+says so in its menu and offers **Sync the whole folder**: when its copy
+finishes, `link_folder` links the whole folder and takes in the links
+inside it (their old cloud copies: see below).
+
+Moving, though, works as in any file browser. A synced folder (or one
+holding some) moved into another synced folder **joins** it: `move_link`
+sees the new place is inside another link, drops its own link and link
+file (`absorb_link`), and the outer folder syncs it as part of itself. The
+tree's drag ghost says so before the drop ("Becomes part of …").
+
+Its old cloud copy is then a leftover: it goes to the cloud trash, and a
+toast offers **Restore** (`settle_old_copy`, `SyncJoinedToast.vue`). It
+stays, and the toast says why and offers **Open**, when someone else relies
+on it or the cloud holds what this Mac never got (`old_copy_verdict`, first
+reason wins): this account does not own it; it has members or pending
+invites; it is published or on the Hub; another computer syncs it; a cloud
+file is new or changed since the link's base snapshot; or the link file or
+the listing could not be read. **Sync the whole folder** settles the
+copies of the links it takes in the same way. The same happens when such a move made in
+Finder is found: opening the folder, **Find…**, or by itself at launch.
+A link that pauses as `folder_missing` looks once per session inside this
+account's other synced folders (`look_for_joined`, `find_moved_folder_in`:
+breadth first, hidden folders and symlinks skipped, at most 5000 folders,
+only folders with `.pile` read) for a folder whose link file is its own,
+and joins it there.
+`sync.json` never syncs (`is_pile_carry_relative`), so an inner link file
+is never uploaded.
+
+**The pile's line in the tree.** A synced folder is a pile, a region. At
+its top folder (where the cloud badge is) the tree draws a thin line under
+the chevron's point, the whole height of its children, in the sync's state
+(`pile_line_state`): blue in sync, a dark run travelling down a lighter
+line while syncing (always, it is a status), amber when paused or failed.
+Folders inside keep the plain guide, so the region reads as one. A cloud
+folder synced on another computer has no status here: blue. The badge stays (a collapsed folder shows no line) and
+shows the same state as the sync menu's button (`sync_badge`): a turning
+arrow while syncing, pause, failed, some files failed, or synced.
+
+Dragging a folder in the tree across a pile's border (`pile_crossing`)
+lights up that pile's region, and the drag ghost says "Leaves the cloud"
+or "Goes to the cloud: …". Moving a synced folder whole crosses nothing:
+its link follows it.
+
 **Engine (`syncEngine.ts`).** One per linked folder. Passes never overlap; a
 change during a pass queues one more. A pass runs:
 - at start;
@@ -237,6 +306,12 @@ decided one by one.
   - a removed key is removed on the other side;
   - with no base yet, keys are united and the local value wins where the
     two differ.
+  - a folder created in the cloud by a pass carries its xattrs from the
+    start (view, icon…), so the cloud never shows it as a plain folder
+    until the layout step; only a cover or background waits for its file
+    (`xattrs_to_create`). A new file gets its own (position, size) right
+    after its upload, in the same action: the backend's finalize takes no
+    xattrs. A miss there is left to the layout step.
 - **Ink.** By cloud id; the base maps it to its id here.
   - Ink drawn here goes up as `derived_uuid(workspace_id, local id)`.
   - Ink that came down keeps its cloud id here, so it is never re-hashed
@@ -268,7 +343,8 @@ decided one by one.
 - **A missing root pauses.** The folder was moved, deleted, or the disk is
   unplugged: the engine pauses as `folder_missing` and does not run a pass.
   That is not a mass delete and not an error that retries the pass. The link
-  stays. The interval looks again and syncs once the folder is back.
+  stays. The interval looks again and syncs once the folder is back Or
+  it is found elsewhere: see "A moved folder".
 - **A missing cloud root pauses.** If the cloud listing has no `/` entry,
   the pass does not reconcile and does not trash local files, however few
   there are. `workspace_state` says why: `trashed` pauses as

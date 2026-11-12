@@ -11,12 +11,13 @@ import { pile_archive_name, run_pile_export } from './exportPile'
 import store from '@/store'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
 import cloud from '@/store/cloud'
-import type { SyncNowOptions } from '@/services/cloud/sync/syncEngine'
-import { type SyncLink, sync_link_of, sync_now, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
+import type { SyncNowOptions, SyncStatus } from '@/services/cloud/sync/syncEngine'
+import { find_moved_folder, type SyncLink, sync_link_of, sync_now, sync_statuses, sync_workspace_to_folder, synced_folder_of, take_over_link, unlink_folder } from '@/store/localSync'
 import { bridge_door_for, open_share_window, type ShareWindow } from '@/store/explorer/sharePublishPanel'
 import { explorer_navigation } from './navigation'
 import { explorer_drives } from './drives'
 import { root_folder_id } from './folder_header'
+export { pile_line_state, sync_badge } from './pile_line'
 
 /**
  * "Share" and "Sync" in the folder header, as in the prototype. A cloud
@@ -166,6 +167,12 @@ export function shows_synced(ref: FolderRef): boolean {
 	return sync_link_for(ref) !== null || synced_elsewhere(ref) !== null
 }
 
+/** The sync status of the link this folder is the top of, on this computer; null elsewhere */
+export function sync_status_of(ref: FolderRef): SyncStatus | null {
+	const link = sync_link_for(ref)
+	return link ? sync_statuses[link.root] ?? null : null
+}
+
 /** "just now", "5 min ago", then the date and time */
 export function sync_ago(epoch_ms: number): string {
 	const minutes = Math.round((Date.now() - epoch_ms) / 60_000)
@@ -212,6 +219,24 @@ export async function start_sync(ref: FolderRef, name: string): Promise<void> {
 export async function continue_sync_here(ref: FolderRef, name: string): Promise<void> {
 	try {
 		await take_over_link(normalize_workspace_id(ref.folder_id), name)
+	} catch (error) {
+		report(error)
+	}
+}
+
+/** Opens the synced folder a folder on this Mac syncs as part of */
+export async function open_sync_root(link: SyncLink): Promise<void> {
+	try {
+		await explorer_navigation.open_local_path(link.root)
+	} catch (error) {
+		report(error)
+	}
+}
+
+/** "Find…": the person points at a synced folder that is not where it was */
+export async function find_sync_folder(link: SyncLink): Promise<void> {
+	try {
+		await find_moved_folder(link)
 	} catch (error) {
 		report(error)
 	}

@@ -7,6 +7,7 @@ import {
 	forget_sync_device,
 	list_workspace_connections,
 	list_workspace_entries,
+	trash_workspace,
 	list_workspace_strokes,
 	purge_entry_id,
 	restore_entry_id,
@@ -15,17 +16,25 @@ import {
 	type EntryRow,
 	type FileManager,
 } from '@pile-commander/file-manager'
+import type { FolderRef } from '@/domain/Drive'
+import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
+import { normalize_workspace_id } from '@/services/workspace/paths'
 import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
 import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStatus } from '@/services/cloud/sync/syncEngine'
 import { download_scratch_dir, join_local, relative_of } from '@/services/cloud/sync/paths'
 import { choose_sync_folder } from '@/services/cloud/sync/syncToFolder'
+import { find_moved_folder_in } from '@/services/cloud/sync/findMoved'
+import { old_copy_verdict, type OldCopyVerdict } from '@/services/cloud/sync/joinedCopy'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { pile_root_name } from '@/services/workspace/pack'
 import type { LocalWriter } from '@/services/cloud/sync/syncPass'
 import {
 	is_sync_state_path,
+	moved_away_link,
+	moved_root,
+	moved_state,
 	new_sync_state,
 	parse_sync_state,
 	other_copy_link,
@@ -98,6 +107,21 @@ export function sync_link_of(root: string): SyncLink | null {
 /** Paths of every folder linked on this device, for any account. */
 export function sync_link_roots(): string[] {
 	return Object.keys(links.value)
+}
+
+/** This account's links at `path` or around it (its own synced folder): one file, one link */
+export function covering_link(path: string, user_id = cloud.user?.id): SyncLink | null {
+	return Object.values(links.value).find(link => link.user_id === user_id && relative_of(link.root, path) !== null) ?? null
+}
+
+/** This account's links strictly inside `root` */
+export function links_inside(root: string, user_id = cloud.user?.id): SyncLink[] {
+	return Object.values(links.value).filter(link => link.user_id === user_id && link.root !== root && relative_of(root, link.root) !== null)
+}
+
+/** Paths of the folders this account syncs on this device */
+export function my_sync_roots(user_id = cloud.user?.id): string[] {
+	return Object.values(links.value).filter(link => link.user_id === user_id).map(link => link.root)
 }
 
 /** The folder this account syncs with a cloud workspace on this device, if any. */
@@ -231,14 +255,7 @@ function start_engine(link: SyncLink): void {
 		}),
 		max_file_bytes: () => cloud.billing?.max_file_bytes ?? Number.POSITIVE_INFINITY,
 		workspace_state: () => workspace_state(require_supabase(), link.workspace_id),
-		root_present: async () => {
-			try {
-				const info = await (await fs()).stat(link.root)
-				return info.isDirectory
-			} catch {
-				return false
-			}
-		},
+		root_present: () => folder_exists(link.root),
 		// joins the workspace's realtime channels itself, board open or not
 		watch_cloud: on_change => cloud_fm.watch_workspace(on_change),
 		watch: async (on_change) => {
@@ -259,6 +276,7 @@ function start_engine(link: SyncLink): void {
 			// The whole status, including folders kept for hidden files.
 			sync_statuses[link.root] = status
 			if (status.phase === 'idle' && status.last_synced_at) stamp_sync_device(link)
+			if (status.reason === 'folder_missing') look_for_joined(link)
 		},
 	})
 	engines.set(link.root, engine)
@@ -304,10 +322,19 @@ export async function link_folder(input: {
 	if (other && other.root !== input.root) {
 		throw new Error(`This cloud workspace already syncs with ${other.root} on this computer.`)
 	}
+	// one file, one link: never inside a synced folder…
+	const outer = covering_link(input.root, user.id)
+	if (outer && outer.root !== input.root) throw new Error(t('sync.inside_synced', { name: outer.name }))
+	// …and a synced folder inside this one now syncs as part of it (the menu said so)
+	// (their old cloud copies are settled as for a folder moved in: `absorb_link`)
+	const inner_links = links_inside(input.root, user.id)
+	for (const inner of inner_links) stop_engine(inner.root)
 	stop_engine(input.root)
 	const link: SyncLink = { root: input.root, name: input.name, workspace_id: input.workspace_id, user_id: user.id }
 	await save_state(link, new_sync_state(owner_of(link), { exclude: input.exclude, adopt_before: input.adopt_before }))
 	links.value = { ...links.value, [input.root]: link }
+	// after the whole folder is linked: the old copies' toasts name it
+	for (const inner of inner_links) await absorb_link(inner, inner.root)
 	start_engine(link)
 	// at once: the first pass of a large workspace can take a while
 	stamp_sync_device(link, { now: true })
@@ -334,6 +361,10 @@ export async function sync_workspace_to_folder(workspace: { id: string; name: st
 			title: `Choose where "${folder_name}" syncs on this computer`,
 			default_path,
 		}))?.folder_id ?? null,
+		refuse_parent: (parent) => {
+			const outer = covering_link(normalize_workspace_id(parent))
+			return outer ? t('sync.parent_inside_synced', { name: outer.name }) : null
+		},
 		join,
 		is_free: async (path) => {
 			try {
@@ -358,6 +389,225 @@ export async function unlink_folder(root: string): Promise<void> {
 	delete next[root]
 	links.value = next
 	await remove_state(root)
+}
+
+/**
+ * A synced folder is like a briefcase: wherever it goes, it keeps syncing.
+ * The app moved or renamed a folder from `from` to `to`: every link at it or
+ * inside it follows. Its link file moved along (a rename is atomic) and keeps
+ * its base snapshot; a move that copied the folder without it starts over,
+ * adopting what the cloud holds at the same paths
+ */
+export function retarget_sync_links(from: string, to: string): Promise<void> {
+	if (!is_desktop || from === to) return Promise.resolve()
+	// One at a time: the store and the tree both report a move, and the
+	// second report then finds nothing left at `from`
+	const run = link_moves.then(async () => {
+		for (const link of Object.values(links.value)) {
+			const root = moved_root(link.root, from, to)
+			if (root !== null && root !== link.root) await move_link(link, root)
+		}
+	})
+	link_moves = run.catch(() => {})
+	return run
+}
+
+let link_moves: Promise<void> = Promise.resolve()
+
+/** The same, for a folder the explorer or an undo moved: only folders on this computer have links */
+export function follow_moved_folder(from: FolderRef, to: FolderRef): void {
+	if (from.drive_id !== 'local' || to.drive_id !== 'local') return
+	void retarget_sync_links(normalize_workspace_id(from.folder_id), normalize_workspace_id(to.folder_id))
+		.catch((error: unknown) => console.warn('[sync] could not follow a moved folder', error))
+}
+
+async function move_link(link: SyncLink, root: string): Promise<void> {
+	stop_engine(link.root)
+	// moved into another synced folder: it becomes part of that one, as a
+	// folder dropped into a synced folder in Finder would. One file, one link
+	const outer = Object.values(links.value).find(other =>
+		other.root !== link.root && other.user_id === link.user_id && relative_of(other.root, root) !== null)
+	if (outer) {
+		await absorb_link(link, root)
+		return
+	}
+	const moved: SyncLink = { ...link, root }
+	try {
+		let state: SyncState | null = null
+		try {
+			state = moved_state(await (await fs()).readTextFile(sync_state_path(root)), owner_of(link), root)
+		} catch {
+			// no link file at the new path
+		}
+		await save_state(moved, state ?? new_sync_state(owner_of(moved), { adopt_before: Date.now() }))
+	} catch (error) {
+		// the link still follows: its engine pauses until the folder is there
+		console.warn('[sync] could not move the link file', error)
+	}
+	const next = { ...links.value }
+	delete next[link.root]
+	next[root] = moved
+	links.value = next
+	if (moved.user_id === cloud.user?.id) start_engine(moved)
+}
+
+/**
+ * A synced folder now inside another one syncs as part of it: its own link
+ * goes, with its link file (now at `root`). Its cloud copy stays in the cloud
+ */
+/** Missing links already looked for in this session */
+const looked_for = new Set<string>()
+
+/**
+ * A synced folder missing at launch may have been moved in Finder into
+ * another synced folder while the app was closed. That one syncs it as part
+ * of itself already; found by its link file, it joins it for good (as a move
+ * in the app would), instead of waiting as "not found". Once per session
+ */
+function look_for_joined(link: SyncLink): void {
+	const key = `${link.user_id}\0${link.root}`
+	if (looked_for.has(key)) return
+	looked_for.add(key)
+	link_moves = link_moves.then(async () => {
+		if (links.value[link.root]?.workspace_id !== link.workspace_id) return
+		const roots = my_sync_roots(link.user_id).filter(root => root !== link.root)
+		if (!roots.length) return
+		const { readDir, readTextFile } = await fs()
+		const device_id = client_instance_id()
+		const found = await find_moved_folder_in(roots, {
+			list: folder => readDir(folder),
+			read_link_file: folder => readTextFile(sync_state_path(folder)).catch(() => null),
+			matches: (folder, text) => {
+				const named = moved_away_link(text, { root_path: folder, user_id: link.user_id, device_id })
+				return named?.root_path === link.root && named.workspace_id === link.workspace_id
+			},
+		})
+		if (!found || await folder_exists(link.root)) return
+		stop_engine(link.root)
+		await absorb_link(link, found)
+	}).catch((error: unknown) => console.warn('[sync] could not look for a moved folder', error))
+}
+
+async function absorb_link(link: SyncLink, root: string): Promise<void> {
+	// the base snapshot tells what the cloud copy holds that this Mac never got
+	let state: SyncState | null = null
+	try {
+		state = parse_sync_state(await (await fs()).readTextFile(sync_state_path(root)), owner_of(link))
+	} catch {
+		// no link file left
+	}
+	forget_sync_record(link)
+	const next = { ...links.value }
+	delete next[link.root]
+	links.value = next
+	await remove_state(root)
+	void settle_old_copy(link, root, state)
+		.catch((error: unknown) => console.warn('[sync] could not settle the old cloud copy', error))
+}
+
+/** What became of the old cloud copy of a synced folder that joined another, for a toast */
+export type JoinedNotice = {
+	id: number
+	workspace_id: string
+	name: string
+	/** The synced folder it joined */
+	into: string
+	verdict: OldCopyVerdict
+}
+
+/** Toasts to show, oldest first: the app shell takes them */
+export const joined_notices: JoinedNotice[] = reactive([])
+let joined_notice_id = 0
+
+/**
+ * The old cloud copy is a leftover once the outer folder syncs it: to the
+ * cloud trash (the toast offers "Restore"), unless someone else relies on
+ * it or the cloud holds what this Mac never got (`old_copy_verdict`)
+ */
+async function settle_old_copy(link: SyncLink, root: string, state: SyncState | null): Promise<void> {
+	if (cloud.user?.id !== link.user_id) return
+	const id = link.workspace_id
+	const into = covering_link(root, link.user_id)?.name ?? ''
+	await cloud.fetch_workspaces()
+	if (!cloud.workspaces.some(ws => ws.id === id)) return
+	let rows: CloudEntry[] | null = null
+	try {
+		rows = (await list_workspace_entries(require_supabase(), id)).map(cloud_entry)
+	} catch {
+		// unknown: kept
+	}
+	let verdict = old_copy_verdict({
+		owner: cloud.roles[id] === 'owner',
+		shared: !!cloud.shared_out[id],
+		published: !!(cloud.published_slugs[id] || cloud.hub_listed[id] || cloud.hub_hidden[id]),
+		other_computers: cloud.synced_on[id]?.devices ?? 0,
+		state,
+		cloud: rows,
+	})
+	if (verdict === 'trash') {
+		try {
+			await trash_workspace(require_supabase(), id)
+			await cloud.fetch_workspaces()
+		} catch (error) {
+			console.warn('[sync] could not trash the old cloud copy', error)
+			verdict = 'unknown'
+		}
+	}
+	joined_notices.push({ id: ++joined_notice_id, workspace_id: id, name: link.name, into, verdict })
+}
+
+async function folder_exists(path: string): Promise<boolean> {
+	try {
+		return (await (await fs()).stat(path)).isDirectory
+	} catch {
+		return false
+	}
+}
+
+/**
+ * The link a folder's link file names when the folder was moved outside the
+ * app: this copy, this account, a link at the old path, and nothing left at
+ * the old path. Still there: the folder is a copy, a plain folder
+ */
+async function moved_away_link_of(root: string): Promise<SyncLink | null> {
+	const user = cloud.user
+	if (!is_desktop || !user || links.value[root]) return null
+	let text: string
+	try {
+		text = await (await fs()).readTextFile(sync_state_path(root))
+	} catch {
+		return null
+	}
+	const found = moved_away_link(text, { root_path: root, user_id: user.id, device_id: client_instance_id() })
+	if (!found) return null
+	const link = links.value[found.root_path]
+	if (!link || link.workspace_id !== found.workspace_id || link.user_id !== user.id) return null
+	return (await folder_exists(link.root)) ? null : link
+}
+
+/**
+ * A synced folder moved in Finder is opened at its new place: its link
+ * follows, quietly. True when it did
+ */
+export async function follow_moved_away(root: string): Promise<boolean> {
+	const link = await moved_away_link_of(root)
+	if (!link) return false
+	await retarget_sync_links(link.root, root)
+	return true
+}
+
+/**
+ * "Find…" for a synced folder that is not where it was: the person points at
+ * it, and the link follows when the folder's link file is this link's
+ */
+export async function find_moved_folder(link: SyncLink): Promise<void> {
+	const picked = (await create_window_manager().pick_folder({ title: t('sync.find_title', { name: link.name }) }))?.folder_id
+	if (!picked) return
+	const root = normalize_workspace_id(picked)
+	if (root === link.root) return
+	const found = await moved_away_link_of(root)
+	if (found?.root !== link.root) throw new Error(t('sync.find_wrong_folder', { name: link.name }))
+	await retarget_sync_links(link.root, root)
 }
 
 /** A folder this account syncs from another copy of the app (its link file is not this copy's) */
@@ -450,5 +700,6 @@ if (is_desktop) {
 			const row = await entry_state_by_id(require_supabase(), entry.cloud_id)
 			if (row.state === 'live' && row.path) await fm.remove_untouched(row.path, expect)
 		},
+		moved: retarget_sync_links,
 	})
 }
