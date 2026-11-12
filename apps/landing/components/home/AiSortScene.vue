@@ -20,6 +20,8 @@ const folders = [
   { key: "plans", name: "Plans", x: 41, y: 16, items: ["Packing.md", "Budget.md"] },
 ];
 
+const emit = defineEmits<{ done: [] }>();
+
 const root = ref<HTMLElement>();
 // The finished frame: the plan as proposed. The loop rewinds it on the client.
 const panel = ref(true);
@@ -61,7 +63,11 @@ function cycle() {
     sorted.value = true;
   });
   at(8200, () => (fading.value = true));
-  at(9100, cycle);
+  at(9100, () => {
+    // The block may move to the next tab; if it does not, the scene plays again
+    emit("done");
+    cycle();
+  });
 }
 
 function start() {

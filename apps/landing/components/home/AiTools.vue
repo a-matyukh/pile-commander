@@ -1,12 +1,18 @@
 <script setup lang="ts">
-type SceneId = "names" | "ideas" | "sort";
+type SceneId = "names" | "summary" | "ideas" | "sort";
 
 const scenes: { id: SceneId; label: string; icon: string; caption: string }[] = [
   {
     id: "names",
-    label: "Names & summary",
+    label: "Names",
     icon: "i-lucide-tag",
-    caption: "Select files and get names from what is inside them, as a list of old and new. Summarize turns a board into a short note next to it.",
+    caption: "Select files and get names from what is inside them: notes are read, images looked at. A list of old and new, each with a checkbox.",
+  },
+  {
+    id: "summary",
+    label: "Summary",
+    icon: "i-lucide-file-text",
+    caption: "Summarize turns a board, or what is selected on it, into a short note right next to it.",
   },
   {
     id: "ideas",
@@ -24,6 +30,20 @@ const scenes: { id: SceneId; label: string; icon: string; caption: string }[] = 
 
 const active = ref<SceneId>("names");
 const activeScene = computed(() => scenes.find(scene => scene.id === active.value) ?? scenes[0]!);
+
+/** The tabs play one after another until the person picks one */
+const autoplay = ref(true);
+
+function pick(id: SceneId) {
+  autoplay.value = false;
+  active.value = id;
+}
+
+function next() {
+  if (!autoplay.value) return;
+  const index = scenes.findIndex(scene => scene.id === active.value);
+  active.value = scenes[(index + 1) % scenes.length]!.id;
+}
 
 const notes = [
   {
@@ -49,7 +69,7 @@ const notes = [
     eyebrow="AI tools"
     badge="New"
     title="AI that tidies the pile you already have."
-    lede="Name files by what is in them and summarize a board. Ask a folder for ideas and get them back as cards on the board, or let a model sort a pile into folders. You see every change before it happens."
+    lede="Four things a model does with a folder: names files by what is in them, sums up a board in a note, brings ideas as cards on the board, and sorts a pile into folders. You see every change before it happens."
     muted
   >
     <div class="-mx-5 overflow-x-auto px-5 pb-4 sm:mx-0 sm:px-0">
@@ -72,7 +92,7 @@ const notes = [
               ? 'bg-pc-500 font-semibold text-white'
               : 'text-slate-600 hover:bg-[var(--pc-gray-header)] hover:text-slate-900'
           "
-          @click="active = scene.id"
+          @click="pick(scene.id)"
         >
           <UIcon :name="scene.icon" class="size-4" />
           {{ scene.label }}
@@ -92,9 +112,10 @@ const notes = [
       class="mt-5 rounded-2xl border border-[var(--pc-gray-border)] bg-white p-3 sm:p-4"
     >
       <div class="aspect-[16/9] overflow-hidden rounded-xl">
-        <HomeAiNamingScene v-if="active === 'names'" />
-        <HomeAiIdeasScene v-else-if="active === 'ideas'" />
-        <HomeAiSortScene v-else />
+        <HomeAiNamingScene v-if="active === 'names'" key="names" mode="names" @done="next" />
+        <HomeAiNamingScene v-else-if="active === 'summary'" key="summary" mode="summary" @done="next" />
+        <HomeAiIdeasScene v-else-if="active === 'ideas'" @done="next" />
+        <HomeAiSortScene v-else @done="next" />
       </div>
     </div>
 

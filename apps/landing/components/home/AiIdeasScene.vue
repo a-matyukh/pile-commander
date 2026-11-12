@@ -10,6 +10,8 @@ const ideas = [
   { key: "rope", title: "Rope & rust", copy: "A palette of rust, sand and teal." },
 ] as const;
 
+const emit = defineEmits<{ done: [] }>();
+
 const root = ref<HTMLElement>();
 // The finished frame: the cards as proposed. The loop rewinds it on the client.
 const typed = ref(PROMPT);
@@ -64,7 +66,11 @@ function cycle() {
     added.value = true;
   });
   at(sent + 6600, () => (fading.value = true));
-  at(sent + 7600, cycle);
+  at(sent + 7600, () => {
+    // The block may move to the next tab; if it does not, the scene plays again
+    emit("done");
+    cycle();
+  });
 }
 
 function start() {

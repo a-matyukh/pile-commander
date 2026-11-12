@@ -1,8 +1,12 @@
-<!-- Names and a summary: files picked on the board get names from a model
-     (a was → now list to accept), then the board gets a summary. Ideas and
-     sorting have scenes of their own (AiIdeasScene, AiSortScene).
+<!-- Names or a summary, one scene per tab: in "names" files picked on the
+     board get names from a model (a was → now list to accept); in
+     "summary" the board gets a short note next to it. Emits "done" at the
+     end of each loop, so the AI block can move to the next tab.
      SSR, no-JS and reduced motion get the finished frame. -->
 <script setup lang="ts">
+const props = defineProps<{ mode: "names" | "summary" }>();
+const emit = defineEmits<{ done: [] }>();
+
 const files = [
   { key: "harbor", kind: "photo", was: "IMG_4823.jpg", now: "Harbor at noon.jpg" },
   { key: "mood", kind: "note", was: "Note 3.md", now: "Warm light.md" },
@@ -21,14 +25,15 @@ const summary = [
 type Panel = "none" | "names" | "summary";
 
 const root = ref<HTMLElement>();
-// The finished frame; the loop rewinds it on the client.
+// The finished frame: the dialog of this mode, filled. The loop rewinds it on the client.
 const selected = ref(false);
-const panel = ref<Panel>("names");
+const panel = ref<Panel>(props.mode);
 const answered = ref(files.length);
 const applying = ref(false);
-const renamed = ref(true);
-const lines = ref(0);
+const renamed = ref(props.mode === "summary");
+const lines = ref(summary.length);
 const adding = ref(false);
+const added = ref(false);
 const fading = ref(false);
 
 let timers: ReturnType<typeof setTimeout>[] = [];
@@ -45,34 +50,49 @@ function stop() {
   timers = [];
 }
 
-function cycle() {
+function reset() {
   selected.value = false;
   panel.value = "none";
   answered.value = 0;
   applying.value = false;
-  renamed.value = false;
+  renamed.value = props.mode === "summary";
   lines.value = 0;
   adding.value = false;
+  added.value = false;
   fading.value = false;
+}
 
-  // Pick the files, ask for names.
-  at(700, () => (selected.value = true));
-  at(1500, () => (panel.value = "names"));
-  const asked = 2100;
-  files.forEach((_, i) => at(asked + i * 550, () => (answered.value = i + 1)));
-
-  // Accept: the cards take the new names.
-  const accept = asked + files.length * 550 + 900;
-  at(accept, () => (applying.value = true));
-  at(accept + 450, () => {
-    panel.value = "none";
-    applying.value = false;
-    renamed.value = true;
-    selected.value = false;
+/** The end of a loop: the block may move on; if it does not, the scene plays again. */
+function finish(after: number) {
+  at(after, () => (fading.value = true));
+  at(after + 800, () => {
+    emit("done");
+    cycle();
   });
+}
 
-  // Summarize the board.
-  const summarize = accept + 2000;
+function cycle() {
+  reset();
+  if (props.mode === "names") {
+    // Pick the files, ask for names
+    at(700, () => (selected.value = true));
+    at(1500, () => (panel.value = "names"));
+    const asked = 2100;
+    files.forEach((_, i) => at(asked + i * 550, () => (answered.value = i + 1)));
+    // Accept: the cards take the new names
+    const accept = asked + files.length * 550 + 900;
+    at(accept, () => (applying.value = true));
+    at(accept + 450, () => {
+      panel.value = "none";
+      applying.value = false;
+      renamed.value = true;
+      selected.value = false;
+    });
+    finish(accept + 2800);
+    return;
+  }
+  // Summarize the board; the summary lands as a note next to it
+  const summarize = 900;
   at(summarize, () => (panel.value = "summary"));
   summary.forEach((_, i) => at(summarize + 900 + i * 700, () => (lines.value = i + 1)));
   const add = summarize + 900 + summary.length * 700 + 900;
@@ -80,10 +100,9 @@ function cycle() {
   at(add + 450, () => {
     panel.value = "none";
     adding.value = false;
+    added.value = true;
   });
-
-  at(add + 2600, () => (fading.value = true));
-  at(add + 3400, cycle);
+  finish(add + 3000);
 }
 
 function start() {
@@ -111,7 +130,7 @@ onBeforeUnmount(() => {
   <div
     ref="root"
     class="ai"
-    :class="{ 'is-selected': selected, 'is-renamed': renamed, 'is-fading': fading }"
+    :class="{ 'is-selected': selected, 'is-renamed': renamed, 'is-added': added, 'is-fading': fading }"
     aria-hidden="true"
   >
     <p class="folder">
@@ -120,11 +139,11 @@ onBeforeUnmount(() => {
     </p>
 
     <ul class="actions">
-      <li class="action" :class="{ 'is-on': panel === 'names' }">
+      <li v-if="mode === 'names'" class="action" :class="{ 'is-on': panel === 'names' }">
         <UIcon name="i-lucide-sparkles" class="size-[1em]" />
         Name files
       </li>
-      <li class="action" :class="{ 'is-on': panel === 'summary' }">
+      <li v-else class="action" :class="{ 'is-on': panel === 'summary' }">
         <UIcon name="i-lucide-sparkles" class="size-[1em]" />
         Summarize
       </li>
@@ -155,7 +174,16 @@ onBeforeUnmount(() => {
       </p>
     </article>
 
-    <!-- The dialog: names to review, then the summary preview -->
+    <!-- The summary, added: an ordinary note next to what it sums up -->
+    <article class="summary-note">
+      <p class="summary-note-title">A quiet harbor</p>
+      <ul>
+        <li v-for="line in summary.slice(0, 2)" :key="line">{{ line }}</li>
+      </ul>
+      <p class="summary-note-name">Summary.md</p>
+    </article>
+
+    <!-- The dialog: names to review, or the summary preview -->
     <div class="panel" :class="{ 'is-open': panel !== 'none' }">
       <div class="panel-head">
         <p class="panel-title">{{ panel === "summary" ? "Summarize “Harbor moodboard”" : "Suggest names" }}</p>
@@ -220,6 +248,48 @@ onBeforeUnmount(() => {
 
 p {
   margin: 0;
+}
+
+/* ── The summary note ────────────────────────────────── */
+
+.summary-note {
+  position: absolute;
+  top: 66%;
+  left: 4%;
+  width: 34%;
+  border: 1px solid rgb(252 211 77 / 0.9);
+  border-radius: 0.8em;
+  background: #fff7d6;
+  padding: 0.6em 0.8em;
+  color: rgb(120 53 15 / 0.85);
+  box-shadow: 0 0.7em 1.4em -0.8em rgb(15 23 42 / 0.4);
+  opacity: 0;
+  scale: 0.9;
+  transition:
+    opacity 0.4s ease,
+    scale 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.is-added .summary-note {
+  opacity: 1;
+  scale: 1;
+}
+
+.summary-note-title {
+  font-weight: 700;
+}
+
+.summary-note ul {
+  margin: 0.25em 0 0;
+  padding-left: 1.1em;
+  line-height: 1.35;
+}
+
+.summary-note-name {
+  margin-top: 0.35em;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: rgb(120 53 15 / 0.6);
 }
 
 .folder {
