@@ -85,7 +85,7 @@ async function add() {
 
 			<div class="ideas-bar__actions">
 				<span v-if="status" class="ideas-bar__status">{{ status }}</span>
-				<UButton
+				<UButton class="rounded-full"
 					v-if="ideas_busy"
 					size="sm"
 					:label="t('ideas.stop')"
@@ -95,11 +95,11 @@ async function add() {
 					@click="stop_ideas"
 				/>
 				<template v-else-if="ideas_flow.phase === 'ask'">
-					<UButton size="sm" :label="t('ideas.cancel')" color="neutral" variant="ghost" @click="cancel_ideas" />
-					<UButton size="sm" :label="t('ideas.generate')" @click="generate_ideas" />
+					<UButton class="rounded-full" size="sm" :label="t('ideas.cancel')" color="neutral" variant="ghost" @click="cancel_ideas" />
+					<UButton class="rounded-full" size="sm" :label="t('ideas.generate')" @click="generate_ideas" />
 				</template>
 				<template v-else-if="ideas_flow.phase === 'review'">
-					<UButton
+					<UButton class="rounded-full"
 						v-if="ideas_from_model"
 						size="sm"
 						:label="t('ideas.more')"
@@ -108,11 +108,11 @@ async function add() {
 						variant="outline"
 						@click="generate_ideas"
 					/>
-					<UButton size="sm" :label="t('ideas.cancel')" color="neutral" variant="ghost" @click="cancel_ideas" />
-					<UButton size="sm" :label="t('ideas.add', { n: ideas_to_add.length })" :disabled="!ideas_to_add.length" @click="add" />
+					<UButton class="rounded-full" size="sm" :label="t('ideas.cancel')" color="neutral" variant="ghost" @click="cancel_ideas" />
+					<UButton class="rounded-full" size="sm" :label="t('ideas.add', { n: ideas_to_add.length })" :disabled="!ideas_to_add.length" @click="add" />
 				</template>
-				<UButton v-else-if="ideas_flow.phase === 'applying'" size="sm" :label="t('ideas.adding')" loading disabled />
-				<UButton v-else size="sm" :label="t('ideas.close')" color="neutral" variant="outline" @click="cancel_ideas" />
+				<UButton class="rounded-full" v-else-if="ideas_flow.phase === 'applying'" size="sm" :label="t('ideas.adding')" loading disabled />
+				<UButton class="rounded-full" v-else size="sm" :label="t('ideas.close')" color="neutral" variant="outline" @click="cancel_ideas" />
 			</div>
 		</div>
 		</div>
@@ -162,9 +162,10 @@ async function add() {
 	box-sizing: border-box;
 	/* The same gray frame and shadow as the canvas dock */
 	border: 0.5px solid var(--border-strong, rgba(0, 0, 0, .15));
-	border-radius: 14px;
+	/* Fully round ends: one smooth curve, not a corner cut by the field */
+	border-radius: 26px;
 	background: var(--surface-3, #fff);
-	padding: 6px 6px 6px 8px;
+	padding: 6px 6px 6px 12px;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
 }
 
@@ -182,7 +183,7 @@ async function add() {
 .ideas-bar__glow {
 	position: absolute;
 	inset: -2px;
-	border-radius: 16px;
+	border-radius: 28px;
 	background: linear-gradient(90deg, var(--pc-accent), #a78bfa, #38bdf8, #f0abfc, var(--pc-accent));
 	background-size: 300% 100%;
 	animation: ideas-bar-flow 2.4s linear infinite;
@@ -192,7 +193,7 @@ async function add() {
 	content: '';
 	position: absolute;
 	inset: -6px;
-	border-radius: 20px;
+	border-radius: 32px;
 	background: inherit;
 	filter: blur(10px);
 	opacity: 0.5;

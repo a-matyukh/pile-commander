@@ -5,7 +5,7 @@ import { model_label } from '@/services/ai/presets'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { close_summary, summary_request } from '@/store/aiSummary'
 import { record_action } from '@/store/history'
-import { t } from '@/i18n'
+import { count_items, t } from '@/i18n'
 import { ai_chat, explain_chat_error } from '@/services/ai/client'
 import { is_abort_error } from '@/services/ai/errors'
 import {
@@ -17,7 +17,10 @@ import {
 import { strip_think, untrusted_markdown } from '@/services/ai/text'
 import { parseNoteMarkdown } from '@/ui/workspace/folder-container/widgets/markdown'
 import { loadedNoteRenderer, loadNoteRenderer } from '@/ui/workspace/folder-container/widgets/noteRenderer'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
 import AiReachBadge from './AiReachBadge.vue'
+import './aiDialog.css'
 
 type Phase = 'reading' | 'writing' | 'review' | 'saving' | 'failed'
 
@@ -67,7 +70,7 @@ async function start() {
 		})
 		if (!is_current()) return
 		if (own.signal.aborted) {
-			error.value = 'Stopped.'
+			error.value = t('summary.stopped')
 			phase.value = 'failed'
 			return
 		}
@@ -78,7 +81,7 @@ async function start() {
 		}
 		if (!is_current()) return
 		if (own.signal.aborted) {
-			error.value = 'Stopped.'
+			error.value = t('summary.stopped')
 			phase.value = 'failed'
 			return
 		}
@@ -94,7 +97,7 @@ async function start() {
 		raw.value = result.text
 		truncated.value = result.truncated
 		if (!summary.value) {
-			error.value = 'The model returned no summary.'
+			error.value = t('summary.empty')
 			phase.value = 'failed'
 			return
 		}
@@ -106,7 +109,7 @@ async function start() {
 				stopped.value = true
 				phase.value = 'review'
 			} else {
-				error.value = 'Stopped.'
+				error.value = t('summary.stopped')
 				phase.value = 'failed'
 			}
 			return
@@ -155,61 +158,37 @@ watch(() => summary_request.run, () => {
 </script>
 
 <template>
-	<UModal
+	<Modal
 		:open="summary_request.open"
-		:title="`Summarize “${summary_request.board_name}”`"
-		:description="`${summary_request.entries.length} ${summary_request.entries.length === 1 ? 'item' : 'items'} · ${model_label(ai_settings.model)}`"
-		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
+		:title="t('summary.title', { name: summary_request.board_name })"
+		:description="t('summary.description', { items: count_items(summary_request.entries.length), model: model_label(ai_settings.model) })"
+		:width="640"
 		@update:open="on_open_change"
 	>
-		<template #body>
-			<div class="flex flex-col gap-3">
-				<div class="flex flex-wrap items-center gap-2 text-xs text-muted">
-					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
-					<span v-if="phase === 'reading'">Reading {{ read }} of {{ summary_request.entries.length }}…</span>
-					<span v-else-if="phase === 'writing' && !summary">Asking {{ model_label(ai_settings.model) }}…</span>
-					<span v-if="coverage">{{ coverage }}</span>
-				</div>
-
-				<div
-					v-if="summary"
-					class="note-preview prose prose-sm prose-gray max-h-[50vh] max-w-none overflow-y-auto rounded-md border border-default p-3"
-					v-html="summary_html"
-				/>
-
-				<p v-if="truncated" class="text-xs text-warning">
-					The answer was cut off by the model's length limit.
-				</p>
-				<p v-else-if="stopped" class="text-xs text-warning">
-					Stopped before the end: the summary may be incomplete.
-				</p>
-				<p v-if="error" class="text-sm text-error">{{ error }}</p>
+		<div class="aid">
+			<div class="aid-status">
+				<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
+				<span v-if="phase === 'reading'">{{ t('summary.reading', { done: read, total: summary_request.entries.length }) }}</span>
+				<span v-else-if="phase === 'writing' && !summary">{{ t('summary.asking', { model: model_label(ai_settings.model) }) }}</span>
+				<span v-if="coverage">{{ coverage }}</span>
 			</div>
-		</template>
 
+			<div v-if="summary" class="aid-preview note-preview prose prose-sm prose-gray max-w-none" v-html="summary_html" />
+
+			<p v-if="truncated" class="aid-warn">{{ t('summary.truncated') }}</p>
+			<p v-else-if="stopped" class="aid-warn">{{ t('summary.stopped_early') }}</p>
+			<p v-if="error" class="aid-error">{{ error }}</p>
+		</div>
+
+		<template #aside>
+			<template v-if="phase === 'review'">{{ t('summary.footer') }}</template>
+		</template>
 		<template #footer>
-			<span class="text-xs text-muted">
-				<template v-if="phase === 'review'">Adds a note next to what you summarized.</template>
-			</span>
-			<div class="flex gap-2">
-				<UButton
-					v-if="phase === 'reading' || phase === 'writing'"
-					label="Stop"
-					icon="i-lucide:square"
-					color="neutral"
-					variant="outline"
-					@click="stop"
-				/>
-				<template v-else>
-					<UButton label="Discard" color="neutral" variant="outline" @click="on_open_change(false)" />
-					<UButton
-						v-if="phase === 'review' || phase === 'saving'"
-						label="Add to board"
-						:loading="phase === 'saving'"
-						@click="accept"
-					/>
-				</template>
-			</div>
+			<Button v-if="phase === 'reading' || phase === 'writing'" icon="tabler:player-stop" @click="stop">{{ t('summary.stop') }}</Button>
+			<template v-else>
+				<Button @click="on_open_change(false)">{{ t('summary.discard') }}</Button>
+				<Button v-if="phase === 'review' || phase === 'saving'" variant="primary" :loading="phase === 'saving'" @click="accept">{{ t('summary.add') }}</Button>
+			</template>
 		</template>
-	</UModal>
+	</Modal>
 </template>

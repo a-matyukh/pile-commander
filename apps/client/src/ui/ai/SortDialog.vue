@@ -17,7 +17,12 @@ import { ai_base_check, ai_settings, vision_support } from '@/store/ai'
 import { ensure_ai_consent } from '@/store/aiConsent'
 import { close_sort, sort_session, type SortGroup } from '@/store/aiSort'
 import { record_action } from '@/store/history'
+import { Icon } from '@iconify/vue'
+import Button from '@/ui/kit/Button.vue'
+import Checkbox from '@/ui/kit/Checkbox.vue'
+import Modal from '@/ui/kit/Modal.vue'
 import AiReachBadge from './AiReachBadge.vue'
+import './aiDialog.css'
 
 /**
  * Sorting before anything moves: folders, new or already there, each with
@@ -243,103 +248,119 @@ watch(() => sort_session.run, () => {
 </script>
 
 <template>
-	<UModal
+	<Modal
 		:open="sort_session.open"
 		:title="dialog_title"
 		:description="dialog_description"
-		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
+		:width="640"
 		@update:open="on_open_change"
 	>
-		<template #body>
-			<div class="flex flex-col gap-3">
-				<div v-if="from_model" class="flex flex-wrap items-center gap-2 text-xs text-muted">
-					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
-					<span v-if="phase === 'reading'">{{ t('ai_sort.reading', { done: read, total: sort_session.entries.length }) }}</span>
-					<span v-else-if="phase === 'asking'" class="flex items-center gap-1.5">
-						<UIcon name="i-lucide:loader-circle" class="size-3.5 animate-spin" />
-						{{ t('ai_sort.asking', { model: model_label(ai_settings.model) }) }}
-					</span>
-					<span v-if="coverage">{{ coverage }}</span>
-				</div>
-				<p v-if="phase === 'review' && groups.length" class="text-xs text-muted">{{ t('ai_sort.hint') }}</p>
-				<p v-if="error" class="text-sm text-error">{{ error }}</p>
-				<p v-if="notice" class="text-sm text-warning">{{ notice }}</p>
-
-				<ul class="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
-					<li v-for="group in groups" :key="group.key" class="rounded-md border border-default">
-						<div class="flex items-center gap-2 border-b border-default bg-elevated/50 px-2.5 py-1.5">
-							<UCheckbox
-								:model-value="group_checked(group)"
-								:disabled="phase !== 'review'"
-								:aria-label="t('ai_sort.check_group', { name: folder_name(group) })"
-								@update:model-value="set_group(group, $event)"
-							/>
-							<UIcon name="i-lucide:folder" class="size-4 shrink-0 text-muted" />
-							<UInput
-								v-if="!group.existing_id"
-								v-model="group.name"
-								size="sm"
-								variant="none"
-								class="min-w-0 flex-1 font-medium"
-								:aria-label="t('ai_sort.folder_name')"
-								:disabled="phase !== 'review'"
-							/>
-							<span v-else class="min-w-0 flex-1 truncate px-2.5 text-sm font-medium">{{ group.to }}</span>
-							<UBadge
-								size="sm"
-								:color="group.existing_id ? 'neutral' : 'primary'"
-								variant="subtle"
-								:label="group.existing_id ? t('ai_sort.existing') : t('ai_sort.new_folder')"
-							/>
-						</div>
-						<ul class="flex flex-col divide-y divide-default">
-							<li v-for="row in group.rows" :key="row.id" class="flex items-center gap-2 px-2.5 py-1.5 pl-8 text-sm">
-								<UCheckbox
-									v-model="row.checked"
-									:disabled="row.status !== 'ready' || phase !== 'review'"
-									:aria-label="t('ai_sort.check', { name: row.name })"
-								/>
-								<UIcon :name="row.type === 'folder' ? 'i-lucide:folder' : 'i-lucide:file'" class="size-3.5 shrink-0 text-dimmed" />
-								<span class="min-w-0 flex-1 truncate" :class="row.checked || row.status !== 'ready' ? 'text-default' : 'text-dimmed'" :title="row.name">{{ row.name }}</span>
-								<UIcon v-if="row.status === 'moved'" name="i-lucide:check" class="size-3.5 shrink-0 text-success" />
-								<span v-else-if="row.status === 'failed'" class="truncate text-xs text-error" :title="row.error ?? ''">{{ row.error }}</span>
-							</li>
-						</ul>
-					</li>
-				</ul>
+		<div class="aid">
+			<div v-if="from_model" class="aid-status">
+				<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
+				<span v-if="phase === 'reading'">{{ t('ai_sort.reading', { done: read, total: sort_session.entries.length }) }}</span>
+				<template v-else-if="phase === 'asking'">
+					<Icon icon="tabler:loader-2" class="aid-spin" />
+					<span>{{ t('ai_sort.asking', { model: model_label(ai_settings.model) }) }}</span>
+				</template>
+				<span v-if="coverage">{{ coverage }}</span>
 			</div>
-		</template>
+			<p v-if="phase === 'review' && groups.length" class="aid-hint">{{ t('ai_sort.hint') }}</p>
+			<p v-if="error" class="aid-error">{{ error }}</p>
+			<p v-if="notice" class="aid-warn">{{ notice }}</p>
 
+			<ul v-if="groups.length" class="aid-cards">
+				<li v-for="group in groups" :key="group.key" class="aid-card">
+					<div class="aid-row sort-head">
+						<Checkbox
+							:model-value="group_checked(group) === true"
+							:indeterminate="group_checked(group) === 'indeterminate'"
+							:disabled="phase !== 'review'"
+							:label="t('ai_sort.check_group', { name: folder_name(group) })"
+							@update:model-value="set_group(group, $event)"
+						/>
+						<Icon icon="tabler:folder" class="aid-icon" />
+						<input
+							v-if="!group.existing_id"
+							v-model="group.name"
+							class="aid-cell sort-name"
+							:aria-label="t('ai_sort.folder_name')"
+							:disabled="phase !== 'review'"
+						/>
+						<span v-else class="aid-cell sort-title">{{ group.to }}</span>
+						<span class="aid-tag" :class="{ 'aid-tag--new': !group.existing_id }">
+							{{ group.existing_id ? t('ai_sort.existing') : t('ai_sort.new_folder') }}
+						</span>
+					</div>
+					<ul class="sort-rows">
+						<li v-for="row in group.rows" :key="row.id" class="aid-row sort-row">
+							<Checkbox
+								v-model="row.checked"
+								:disabled="row.status !== 'ready' || phase !== 'review'"
+								:label="t('ai_sort.check', { name: row.name })"
+							/>
+							<Icon :icon="row.type === 'folder' ? 'tabler:folder' : 'tabler:file'" class="aid-icon" />
+							<span class="aid-cell" :class="{ 'aid-dim': !row.checked && row.status === 'ready' }" :title="row.name">{{ row.name }}</span>
+							<Icon v-if="row.status === 'moved'" icon="tabler:check" class="aid-icon aid-success" />
+							<span v-else-if="row.status === 'failed'" class="aid-cell aid-error" :title="row.error ?? ''">{{ row.error }}</span>
+						</li>
+					</ul>
+				</li>
+			</ul>
+		</div>
+
+		<template #aside>
+			<template v-if="phase === 'review' && groups.length">
+				{{ t('ai_sort.to_move', { n: to_move }) }}<template v-if="left"> · {{ t('ai_sort.left', { n: left }) }}</template>
+			</template>
+		</template>
 		<template #footer>
-			<span class="text-xs text-muted">
-				<template v-if="phase === 'review' && groups.length">
-					{{ t('ai_sort.to_move', { n: to_move }) }}<template v-if="left"> · {{ t('ai_sort.left', { n: left }) }}</template>
-				</template>
-			</span>
-			<div class="flex gap-2">
-				<UButton
-					v-if="busy"
-					:label="t('ai_sort.stop')"
-					icon="i-lucide:square"
-					color="neutral"
-					variant="outline"
-					@click="stop"
-				/>
-				<template v-else-if="phase === 'review'">
-					<UButton
-						v-if="from_model"
-						:label="t('ai_sort.again')"
-						icon="i-lucide:sparkles"
-						color="neutral"
-						variant="outline"
-						@click="ask_model"
-					/>
-					<UButton :label="t('ai_sort.cancel')" color="neutral" variant="outline" @click="on_open_change(false)" />
-					<UButton :label="t('ai_sort.apply', { n: to_move })" :disabled="!to_move" @click="apply" />
-				</template>
-				<UButton v-else-if="phase === 'applying'" :label="t('ai_sort.applying')" loading disabled />
-				<UButton v-else :label="t('ai_sort.close')" color="neutral" variant="outline" @click="on_open_change(false)" />
-			</div>
+			<Button v-if="busy" icon="tabler:player-stop" @click="stop">{{ t('ai_sort.stop') }}</Button>
+			<template v-else-if="phase === 'review'">
+				<Button v-if="from_model" icon="tabler:sparkles" @click="ask_model">{{ t('ai_sort.again') }}</Button>
+				<Button @click="on_open_change(false)">{{ t('ai_sort.cancel') }}</Button>
+				<Button variant="primary" :disabled="!to_move" @click="apply">{{ t('ai_sort.apply', { n: to_move }) }}</Button>
+			</template>
+			<Button v-else-if="phase === 'applying'" variant="primary" loading>{{ t('ai_sort.applying') }}</Button>
+			<Button v-else @click="on_open_change(false)">{{ t('ai_sort.close') }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>
+
+<style scoped>
+.sort-head {
+	background: var(--surface-1);
+	border-bottom: 0.5px solid var(--border);
+}
+.sort-name {
+	height: 26px;
+	padding: 0 6px;
+	border: 0.5px solid transparent;
+	border-radius: 6px;
+	background: none;
+	font: inherit;
+	font-weight: 500;
+	color: var(--text-primary);
+	outline: none;
+}
+.sort-name:hover:not(:disabled),
+.sort-name:focus {
+	border-color: var(--border-strong);
+	background: var(--surface-2);
+}
+.sort-title {
+	padding: 0 7px;
+	font-weight: 500;
+}
+.sort-rows {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.sort-rows > li + li {
+	border-top: 0.5px solid var(--border);
+}
+.sort-row {
+	padding-left: 36px;
+}
+</style>

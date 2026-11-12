@@ -2,6 +2,10 @@
 import { computed, ref } from 'vue'
 import { is_reserved_slug } from '@pile-commander/file-manager'
 import cloud from '@/store/cloud'
+import { t } from '@/i18n'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
+import TextField from '@/ui/kit/TextField.vue'
 
 /** DB: profiles.username ~ '^[a-z0-9][a-z0-9-]{2,39}$' (the /<username> segment) */
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9-]{2,39}$/
@@ -15,9 +19,9 @@ const trimmed_username = computed(() => username.value.trim())
 const username_error = computed(() => {
 	if (!trimmed_username.value) return null
 	if (!USERNAME_PATTERN.test(trimmed_username.value)) {
-		return '3-40 chars: lowercase letters, digits, hyphens'
+		return t('profile.username_rule')
 	}
-	if (is_reserved_slug(trimmed_username.value)) return 'this username is reserved'
+	if (is_reserved_slug(trimmed_username.value)) return t('profile.username_reserved')
 	return null
 })
 
@@ -60,38 +64,43 @@ defineExpose({ open })
 </script>
 
 <template>
-	<UModal v-model:open="is_open" title="Profile">
-		<template #body>
-			<p class="mb-3 text-sm text-muted">
-				Your username is the public address of your publications:
-				<span class="font-mono">/{{ trimmed_username || 'username' }}/&lt;slug&gt;</span>
-			</p>
-			<p v-if="cloud.last_error" class="mb-3 text-sm text-error">{{ cloud.last_error }}</p>
-			<form class="flex flex-col gap-3" @submit.prevent="save">
-				<div>
-					<UInput
-						v-model="username"
-						placeholder="set username"
-						class="w-full"
-						icon="i-lucide:at-sign"
-					/>
-					<p v-if="username_error" class="mt-1 text-xs text-error">{{ username_error }}</p>
-				</div>
-				<UInput
-					v-model="display_name"
-					placeholder="Display name (optional)"
-					class="w-full"
-					icon="i-lucide:user-round"
-				/>
-				<div class="flex justify-end">
-					<UButton
-						type="submit"
-						label="Save"
-						:loading="is_saving"
-						:disabled="!can_save"
-					/>
-				</div>
-			</form>
+	<Modal v-model:open="is_open" :title="t('profile.title')">
+		<p class="pf-note">
+			{{ t('profile.address') }}
+			<span class="pf-mono">/{{ trimmed_username || t('profile.username_example') }}/&lt;slug&gt;</span>
+		</p>
+		<p v-if="cloud.last_error" class="pf-bad">{{ cloud.last_error }}</p>
+		<form class="pf" @submit.prevent="save">
+			<TextField v-model="username" icon="tabler:at" :placeholder="t('profile.username')" :invalid="!!username_error" autocomplete="username" />
+			<p v-if="username_error" class="pf-bad">{{ username_error }}</p>
+			<TextField v-model="display_name" icon="tabler:user" :placeholder="t('profile.display_name')" />
+			<button type="submit" hidden />
+		</form>
+		<template #footer>
+			<Button @click="is_open = false">{{ t('dialog.cancel') }}</Button>
+			<Button variant="primary" :loading="is_saving" :disabled="!can_save" @click="save">{{ t('dialog.save') }}</Button>
 		</template>
-	</UModal>
+	</Modal>
 </template>
+
+<style scoped>
+.pf {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.pf-note {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-secondary);
+}
+.pf-mono {
+	font-family: var(--font-mono);
+}
+.pf-bad {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-danger);
+}
+</style>

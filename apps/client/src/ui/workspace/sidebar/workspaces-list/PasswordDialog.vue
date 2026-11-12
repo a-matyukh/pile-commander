@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import cloud from '@/store/cloud'
-import { SIGN_UP_PASSWORD_HINT, SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
+import { SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
+import { t } from '@/i18n'
+import Button from '@/ui/kit/Button.vue'
+import Modal from '@/ui/kit/Modal.vue'
+import TextField from '@/ui/kit/TextField.vue'
 
 const current = ref('')
 const password = ref('')
@@ -71,70 +75,75 @@ async function submit() {
 </script>
 
 <template>
-	<UModal
+	<Modal
 		v-model:open="open"
-		:title="is_recovery ? 'Choose a new password' : 'Change password'"
-		:description="is_recovery
-			? 'This replaces the password on your account.'
-			: 'Enter your current password, then a new one.'"
-		:ui="{ footer: 'justify-end' }"
+		:title="is_recovery ? t('password.recovery_title') : t('password.title')"
+		:description="is_recovery ? t('password.recovery_description') : t('password.description')"
 	>
-		<template #body>
-			<p v-if="done" class="text-sm text-green-600">Password updated.</p>
-			<form v-else class="flex flex-col gap-2" @submit.prevent="submit">
-				<UInput
-					v-if="!is_recovery"
-					v-model="current"
-					type="password"
-					placeholder="Current password"
-					autocomplete="current-password"
-					autofocus
-				/>
-				<p v-if="current_missing" class="text-xs text-red-500">Enter your current password.</p>
-				<UInput
-					v-model="password"
-					type="password"
-					placeholder="New password"
-					autocomplete="new-password"
-					:autofocus="is_recovery"
-				/>
-				<p
-					class="text-xs"
-					:class="too_short ? 'text-red-500' : 'opacity-60'"
-				>
-					{{ SIGN_UP_PASSWORD_HINT }}
-				</p>
-				<UInput
-					v-model="confirm"
-					type="password"
-					placeholder="Repeat password"
-					autocomplete="new-password"
-				/>
-				<p v-if="mismatch" class="text-xs text-red-500">Those passwords don't match.</p>
-				<p v-if="cloud.last_error" class="text-xs text-red-500">{{ cloud.last_error }}</p>
-			</form>
-		</template>
-		<template #footer>
-			<UButton
-				v-if="done"
-				label="Close"
-				color="neutral"
-				variant="outline"
-				@click="cloud.dismiss_password_prompt()"
+		<p v-if="done" class="pw-ok">{{ t('password.updated') }}</p>
+		<form v-else class="pw" @submit.prevent="submit">
+			<TextField
+				v-if="!is_recovery"
+				v-model="current"
+				type="password"
+				icon="tabler:lock"
+				:placeholder="t('password.current')"
+				autocomplete="current-password"
+				:invalid="current_missing"
+				autofocus
 			/>
+			<p v-if="current_missing" class="pw-bad">{{ t('password.enter_current') }}</p>
+			<TextField
+				v-model="password"
+				type="password"
+				icon="tabler:key"
+				:placeholder="t('password.new')"
+				autocomplete="new-password"
+				:invalid="too_short"
+				:autofocus="is_recovery"
+			/>
+			<p class="pw-hint" :class="{ 'pw-bad': too_short }">{{ t('auth.password_hint', { n: SIGN_UP_PASSWORD_MIN }) }}</p>
+			<TextField
+				v-model="confirm"
+				type="password"
+				icon="tabler:key"
+				:placeholder="t('password.repeat')"
+				autocomplete="new-password"
+				:invalid="mismatch"
+			/>
+			<p v-if="mismatch" class="pw-bad">{{ t('password.mismatch') }}</p>
+			<p v-if="cloud.last_error" class="pw-bad">{{ cloud.last_error }}</p>
+			<button type="submit" hidden />
+		</form>
+		<template #footer>
+			<Button v-if="done" @click="cloud.dismiss_password_prompt()">{{ t('dialog.close') }}</Button>
 			<template v-else>
-				<UButton
-					:label="is_recovery ? 'Not now' : 'Cancel'"
-					color="neutral"
-					variant="outline"
-					@click="cloud.dismiss_password_prompt()"
-				/>
-				<UButton
-					label="Update password"
-					:loading="is_submitting"
-					@click="submit"
-				/>
+				<Button @click="cloud.dismiss_password_prompt()">{{ is_recovery ? t('password.not_now') : t('dialog.cancel') }}</Button>
+				<Button variant="primary" :loading="is_submitting" @click="submit">{{ t('password.submit') }}</Button>
 			</template>
 		</template>
-	</UModal>
+	</Modal>
 </template>
+
+<style scoped>
+.pw {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.pw-hint {
+	margin: -2px 0 0;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.pw-bad {
+	margin: 0;
+	font-size: 12px;
+	color: var(--text-danger);
+}
+.pw-ok {
+	margin: 0;
+	font-size: 13px;
+	color: var(--text-success);
+}
+</style>

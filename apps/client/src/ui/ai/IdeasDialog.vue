@@ -4,7 +4,13 @@ import { count_notes, t } from '@/i18n'
 import { model_label } from '@/services/ai/presets'
 import { ai_base_check, ai_settings } from '@/store/ai'
 import { ideas_session } from '@/store/aiIdeas'
+import { Icon } from '@iconify/vue'
+import Button from '@/ui/kit/Button.vue'
+import Checkbox from '@/ui/kit/Checkbox.vue'
+import Modal from '@/ui/kit/Modal.vue'
+import TextField from '@/ui/kit/TextField.vue'
 import AiReachBadge from './AiReachBadge.vue'
+import './aiDialog.css'
 import IdeaNotePreview from './IdeaNotePreview.vue'
 import {
 	add_ideas,
@@ -31,12 +37,12 @@ import {
 
 const toast = useToast()
 const open = computed(() => ideas_in_dialog.value)
-const field = ref<{ inputRef?: HTMLInputElement } | null>(null)
+const field = ref<InstanceType<typeof TextField> | null>(null)
 
 watch(() => [ideas_session.run, open.value] as const, async () => {
 	if (!open.value || !ideas_from_model.value || ideas_flow.phase !== 'ask') return
 	await nextTick()
-	field.value?.inputRef?.focus()
+	field.value?.focus()
 })
 
 async function add() {
@@ -51,94 +57,116 @@ function on_open_change(value: boolean) {
 </script>
 
 <template>
-	<UModal
+	<Modal
 		:open="open"
 		:title="ideas_title"
 		:description="ideas_description"
-		:ui="{ content: 'max-w-2xl', footer: 'justify-between' }"
+		:width="640"
 		@update:open="on_open_change"
 	>
-		<template #body>
-			<div class="flex flex-col gap-3">
-				<form v-if="ideas_from_model" class="flex gap-2" @submit.prevent="generate_ideas">
-					<UInput
-						ref="field"
-						v-model="ideas_flow.prompt"
-						class="flex-1"
-						:placeholder="t('ideas.prompt_placeholder')"
-						:disabled="ideas_busy || ideas_flow.phase === 'applying'"
-						icon="i-lucide:sparkles"
-					/>
-					<UButton v-if="ideas_flow.phase === 'ask'" type="submit" :label="t('ideas.generate')" />
-				</form>
-
-				<div v-if="ideas_from_model" class="flex flex-wrap items-center gap-2 text-xs text-muted">
-					<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
-					<span v-if="ideas_flow.phase === 'reading'">{{ t('ideas.reading', { done: ideas_flow.read, total: ideas_session.entries.length }) }}</span>
-					<span v-else-if="ideas_flow.phase === 'writing'">{{ t('ideas.asking', { model: model_label(ai_settings.model) }) }}</span>
-					<span v-if="ideas_flow.coverage">{{ ideas_flow.coverage }}</span>
-				</div>
-
-				<p v-if="ideas_flow.phase === 'review' && ideas_rows.length" class="text-xs text-muted">{{ t('ideas.hint') }}</p>
-				<p v-if="ideas_flow.error" class="text-sm text-error">{{ ideas_flow.error }}</p>
-				<p v-if="ideas_flow.notice" class="text-sm text-warning">{{ ideas_flow.notice }}</p>
-				<p v-if="ideas_flow.truncated" class="text-xs text-warning">{{ t('ideas.truncated') }}</p>
-
-				<ul v-if="ideas_rows.length" class="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
-					<li
-						v-for="(row, index) in ideas_rows"
-						:key="row.key"
-						class="flex gap-2.5 rounded-md border border-default p-2.5"
-						:class="{ 'opacity-60': (!row.checked && row.status === 'ready') || row.status === 'writing' }"
-					>
-						<UCheckbox
-							v-model="row.checked"
-							class="mt-0.5"
-							:disabled="row.status !== 'ready' || ideas_flow.phase !== 'review'"
-							:aria-label="t('ideas.check', { name: idea_title_of(ideas_planned[index] ?? row.name) })"
-						/>
-						<div class="min-w-0 flex-1">
-							<p class="flex items-center gap-1.5 truncate text-sm font-medium" :title="ideas_planned[index] ?? row.name">
-								<UIcon v-if="row.status === 'writing'" name="i-lucide:loader-circle" class="size-3.5 shrink-0 animate-spin text-muted" />
-								{{ idea_title_of(ideas_planned[index] ?? row.name) }}
-							</p>
-							<IdeaNotePreview :text="row.text" class="mt-1 max-h-28" />
-							<p v-if="row.status === 'failed' && row.error" class="mt-1 text-xs text-error">{{ row.error }}</p>
-						</div>
-					</li>
-				</ul>
-			</div>
-		</template>
-
-		<template #footer>
-			<span class="text-xs text-muted">
-				<template v-if="ideas_flow.phase === 'review'">{{ t('ideas.to_add', { n: ideas_to_add.length }) }}</template>
-			</span>
-			<div class="flex gap-2">
-				<UButton
-					v-if="ideas_busy"
-					:label="t('ideas.stop')"
-					icon="i-lucide:square"
-					color="neutral"
-					variant="outline"
-					@click="stop_ideas"
+		<div class="aid">
+			<form v-if="ideas_from_model" class="ideas-ask" @submit.prevent="generate_ideas">
+				<TextField
+					ref="field"
+					v-model="ideas_flow.prompt"
+					class="ideas-field"
+					icon="tabler:sparkles"
+					:placeholder="t('ideas.prompt_placeholder')"
+					:disabled="ideas_busy || ideas_flow.phase === 'applying'"
 				/>
-				<UButton v-else-if="ideas_flow.phase === 'ask'" :label="t('ideas.cancel')" color="neutral" variant="outline" @click="cancel_ideas" />
-				<template v-else-if="ideas_flow.phase === 'review'">
-					<UButton
-						v-if="ideas_from_model"
-						:label="t('ideas.more')"
-						icon="i-lucide:sparkles"
-						color="neutral"
-						variant="outline"
-						@click="generate_ideas"
-					/>
-					<UButton :label="t('ideas.cancel')" color="neutral" variant="outline" @click="cancel_ideas" />
-					<UButton :label="t('ideas.add', { n: ideas_to_add.length })" :disabled="!ideas_to_add.length" @click="add" />
-				</template>
-				<UButton v-else-if="ideas_flow.phase === 'applying'" :label="t('ideas.adding')" loading disabled />
-				<UButton v-else :label="t('ideas.close')" color="neutral" variant="outline" @click="cancel_ideas" />
+				<Button v-if="ideas_flow.phase === 'ask'" type="submit" variant="primary">{{ t('ideas.generate') }}</Button>
+			</form>
+
+			<div v-if="ideas_from_model" class="aid-status">
+				<AiReachBadge v-if="ai_base_check.ok" :reach="ai_base_check.reach" />
+				<span v-if="ideas_flow.phase === 'reading'">{{ t('ideas.reading', { done: ideas_flow.read, total: ideas_session.entries.length }) }}</span>
+				<span v-else-if="ideas_flow.phase === 'writing'">{{ t('ideas.asking', { model: model_label(ai_settings.model) }) }}</span>
+				<span v-if="ideas_flow.coverage">{{ ideas_flow.coverage }}</span>
 			</div>
+
+			<p v-if="ideas_flow.phase === 'review' && ideas_rows.length" class="aid-hint">{{ t('ideas.hint') }}</p>
+			<p v-if="ideas_flow.error" class="aid-error">{{ ideas_flow.error }}</p>
+			<p v-if="ideas_flow.notice" class="aid-warn">{{ ideas_flow.notice }}</p>
+			<p v-if="ideas_flow.truncated" class="aid-warn">{{ t('ideas.truncated') }}</p>
+
+			<ul v-if="ideas_rows.length" class="aid-cards">
+				<li
+					v-for="(row, index) in ideas_rows"
+					:key="row.key"
+					class="aid-card idea"
+					:class="{ 'idea--off': (!row.checked && row.status === 'ready') || row.status === 'writing' }"
+				>
+					<Checkbox
+						v-model="row.checked"
+						class="idea-check"
+						:disabled="row.status !== 'ready' || ideas_flow.phase !== 'review'"
+						:label="t('ideas.check', { name: idea_title_of(ideas_planned[index] ?? row.name) })"
+					/>
+					<div class="idea-body">
+						<p class="idea-title" :title="ideas_planned[index] ?? row.name">
+							<Icon v-if="row.status === 'writing'" icon="tabler:loader-2" class="aid-spin aid-icon" />
+							{{ idea_title_of(ideas_planned[index] ?? row.name) }}
+						</p>
+						<IdeaNotePreview :text="row.text" class="idea-text" />
+						<p v-if="row.status === 'failed' && row.error" class="aid-error">{{ row.error }}</p>
+					</div>
+				</li>
+			</ul>
+		</div>
+
+		<template #aside>
+			<template v-if="ideas_flow.phase === 'review'">{{ t('ideas.to_add', { n: ideas_to_add.length }) }}</template>
 		</template>
-	</UModal>
+		<template #footer>
+			<Button v-if="ideas_busy" icon="tabler:player-stop" @click="stop_ideas">{{ t('ideas.stop') }}</Button>
+			<Button v-else-if="ideas_flow.phase === 'ask'" @click="cancel_ideas">{{ t('ideas.cancel') }}</Button>
+			<template v-else-if="ideas_flow.phase === 'review'">
+				<Button v-if="ideas_from_model" icon="tabler:sparkles" @click="generate_ideas">{{ t('ideas.more') }}</Button>
+				<Button @click="cancel_ideas">{{ t('ideas.cancel') }}</Button>
+				<Button variant="primary" :disabled="!ideas_to_add.length" @click="add">{{ t('ideas.add', { n: ideas_to_add.length }) }}</Button>
+			</template>
+			<Button v-else-if="ideas_flow.phase === 'applying'" variant="primary" loading>{{ t('ideas.adding') }}</Button>
+			<Button v-else @click="cancel_ideas">{{ t('ideas.close') }}</Button>
+		</template>
+	</Modal>
 </template>
+
+<style scoped>
+.ideas-ask {
+	display: flex;
+	gap: 8px;
+}
+.ideas-field {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.idea {
+	display: flex;
+	gap: 10px;
+	padding: 10px;
+}
+.idea--off {
+	opacity: .6;
+}
+.idea-check {
+	margin-top: 1px;
+}
+.idea-body {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.idea-title {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+	overflow: hidden;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.idea-text {
+	max-height: 7rem;
+	margin-top: 4px;
+}
+</style>
