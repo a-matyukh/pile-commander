@@ -12,6 +12,7 @@ import { require_supabase } from '@/services/cloud/client'
 import { t } from '@/i18n'
 import { history, record_action } from '@/store/history'
 import { bring_back_bookmarks, forget_bookmarks, retarget_bookmarks } from './bookmarks'
+import { follow_moved_folder } from '@/store/localSync'
 import { find_tree_node } from '@/services/workspace/tree'
 import { transfer_entries, type PartialCopy } from '@/store/helpers/crossStoreTransfer'
 import { create_entry } from '@/store/helpers/createEntry'
@@ -54,7 +55,7 @@ export type ExplorerTreeDeps = {
 	delete_cloud_root?(root_id: string): Promise<void>
 	/** Keeps a root's store open during an operation; returns the release */
 	hold_root?(root_id: string): () => void
-	/** Bookmarks at or inside a renamed or moved folder follow it */
+	/** Bookmarks (and sync links) at or inside a renamed or moved folder follow it */
 	retarget_bookmarks?(from: FolderRef, to: FolderRef): void
 	/** Bookmarks at or inside a trashed or ungrouped folder go away */
 	forget_bookmarks?(gone: FolderRef): void
@@ -1003,7 +1004,10 @@ export const explorer_tree = create_explorer_tree({
 		if (cloud.last_error) throw new Error(cloud.last_error)
 	},
 	hold_root: root_id => explorer_drives.hold(root_id),
-	retarget_bookmarks,
+	retarget_bookmarks: (from, to) => {
+		retarget_bookmarks(from, to)
+		follow_moved_folder(from, to)
+	},
 	forget_bookmarks,
 	bring_back_bookmarks: back => bring_back_bookmarks(back),
 	cloud_root_published: root_id => !!(cloud.published_slugs[root_id] || cloud.hub_listed[root_id] || cloud.hub_hidden[root_id]),

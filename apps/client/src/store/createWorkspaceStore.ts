@@ -236,6 +236,16 @@ async function locate_synced(store: WorkspaceStore, id: string): Promise<SyncedE
 	return (await synced_folders()?.locate(id).catch(() => null)) ?? undefined
 }
 
+/**
+ * A folder on this computer was renamed or moved: a synced folder at it or
+ * inside it keeps syncing from its new place (desktop)
+ */
+function follow_synced_folder(store: WorkspaceStore, type: string, from: string, to: string): void {
+	if (store.type !== 'local' || type !== 'folder' || from === to) return
+	void synced_folders()?.moved(from, to)
+		.catch((error: unknown) => console.warn('[sync] could not follow a moved folder', error))
+}
+
 /** Something is at `id` now */
 async function entry_there(fm: FileManager, id: string, root_id: string): Promise<boolean> {
 	const siblings = await fm.FolderChildren(parent_folder_id_from_node_id(id, root_id)).catch(() => [])
@@ -3326,6 +3336,7 @@ export async function createWorkspaceStore(
 			apply_id_changed(this, shown_id, result.id, result.name)
 		}
 		note_hidden_name(this, result.name)
+		follow_synced_folder(this, entry_type, id, result.id)
 		await rename_folder_canvas_connections(this, id, result.id)
 		tx?.record({ kind: 'entry_move', from: id, to: result.id, entry_type: entry_type === 'folder' ? 'folder' : 'file' })
 		return result.id
@@ -3520,6 +3531,7 @@ export async function createWorkspaceStore(
 
 			rekey_entry_content_caches(content_caches, old_id, result.id)
 			apply_id_changed(this, old_id, result.id, result.name)
+			follow_synced_folder(this, node.type, old_id, result.id)
 
 		await rename_folder_canvas_connections(this, old_id, result.id, {
 			same_parent: !is_cross_folder,

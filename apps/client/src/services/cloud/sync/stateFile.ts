@@ -1,5 +1,5 @@
 import { PILE_DIR_NAME } from '@pile-commander/file-manager'
-import { join_local } from './paths'
+import { join_local, relative_of } from './paths'
 import { SYNC_STATE_VERSION, type SyncState } from './types'
 
 export const SYNC_STATE_FILE = 'sync.json'
@@ -91,6 +91,27 @@ export function other_copy_link(
 export function take_over_state(text: string, owner: SyncLinkOwner, from_device: string): SyncState | null {
 	const state = parse_sync_state(text, { ...owner, device_id: from_device })
 	return state ? { ...state, device_id: owner.device_id } : null
+}
+
+/**
+ * Where a linked folder is after a folder moved from `from` to `to`: the
+ * folder itself, or one inside it (its parent moved). Null when the move
+ * did not touch it
+ */
+export function moved_root(root: string, from: string, to: string): string | null {
+	const relative = relative_of(from, root)
+	if (relative === null) return null
+	return join_local(to, relative)
+}
+
+/**
+ * The link file of a folder the app moved: the same state (its base snapshot
+ * keeps deletes and conflicts right), now at the new path. Null when the
+ * file is not this link's
+ */
+export function moved_state(text: string, owner: SyncLinkOwner, root: string): SyncState | null {
+	const state = parse_sync_state(text, owner)
+	return state ? { ...state, root_path: root } : null
 }
 
 export function new_sync_state(owner: SyncLinkOwner, options: { exclude?: string[]; adopt_before?: number } = {}): SyncState {

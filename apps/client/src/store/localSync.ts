@@ -15,7 +15,9 @@ import {
 	type EntryRow,
 	type FileManager,
 } from '@pile-commander/file-manager'
+import type { FolderRef } from '@/domain/Drive'
 import { is_desktop } from '@/isDesktop'
+import { normalize_workspace_id } from '@/services/workspace/paths'
 import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
 import { create_sync_engine, type SyncEngine, type SyncNowOptions, type SyncStatus } from '@/services/cloud/sync/syncEngine'
@@ -26,6 +28,8 @@ import { pile_root_name } from '@/services/workspace/pack'
 import type { LocalWriter } from '@/services/cloud/sync/syncPass'
 import {
 	is_sync_state_path,
+	moved_root,
+	moved_state,
 	new_sync_state,
 	parse_sync_state,
 	other_copy_link,
@@ -360,6 +364,58 @@ export async function unlink_folder(root: string): Promise<void> {
 	await remove_state(root)
 }
 
+/**
+ * A synced folder is like a briefcase: wherever it goes, it keeps syncing.
+ * The app moved or renamed a folder from `from` to `to`: every link at it or
+ * inside it follows. Its link file moved along (a rename is atomic) and keeps
+ * its base snapshot; a move that copied the folder without it starts over,
+ * adopting what the cloud holds at the same paths
+ */
+export function retarget_sync_links(from: string, to: string): Promise<void> {
+	if (!is_desktop || from === to) return Promise.resolve()
+	// One at a time: the store and the tree both report a move, and the
+	// second report then finds nothing left at `from`
+	const run = link_moves.then(async () => {
+		for (const link of Object.values(links.value)) {
+			const root = moved_root(link.root, from, to)
+			if (root !== null && root !== link.root) await move_link(link, root)
+		}
+	})
+	link_moves = run.catch(() => {})
+	return run
+}
+
+let link_moves: Promise<void> = Promise.resolve()
+
+/** The same, for a folder the explorer or an undo moved: only folders on this computer have links */
+export function follow_moved_folder(from: FolderRef, to: FolderRef): void {
+	if (from.drive_id !== 'local' || to.drive_id !== 'local') return
+	void retarget_sync_links(normalize_workspace_id(from.folder_id), normalize_workspace_id(to.folder_id))
+		.catch((error: unknown) => console.warn('[sync] could not follow a moved folder', error))
+}
+
+async function move_link(link: SyncLink, root: string): Promise<void> {
+	stop_engine(link.root)
+	const moved: SyncLink = { ...link, root }
+	try {
+		let state: SyncState | null = null
+		try {
+			state = moved_state(await (await fs()).readTextFile(sync_state_path(root)), owner_of(link), root)
+		} catch {
+			// no link file at the new path
+		}
+		await save_state(moved, state ?? new_sync_state(owner_of(moved), { adopt_before: Date.now() }))
+	} catch (error) {
+		// the link still follows: its engine pauses until the folder is there
+		console.warn('[sync] could not move the link file', error)
+	}
+	const next = { ...links.value }
+	delete next[link.root]
+	next[root] = moved
+	links.value = next
+	if (moved.user_id === cloud.user?.id) start_engine(moved)
+}
+
 /** A folder this account syncs from another copy of the app (its link file is not this copy's) */
 export type OtherCopyLink = {
 	workspace_id: string
@@ -450,5 +506,6 @@ if (is_desktop) {
 			const row = await entry_state_by_id(require_supabase(), entry.cloud_id)
 			if (row.state === 'live' && row.path) await fm.remove_untouched(row.path, expect)
 		},
+		moved: retarget_sync_links,
 	})
 }

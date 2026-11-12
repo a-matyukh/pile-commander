@@ -413,6 +413,9 @@ describe('undo in a synced folder', () => {
 			async remove_copy(entry, expect) {
 				calls.push(`remove copy ${entry.cloud_id} ${JSON.stringify(expect)}`)
 			},
+			async moved(from, to) {
+				calls.push(`moved ${from} -> ${to}`)
+			},
 		}
 		set_synced_folders(hooks)
 		return calls
@@ -456,6 +459,23 @@ describe('undo in a synced folder', () => {
 		await h.undo()
 		expect(fake.has(id)).toBe(false)
 		expect(calls).toEqual(['hold /ws', 'remove copy row-1 {"text":""}', 'release'])
+	})
+
+	test('a folder renamed, moved, and moved back by undo: the sync hears each new path, a file never', async () => {
+		const calls = fake_sync({ row: 'live' })
+		const { fake, ws, h, act } = await setup()
+		fake.seed_folder('/ws/bag')
+		fake.seed_folder('/ws/shelf')
+		await ws.reload_folder_cache('/ws')
+		await ws.rename('/ws/bag', 'case')
+		await act(tx => ws.move('/ws/case', '/ws/shelf', 0, '/ws', undefined, { tx }))
+		await ws.rename('/ws/a.md', 'z.md')
+		await h.undo()
+		expect(calls.filter(call => call.startsWith('moved'))).toEqual([
+			'moved /ws/bag -> /ws/case',
+			'moved /ws/case -> /ws/shelf/case',
+			'moved /ws/shelf/case -> /ws/case',
+		])
 	})
 
 	test('a creation not uploaded yet goes only here', async () => {

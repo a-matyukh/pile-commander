@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { new_sync_state, other_copy_link, parse_sync_state, take_over_state } from './stateFile'
+import { moved_root, moved_state, new_sync_state, other_copy_link, parse_sync_state, take_over_state } from './stateFile'
 
 const ROOT = '/Users/me/Desktop/Folder views'
 const ME = 'user-me'
@@ -37,5 +37,24 @@ describe('a folder synced from another copy of the app', () => {
 		const written = JSON.stringify(taken)
 		expect(parse_sync_state(written, owner)).not.toBeNull()
 		expect(parse_sync_state(written, { ...owner, device_id: THERE })).toBeNull()
+	})
+})
+
+describe('a synced folder the app moves or renames', () => {
+	test('the folder itself, or one inside a moved parent, follows; others stay', () => {
+		expect(moved_root(ROOT, ROOT, '/Users/me/Projects/Folder views')).toBe('/Users/me/Projects/Folder views')
+		expect(moved_root(ROOT, '/Users/me/Desktop', '/Users/me/Archive')).toBe('/Users/me/Archive/Folder views')
+		expect(moved_root(ROOT, '/Users/me/Desktop/Folder', '/Users/me/X')).toBeNull()
+		expect(moved_root(ROOT, '/Users/me/Desktop/Folder views/inner', '/Users/me/X')).toBeNull()
+	})
+
+	test('the link file keeps its base snapshot at the new path, and only this link\'s file moves', () => {
+		const owner = { root_path: ROOT, device_id: HERE, user_id: ME, workspace_id: WS }
+		const to = '/Users/me/Projects/Folder views'
+		const moved = moved_state(file_from(HERE), owner, to)
+		expect(moved?.root_path).toBe(to)
+		expect(Object.keys(moved?.entries ?? {})).toEqual(['note.md'])
+		expect(parse_sync_state(JSON.stringify(moved), { ...owner, root_path: to })).not.toBeNull()
+		expect(moved_state(file_from(THERE), owner, to)).toBeNull()
 	})
 })

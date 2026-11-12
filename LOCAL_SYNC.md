@@ -68,6 +68,18 @@ link in localStorage (`local_sync_links`, by folder path).
 - One cloud workspace syncs with one folder per account on a device; a
   second link is refused.
 
+**A moved folder.** A synced folder is like a briefcase: wherever it goes,
+it keeps syncing. When the app renames or moves a folder on this computer
+(the tree, the folder view, AI sort, undo — all through the store's
+`rename`/`move`, plus the tree's move between `~` and a folder outside it),
+`retarget_sync_links(from, to)` moves every link at it or inside it (its
+parent moved): the engine stops, the link file gets the new `root_path`
+and keeps its base snapshot (`moved_state`), the link is re-keyed and the
+engine starts again. A move that copied the folder without its link file
+starts over with `adopt_before`, adopting what the cloud holds at the same
+paths. Reports of one move from the store and the tree run one after the
+other; the second finds nothing left to move.
+
 **Engine (`syncEngine.ts`).** One per linked folder. Passes never overlap; a
 change during a pass queues one more. A pass runs:
 - at start;
