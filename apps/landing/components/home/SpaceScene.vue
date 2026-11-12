@@ -37,7 +37,7 @@ async function load() {
     sync();
   } catch (error) {
     // No WebGL (or the chunk failed): the poster stays.
-    console.warn("[vision] 3D scene unavailable", error);
+    console.warn("[3d] 3D scene unavailable", error);
   }
 }
 
@@ -73,7 +73,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" class="relative h-full">
-    <VisionSpacePoster class="poster" :class="{ 'poster-hidden': ready }" />
+    <HomeSpacePoster class="poster" :class="{ 'poster-hidden': ready }" />
 
     <div
       ref="stage"

@@ -5,7 +5,7 @@ Status: **two-way sync is built** in the desktop app (branch
 the live project. Follow `AGENTS.md` → "Project stage: production" for any
 further database step.
 
-The landing promises the feature on /vision ("Local folders that stay in
+The landing shows the feature on the home page ("Local folders that stay in
 sync"): a workspace folder on disk and its cloud copy, changes travelling
 both ways, and on either side the folder is still a board or a canvas.
 

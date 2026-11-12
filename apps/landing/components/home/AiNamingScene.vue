@@ -1,6 +1,6 @@
-<!-- AI tools as they ship: files picked on the board get names from a model
-     (a was → now list to accept), then the board gets a summary. Generate
-     ideas and Sort into folders are chips marked Soon.
+<!-- Names and a summary: files picked on the board get names from a model
+     (a was → now list to accept), then the board gets a summary. Ideas and
+     sorting have scenes of their own (AiIdeasScene, AiSortScene).
      SSR, no-JS and reduced motion get the finished frame. -->
 <script setup lang="ts">
 const files = [
@@ -128,8 +128,6 @@ onBeforeUnmount(() => {
         <UIcon name="i-lucide-sparkles" class="size-[1em]" />
         Summarize
       </li>
-      <li class="action action-soon">Generate ideas <span class="soon">Soon</span></li>
-      <li class="action action-soon">Sort into folders <span class="soon">Soon</span></li>
     </ul>
 
     <article
@@ -275,22 +273,7 @@ p {
   color: white;
 }
 
-.action-soon {
-  border-color: var(--pc-gray-border);
-  background: rgb(255 255 255 / 0.7);
-  color: #94a3b8;
-}
 
-.soon {
-  border-radius: 999px;
-  background: hsl(213 40% 93%);
-  padding: 0.05em 0.45em;
-  font-size: 0.75em;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #64748b;
-}
 
 /* ── Files ───────────────────────────────────────────── */
 
@@ -617,7 +600,6 @@ p {
 
 /* Narrow cards: fewer things, same story. */
 @container (max-width: 520px) {
-  .action-soon,
   .file-rope,
   .row-rope {
     display: none;

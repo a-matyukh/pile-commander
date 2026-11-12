@@ -1,7 +1,7 @@
 // The three.js scene of the home page's 3D block: a folder's board as a
 // table, cards over it and a 3D model standing on it, as the app's 3D view
 // draws them. Plain TS on purpose: this directory is not auto-imported by
-// Nuxt, so three ships only in the lazy chunk that VisionSpace loads on the
+// Nuxt, so three ships only in the lazy chunk that HomeSpaceScene loads on the
 // client.
 import {
   Box3,
