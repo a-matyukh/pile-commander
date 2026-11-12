@@ -978,6 +978,15 @@ export const en: typeof ru = {
 			snake: 'meeting_notes',
 		},
 	},
+	ai_consent: {
+		title: 'Send to {host}?',
+		description: "The provider is in the cloud. You'll be asked once for each of these.",
+		cloud: 'File names and note text will be sent to {host} to answer the request.',
+		images: 'Images will be sent to {host}, reduced to 512 px.',
+		shared: 'This workspace is shared: files by other members will be sent too.',
+		cancel: 'Cancel',
+		send: 'Send',
+	},
 	ideas: {
 		agent: 'Agent',
 		hint: 'Uncheck what you don’t need. Nothing is created until you click Add.',

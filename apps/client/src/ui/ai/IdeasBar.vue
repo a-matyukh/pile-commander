@@ -160,11 +160,22 @@ async function add() {
 	gap: 6px 10px;
 	width: 100%;
 	box-sizing: border-box;
-	border: 1px solid var(--pc-gray-border);
+	/* The same gray frame and shadow as the canvas dock */
+	border: 0.5px solid var(--border-strong, rgba(0, 0, 0, .15));
 	border-radius: 14px;
-	background: white;
+	background: var(--surface-3, #fff);
 	padding: 6px 6px 6px 8px;
-	box-shadow: 0 14px 30px -18px rgb(15 23 42 / 0.45);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
+}
+
+/* The field's hint and sparkle in neutral gray, not the blue-gray of the old kit */
+.ideas-bar__field :deep(input) {
+	color: var(--text-primary, #1f1f1e);
+}
+
+.ideas-bar__field :deep(input::placeholder),
+.ideas-bar__field :deep(.iconify) {
+	color: var(--text-muted, #9a9893);
 }
 
 /* While the model writes, a soft glow runs around the bar, as in the landing scene */
