@@ -152,6 +152,17 @@ export function granted_path(
 	return resolve_granted(ctx, drive_id, root_id, relative)
 }
 
+/**
+ * A new direct child of `folder_real` (a granted folder's real path) is
+ * proposed only where the agent could read it afterwards: inside a bookmark,
+ * or directly in the open folder.
+ */
+export async function granted_new_child(ctx: McpContext, folder_real: string, name: string): Promise<void> {
+	if (!await is_granted(ctx, normalize_workspace_id(join_root(folder_real, name)))) {
+		throw new McpError('not_allowed')
+	}
+}
+
 /** The folder `get_folder` would list. `propose_rename` renames its direct children. */
 export async function load_granted_folder(
 	ctx: McpContext,

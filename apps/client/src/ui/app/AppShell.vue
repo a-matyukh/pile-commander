@@ -32,6 +32,7 @@ import SyncKeptHiddenToast from '@/ui/workspace/sidebar/SyncKeptHiddenToast.vue'
 import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
 import AiConsentDialog from '@/ui/ai/AiConsentDialog.vue'
 import BulkRenameDialog from '@/ui/ai/BulkRenameDialog.vue'
+import IdeasDialog from '@/ui/ai/IdeasDialog.vue'
 import SummaryDialog from '@/ui/ai/SummaryDialog.vue'
 
 // OS-level drop and open events live here: the shell never unmounts.
@@ -244,6 +245,7 @@ onUnmounted(() => {
 		<QuotaWallDialog />
 		<PasswordDialog />
 		<BulkRenameDialog />
+		<IdeasDialog />
 		<SummaryDialog />
 		<AiConsentDialog />
 		<UpdateBanner />

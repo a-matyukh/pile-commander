@@ -970,6 +970,18 @@ export const ru = {
 			snake: 'заметки_встречи',
 		},
 	},
+	ideas: {
+		agent: 'Агент',
+		hint: 'Снимите галочки с того, что не нужно. Пока не нажмёте «Добавить», ничего не создаётся.',
+		to_add: 'К добавлению: {n}',
+		cancel: 'Отмена',
+		add: 'Добавить {n}',
+		adding: 'Добавляю…',
+		close: 'Закрыть',
+		not_added: 'Не добавлено: {n}',
+		notify: 'Заметки для папки «{folder}»: {n}',
+		check: 'Добавить «{name}»',
+	},
 	bulk_rename: {
 		agent: 'Агент',
 		hint: 'Снимите галочки с того, что оставить. Пока не подтвердите, ничего не переименуется.',
@@ -1149,6 +1161,7 @@ export const ru = {
 		restore_one: 'восстановление «{name}»',
 		rename_many: 'переименование: {count}',
 		summary: 'добавление сводки',
+		notes: 'добавление: {count}',
 		ungroup: 'разгруппировка «{name}»',
 		/** A toast once the action is kept, with "Отменить" */
 		moved: 'Перенесено: «{name}»',
@@ -1158,6 +1171,7 @@ export const ru = {
 		renamed: 'Переименовано: «{name}»',
 		renamed_many: 'Переименовано: {count}',
 		summary_added: 'Сводка добавлена',
+		notes_added: 'Добавлено: {count}',
 		undo_action: 'Отменить',
 		source_changed: 'Исходный файл «{name}» изменился — повторить нельзя',
 		restore_gone: '«{name}» не удалось вернуть из корзины',
@@ -1195,6 +1209,11 @@ export const ru = {
 			one: '{n} элемент',
 			few: '{n} элемента',
 			many: '{n} элементов',
+		},
+		notes: {
+			one: '{n} заметка',
+			few: '{n} заметки',
+			many: '{n} заметок',
 		},
 	},
 }

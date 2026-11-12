@@ -86,7 +86,7 @@ export type ReadTextArgs = { folder: FolderAddress; path: string }
 export type ReadTextResult = { path: string; text: string; truncated: boolean }
 
 /** What an agent's preview proposes. One slot holds one proposal of any kind. */
-export type ProposalKind = 'rename'
+export type ProposalKind = 'rename' | 'create'
 
 export type ProposalStatus = 'pending' | 'accepted' | 'dismissed'
 
@@ -99,8 +99,21 @@ export type RenameRowResult = {
 	error?: string
 }
 
+export type CreateRowResult = {
+	/** The name asked for, ending in `.md`. */
+	name: string
+	outcome: 'pending' | 'created' | 'skipped' | 'failed'
+	/** Set when outcome is `created`: the name on disk, which may carry a ` (1)` suffix. */
+	written_name?: string
+	/** Set when outcome is `created`: relative to the drive root. */
+	path?: string
+	error?: string
+}
+
 /** The kind's own part of `get_proposal`. */
-export type ProposalBody = { kind: 'rename'; rows: RenameRowResult[] }
+export type ProposalBody =
+	| { kind: 'rename'; rows: RenameRowResult[] }
+	| { kind: 'create'; rows: CreateRowResult[] }
 
 export type GetProposalResult = {
 	proposal_id: string
