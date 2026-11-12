@@ -4,19 +4,19 @@ type SceneId = "names" | "summary" | "ideas" | "sort";
 const scenes: { id: SceneId; label: string; icon: string; caption: string }[] = [
   {
     id: "names",
-    label: "Names",
+    label: "Rename files",
     icon: "i-lucide-tag",
     caption: "Select files and get names from what is inside them: notes are read, images looked at. A list of old and new, each with a checkbox.",
   },
   {
     id: "summary",
-    label: "Summary",
+    label: "Summarize a board",
     icon: "i-lucide-file-text",
     caption: "Summarize turns a board, or what is selected on it, into a short note right next to it.",
   },
   {
     id: "ideas",
-    label: "Ideas",
+    label: "Generate ideas",
     icon: "i-lucide-lightbulb",
     caption: "Say what the ideas should be about, or leave it empty. They appear on the board as cards where their notes will go; keep the ones you like.",
   },

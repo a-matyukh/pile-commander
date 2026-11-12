@@ -138,16 +138,6 @@ onBeforeUnmount(() => {
       Harbor moodboard
     </p>
 
-    <ul class="actions">
-      <li v-if="mode === 'names'" class="action" :class="{ 'is-on': panel === 'names' }">
-        <UIcon name="i-lucide-sparkles" class="size-[1em]" />
-        Name files
-      </li>
-      <li v-else class="action" :class="{ 'is-on': panel === 'summary' }">
-        <UIcon name="i-lucide-sparkles" class="size-[1em]" />
-        Summarize
-      </li>
-    </ul>
 
     <article
       v-for="(file, i) in files"
@@ -307,41 +297,9 @@ p {
   color: #475569;
 }
 
-/* ── Actions ─────────────────────────────────────────── */
 
-.actions {
-  position: absolute;
-  top: 6%;
-  right: 4%;
-  display: flex;
-  gap: 0.45em;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  white-space: nowrap;
-}
 
-.action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  border: 1px solid var(--color-pc-200);
-  border-radius: 999px;
-  background: white;
-  padding: 0.3em 0.75em;
-  font-weight: 600;
-  color: var(--color-pc-700);
-  transition:
-    background-color 0.25s ease,
-    color 0.25s ease,
-    border-color 0.25s ease;
-}
 
-.action.is-on {
-  border-color: var(--color-pc-500);
-  background: var(--color-pc-500);
-  color: white;
-}
 
 
 
@@ -675,9 +633,6 @@ p {
     display: none;
   }
 
-  .actions {
-    font-size: 0.9em;
-  }
 
   .file-harbor {
     top: 22%;
