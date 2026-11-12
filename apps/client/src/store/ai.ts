@@ -85,6 +85,35 @@ export function record_reasoning_off_refused(base_url: string, model: string) {
 	ai_reasoning_off_refused.value = { ...ai_reasoning_off_refused.value, [key]: true }
 }
 
+/**
+ * The last "Test connection" result per provider + model, so the settings
+ * still show it after a restart. A new or removed key forgets the results
+ * for that address: they no longer say anything about it.
+ */
+export type AiConnectionCheck = { ok: boolean; text: string }
+
+export const ai_connection_checks = useStorage<Record<string, AiConnectionCheck>>('pile_commander_ai_connection_checks', {})
+
+export function connection_check(base_url: string, model: string): AiConnectionCheck | null {
+	return ai_connection_checks.value[vision_key(base_url, model)] ?? null
+}
+
+export function record_connection_check(base_url: string, model: string, check: AiConnectionCheck | null) {
+	const key = vision_key(base_url, model)
+	const next = { ...ai_connection_checks.value }
+	if (check) next[key] = check
+	else if (key in next) delete next[key]
+	else return
+	ai_connection_checks.value = next
+}
+
+export function forget_connection_checks(base_url: string) {
+	const prefix = vision_key(base_url, '')
+	const next = Object.fromEntries(Object.entries(ai_connection_checks.value).filter(([key]) => !key.startsWith(prefix)))
+	if (Object.keys(next).length === Object.keys(ai_connection_checks.value).length) return
+	ai_connection_checks.value = next
+}
+
 export const ai_base_check = computed(() => check_base_url(ai_settings.value.base_url, { web: !is_desktop }))
 
 /** A provider address that passes the checks and a model to ask. */

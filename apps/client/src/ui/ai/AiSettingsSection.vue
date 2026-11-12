@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { watchDebounced } from '@vueuse/core'
 import { invoke } from '@tauri-apps/api/core'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import { agent_access, set_agent_access } from '@/store/agentAccess'
-import { ai_base_check, ai_settings } from '@/store/ai'
+import { ai_base_check, ai_settings, connection_check, forget_connection_checks, record_connection_check } from '@/store/ai'
 import { ai_transport } from '@/services/ai/client'
 import { explain_ai_error } from '@/services/ai/errors'
 import { may_carry_key } from '@/services/ai/locality'
@@ -85,7 +85,8 @@ const model_items = computed(() => {
 	return ids.map(id => ({ label: model_label(id), value: id }))
 })
 const testing = ref(false)
-const test_result = ref<{ ok: boolean; text: string } | null>(null)
+/** The last check of this address + model, kept across restarts */
+const test_result = computed(() => connection_check(ai_settings.value.base_url, ai_settings.value.model))
 /**
  * The setup as numbered steps, each with how it stands. Provider, address
  * and model are needed; the key and the test are optional (a model on
@@ -208,6 +209,7 @@ async function save_key() {
 		await transport.set_key(ai_settings.value.base_url, key_input.value)
 		key_input.value = ''
 		has_key.value = true
+		forget_connection_checks(ai_settings.value.base_url)
 	} catch (error) {
 		key_error.value = explain_ai_error(error, { base_url: ai_settings.value.base_url, operation: 'models' })
 	} finally {
@@ -222,6 +224,7 @@ async function remove_key() {
 	try {
 		await transport.delete_key(ai_settings.value.base_url)
 		has_key.value = false
+		forget_connection_checks(ai_settings.value.base_url)
 	} catch (error) {
 		key_error.value = explain_ai_error(error, { base_url: ai_settings.value.base_url, operation: 'models' })
 	} finally {
@@ -232,22 +235,22 @@ async function remove_key() {
 async function test_connection() {
 	if (!ai_base_check.value.ok) return
 	testing.value = true
-	test_result.value = null
 	const base_url = ai_settings.value.base_url
+	record_connection_check(base_url, ai_settings.value.model, null)
 	try {
 		const ids = await transport.list_models(base_url)
 		models.value = ids
 		const model = ai_settings.value.model
 		if (!model && ids.length === 1) set_model(ids[0])
 		const missing = model && ids.length && !ids.includes(model)
-		test_result.value = {
+		record_connection_check(base_url, ai_settings.value.model, {
 			ok: !missing,
 			text: missing
 				? caption('test_missing', `Connected, but “${model_label(model)}” isn't among the ${ids.length} models of this provider.`, { model: model_label(model), n: ids.length })
 				: caption('test_ok', `Connected: ${ids.length} ${ids.length === 1 ? 'model' : 'models'} available.`, { n: ids.length }),
-		}
+		})
 	} catch (error) {
-		test_result.value = {
+		record_connection_check(base_url, ai_settings.value.model, {
 			ok: false,
 			text: explain_ai_error(error, {
 				base_url,
@@ -256,7 +259,7 @@ async function test_connection() {
 				has_key: has_key.value,
 				web: !is_desktop,
 			}),
-		}
+		})
 	} finally {
 		testing.value = false
 	}
@@ -267,15 +270,10 @@ if (props.part !== 'mcp') {
 		() => ai_settings.value.base_url,
 		() => {
 			models.value = []
-			test_result.value = null
 			void refresh_key_status()
 		},
 		{ debounce: 400, immediate: true },
 	)
-
-	watch(() => ai_settings.value.model, () => {
-		test_result.value = null
-	})
 }
 </script>
 
