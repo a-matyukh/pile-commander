@@ -374,6 +374,20 @@ function applyCanvasLive(layout: LineEndpointLiveLayout) {
 	touch-action: none;
 }
 
+/*
+ * The drawn resize mark (.canvas-resize-affordance) sits up to 20 canvas px
+ * inside the corner, past the zone above: under it the node moved instead.
+ * The bottom-right zone reaches over all of the mark.
+ */
+.canvas-widget-node :deep(.vue-flow__resize-control.handle.bottom.right:not(.text-resize-control))::before {
+	content: '';
+	position: absolute;
+	right: 50%;
+	bottom: 50%;
+	width: 24px;
+	height: 24px;
+}
+
 /* A text block's side handles: a visible pill on the edge, in the middle. */
 .canvas-widget-node :deep(.vue-flow__resize-control.handle.text-resize-control) {
 	display: flex;
