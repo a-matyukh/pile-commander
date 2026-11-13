@@ -80,6 +80,7 @@ export const en: typeof ru = {
 		resize_hint: 'Drag to resize. Double-click for the default width',
 	},
 	tree: {
+		sync_line: 'Sync line: everything along it is in the cloud and on a computer',
 		folder_menu: 'Folder menu',
 		delete_permanently_title: 'Delete “{name}” and everything in it?',
 		delete_permanently: 'Delete',

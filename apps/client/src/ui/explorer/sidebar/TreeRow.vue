@@ -179,6 +179,13 @@ const sync_status = computed(() => sync_status_of(row_ref.value))
 const pile_line = computed(() => pile_line_state(shows_synced(row_ref.value), sync_status.value))
 /** The cloud badge says what the sync does now, as the sync menu's button */
 const badge = computed(() => sync_badge(sync_status.value))
+/** The badge's own tip: the sync's state, or synced (and where) */
+const badge_tip = computed(() => (badge.value.tip ? t(badge.value.tip) : synced_tip(row_ref.value)))
+/** On the line: what the line is, then the sync's state when it says more than "synced" */
+const pile_line_tip = computed(() => {
+	const state = badge_tip.value
+	return state === t('badge.synced') ? t('tree.sync_line') : `${t('tree.sync_line')} · ${state}`
+})
 /** A drag leaves this pile or goes into it: its region lights up */
 const pile_lit = computed(() => {
 	if (!pile_line.value || !tree_drag.source) return false
@@ -297,7 +304,8 @@ watchEffect(on_cleanup => {
 		<Icon :icon="glyph.icon" :class="glyph.plain ? 'plain' : 'vw'" :style="{ color: glyph.color }" />
 		<span class="nm">{{ name }}</span>
 		<span class="tg">
-			<span v-if="pile_line" class="bdg" :class="{ spin: badge.spin }" :data-tip="badge.tip ? t(badge.tip) : synced_tip(row_ref)"><Icon :icon="badge.icon" /></span>
+			<!-- In the colour of the line it heads, so the two read as one -->
+			<span v-if="pile_line" class="bdg sync" :class="[pile_line, { spin: badge.spin, lit: pile_lit }]" :data-tip="badge_tip"><Icon :icon="badge.icon" /></span>
 			<span v-if="is_bookmarked(row_ref)" class="bdg" :data-tip="t('badge.bookmarked')"><Icon icon="tabler:bookmark" /></span>
 			<span v-if="shared_tip" class="bdg" :data-tip="shared_tip"><Icon icon="tabler:users" /></span>
 			<!-- A publication or the demo is not one of the user's places: no folder menu -->
@@ -321,6 +329,8 @@ watchEffect(on_cleanup => {
 		class="g"
 		:class="pile_line && ['pile', pile_line, { lit: pile_lit }]"
 	>
+		<!-- The line itself is drawn (::before) and takes no pointer: this strip over it says what it is -->
+		<span v-if="pile_line" class="pl" :data-tip="pile_line_tip" data-tip-side="right" />
 		<TreeRow v-for="child in children" :key="child.id" :item="item" :node="child" />
 	</div>
 	<Modal
@@ -402,6 +412,17 @@ watchEffect(on_cleanup => {
 .r.sel .bdg {
 	color: var(--text-accent);
 }
+/* The sync badge takes its line's colour, selected or not */
+.bdg.sync.idle {
+	color: var(--fill-accent);
+}
+.bdg.sync.syncing,
+.bdg.sync.lit {
+	color: var(--text-accent);
+}
+.bdg.sync.attention {
+	color: var(--fill-warning);
+}
 .dt {
 	display: none;
 	align-items: center;
@@ -460,6 +481,20 @@ watchEffect(on_cleanup => {
 }
 .g.pile.lit::before {
 	background: var(--text-accent);
+}
+/* Over the line, a few pixels wide: it thickens and says what it is */
+.pl {
+	position: absolute;
+	z-index: 1;
+	left: 1px;
+	top: 0;
+	bottom: 0;
+	width: 8px;
+	cursor: help;
+}
+.g.pile:has(> .pl:hover)::before {
+	left: 4px;
+	width: 2.5px;
 }
 /* Syncing: a dark run travels down a lighter line */
 .g.pile.syncing::before {

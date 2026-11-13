@@ -5,7 +5,8 @@ import { useEventListener } from '@vueuse/core'
 /**
  * One tooltip for the whole app. Any element with `data-tip` gets it;
  * `data-tip-key` adds a keyboard shortcut on the right;
- * `data-tip-side="top"` puts it above the element.
+ * `data-tip-side="top"` puts it above the element; `"right"` beside it, at
+ * the pointer's height (a tall, thin element such as the tree's sync line).
  *
  * A layer instead of a wrapper component: menu triggers are `as-child`
  * slots and need the button itself as their root.
@@ -27,6 +28,8 @@ let current: HTMLElement | null = null
 let warm_until = 0
 /** Pressed: no tooltip until the pointer leaves this element */
 let pressed = false
+/** Where the pointer came onto the element, for a tip beside it */
+let pointer_y = 0
 
 const menu_open = (el: HTMLElement) =>
 	el.getAttribute('aria-expanded') === 'true' || el.dataset.state === 'open'
@@ -35,6 +38,7 @@ async function show(el: HTMLElement) {
 	if (!el.isConnected || menu_open(el)) return
 	tip.text = el.dataset.tip ?? ''
 	tip.key = el.dataset.tipKey ?? ''
+	const right = el.dataset.tipSide === 'right'
 	tip.beside = el.getAttribute('role') === 'menuitem'
 	if (!tip.text) return
 	tip.measured = false
@@ -45,7 +49,11 @@ async function show(el: HTMLElement) {
 	const r = el.getBoundingClientRect()
 	const w = b.offsetWidth
 	const h = b.offsetHeight
-	if (tip.beside) {
+	if (right) {
+		tip.x = Math.min(r.right + 8, innerWidth - w - 8)
+		const y = Math.min(Math.max(pointer_y, r.top), r.bottom)
+		tip.y = Math.min(Math.max(8, y - h / 2), innerHeight - h - 8)
+	} else if (tip.beside) {
 		// beside a menu item, not over its neighbors: right, or left when there is no room
 		tip.x = r.right + 8 + w > innerWidth - 8 ? Math.max(8, r.left - 8 - w) : r.right + 8
 		tip.y = r.top + r.height / 2 - h / 2
@@ -70,6 +78,7 @@ useEventListener(document, 'pointerover', (e: PointerEvent) => {
 	if (e.pointerType === 'touch') return
 	const el = (e.target as HTMLElement).closest<HTMLElement>('[data-tip]')
 	if (el === current) return
+	pointer_y = e.clientY
 	hide()
 	current = el
 	pressed = false

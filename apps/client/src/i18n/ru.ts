@@ -77,6 +77,7 @@ export const ru = {
 		resize_hint: 'Потяните, чтобы изменить ширину. Двойной клик — исходная ширина',
 	},
 	tree: {
+		sync_line: 'Линия синхронизации: всё вдоль неё — и в облаке, и на компьютере',
 		folder_menu: 'Меню папки',
 		delete_permanently_title: 'Удалить папку «{name}» со всем, что в ней?',
 		delete_permanently: 'Удалить',
