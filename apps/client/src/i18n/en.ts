@@ -644,6 +644,8 @@ export const en: typeof ru = {
 		no_items: 'No items',
 		opening: 'Opening the folder…',
 		refreshing: 'Checking with the cloud…',
+		view_only: 'View only',
+		view_only_tip: 'The owner shared this folder for viewing: nothing in it can be changed',
 		gone: 'This folder was deleted or moved elsewhere',
 	},
 	list: {

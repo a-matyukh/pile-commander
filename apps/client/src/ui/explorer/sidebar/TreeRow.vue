@@ -197,7 +197,8 @@ const shared_tip = computed(() => {
 	const id = props.item.root.id
 	if (cloud.shared_out[id]) return t('badge.shared')
 	const role = cloud.role_of(id)
-	return role === 'editor' || role === 'viewer' ? t('badge.shared_with_me') : null
+	if (role === 'viewer') return `${t('badge.shared_with_me')} · ${t('folder.view_only').toLowerCase()}`
+	return role === 'editor' ? t('badge.shared_with_me') : null
 })
 
 const root_move_open = ref(false)
