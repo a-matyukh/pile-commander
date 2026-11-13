@@ -4,7 +4,6 @@ import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { Icon } from '@iconify/vue'
 import type { Connection } from '@/domain/Widget'
 import { t } from '@/i18n'
-import { is_mac_user_agent } from '@/services/window/trafficInset'
 import DropMenu from '@/ui/kit/DropMenu.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
@@ -17,8 +16,8 @@ import { DOCK_METRICS, dock_layout } from './canvasDockLayout'
 import { useCloseOnCanvasPress } from './useCloseOnCanvasPress'
 
 /**
- * The canvas panel: one island at the bottom center with undo, the tools and
- * the zoom, and above it a strip with what the chosen tool or the selection
+ * The canvas panel: one island at the bottom center with the tools and the
+ * zoom, and above it a strip with what the chosen tool or the selection
  * offers. What does not fit the canvas's width goes under "more".
  *
  * No `pointerdown.stop` on it: an open menu elsewhere must close on a press
@@ -31,10 +30,8 @@ const props = defineProps<{
 	spacePan?: boolean
 	zoomPercent: number
 	canWrite: boolean
-	/** A folder preview's panel: smaller, no undo, no hotkeys */
+	/** A folder preview's panel: smaller, no hotkeys */
 	embedded?: boolean
-	canUndo?: boolean
-	canRedo?: boolean
 	penColor: string
 	penWidth: number
 	selectedStrokeCount: number
@@ -51,8 +48,6 @@ const emit = defineEmits<{
 	'update-connection': [patch: ConnectionPatch]
 	'delete-connection': []
 	zoom: [action: DockZoomAction]
-	undo: []
-	redo: []
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -101,10 +96,6 @@ const strip_stacked = computed(() => width.value < PEN_ROW_WIDTH)
 /** Hotkey hints are for a keyboard at hand, as the menus' own: not a touch screen */
 const has_keyboard = useMediaQuery('(hover: hover) and (pointer: fine)')
 
-const mac = is_mac_user_agent(navigator.userAgent)
-const undo_key = mac ? '⌘Z' : 'Ctrl+Z'
-const redo_key = mac ? '⇧⌘Z' : 'Ctrl+Shift+Z'
-
 /** A preview does not hear the keys, so its tooltips do not promise them */
 function tool_key(tool: DockTool): string | undefined {
 	if (props.embedded) return undefined
@@ -151,25 +142,7 @@ const vars = computed(() => ({
 				<span v-if="index > 0" class="sep" aria-hidden="true" />
 				<div class="grp">
 					<template v-for="id in group.ids" :key="id">
-						<CanvasDockButton
-							v-if="id === 'undo'"
-							icon="tabler:arrow-back-up"
-							:off="!canUndo"
-							:aria-label="t('canvas_dock.undo')"
-							:data-tip="t('canvas_dock.undo')"
-							:data-tip-key="undo_key"
-							@click="emit('undo')"
-						/>
-						<CanvasDockButton
-							v-else-if="id === 'redo'"
-							icon="tabler:arrow-forward-up"
-							:off="!canRedo"
-							:aria-label="t('canvas_dock.redo')"
-							:data-tip="t('canvas_dock.redo')"
-							:data-tip-key="redo_key"
-							@click="emit('redo')"
-						/>
-						<DropMenu v-else-if="id === 'zoom'" v-model:open="zoom_open" side="top" align="end" :width="200" :offset="10">
+						<DropMenu v-if="id === 'zoom'" v-model:open="zoom_open" side="top" align="end" :width="200" :offset="10">
 							<template #trigger>
 								<button
 									type="button"
@@ -213,23 +186,6 @@ const vars = computed(() => ({
 							:aria-label="t('canvas_dock.more')"
 							:data-tip="t('canvas_dock.more')"
 						/>
-					</template>
-					<template v-if="tucked('undo') || tucked('redo')">
-						<MenuItem
-							v-if="tucked('undo')"
-							icon="tabler:arrow-back-up"
-							:label="t('canvas_dock.undo')"
-							:disabled="!canUndo"
-							@select="emit('undo')"
-						/>
-						<MenuItem
-							v-if="tucked('redo')"
-							icon="tabler:arrow-forward-up"
-							:label="t('canvas_dock.redo')"
-							:disabled="!canRedo"
-							@select="emit('redo')"
-						/>
-						<MenuSeparator />
 					</template>
 					<MenuItem
 						v-for="item in tucked_tools"

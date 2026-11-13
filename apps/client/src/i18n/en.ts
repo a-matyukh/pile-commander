@@ -6,6 +6,8 @@ export const en: typeof ru = {
 		sidebar: 'Sidebar',
 		back: 'Back',
 		forward: 'Forward',
+		undo: 'Undo',
+		redo: 'Redo',
 	},
 	bookmarks: {
 		title: 'Bookmarks',

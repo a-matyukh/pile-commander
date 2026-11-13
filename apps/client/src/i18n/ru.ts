@@ -3,6 +3,8 @@ export const ru = {
 		sidebar: 'Сайдбар',
 		back: 'Назад',
 		forward: 'Вперёд',
+		undo: 'Отменить',
+		redo: 'Повторить',
 	},
 	bookmarks: {
 		title: 'Закладки',

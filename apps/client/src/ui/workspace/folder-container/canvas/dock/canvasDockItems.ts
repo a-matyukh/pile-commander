@@ -1,8 +1,8 @@
 import type { EditorTool } from '../drawing/types'
 import { CANVAS_TOOL_HOTKEYS } from '../useCanvasToolShortcuts'
 
-/** What stands on the canvas panel: undo and redo, the tools, the zoom */
-export type DockItemId = 'undo' | 'redo' | EditorTool | 'zoom'
+/** What stands on the canvas panel: the tools and the zoom (undo is in the top bar) */
+export type DockItemId = EditorTool | 'zoom'
 
 /** What the zoom readout's menu does */
 export type DockZoomAction = 'in' | 'out' | 'fit' | 'reset'
@@ -45,8 +45,6 @@ export function dock_tool(id: DockItemId): DockTool | undefined {
  * `keep` here, and the layout and the menu follow it as they are.
  */
 const DOCK_ITEMS: DockItem[] = [
-	{ id: 'undo', group: 0, keep: 5 },
-	{ id: 'redo', group: 0, keep: 8 },
 	{ id: 'hand', group: 1, keep: 1 },
 	{ id: 'select', group: 1, keep: 2 },
 	{ id: 'lasso', group: 1, keep: 7 },
@@ -59,10 +57,9 @@ const DOCK_ITEMS: DockItem[] = [
 
 /**
  * What this canvas's panel holds. A viewer only looks, so only the zoom is
- * left. A folder preview has no undo of its own: undo is the window's.
+ * left. Undo is the window's, in the top bar.
  */
 export function dock_items(options: { can_write: boolean; embedded: boolean }): DockItem[] {
 	if (!options.can_write) return DOCK_ITEMS.filter(item => item.id === 'zoom')
-	if (options.embedded) return DOCK_ITEMS.filter(item => item.id !== 'undo' && item.id !== 'redo')
 	return DOCK_ITEMS
 }

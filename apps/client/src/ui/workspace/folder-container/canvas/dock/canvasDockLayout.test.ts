@@ -7,16 +7,14 @@ const preview = dock_items({ can_write: true, embedded: true })
 const viewer = dock_items({ can_write: false, embedded: false })
 
 describe('dock_items', () => {
-	test('a writable canvas has undo, the tools in the toolbar order and the zoom', () => {
+	test('a writable canvas has the tools in the toolbar order and the zoom: undo is in the top bar', () => {
 		expect(full.map(item => item.id)).toEqual([
-			'undo', 'redo', 'hand', 'select', 'lasso', 'connect', 'disconnect', 'pen', 'eraser', 'zoom',
+			'hand', 'select', 'lasso', 'connect', 'disconnect', 'pen', 'eraser', 'zoom',
 		])
 	})
 
-	test('a folder preview has no undo of its own', () => {
-		expect(preview.map(item => item.id)).toEqual([
-			'hand', 'select', 'lasso', 'connect', 'disconnect', 'pen', 'eraser', 'zoom',
-		])
+	test('a folder preview has the same panel', () => {
+		expect(preview).toEqual(full)
 	})
 
 	test('a viewer keeps only the zoom', () => {
@@ -26,8 +24,8 @@ describe('dock_items', () => {
 
 describe('dock_width', () => {
 	test('counts buttons, gaps inside groups, separators between them, padding and border', () => {
-		// 9 buttons, 5 gaps inside groups, the zoom, 4 separators, padding, border
-		expect(dock_width(full, false, DOCK_METRICS.regular)).toBe(9 * 40 + 5 * 2 + 64 + 4 * 9 + 8 + 1)
+		// 7 buttons, 4 gaps inside groups, the zoom, 3 separators, padding, border
+		expect(dock_width(full, false, DOCK_METRICS.regular)).toBe(7 * 40 + 4 * 2 + 64 + 3 * 9 + 8 + 1)
 	})
 
 	test('"more" is one more group', () => {
@@ -58,19 +56,19 @@ describe('dock_layout', () => {
 		expect(dock_layout(full, width - 1, DOCK_METRICS.regular).more).toBe(true)
 	})
 
-	test('a phone keeps undo, the main tools and "more"', () => {
+	test('a phone keeps the main tools and "more"', () => {
 		// 375px wide screen less the panel's side margins
 		expect(dock_layout(full, 359, DOCK_METRICS.regular)).toEqual({
-			inline: ['undo', 'hand', 'select', 'connect', 'pen', 'eraser'],
-			overflow: ['redo', 'lasso', 'disconnect', 'zoom'],
+			inline: ['hand', 'select', 'lasso', 'connect', 'pen', 'eraser'],
+			overflow: ['disconnect', 'zoom'],
 			more: true,
 		})
 	})
 
-	test('a narrower phone gives up Connect next', () => {
+	test('a narrower phone gives up Lasso next', () => {
 		expect(dock_layout(full, 304, DOCK_METRICS.regular)).toEqual({
-			inline: ['undo', 'hand', 'select', 'pen', 'eraser'],
-			overflow: ['redo', 'lasso', 'connect', 'disconnect', 'zoom'],
+			inline: ['hand', 'select', 'connect', 'pen', 'eraser'],
+			overflow: ['lasso', 'disconnect', 'zoom'],
 			more: true,
 		})
 	})

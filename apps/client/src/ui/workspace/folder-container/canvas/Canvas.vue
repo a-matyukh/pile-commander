@@ -61,7 +61,7 @@ import PileImagePending from '../widgets/PileImagePending.vue'
 import { useResolvedFill } from '../widgets/useResolvedFill'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { t } from '@/i18n'
-import { history, record_action } from '@/store/history'
+import { record_action } from '@/store/history'
 import { setExternalDropPositionResolver } from '../externalDropPosition'
 import {
 	registerPaneEditingNoteSetter,
@@ -390,18 +390,6 @@ const editingText = computed(() => editingNoteId.value !== null || editingEdgeId
 function on_dock_tool(next: EditorTool) {
 	if (editingText.value && document.activeElement instanceof HTMLElement) document.activeElement.blur()
 	on_tool_update(next)
-}
-
-const canUndo = computed(() => history.can_undo && !editingText.value)
-const canRedo = computed(() => history.can_redo && !editingText.value)
-
-// Text being typed has its own undo: the panel's buttons leave it alone
-function on_undo() {
-	if (!editingText.value) void history.undo()
-}
-
-function on_redo() {
-	if (!editingText.value) void history.redo()
 }
 
 /** A phone's keyboard is up: the panel gets out of the way of what is being typed */
@@ -841,8 +829,6 @@ function onSectionPointerDown(event: PointerEvent) {
 				:zoom-percent="zoomPercent"
 				:can-write="can_write"
 				:embedded="isEmbedded"
-				:can-undo="canUndo"
-				:can-redo="canRedo"
 				:pen-color="penColor"
 				:pen-width="penWidth"
 				:selected-stroke-count="selectedStrokeCount"
@@ -854,8 +840,6 @@ function onSectionPointerDown(event: PointerEvent) {
 				@update-connection="on_update_connection"
 				@delete-connection="on_delete_connection"
 				@zoom="on_dock_zoom"
-				@undo="on_undo"
-				@redo="on_redo"
 			/>
 		</section>
 	</FolderContainerCtxMenu>

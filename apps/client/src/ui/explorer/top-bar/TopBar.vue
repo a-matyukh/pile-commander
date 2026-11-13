@@ -6,6 +6,7 @@ import { use_overlay_titlebar } from '@/services/window/macOverlayChrome'
 import { traffic_inset_target } from '@/services/window/trafficInset'
 import { is_desktop } from '@/isDesktop'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { history } from '@/store/history'
 import { explorer_drawer_open, explorer_mobile, explorer_sidebar_open, toggle_explorer_sidebar } from '@/store/explorer/sidebar'
 import IconButton from '@/ui/kit/IconButton.vue'
 import { actions_on_top, explorer_settings, path_on_top } from '@/store/explorer/settings'
@@ -32,8 +33,8 @@ const inset = computed(() => traffic_inset_target({
 }) === 'header')
 
 const shortcut = computed(() => (macOS.value
-	? { back: '⌘←', forward: '⌘→', sidebar: '⌘B' }
-	: { back: 'Alt+←', forward: 'Alt+→', sidebar: 'Alt+B' }))
+	? { back: '⌘←', forward: '⌘→', sidebar: '⌘B', undo: '⌘Z', redo: '⇧⌘Z' }
+	: { back: 'Alt+←', forward: 'Alt+→', sidebar: 'Alt+B', undo: 'Ctrl+Z', redo: 'Ctrl+Shift+Z' }))
 
 defineShortcuts(computed(() => ({
 	// Cmd on macOS, Alt elsewhere. meta would become Ctrl off a Mac.
@@ -86,6 +87,24 @@ function go_forward() {
 			:data-tip="t('top.forward')"
 			:data-tip-key="shortcut.forward"
 			@click="go_forward"
+		/>
+		<!-- The window's undo: the same as ⌘Z, whatever the folder's view -->
+		<div class="vsep" />
+		<IconButton
+			icon="tabler:arrow-back-up"
+			:disabled="!history.can_undo"
+			:aria-label="t('top.undo')"
+			:data-tip="t('top.undo')"
+			:data-tip-key="shortcut.undo"
+			@click="history.can_undo && history.undo()"
+		/>
+		<IconButton
+			icon="tabler:arrow-forward-up"
+			:disabled="!history.can_redo"
+			:aria-label="t('top.redo')"
+			:data-tip="t('top.redo')"
+			:data-tip-key="shortcut.redo"
+			@click="history.can_redo && history.redo()"
 		/>
 		<div v-if="explorer_settings.bookmarks_visible || path_on_top" class="vsep" />
 		<template v-if="explorer_settings.bookmarks_visible">
