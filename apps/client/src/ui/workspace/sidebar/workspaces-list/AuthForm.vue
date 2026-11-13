@@ -3,10 +3,10 @@ import { ref, watch } from 'vue'
 import cloud from '@/store/cloud'
 import { SIGN_UP_PASSWORD_HINT, SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
 
-/** Flip to false to reopen registration. Mid-November is approximate, not a cutoff. */
+/** Flip to false to reopen registration. The end of November is approximate, not a cutoff. */
 const SIGN_UP_CLOSED = true
 const SIGN_UP_CLOSED_NOTICE =
-	'Registration is closed for technical work until around mid-November. It will open again after that.'
+	'Registration is closed for technical work until around the end of November. It will open again after that.'
 
 const props = withDefaults(defineProps<{
 	initial_email?: string
