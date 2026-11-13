@@ -169,10 +169,14 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 .fc :deep(.ex-row-icon.plain) {
 	color: var(--text-secondary);
 }
-/* The current views' "Select" and clipboard panel line up with the folder header */
-.fc :deep(.folder-actions-panel) {
+/* The current views' "Select" and clipboard panel line up with the folder header
+   (the canvas; the other views keep it at the bottom) */
+.fc :deep(.folder-actions-panel:not(.folder-actions-panel--bottom)) {
 	top: 16px;
 	left: 16px;
+	max-width: calc(100% - 32px);
+}
+.fc :deep(.folder-actions-panel--bottom) {
 	max-width: calc(100% - 32px);
 }
 </style>

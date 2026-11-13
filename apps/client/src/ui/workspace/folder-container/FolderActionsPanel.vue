@@ -60,6 +60,10 @@ const showClipboard = computed(() =>
 	!isEmbedded && (entry_clipboard.current?.entry_ids.length ?? 0) > 0,
 )
 
+// On a phone the panel sits at the bottom, under the thumb and clear of the
+// first row; the canvas keeps it on top, its tool dock owns the bottom
+const atBottom = computed(() => !isEmbedded && view.value !== 'canvas')
+
 const shown = computed(() =>
 	showSelect.value
 	|| showDeselect.value
@@ -74,6 +78,7 @@ const shown = computed(() =>
 		<div
 			v-if="shown"
 			class="folder-actions-panel board-no-drag nodrag nopan"
+			:class="{ 'folder-actions-panel--bottom': atBottom }"
 			@click.stop
 			@dblclick.stop
 			@pointerdown.stop
@@ -144,6 +149,23 @@ const shown = computed(() =>
 	user-select: none;
 	-webkit-user-select: none;
 	-webkit-touch-callout: none;
+}
+
+.folder-actions-panel--bottom {
+	top: auto;
+	bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+	left: 50%;
+	transform: translateX(-50%);
+	justify-content: center;
+	width: max-content;
+}
+
+.folder-actions-panel--bottom :deep(.folder-chrome-action-btn) {
+	min-height: 36px;
+	padding: 0.375rem 0.875rem;
+	border-radius: 999px;
+	font-size: 13px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .folder-actions-dialog {
