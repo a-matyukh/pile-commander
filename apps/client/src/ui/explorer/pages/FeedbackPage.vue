@@ -19,7 +19,7 @@ import TextField from '@/ui/kit/TextField.vue'
 import Textarea from '@/ui/kit/Textarea.vue'
 
 /**
- * The feedback page: the landing's feedback form inside the app. A bug, an
+ * The feedback page in the app. A bug, an
  * idea or anything else, an email to write back to (the account's, when signed
  * in) and up to five screenshots. Sent to the backend's POST /feedback
  */

@@ -1,6 +1,6 @@
 /**
- * The feedback form (the Feedback page): the same POST /feedback the landing
- * form uses, then each screenshot PUT to the signed Storage URL it returns.
+ * The feedback form in the app: POST /feedback, then each screenshot PUT
+ * to the signed Storage URL it returns.
  * Limits match apps/backend/src/feedback.ts
  */
 export const FEEDBACK_MESSAGE_MAX = 4000

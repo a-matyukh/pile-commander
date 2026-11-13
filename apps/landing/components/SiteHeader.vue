@@ -5,7 +5,6 @@ const route = useRoute();
 const links = [
   { label: "Home", to: "/" },
   { label: "Pricing", to: "/pricing" },
-  { label: "Feedback", to: "/feedback" },
 ];
 
 const githubUrl = "https://github.com/a-matyukh/pile-commander";

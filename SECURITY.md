@@ -279,8 +279,8 @@ show only these intentional INFOs. Anything else is a regression.
   (`is_ip_like`), falls back to the socket, never to client text. The bucket
   keyed by the JWT subject is advisory by design (`unverified_subject` decodes
   without verifying): a forged `sub` only lands in a different bucket while
-  the IP one still applies. The public landing forms (`POST /pricing/notify`,
-  `POST /feedback`) are 5 / hour / IP; they write `plan_launch_subscribers` and
+  the IP one still applies. The public forms (`POST /pricing/notify` on the
+  landing, `POST /feedback` in the app) are 5 / hour / IP; they write `plan_launch_subscribers` and
   `feedback` under the service role (honeypot `website` returns `{ ok: true }`;
   duplicate waitlist emails also look like a successful subscribe). Feedback
   screenshots never enter this process: the JSON body only claims mime/size

@@ -52,9 +52,11 @@ export default defineNuxtConfig({
       allowIndexing: false,
     },
   },
-  // The roadmap page is gone: its last direction, AI, now ships on the home page
+  // /vision was the roadmap; its last direction, AI, now ships on the home page.
+  // /feedback moved into the app.
   routeRules: {
     "/vision": { redirect: "/" },
+    "/feedback": { redirect: "/" },
   },
   app: {
     head: {

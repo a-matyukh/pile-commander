@@ -122,7 +122,7 @@ function stored_attachments(id: string, claims: FeedbackAttachmentClaim[]): Feed
 	}));
 }
 
-// POST /feedback — public landing form. Writes under service_role; clients
+// POST /feedback — the form in the app. Writes under service_role; clients
 // never see the table. Optional screenshots are claimed here and PUT by the
 // browser to signed Storage URLs. The honeypot looks like a successful send
 // so bots do not learn that the field is a trap.

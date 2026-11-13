@@ -15,7 +15,7 @@ database.
 [Download for desktop](https://github.com/a-matyukh/pile-commander/releases/latest)
 
 > [!NOTE]
-> Pile Commander is in beta. If you have suggestions or any feedback, it would be very much appreciated — you can send it from the [feedback page](https://www.pile-commander.com/feedback).
+> Pile Commander is in beta. If you have suggestions or any feedback, it would be very much appreciated — you can send it from the app.
 
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883?logo=vuedotjs&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white)

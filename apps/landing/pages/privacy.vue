@@ -11,7 +11,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Privacy"
-    updated="26 October 2026"
+    updated="13 November 2026"
     note="Written against what the code actually does. It changes when the product does."
   >
     <p>
@@ -74,8 +74,7 @@ useSeoMeta({
         you once, when paid plans open.
       </li>
       <li>
-        <strong>Feedback</strong> — if you send a note on the
-        <NuxtLink to="/feedback">Feedback</NuxtLink> page, we keep the email,
+        <strong>Feedback</strong> — if you send a note from the app, we keep the email,
         the category (bug, idea, or other), the message, and any screenshots
         you attach (up to five), so we can read it and write back.
       </li>
@@ -87,8 +86,7 @@ useSeoMeta({
       (<code>eu-west-1</code>). Your workspace files sit in a private Backblaze
       B2 bucket in the United States (<code>us-east-005</code>) and are served
       only through links that we sign for one reader at a time. Screenshots
-      attached to a
-      <NuxtLink to="/feedback">Feedback</NuxtLink> note stay in the same Irish
+      attached to a feedback note stay in the same Irish
       Supabase project as the note, not in that US bucket. By using the cloud
       service you accept that workspace files are stored in the US.
     </p>
