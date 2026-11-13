@@ -16,6 +16,7 @@ import { handle_send_email } from "./mail";
 import { handle_workspace_invite } from "./invites";
 import { handle_pricing_notify } from "./waitlist";
 import { handle_feedback } from "./feedback";
+import { feedback_cors_headers, feedback_origin_allowed } from "./feedback_origins";
 import { start_gc_worker } from "./gc";
 import { start_derivative_worker } from "./derivatives";
 import { create_download_meter, create_egress_meter, start_egress_worker } from "./egress";
@@ -46,8 +47,8 @@ const CORS_HEADERS: Record<string, string> = {
 	"Access-Control-Expose-Headers": "Retry-After, Server-Timing",
 };
 
-function with_cors(response: Response): Response {
-	for (const [name, value] of Object.entries(CORS_HEADERS)) {
+function with_cors(response: Response, cors: Record<string, string> = CORS_HEADERS): Response {
+	for (const [name, value] of Object.entries(cors)) {
 		response.headers.set(name, value);
 	}
 	return response;
@@ -62,9 +63,18 @@ const server = Bun.serve({
 	maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 	async fetch(req, srv) {
 		const url = new URL(req.url);
+		// The public feedback form answers only the site and the desktop app
+		// (feedback_origins.ts); every other route keeps CORS `*`
+		const feedback_route = url.pathname === "/feedback";
+		const origin = req.headers.get("Origin");
+		const cors = feedback_route ? feedback_cors_headers(origin, env.feedback_origins) : CORS_HEADERS;
+		const respond = (response: Response) => with_cors(response, cors);
+		if (feedback_route && !feedback_origin_allowed(origin, env.feedback_origins)) {
+			return respond(Response.json({ error: "origin not allowed" }, { status: 403 }));
+		}
 
 		if (req.method === "OPTIONS") {
-			return with_cors(new Response(null, { status: 204 }));
+			return respond(new Response(null, { status: 204 }));
 		}
 
 		const route = `${req.method} ${url.pathname}`;
@@ -77,7 +87,7 @@ const server = Bun.serve({
 		const ip = client_ip(req, socket_address, env.trusted_proxy_hops);
 		const retry_after = enforce_rate_limits(limiter, req, route, ip);
 		if (retry_after !== null) {
-			return with_cors(
+			return respond(
 				Response.json(
 					{ error: "rate limited" },
 					{ status: 429, headers: { "Retry-After": String(retry_after) } },
@@ -88,43 +98,43 @@ const server = Bun.serve({
 		try {
 			switch (route) {
 				case "GET /":
-					return with_cors(Response.json({ ok: true, message: "pile-commander backend" }));
+					return respond(Response.json({ ok: true, message: "pile-commander backend" }));
 				case "GET /presign":
-					return with_cors(
+					return respond(
 						await handle_download_presign(env, s3, req, meter, downloads, ip),
 					);
 				case "POST /presign/upload":
-					return with_cors(await handle_upload_presign(env, s3, service, req));
+					return respond(await handle_upload_presign(env, s3, service, req));
 				case "POST /presign/hub-preview-upload":
-					return with_cors(await handle_hub_preview_upload(env, s3, service, req));
+					return respond(await handle_hub_preview_upload(env, s3, service, req));
 				case "GET /hub-preview":
-					return with_cors(
+					return respond(
 						await handle_hub_preview_download(env, s3, req, meter, ip),
 					);
 				case "POST /hub-preview/finalize":
-					return with_cors(await handle_hub_preview_finalize(env, s3, service, req));
+					return respond(await handle_hub_preview_finalize(env, s3, service, req));
 				case "POST /finalize":
-					return with_cors(await handle_finalize(env, s3, service, req));
+					return respond(await handle_finalize(env, s3, service, req));
 				case "POST /blobs/copy-clones":
-					return with_cors(await handle_copy_clones(env, s3, service, req));
+					return respond(await handle_copy_clones(env, s3, service, req));
 				case "POST /account/delete":
-					return with_cors(await handle_delete_account(env, req));
+					return respond(await handle_delete_account(env, req));
 				case "POST /billing/webhook":
-					return with_cors(await handle_billing_webhook(env, req));
+					return respond(await handle_billing_webhook(env, req));
 				case "POST /auth/send-email":
-					return with_cors(await handle_send_email(env, req));
+					return respond(await handle_send_email(env, req));
 				case "POST /workspace/invite":
-					return with_cors(await handle_workspace_invite(env, req));
+					return respond(await handle_workspace_invite(env, req));
 				case "POST /pricing/notify":
-					return with_cors(await handle_pricing_notify(env, req));
+					return respond(await handle_pricing_notify(env, req));
 				case "POST /feedback":
-					return with_cors(await handle_feedback(env, req));
+					return respond(await handle_feedback(env, req));
 				default:
-					return with_cors(Response.json({ error: "not found" }, { status: 404 }));
+					return respond(Response.json({ error: "not found" }, { status: 404 }));
 			}
 		} catch (err) {
 			if (err instanceof ApiError) {
-				return with_cors(
+				return respond(
 					Response.json(
 						{ error: err.message, ...err.extra },
 						{ status: err.status, headers: err.headers },
@@ -132,7 +142,7 @@ const server = Bun.serve({
 				);
 			}
 			console.error("request failed:", err);
-			return with_cors(Response.json({ error: "internal error" }, { status: 500 }));
+			return respond(Response.json({ error: "internal error" }, { status: 500 }));
 		}
 	},
 });

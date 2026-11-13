@@ -11,6 +11,7 @@ import ExportPanel from '@/ui/explorer/folder-header/ExportPanel.vue'
 import BridgePanel from '@/ui/explorer/folder-header/BridgePanel.vue'
 import { explorer_window_classes } from '@/ui/explorer/window_classes'
 import SettingsPage from '@/ui/explorer/pages/SettingsPage.vue'
+import FeedbackPage from '@/ui/explorer/pages/FeedbackPage.vue'
 import AccountPage from '@/ui/explorer/pages/AccountPage.vue'
 import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
 import CloudPage from '@/ui/explorer/pages/CloudPage.vue'
@@ -293,6 +294,7 @@ onUnmounted(() => {
 					<div class="content">
 						<SettingsPage v-if="page === 'settings'" />
 						<AccountPage v-else-if="page === 'account'" />
+						<FeedbackPage v-else-if="page === 'feedback'" />
 						<TrashPage v-else-if="page === 'trash'" />
 						<CloudPage v-else-if="page === 'cloud'" />
 						<HubPage v-else-if="page === 'hub'" />

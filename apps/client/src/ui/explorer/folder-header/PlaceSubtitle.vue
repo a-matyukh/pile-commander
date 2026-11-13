@@ -19,6 +19,7 @@ const subtitle = computed(() => {
 		return { icon: 'tabler:user-circle', text: count === null ? `@${props.arg ?? ''}` : `@${props.arg} · ${t('hub.publications', { n: count })}` }
 	}
 	if (props.page === 'cloud') return { icon: 'tabler:cloud', text: t('subtitle.cloud') }
+	if (props.page === 'feedback') return { icon: 'tabler:message-circle', text: t('subtitle.feedback') }
 	if (props.page === 'trash') return { icon: 'tabler:cloud', text: t('trash.cloud_note') }
 	return { icon: 'tabler:settings', text: t('subtitle.settings') }
 })

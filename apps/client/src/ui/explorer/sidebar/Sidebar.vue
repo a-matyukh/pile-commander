@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { useEventListener } from '@vueuse/core'
-import { computed, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { Drive } from '@/domain/Drive'
-import { t } from '@/i18n'
+import { locale, t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import store from '@/store'
 import cloud from '@/store/cloud'
@@ -42,11 +42,54 @@ function crossing_text(crossing: PileCrossing): string {
 	const name = base_name(crossing.pile)
 	return crossing.way === 'joins' ? t('tree.joins_pile', { name }) : t('tree.enters_cloud', { name })
 }
-/** The account or settings page is open: its footer button shows it */
-function page_open(page: 'account' | 'settings' | 'trash' | 'cloud') {
+/** The account, feedback or settings page is open: its footer button shows it */
+function page_open(page: 'account' | 'feedback' | 'settings' | 'trash' | 'cloud') {
 	const location = explorer_navigation.location
 	return location?.kind === 'page' && location.page === page
 }
+
+const FOOTER_ICONS = { account: 'tabler:user-circle', feedback: 'tabler:message-circle', settings: 'tabler:settings' } as const
+
+/**
+ * The footer's labels do not fit (a narrow sidebar, long words): its buttons
+ * show icons only, the tooltip keeps the name. `labels_width` is what the
+ * labels needed, so widening the sidebar past it brings them back
+ */
+const footer_el = ref<HTMLElement | null>(null)
+const footer_tight = ref(false)
+let labels_width = 0
+function measure_footer() {
+	const el = footer_el.value
+	if (!el || explorer_settings.footer_buttons === 'icon') return
+	if (!footer_tight.value) {
+		if (el.scrollWidth > el.clientWidth + 1) {
+			labels_width = el.scrollWidth
+			footer_tight.value = true
+		}
+	} else if (el.clientWidth >= labels_width) {
+		footer_tight.value = false
+	}
+}
+// The buttons too: a label or an icon that loads late widens them, not the footer
+let footer_observer: ResizeObserver | null = null
+watch(footer_el, (el) => {
+	footer_observer?.disconnect()
+	footer_observer = null
+	if (!el) return
+	footer_observer = new ResizeObserver(measure_footer)
+	footer_observer.observe(el)
+	for (const button of el.children) footer_observer.observe(button)
+}, { flush: 'post' })
+onBeforeUnmount(() => footer_observer?.disconnect())
+// Another mode or language changes the labels: measure them again
+watch([() => explorer_settings.footer_buttons, locale], () => {
+	footer_tight.value = false
+	void nextTick(measure_footer)
+})
+const footer_icon = (page: keyof typeof FOOTER_ICONS) =>
+	explorer_settings.footer_buttons !== 'text' || footer_tight.value ? FOOTER_ICONS[page] : undefined
+const footer_label = (page: keyof typeof FOOTER_ICONS) =>
+	explorer_settings.footer_buttons !== 'icon' && !footer_tight.value ? t(`page.${page}`) : undefined
 
 const cloud_signed_in = computed(() => !!cloud.user)
 
@@ -333,12 +376,12 @@ watchEffect(() => {
 				/>
 			</div>
 		</template>
-		<div class="ft">
+		<div ref="footer_el" class="ft">
 			<IconButton
-				v-for="page in (['account', 'settings'] as const)"
+				v-for="page in (['account', 'feedback', 'settings'] as const)"
 				:key="page"
-				:icon="explorer_settings.footer_buttons !== 'text' ? (page === 'account' ? 'tabler:user-circle' : 'tabler:settings') : undefined"
-				:label="explorer_settings.footer_buttons !== 'icon' ? t(`page.${page}`) : undefined"
+				:icon="footer_icon(page)"
+				:label="footer_label(page)"
 				:selected="page_open(page)"
 				:aria-label="t(`page.${page}`)"
 				:data-tip="t(`page.${page}`)"

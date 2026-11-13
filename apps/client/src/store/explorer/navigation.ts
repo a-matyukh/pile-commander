@@ -16,7 +16,7 @@ import { explain_folder_error } from './fsErrorMessage'
  * Pages the history can stand on. Trash, a profile and an invite join this
  * list when those screens exist; they are not folders.
  */
-export type ExplorerPage = 'hub' | 'account' | 'settings' | 'trash' | 'cloud' | 'profile'
+export type ExplorerPage = 'hub' | 'account' | 'feedback' | 'settings' | 'trash' | 'cloud' | 'profile'
 
 export type ExplorerLocation =
 	/**

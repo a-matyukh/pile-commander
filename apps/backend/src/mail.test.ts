@@ -75,6 +75,7 @@ function mail_env(overrides: Partial<Env> = {}): Env {
 		moderation_digest_email: null,
 		moderation_digest_cron: "0 9 * * 1",
 		moderation_mail_cron: "* * * * *",
+		feedback_origins: ["https://pile-commander.app"],
 		egress: { mode: "off", alert_day_fraction: 0.25, visitor_fraction: 0.05, alert_email: null },
 		deriv: DERIV_OFF,
 		...overrides,

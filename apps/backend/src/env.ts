@@ -1,3 +1,4 @@
+import { parse_feedback_origins } from "./feedback_origins";
 /**
  * Which egress refusals are live (see egress.ts). `off` only counts and
  * alerts; `file_size` also refuses originals above max_public_file_bytes to
@@ -126,6 +127,12 @@ export type Env = {
 	moderation_digest_email: string | null;
 	moderation_digest_cron: string;
 	moderation_mail_cron: string;
+	/**
+	 * Origins allowed to POST /feedback: the site (landing and web app share
+	 * pile-commander.app) and the Tauri webviews. FEEDBACK_ORIGINS, comma
+	 * separated, replaces the list (add http://localhost:<port> for local dev)
+	 */
+	feedback_origins: string[];
 	egress: EgressEnv;
 	deriv: DerivEnv;
 };
@@ -238,6 +245,7 @@ export function load_env(): Env {
 		moderation_digest_email: process.env.MODERATION_DIGEST_EMAIL?.trim() || null,
 		moderation_digest_cron: process.env.MODERATION_DIGEST_CRON?.trim() || "0 9 * * 1",
 		moderation_mail_cron: process.env.MODERATION_MAIL_CRON?.trim() || "* * * * *",
+		feedback_origins: parse_feedback_origins(process.env.FEEDBACK_ORIGINS),
 		egress: {
 			mode: egress_mode(),
 			alert_day_fraction: fraction_or("EGRESS_ALERT_DAY_FRACTION", 0.25),
