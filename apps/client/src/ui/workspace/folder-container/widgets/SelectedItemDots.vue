@@ -33,4 +33,11 @@ defineProps<{
 	right: 3px;
 	cursor: default;
 }
+
+/* Over the item's own text a bare "⋯" is barely seen: it looks pressed (as
+   with its menu open) from the start. */
+.selected-item-dots :deep(.ib) {
+	background: var(--hv);
+	border-color: var(--border);
+}
 </style>

@@ -316,6 +316,17 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 		}
 	}
 
+	/**
+	 * `.board-no-drag` always opts out, whatever the widget's own list: the
+	 * selected item's "⋯" carries it, and a finger on it is no tap on the item
+	 * (that tap would let the selection go before the menu opens).
+	 */
+	function ignoreSelector() {
+		return options.ignoreFrom
+			? `${options.ignoreFrom}, .board-no-drag`
+			: '.resize-handle, .board-no-drag'
+	}
+
 	function onPointerDown(event: PointerEvent) {
 		if (!enabled || event.button !== 0 || dragging) return
 		if (!(event.target instanceof Element)) return
@@ -323,8 +334,7 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 		// but also when listening on ancestors — keep the guard explicit).
 		if (!el.contains(event.target) && event.target !== el) return
 
-		const ignoreFrom = options.ignoreFrom ?? '.resize-handle, .board-no-drag'
-		if (matchesWithin(el, event.target, ignoreFrom)) return
+		if (matchesWithin(el, event.target, ignoreSelector())) return
 
 		if (typeof options.allowFrom === 'string' && options.allowFrom.length > 0) {
 			if (!matchesWithin(el, event.target, options.allowFrom)) return
@@ -374,8 +384,7 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 		if (!enabled || event.pointerType === 'mouse') return
 		if (!(event.target instanceof Element)) return
 		if (!el.contains(event.target) && event.target !== el) return
-		const ignoreFrom = options.ignoreFrom ?? '.resize-handle, .board-no-drag'
-		if (matchesWithin(el, event.target, ignoreFrom)) return
+		if (matchesWithin(el, event.target, ignoreSelector())) return
 		event.stopPropagation()
 	}
 
