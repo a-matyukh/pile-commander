@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "pile-commander"
-version = "2.7.0"
+version = "2.7.1"
 dependencies = [
  "bytes",
  "futures-util",
