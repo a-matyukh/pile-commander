@@ -711,7 +711,10 @@ export function note_extensions(options: NoteExtensionOptions = {}): AnyExtensio
 		NoteImage.configure({ inline: true, allowBase64: true }),
 		NoteUnderline,
 		NoteTaskList,
-		TaskItem.configure({ nested: true }),
+		// Tiptap's task node view (the editor) leaves `data-type` off the <li>
+		// that its renderHTML (the preview) sets, and every task style keys on
+		// it: without it the box sits on a line of its own while editing.
+		TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }),
 		TableKit.configure({ table: false }),
 		NoteTable.configure({ resizable: false }),
 		TextColor,
