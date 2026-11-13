@@ -86,7 +86,7 @@ import { sign_up_error_message } from './helpers/signUpPasswordError'
 import { take_password_recovery } from '@/services/cloud/passwordRecovery'
 import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
-import { t } from '@/i18n'
+import { locale, t } from '@/i18n'
 import { reset_folder_list_cache, set_folder_list_owner } from '@/services/cloud/folderListCache'
 import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
 import { has_unsaved_writes } from '@/services/workspace/xattrs'
@@ -1216,7 +1216,8 @@ const cloud: CloudStore = {
 					Authorization: `Bearer ${token}`,
 					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify({ workspace_id, email, role }),
+				// the mail goes out in the inviter's interface language
+				body: JSON.stringify({ workspace_id, email, role, locale: locale.value }),
 			})
 			const body = (await response.json().catch(() => null)) as { error?: unknown; status?: unknown } | null
 			if (!response.ok) {

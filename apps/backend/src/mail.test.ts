@@ -9,6 +9,8 @@ import {
 	hook_secret_bytes,
 	verify_standard_webhook,
 	workspace_invite_email_copy,
+	workspace_shared_email_copy,
+	mail_locale,
 	subject_text,
 	PLUNK_SEND_URL,
 	type FetchLike,
@@ -227,6 +229,52 @@ describe("workspace_invite_email_copy", () => {
 	});
 });
 
+describe("workspace_shared_email_copy", () => {
+	test("tells a registered member the folder is already theirs", () => {
+		const { subject, body } = workspace_shared_email_copy({
+			inviter: "Ada <b>",
+			workspace_name: "Notes\nBcc: x",
+			role: "viewer",
+			url: "https://app.example",
+		});
+		expect(subject).toBe("Ada <b> shared Notes Bcc: x with you");
+		expect(body).toContain("Ada &lt;b&gt;");
+		expect(body).toContain("as a viewer");
+		expect(body).toContain('href="https://app.example"');
+	});
+});
+
+describe("Russian invite mail", () => {
+	test("both mails follow the inviter's interface language", () => {
+		const shared = workspace_shared_email_copy({
+			inviter: "Ада",
+			workspace_name: "Заметки",
+			role: "editor",
+			url: "https://app.example",
+			locale: "ru",
+		});
+		expect(shared.subject).toBe("Ада делится с вами папкой «Заметки»");
+		expect(shared.body).toContain("ваша роль — редактор");
+		expect(shared.body).toContain("Открыть Pile Commander");
+
+		const invite = workspace_invite_email_copy({
+			inviter: "",
+			workspace_name: "",
+			role: "viewer",
+			url: "https://app.example/invite/ab",
+			locale: "ru",
+		});
+		expect(invite.subject).toBe("Кто-то приглашает вас в папку");
+		expect(invite.body).toContain("ваша роль — зритель");
+		expect(invite.body).toContain('href="https://app.example/invite/ab"');
+	});
+
+	test("anything but ru mails in English", () => {
+		expect(mail_locale("ru")).toBe("ru");
+		expect(mail_locale(undefined)).toBe("en");
+		expect(mail_locale("de")).toBe("en");
+	});
+});
 
 describe("handle_send_email", () => {
 	test("503 when the hook secret or Plunk is unset", async () => {

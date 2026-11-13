@@ -102,7 +102,17 @@ describe("map_add_member_error / parse_add_member_result", () => {
 	});
 
 	test("accepts member and pending rpc payloads", () => {
-		expect(parse_add_member_result({ kind: "member" })).toEqual({ kind: "member" });
+		expect(parse_add_member_result({ kind: "member", workspace_name: "Notes", inviter: "Ada" })).toEqual({
+			kind: "member",
+			workspace_name: "Notes",
+			inviter: "Ada",
+		});
+		// the database before the names were added to the member answer
+		expect(parse_add_member_result({ kind: "member" })).toEqual({
+			kind: "member",
+			workspace_name: "",
+			inviter: "",
+		});
 		expect(
 			parse_add_member_result({
 				kind: "pending",
@@ -120,21 +130,80 @@ describe("map_add_member_error / parse_add_member_result", () => {
 });
 
 describe("handle_workspace_invite", () => {
-	test("adds a registered member without sending mail", async () => {
+	const member: AddMemberFn = async () => ({ kind: "member", workspace_name: "Notes", inviter: "Ada" });
+
+	test("adds a registered member and mails a shared-with-you notice", async () => {
 		const sent: unknown[] = [];
-		const add_member: AddMemberFn = async () => ({ kind: "member" });
 		const send: FetchLike = async (_input, init) => {
 			sent.push(JSON.parse(String(init?.body)));
 			return new Response("{}", { status: 200 });
 		};
 		const res = await handle_workspace_invite(
-			invite_env(),
+			invite_env({ public_app_url: "https://app.example/" }),
 			invite_request({ workspace_id: WS, email: "Ada@Example.com", role: "editor" }),
-			add_member,
+			member,
 			send,
 		);
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ ok: true, status: "member" });
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toMatchObject({
+			to: "ada@example.com",
+			subject: "Ada shared Notes with you",
+			subscribed: false,
+		});
+		const body = (sent[0] as { body: string }).body;
+		expect(body).toContain('href="https://app.example"');
+		expect(body).toContain("as an editor");
+		expect(body).not.toContain("/invite/");
+	});
+
+	test("mails in Russian when the inviter's interface is Russian", async () => {
+		const sent: Array<{ subject: string }> = [];
+		const send: FetchLike = async (_input, init) => {
+			sent.push(JSON.parse(String(init?.body)));
+			return new Response("{}", { status: 200 });
+		};
+		await handle_workspace_invite(
+			invite_env(),
+			invite_request({ workspace_id: WS, email: "ada@example.com", role: "editor", locale: "ru" }),
+			member,
+			send,
+		);
+		await handle_workspace_invite(
+			invite_env(),
+			invite_request({ workspace_id: WS, email: "new@example.com", role: "editor", locale: "ru" }),
+			async () => ({ kind: "pending", token: "ab".repeat(32), workspace_name: "Notes", inviter: "Ada" }),
+			send,
+		);
+		expect(sent.map((m) => m.subject)).toEqual([
+			"Ada делится с вами папкой «Notes»",
+			"Ada приглашает вас в папку «Notes»",
+		]);
+	});
+
+	test("a failed or unconfigured notice still answers member", async () => {
+		const failing: FetchLike = async () => new Response("down", { status: 500 });
+		const res = await handle_workspace_invite(
+			invite_env(),
+			invite_request({ workspace_id: WS, email: "ada@example.com", role: "viewer" }),
+			member,
+			failing,
+		);
+		expect(await res.json()).toEqual({ ok: true, status: "member" });
+
+		const sent: unknown[] = [];
+		const send: FetchLike = async (_input, init) => {
+			sent.push(init);
+			return new Response("{}", { status: 200 });
+		};
+		const quiet = await handle_workspace_invite(
+			invite_env({ plunk_secret_key: null }),
+			invite_request({ workspace_id: WS, email: "ada@example.com", role: "viewer" }),
+			member,
+			send,
+		);
+		expect(await quiet.json()).toEqual({ ok: true, status: "member" });
 		expect(sent).toHaveLength(0);
 	});
 
@@ -197,7 +266,7 @@ describe("handle_workspace_invite", () => {
 	});
 
 	test("refuses a malformed body", async () => {
-		const add_member: AddMemberFn = async () => ({ kind: "member" });
+		const add_member = member;
 		await expect(
 			handle_workspace_invite(invite_env(), invite_request({ email: "a@b.com", role: "editor" }), add_member),
 		).rejects.toMatchObject({ status: 400, message: "invalid workspace" });

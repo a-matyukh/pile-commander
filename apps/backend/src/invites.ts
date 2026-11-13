@@ -1,8 +1,10 @@
 import { ApiError, bearer_token, internal_error, require_user, require_workspace_owner, user_client } from "./auth";
 import type { Env } from "./env";
 import {
+	mail_locale,
 	plunk_send,
 	workspace_invite_email_copy,
+	workspace_shared_email_copy,
 	workspace_invite_url,
 	type FetchLike,
 } from "./mail";
@@ -11,7 +13,7 @@ import { normalize_waitlist_email } from "./waitlist";
 export type AddMemberKind = "member" | "pending";
 
 export type AddMemberResult =
-	| { kind: "member" }
+	| { kind: "member"; workspace_name: string; inviter: string }
 	| { kind: "pending"; token: string; workspace_name: string; inviter: string };
 
 export type AddMemberFn = (
@@ -44,11 +46,13 @@ export function parse_add_member_result(data: unknown): AddMemberResult {
 		throw internal_error("add workspace member", "unexpected rpc payload");
 	}
 	const row = data as Record<string, unknown>;
-	if (row.kind === "member") return { kind: "member" };
+	// A database without the member names yet answers { kind: "member" }:
+	// the mail then falls back to "Someone" / "a workspace"
+	const workspace_name = typeof row.workspace_name === "string" ? row.workspace_name : "";
+	const inviter = typeof row.inviter === "string" ? row.inviter : "";
+	if (row.kind === "member") return { kind: "member", workspace_name, inviter };
 	if (row.kind === "pending") {
 		const token = typeof row.token === "string" ? row.token : "";
-		const workspace_name = typeof row.workspace_name === "string" ? row.workspace_name : "";
-		const inviter = typeof row.inviter === "string" ? row.inviter : "";
 		if (!token) throw internal_error("add workspace member", "pending invite missing token");
 		return { kind: "pending", token, workspace_name, inviter };
 	}
@@ -71,8 +75,9 @@ function default_add_member(env: Env, req: Request): AddMemberFn {
 	};
 }
 
-// POST /workspace/invite — owner JWT. Registered email becomes a member with
-// no mail; otherwise pending + Plunk. Resend is the same path (RPC upserts).
+// POST /workspace/invite — owner JWT. Registered email becomes a member at
+// once and gets a "shared with you" notice; otherwise pending + an invite
+// mail. Resend is the same path (RPC upserts).
 export async function handle_workspace_invite(
 	env: Env,
 	req: Request,
@@ -98,9 +103,26 @@ export async function handle_workspace_invite(
 
 	const role = body.role === "viewer" ? "viewer" : body.role === "editor" ? "editor" : null;
 	if (!role) throw new ApiError(400, "invalid invite");
+	const locale = mail_locale(body.locale);
 
 	const result = await add_member(workspace_id, email, role);
 	if (result.kind === "member") {
+		// The member is already added: a missing or failed notice must not
+		// turn that into an error the owner would retry
+		if (env.public_app_url && env.plunk_secret_key && env.plunk_from_email) {
+			const copy = workspace_shared_email_copy({
+				inviter: result.inviter,
+				workspace_name: result.workspace_name,
+				role,
+				url: env.public_app_url.replace(/\/$/, ""),
+				locale,
+			});
+			try {
+				await plunk_send(env, email, copy.subject, copy.body, send);
+			} catch (err) {
+				console.error("workspace shared notice:", err);
+			}
+		}
 		return Response.json({ ok: true, status: "member" satisfies AddMemberKind });
 	}
 
@@ -114,6 +136,7 @@ export async function handle_workspace_invite(
 		workspace_name: result.workspace_name,
 		role,
 		url,
+		locale,
 	});
 	await plunk_send(env, email, copy.subject, copy.body, send);
 	return Response.json({ ok: true, status: "pending" satisfies AddMemberKind });

@@ -88,8 +88,13 @@ begin
     v_ws := private.create_workspace('rls-suite');
     select e.id into v_root from public.entries e where e.workspace_id = v_ws and e.parent_id is null;
     perform private.add_workspace_member(v_ws, 'rls-editor@example.invalid', 'editor');
-    perform private.add_workspace_member(v_ws, 'rls-viewer@example.invalid', 'viewer');
+    v_json := private.add_workspace_member(v_ws, 'rls-viewer@example.invalid', 'viewer');
     insert into __results values ('fixtures', v_ws is not null and v_root is not null, format('ws=%s', v_ws));
+    insert into __results values ('invites: registered member answer carries names for the mail',
+        v_json->>'kind' = 'member'
+        and v_json->>'workspace_name' = 'rls-suite'
+        and coalesce(v_json->>'inviter', '') <> '',
+        v_json::text);
     insert into __results values ('fixtures: free plan seeds the egress, download and row fences',
         (select egress_bytes_month = 20::bigint * 1024 * 1024 * 1024 and max_public_file_bytes = 10 * 1024 * 1024
                 and download_bytes_month = 20::bigint * 1024 * 1024 * 1024

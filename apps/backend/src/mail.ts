@@ -199,12 +199,44 @@ export function workspace_invite_url(app_url: string, token: string): string {
 	return `${app_url.replace(/\/$/, "")}/invite/${token}`;
 }
 
-export function workspace_invite_email_copy(opts: {
+export type MailLocale = "en" | "ru";
+
+/** Anything but "ru" mails in English: older clients send no locale. */
+export function mail_locale(value: unknown): MailLocale {
+	return value === "ru" ? "ru" : "en";
+}
+
+type WorkspaceMailOpts = {
 	inviter: string;
 	workspace_name: string;
 	role: "editor" | "viewer";
 	url: string;
-}): { subject: string; body: string } {
+	locale?: MailLocale;
+};
+
+// Russian: present tense ("приглашает", "делится") keeps the inviter's
+// gender out of the sentence
+function ru_names(opts: WorkspaceMailOpts): { inviter: string; folder: string; role: string } {
+	const name = subject_text(opts.workspace_name);
+	return {
+		inviter: subject_text(opts.inviter) || "Кто-то",
+		folder: name ? `папку «${name}»` : "папку",
+		role: opts.role === "viewer" ? "зритель" : "редактор",
+	};
+}
+
+export function workspace_invite_email_copy(opts: WorkspaceMailOpts): { subject: string; body: string } {
+	if (opts.locale === "ru") {
+		const { inviter, folder, role } = ru_names(opts);
+		return {
+			subject: `${inviter} приглашает вас в ${folder}`,
+			body: link_body(
+				`${escape_html(inviter)} приглашает вас в ${escape_html(folder)}, ваша роль — ${role}. Создайте аккаунт, чтобы открыть её.`,
+				opts.url,
+				"Открыть папку",
+			),
+		};
+	}
 	const inviter = subject_text(opts.inviter) || "Someone";
 	const board = subject_text(opts.workspace_name) || "a workspace";
 	const role = opts.role === "viewer" ? "a viewer" : "an editor";
@@ -214,6 +246,34 @@ export function workspace_invite_email_copy(opts: {
 			`${escape_html(inviter)} invited you to ${escape_html(board)} as ${role}. Create an account to open it.`,
 			opts.url,
 			"Open the workspace",
+		),
+	};
+}
+
+// A registered address joins at once, so this is a notice, not an invite:
+// the folder is already in their sidebar when they open the app
+export function workspace_shared_email_copy(opts: WorkspaceMailOpts): { subject: string; body: string } {
+	if (opts.locale === "ru") {
+		const { inviter, folder, role } = ru_names(opts);
+		const shared = folder.replace(/^папку/, "папкой");
+		return {
+			subject: `${inviter} делится с вами ${shared}`,
+			body: link_body(
+				`${escape_html(inviter)} делится с вами ${escape_html(shared)}, ваша роль — ${role}. Она уже есть в вашем Pile Commander.`,
+				opts.url,
+				"Открыть Pile Commander",
+			),
+		};
+	}
+	const inviter = subject_text(opts.inviter) || "Someone";
+	const board = subject_text(opts.workspace_name) || "a workspace";
+	const role = opts.role === "viewer" ? "a viewer" : "an editor";
+	return {
+		subject: `${inviter} shared ${board} with you`,
+		body: link_body(
+			`${escape_html(inviter)} shared ${escape_html(board)} with you as ${role}. It is already in your Pile Commander.`,
+			opts.url,
+			"Open Pile Commander",
 		),
 	};
 }

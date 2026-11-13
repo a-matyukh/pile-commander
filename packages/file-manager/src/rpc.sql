@@ -2662,9 +2662,9 @@ grant execute on function public.complete_upload(text, uuid, text, jsonb, text, 
 -- impossible through RLS (auth.users is not exposed), so the lookup happens
 -- here under security definer. Owner only. This is the ONLY insert path
 -- for workspace_members and workspace_invites (clients have no INSERT).
--- Registered email → member; otherwise a pending invite (email is sent by
--- the backend, not from this function). Repeat (workspace, email) upserts
--- role/token/expiry. Role changes/removals of members need no RPC:
+-- Registered email → member; otherwise a pending invite. Both answers carry
+-- workspace_name and inviter: the backend mails either way, not this
+-- function. Repeat (workspace, email) upserts role/token/expiry. Role changes/removals of members need no RPC:
 -- members_update (column grant: role) / members_delete allow them to the
 -- owner directly. Pending revoke is a direct DELETE on workspace_invites.
 -- ----------------------------------------------------------------------------
@@ -2711,6 +2711,14 @@ begin
       from auth.users u
      where lower(u.email) = v_email;
 
+    -- Both answers carry the names for the backend's mail
+    select w.name into v_name from public.workspaces w where w.id = p_workspace;
+    select coalesce(nullif(p.display_name, ''), p.username, u.email::text)
+      into v_inviter
+      from auth.users u
+      left join public.profiles p on p.id = u.id
+     where u.id = auth.uid();
+
     if v_user_id is not null then
         if v_user_id = auth.uid() then
             raise exception 'add_workspace_member: the owner needs no membership';
@@ -2726,7 +2734,11 @@ begin
         values (p_workspace, v_user_id, p_role);
         delete from public.workspace_invites
          where workspace_id = p_workspace and email = v_email;
-        return json_build_object('kind', 'member');
+        return json_build_object(
+            'kind', 'member',
+            'workspace_name', coalesce(v_name, ''),
+            'inviter', coalesce(v_inviter, '')
+        );
     end if;
 
     select exists (
@@ -2757,13 +2769,6 @@ begin
             token = excluded.token,
             invited_by = excluded.invited_by,
             expires_at = excluded.expires_at;
-
-    select w.name into v_name from public.workspaces w where w.id = p_workspace;
-    select coalesce(nullif(p.display_name, ''), p.username, u.email::text)
-      into v_inviter
-      from auth.users u
-      left join public.profiles p on p.id = u.id
-     where u.id = auth.uid();
 
     return json_build_object(
         'kind', 'pending',
