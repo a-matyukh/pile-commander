@@ -49,6 +49,15 @@ export function usePinchZoom(options: PinchZoomOptions) {
 
 	let lastDistance: number | null = null
 	let lastCenter: { x: number; y: number } | null = null
+	/**
+	 * A pinch has begun and a finger is still down. Until the last one lifts,
+	 * the canvas's items do not hear the touches (this listens in the capture
+	 * phase, above them): a finger that came down on a card or on its resize
+	 * handle zooms with the other one instead of moving or resizing the card,
+	 * and the finger left after the pinch does not pick the drag up again.
+	 * Touch ends still pass, so a drag already begun ends where it stood.
+	 */
+	let itemsFrozen = false
 
 	function resetPinch() {
 		isPinching.value = false
@@ -61,6 +70,7 @@ export function usePinchZoom(options: PinchZoomOptions) {
 			options.onGestureStart?.()
 		}
 		isPinching.value = true
+		itemsFrozen = true
 	}
 
 	function isTouchOnTarget(event: TouchEvent): boolean {
@@ -77,16 +87,19 @@ export function usePinchZoom(options: PinchZoomOptions) {
 	}
 
 	function onTouchStart(event: TouchEvent) {
+		if (itemsFrozen) event.stopPropagation()
 		if (!options.enabled.value || event.touches.length !== 2) return
 		if (!isTouchOnTarget(event)) return
 
 		event.preventDefault()
+		event.stopPropagation()
 		beginPinch()
 		lastDistance = touchDistance(event.touches)
 		lastCenter = touchCenter(event.touches)
 	}
 
 	function onTouchMove(event: TouchEvent) {
+		if (itemsFrozen) event.stopPropagation()
 		if (!options.enabled.value) return
 
 		if (event.touches.length !== 2) {
@@ -97,6 +110,7 @@ export function usePinchZoom(options: PinchZoomOptions) {
 		if (!isTouchOnTarget(event)) return
 
 		event.preventDefault()
+		event.stopPropagation()
 		beginPinch()
 
 		const distance = touchDistance(event.touches)
@@ -126,6 +140,7 @@ export function usePinchZoom(options: PinchZoomOptions) {
 		if (event.touches.length < 2) {
 			resetPinch()
 		}
+		if (event.touches.length === 0) itemsFrozen = false
 	}
 
 	function attach(el: HTMLElement) {
@@ -141,6 +156,7 @@ export function usePinchZoom(options: PinchZoomOptions) {
 		el.removeEventListener('touchend', onTouchEnd, listenerOpts)
 		el.removeEventListener('touchcancel', onTouchEnd, listenerOpts)
 		resetPinch()
+		itemsFrozen = false
 	}
 
 	let currentEl: HTMLElement | null = null
