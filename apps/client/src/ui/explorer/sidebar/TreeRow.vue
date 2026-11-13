@@ -388,11 +388,14 @@ watchEffect(on_cleanup => {
 }
 .cv {
 	color: var(--text-muted);
-	width: 14px;
+	/* As wide as the folder icon: a level in is one chevron plus its gap, so a
+	   child's chevron stands under its parent's icon, and its icon under the
+	   parent's name */
+	width: 16px;
 	font-size: 14px !important;
 }
 .sp {
-	width: 14px;
+	width: 16px;
 	flex: none;
 }
 .tg {
@@ -447,19 +450,22 @@ watchEffect(on_cleanup => {
 	color: var(--text-accent);
 }
 /*
- * Children's guide: a hairline under the chevron's point (the row's margin
- * and padding plus half the chevron). Drawn, not a border, so a pile's
- * thicker line takes the same place and the rows never move
+ * Children's guide: a hairline under the parent's chevron (the row's margin
+ * and padding plus half the chevron, less the group's margin: --guide).
+ * Drawn, not a border, so a pile's thicker line takes the same place and the
+ * rows never move. Margin and padding together are one level in, the
+ * chevron's width plus the row's gap.
  */
 .g {
+	--guide: 4px;
 	position: relative;
-	margin-left: 13px;
-	padding-left: 0.5px;
+	margin-left: 16px;
+	padding-left: 6px;
 }
 .g::before {
 	content: '';
 	position: absolute;
-	left: 5px;
+	left: calc(var(--guide) - 0.25px);
 	top: 0;
 	bottom: 0;
 	width: 0.5px;
@@ -468,7 +474,7 @@ watchEffect(on_cleanup => {
 }
 /* A pile's region: the same guide, thicker and in the sync's state */
 .g.pile::before {
-	left: 4.5px;
+	left: calc(var(--guide) - 0.75px);
 	width: 1.5px;
 	border-radius: 1px;
 	background: var(--fill-accent);
@@ -486,14 +492,14 @@ watchEffect(on_cleanup => {
 .pl {
 	position: absolute;
 	z-index: 1;
-	left: 1px;
+	left: calc(var(--guide) - 4px);
 	top: 0;
 	bottom: 0;
 	width: 8px;
 	cursor: help;
 }
 .g.pile:has(> .pl:hover)::before {
-	left: 4px;
+	left: calc(var(--guide) - 1.25px);
 	width: 2.5px;
 }
 /* Syncing: a dark run travels down a lighter line */
@@ -528,7 +534,7 @@ watchEffect(on_cleanup => {
 }
 .explorer.lg .cv,
 .explorer.lg .sp {
-	width: 18px;
+	width: 19px;
 }
 .explorer.lg .cv {
 	font-size: 17px !important;
@@ -538,7 +544,9 @@ watchEffect(on_cleanup => {
 	height: 26px;
 }
 .explorer.lg .g {
-	margin-left: 15px;
+	--guide: 4.5px;
+	margin-left: 17px;
+	padding-left: 8px;
 }
 @media (hover: hover) {
 	.r:hover {
