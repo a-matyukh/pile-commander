@@ -12,12 +12,13 @@ import { public_roots, type PublicRoot } from './public_roots'
  * Public addresses and cloud flows. A publication opens
  * as a read-only folder of the "public" drive; a fork, "Edit" of one's own
  * publication and an accepted invitation open their cloud folder; /demo opens
- * the demo. An invitation and a missing publication are drawn by PublicScreen
+ * the demo. An invitation, a shared folder's link and a missing publication are drawn by PublicScreen
  * instead of the shell (from there "Back to Hub" comes back to its Hub page).
  */
 export const explorer_public_open = computed(() => !!(
 	cloud.public_not_found
 	|| cloud.invite_view
+	|| cloud.shared_view
 ))
 
 /** The Explorer is on screen: a flow navigates in it, otherwise it starts there */
@@ -65,6 +66,12 @@ export function back_to_explorer_hub(): void {
 /** Drops an invitation and the /invite address, so the shell opens the last folder */
 export function leave_invite(): void {
 	cloud.invite_view = null
+	leave_invite_address()
+}
+
+/** From the /app/<id> card back to the app: the address goes too */
+export function leave_shared(): void {
+	cloud.shared_view = null
 	leave_invite_address()
 }
 

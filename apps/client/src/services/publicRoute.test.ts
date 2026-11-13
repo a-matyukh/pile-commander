@@ -13,6 +13,7 @@ function deps(overrides: Partial<Pick<ApplyPublicRouteDeps, 'is_cloud_configured
 		open_profile: vi.fn<(username: string) => void>(),
 		open_public: vi.fn<(username: string, slug: string) => void>(),
 		open_invite: vi.fn<(token: string) => void>(),
+		open_shared: vi.fn<(workspace_id: string) => void>(),
 		...overrides,
 	}
 }
@@ -88,7 +89,31 @@ describe('resolve_public_route', () => {
 	})
 })
 
+describe('resolve_public_route: shared folder link', () => {
+	const id = '11111111-1111-4111-8111-11111111ABCD'
+
+	it('maps /app/<workspace id> to the shared folder', () => {
+		expect(resolve_public_route(`/app/${id}`)).toEqual({ kind: 'shared', workspace_id: id.toLowerCase() })
+	})
+
+	it('leaves /app and /app/<not an id> to the regular app', () => {
+		expect(resolve_public_route('/app')).toEqual({ kind: 'app' })
+		expect(resolve_public_route('/app/notes')).toEqual({ kind: 'app' })
+		expect(resolve_public_route(`/app/${id}/more`)).toEqual({ kind: 'app' })
+	})
+})
+
 describe('apply_public_route', () => {
+	it('opens a shared folder link only when cloud is configured', () => {
+		const id = '11111111-1111-4111-8111-111111111111'
+		const d = deps()
+		apply_public_route({ kind: 'shared', workspace_id: id }, d)
+		expect(d.open_shared).toHaveBeenCalledWith(id)
+		const off = deps({ is_cloud_configured: false })
+		apply_public_route({ kind: 'shared', workspace_id: id }, off)
+		expect(off.open_shared).not.toHaveBeenCalled()
+	})
+
 	it('loads an invite when cloud is configured', () => {
 		const token = 'ab'.repeat(32)
 		const d = deps()

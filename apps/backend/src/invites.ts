@@ -6,6 +6,7 @@ import {
 	workspace_invite_email_copy,
 	workspace_shared_email_copy,
 	workspace_invite_url,
+	workspace_open_url,
 	type FetchLike,
 } from "./mail";
 import { normalize_waitlist_email } from "./waitlist";
@@ -114,7 +115,7 @@ export async function handle_workspace_invite(
 				inviter: result.inviter,
 				workspace_name: result.workspace_name,
 				role,
-				url: env.public_app_url.replace(/\/$/, ""),
+				url: workspace_open_url(env.public_app_url, workspace_id),
 				locale,
 			});
 			try {

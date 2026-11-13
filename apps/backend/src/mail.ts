@@ -199,6 +199,11 @@ export function workspace_invite_url(app_url: string, token: string): string {
 	return `${app_url.replace(/\/$/, "")}/invite/${token}`;
 }
 
+/** A folder already shared with a registered member: the client opens it (`/app/<id>`) */
+export function workspace_open_url(app_url: string, workspace_id: string): string {
+	return `${app_url.replace(/\/$/, "")}/app/${workspace_id}`;
+}
+
 export type MailLocale = "en" | "ru";
 
 /** Anything but "ru" mails in English: older clients send no locale. */
@@ -251,7 +256,7 @@ export function workspace_invite_email_copy(opts: WorkspaceMailOpts): { subject:
 }
 
 // A registered address joins at once, so this is a notice, not an invite:
-// the folder is already in their sidebar when they open the app
+// the link opens the folder itself
 export function workspace_shared_email_copy(opts: WorkspaceMailOpts): { subject: string; body: string } {
 	if (opts.locale === "ru") {
 		const { inviter, folder, role } = ru_names(opts);
@@ -261,7 +266,7 @@ export function workspace_shared_email_copy(opts: WorkspaceMailOpts): { subject:
 			body: link_body(
 				`${escape_html(inviter)} делится с вами ${escape_html(shared)}, ваша роль — ${role}. Она уже есть в вашем Pile Commander.`,
 				opts.url,
-				"Открыть Pile Commander",
+				"Открыть папку",
 			),
 		};
 	}
@@ -273,7 +278,7 @@ export function workspace_shared_email_copy(opts: WorkspaceMailOpts): { subject:
 		body: link_body(
 			`${escape_html(inviter)} shared ${escape_html(board)} with you as ${role}. It is already in your Pile Commander.`,
 			opts.url,
-			"Open Pile Commander",
+			"Open the folder",
 		),
 	};
 }

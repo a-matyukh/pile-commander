@@ -188,6 +188,18 @@ const drop_target = computed(() => is_drop_target(spot.value))
 const dragged = computed(() => tree_drag.source?.root_key === root_key.value
 	&& tree_drag.source.folder_id === folder_id.value)
 
+/**
+ * A cloud folder other people see too: the owner shared it out, or it is
+ * someone else's folder shared with me. Only its top row says so
+ */
+const shared_tip = computed(() => {
+	if (props.node || props.item.drive.kind !== 'cloud') return null
+	const id = props.item.root.id
+	if (cloud.shared_out[id]) return t('badge.shared')
+	const role = cloud.role_of(id)
+	return role === 'editor' || role === 'viewer' ? t('badge.shared_with_me') : null
+})
+
 const root_move_open = ref(false)
 const pending_root_move = ref<{ target: ExplorerTreeRoot; folder_id: string } | null>(null)
 const root_move_needs_warning = computed(() => props.item.drive.kind === 'cloud' && Boolean(
@@ -286,6 +298,7 @@ watchEffect(on_cleanup => {
 		<span class="tg">
 			<span v-if="pile_line" class="bdg" :class="{ spin: badge.spin }" :data-tip="badge.tip ? t(badge.tip) : synced_tip(row_ref)"><Icon :icon="badge.icon" /></span>
 			<span v-if="is_bookmarked(row_ref)" class="bdg" :data-tip="t('badge.bookmarked')"><Icon icon="tabler:bookmark" /></span>
+			<span v-if="shared_tip" class="bdg" :data-tip="shared_tip"><Icon icon="tabler:users" /></span>
 			<!-- A publication or the demo is not one of the user's places: no folder menu -->
 			<FolderMenu
 				v-if="!is_transient_drive(item.drive.id)"

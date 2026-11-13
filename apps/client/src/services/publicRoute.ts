@@ -5,6 +5,8 @@ export type PublicRoute =
 	| { kind: 'demo'; path?: string }
 	| { kind: 'hub' }
 	| { kind: 'invite'; token: string }
+	/** A cloud folder shared with me, from the "shared with you" email */
+	| { kind: 'shared'; workspace_id: string }
 	| { kind: 'profile'; username: string }
 	/** `path`: a folder inside the publication, as its id (`/Notes/Ideas`) */
 	| { kind: 'slug'; username: string; slug: string; path?: string }
@@ -16,6 +18,7 @@ export type ApplyPublicRouteDeps = {
 	open_profile: (username: string) => void
 	open_public: (username: string, slug: string) => void
 	open_invite: (token: string) => void
+	open_shared: (workspace_id: string) => void
 }
 
 type PrerenderDocument = {
@@ -32,6 +35,7 @@ type PrerenderDocument = {
  *   /demo[/<folders>]  → the Explorer opens it (that folder) from the address
  *   /hub               → the public gallery
  *   /invite/<token>    → a pending workspace invite
+ *   /app/<workspace id> → a cloud folder shared with me ("app" is a reserved username)
  *   /<username>        → a profile page with its publications
  *   /<username>/<slug>[/<folders>] → a public workspace (read-only view, anon included), at that folder
  * everything else is the regular app.
@@ -39,6 +43,8 @@ type PrerenderDocument = {
  * The root segment is the username, so it must satisfy the slug pattern and
  * not be reserved.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export function resolve_public_route(pathname: string): PublicRoute {
 	const segments = pathname.split('/').filter(Boolean)
 
@@ -68,6 +74,9 @@ export function resolve_public_route(pathname: string): PublicRoute {
 		const [first, second] = segments
 		if (first === 'invite' && /^[0-9a-f]{64}$/i.test(second)) {
 			return { kind: 'invite', token: second.toLowerCase() }
+		}
+		if (first === 'app' && UUID_RE.test(second)) {
+			return { kind: 'shared', workspace_id: second.toLowerCase() }
 		}
 		if (
 			SLUG_PATTERN.test(first) && !is_reserved_slug(first)
@@ -105,6 +114,10 @@ export function when_not_prerendering(doc: PrerenderDocument = document): Promis
 export function apply_public_route(route: PublicRoute, deps: ApplyPublicRouteDeps): void {
 	if (route.kind === 'invite') {
 		if (deps.is_cloud_configured) deps.open_invite(route.token)
+		return
+	}
+	if (route.kind === 'shared') {
+		if (deps.is_cloud_configured) deps.open_shared(route.workspace_id)
 		return
 	}
 	// /demo is opened by the Explorer from the address (take_explorer_start).

@@ -118,6 +118,7 @@ export const ru = {
 		synced_other_computer: 'Синхронизируется с другим компьютером · {when}',
 		synced_other_computers: 'Синхронизируется с другими компьютерами ({n}) · {when}',
 		shared: 'Общая папка',
+		shared_with_me: 'С вами поделились',
 		public_link: 'Публичная ссылка',
 		in_hub: 'Опубликована в Хабе',
 		bookmarked: 'В закладках',
@@ -764,6 +765,11 @@ export const ru = {
 		role_editor: 'редактор',
 		signed_in: 'Вы вошли как {email}',
 		open_app: 'Открыть приложение',
+	},
+	shared_link: {
+		loading: 'Открываем папку…',
+		sign_in: 'Войдите, чтобы открыть папку',
+		no_access: 'У этого аккаунта нет доступа к папке',
 	},
 	publication: {
 		not_found: 'Публикация не найдена',

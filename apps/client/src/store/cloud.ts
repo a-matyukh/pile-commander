@@ -193,6 +193,16 @@ export type CloudStore = {
 		loading: boolean
 		error: string | null
 	} | null
+	/**
+	 * /app/<workspace id> landing (the "shared with you" email); null when
+	 * not on that route. `no_access`: signed in, but this account is not a
+	 * member (another account, or access was taken back)
+	 */
+	shared_view: {
+		workspace_id: string
+		loading: boolean
+		error: 'no_access' | null
+	} | null
 	/** Own profiles row; username is null until set (required for a public link) */
 	my_profile: Profile | null
 	billing: BillingAccount | null
@@ -302,6 +312,10 @@ export type CloudStore = {
 	/** Loads the /invite/<token> landing; opens the board when the session already has access */
 	open_invite(token: string): Promise<void>
 	accept_invite(): Promise<boolean>
+	/** Loads the /app/<workspace id> landing; opens the folder once signed in */
+	open_shared(workspace_id: string): Promise<void>
+	/** Opens the shared folder for the signed-in user. False: no access (or not signed in) */
+	accept_shared(): Promise<boolean>
 	fetch_publication(workspace_id: string): Promise<Publication | null>
 	report_hub(workspace_id: string, reason: string): Promise<boolean>
 	hub_already_reported(workspace_id: string): Promise<boolean>
@@ -395,6 +409,7 @@ const cloud: CloudStore = {
 	notice: null,
 	password_prompt: null,
 	invite_view: null,
+	shared_view: null,
 	my_profile: null,
 	billing: null,
 	owner_usage: null,
@@ -475,6 +490,7 @@ const cloud: CloudStore = {
 			// keep the /invite/:token card so signing out to switch accounts
 			// does not flash “no longer valid”
 			if (this.invite_view) this.invite_view = { ...this.invite_view, error: null }
+			if (this.shared_view) this.shared_view = { ...this.shared_view, loading: false, error: null }
 			// authenticated cloud workspace; keep public-URL views (publication_view)
 			if (store.workspace?.type === 'cloud' && !this.publication_view) {
 				store.close_workspace()
@@ -506,6 +522,7 @@ const cloud: CloudStore = {
 		// signing in while viewing a publication may unlock the Edit button
 		void this.refresh_public_edit_access()
 		if (this.invite_view) void this.accept_invite()
+		if (this.shared_view) void this.accept_shared()
 	},
 
 	async sign_up(email: string, password: string, redirect_to?: string) {
@@ -1402,6 +1419,34 @@ const cloud: CloudStore = {
 			await open_workspace(item)
 		} finally {
 			if (this.invite_view?.token === view.token) this.invite_view = null
+		}
+		return true
+	},
+
+	async open_shared(workspace_id: string): Promise<void> {
+		this.shared_view = { workspace_id, loading: !!this.user, error: null }
+		if (this.user) await this.accept_shared()
+	},
+
+	async accept_shared(): Promise<boolean> {
+		const view = this.shared_view
+		if (!view || !this.user) return false
+		const current = () => this.shared_view?.workspace_id === view.workspace_id
+		this.shared_view = { ...view, loading: true, error: null }
+		await wait_for_jwt_ready(require_supabase())
+		if (!this.user || !current()) return false
+		await this.fetch_workspaces({ join: true })
+		if (!current()) return false
+		const item = this.workspaces.find(ws => ws.id === view.workspace_id)
+		if (!item || this.role_of(view.workspace_id) == null) {
+			this.shared_view = { workspace_id: view.workspace_id, loading: false, error: 'no_access' }
+			return false
+		}
+		if (typeof history !== 'undefined') history.replaceState(null, '', '/')
+		try {
+			await open_workspace(item)
+		} finally {
+			if (current()) this.shared_view = null
 		}
 		return true
 	},

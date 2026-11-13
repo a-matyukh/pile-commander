@@ -2,14 +2,14 @@
 import { computed } from 'vue'
 import { t } from '@/i18n'
 import cloud from '@/store/cloud'
-import { back_to_explorer_hub, leave_invite } from '@/store/explorer/public_view'
+import { back_to_explorer_hub, leave_invite, leave_shared } from '@/store/explorer/public_view'
 import Button from '@/ui/kit/Button.vue'
 import AuthForm from '@/ui/workspace/sidebar/workspaces-list/AuthForm.vue'
 import { explorer_window_classes } from '@/ui/explorer/window_classes'
 import '../tokens.css'
 
 /**
- * An invitation or a missing publication, in place of the shell. The shell
+ * An invitation, a shared folder's link or a missing publication, in place of the shell. The shell
  * stays unmounted while either flag is set, so a cold start does not open
  * the last folder underneath and there is no header to leave through.
  */
@@ -21,6 +21,14 @@ const redirect_to = computed(() => {
 	if (!token) return undefined
 	const origin = (import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, '')
 	return `${origin}/invite/${token}`
+})
+
+const shared = computed(() => cloud.shared_view)
+const shared_redirect_to = computed(() => {
+	const id = shared.value?.workspace_id
+	if (!id) return undefined
+	const origin = (import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin).replace(/\/$/, '')
+	return `${origin}/app/${id}`
 })
 
 const role_label = computed(() => {
@@ -55,6 +63,19 @@ async function sign_out() {
 			</template>
 			<p v-else-if="view.error" class="err">{{ view.error }}</p>
 			<Button @click="leave_invite">{{ t('invite.open_app') }}</Button>
+		</div>
+		<div v-else-if="shared" class="card">
+			<p v-if="shared.loading" class="muted">{{ t('shared_link.loading') }}</p>
+			<template v-else-if="!cloud.user">
+				<h1>{{ t('shared_link.sign_in') }}</h1>
+				<AuthForm initial_mode="sign_in" :redirect_to="shared_redirect_to" />
+			</template>
+			<template v-else>
+				<h1>{{ t('shared_link.no_access') }}</h1>
+				<p class="muted">{{ t('invite.signed_in', { email: cloud.user.email ?? '' }) }}</p>
+				<Button @click="sign_out">{{ t('account.sign_out') }}</Button>
+			</template>
+			<Button @click="leave_shared">{{ t('invite.open_app') }}</Button>
 		</div>
 		<div v-else-if="cloud.public_not_found" class="card missing">
 			<h1>{{ t('publication.not_found') }}</h1>

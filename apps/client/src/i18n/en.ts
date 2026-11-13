@@ -121,6 +121,7 @@ export const en: typeof ru = {
 		synced_other_computer: 'Synced with another computer · {when}',
 		synced_other_computers: 'Synced with {n} other computers · {when}',
 		shared: 'Shared folder',
+		shared_with_me: 'Shared with you',
 		public_link: 'Public link',
 		in_hub: 'Published in the Hub',
 		bookmarked: 'Bookmarked',
@@ -766,6 +767,11 @@ export const en: typeof ru = {
 		role_editor: 'editor',
 		signed_in: 'Signed in as {email}',
 		open_app: 'Open the app',
+	},
+	shared_link: {
+		loading: 'Opening the folder…',
+		sign_in: 'Sign in to open the folder',
+		no_access: 'This account has no access to the folder',
 	},
 	publication: {
 		not_found: 'Workspace not found',

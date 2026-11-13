@@ -13,6 +13,7 @@ export function public_route_deps(): ApplyPublicRouteDeps {
 			public_start_opening = cloud_store.open_public(username, slug).catch(() => false)
 		},
 		open_invite: (token: string) => { void cloud_store.open_invite(token) },
+		open_shared: (workspace_id: string) => { void cloud_store.open_shared(workspace_id) },
 	}
 }
 

@@ -255,7 +255,7 @@ describe("Russian invite mail", () => {
 		});
 		expect(shared.subject).toBe("Ада делится с вами папкой «Заметки»");
 		expect(shared.body).toContain("ваша роль — редактор");
-		expect(shared.body).toContain("Открыть Pile Commander");
+		expect(shared.body).toContain("Открыть папку");
 
 		const invite = workspace_invite_email_copy({
 			inviter: "",

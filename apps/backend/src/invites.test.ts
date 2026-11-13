@@ -153,7 +153,7 @@ describe("handle_workspace_invite", () => {
 			subscribed: false,
 		});
 		const body = (sent[0] as { body: string }).body;
-		expect(body).toContain('href="https://app.example"');
+		expect(body).toContain(`href="https://app.example/app/${WS}"`);
 		expect(body).toContain("as an editor");
 		expect(body).not.toContain("/invite/");
 	});
