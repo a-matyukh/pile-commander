@@ -182,7 +182,7 @@ describe("confirmation_url / auth_email_copy", () => {
 			url: "https://app.example/invite/ab",
 		});
 		expect(subject).not.toMatch(/[\r\n]/);
-		expect(subject).toBe("Ada Bcc: victim@example.invalid invited you to Notes X-Spoof: yes");
+		expect(subject).toBe("Ada Bcc: victim@example.invalid invited you to the “Notes X-Spoof: yes” folder");
 		expect(body).not.toMatch(/[\r\n]/);
 	});
 
@@ -222,7 +222,7 @@ describe("workspace_invite_email_copy", () => {
 			role: "editor",
 			url: "https://app.example/invite/ab",
 		});
-		expect(subject).toBe("Ada invited you to Notes");
+		expect(subject).toBe("Ada invited you to the “Notes” folder");
 		expect(body).toContain("as an editor");
 		expect(body).toContain('href="https://app.example/invite/ab"');
 		expect(body.toLowerCase()).not.toMatch(/upgrade|promo|newsletter/);
@@ -237,7 +237,7 @@ describe("workspace_shared_email_copy", () => {
 			role: "viewer",
 			url: "https://app.example",
 		});
-		expect(subject).toBe("Ada <b> shared Notes Bcc: x with you");
+		expect(subject).toBe("Ada <b> shared the “Notes Bcc: x” folder with you");
 		expect(body).toContain("Ada &lt;b&gt;");
 		expect(body).toContain("as a viewer");
 		expect(body).toContain('href="https://app.example"');

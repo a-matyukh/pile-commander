@@ -149,7 +149,7 @@ describe("handle_workspace_invite", () => {
 		expect(sent).toHaveLength(1);
 		expect(sent[0]).toMatchObject({
 			to: "ada@example.com",
-			subject: "Ada shared Notes with you",
+			subject: "Ada shared the “Notes” folder with you",
 			subscribed: false,
 		});
 		const body = (sent[0] as { body: string }).body;
@@ -233,7 +233,7 @@ describe("handle_workspace_invite", () => {
 		expect(urls).toEqual([PLUNK_SEND_URL]);
 		expect(sent[0]).toMatchObject({
 			to: "new@example.com",
-			subject: "Ada invited you to Notes",
+			subject: "Ada invited you to the “Notes” folder",
 			subscribed: false,
 		});
 		expect((sent[0] as { body: string }).body).toContain(

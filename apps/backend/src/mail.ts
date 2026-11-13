@@ -230,6 +230,15 @@ function ru_names(opts: WorkspaceMailOpts): { inviter: string; folder: string; r
 	};
 }
 
+function en_names(opts: WorkspaceMailOpts): { inviter: string; folder: string; role: string } {
+	const name = subject_text(opts.workspace_name);
+	return {
+		inviter: subject_text(opts.inviter) || "Someone",
+		folder: name ? `the “${name}” folder` : "a folder",
+		role: opts.role === "viewer" ? "a viewer" : "an editor",
+	};
+}
+
 export function workspace_invite_email_copy(opts: WorkspaceMailOpts): { subject: string; body: string } {
 	if (opts.locale === "ru") {
 		const { inviter, folder, role } = ru_names(opts);
@@ -242,15 +251,13 @@ export function workspace_invite_email_copy(opts: WorkspaceMailOpts): { subject:
 			),
 		};
 	}
-	const inviter = subject_text(opts.inviter) || "Someone";
-	const board = subject_text(opts.workspace_name) || "a workspace";
-	const role = opts.role === "viewer" ? "a viewer" : "an editor";
+	const { inviter, folder, role } = en_names(opts);
 	return {
-		subject: `${inviter} invited you to ${board}`,
+		subject: `${inviter} invited you to ${folder}`,
 		body: link_body(
-			`${escape_html(inviter)} invited you to ${escape_html(board)} as ${role}. Create an account to open it.`,
+			`${escape_html(inviter)} invited you to ${escape_html(folder)} as ${role}. Create an account to open it.`,
 			opts.url,
-			"Open the workspace",
+			"Open the folder",
 		),
 	};
 }
@@ -270,13 +277,11 @@ export function workspace_shared_email_copy(opts: WorkspaceMailOpts): { subject:
 			),
 		};
 	}
-	const inviter = subject_text(opts.inviter) || "Someone";
-	const board = subject_text(opts.workspace_name) || "a workspace";
-	const role = opts.role === "viewer" ? "a viewer" : "an editor";
+	const { inviter, folder, role } = en_names(opts);
 	return {
-		subject: `${inviter} shared ${board} with you`,
+		subject: `${inviter} shared ${folder} with you`,
 		body: link_body(
-			`${escape_html(inviter)} shared ${escape_html(board)} with you as ${role}. It is already in your Pile Commander.`,
+			`${escape_html(inviter)} shared ${escape_html(folder)} with you as ${role}. It is already in your Pile Commander.`,
 			opts.url,
 			"Open the folder",
 		),
