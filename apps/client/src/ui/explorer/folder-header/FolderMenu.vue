@@ -14,6 +14,7 @@ import {
 	toggle_bookmark,
 } from '@/store/explorer/folder_menu'
 import { explorer_tree } from '@/store/explorer/tree'
+import { synced_folder_of } from '@/store/localSync'
 import { use_home } from './use_folder_place'
 import { explorer_folder_clipboard as clipboard } from '@/store/explorer/folder_clipboard'
 import { report_error } from '@/store/helpers/reportError'
@@ -66,9 +67,22 @@ const cloud_root_audience = computed(() => {
 	const id = folder.root_id
 	return !!cloud.has_members[id] || !!cloud.hub_listed[id] || !!cloud.published_slugs[id]
 })
+/**
+ * A cloud folder synced with a folder on a computer: trashing it removes the
+ * cloud copy only. The sync pauses and the computer's folder keeps its files
+ */
+const cloud_root_sync_note = computed(() => {
+	const folder = props.folder
+	if (folder.drive_id !== 'cloud' || folder.folder_id !== '/') return null
+	const here = synced_folder_of(folder.root_id)
+	if (here) return t('tree.trash_synced_here', { folder: here.root.split(/[\\/]/).filter(Boolean).pop() ?? here.name })
+	return cloud.synced_on[folder.root_id] ? t('tree.trash_synced_elsewhere') : null
+})
 const trash_description = computed(() => {
-	const base = t(remove_text.value.description, { name: props.name })
-	return cloud_root_audience.value ? `${base} ${t('tree.trash_workspace_audience')}` : base
+	const parts = [t(remove_text.value.description, { name: props.name })]
+	if (cloud_root_sync_note.value) parts.push(cloud_root_sync_note.value)
+	if (cloud_root_audience.value) parts.push(t('tree.trash_workspace_audience'))
+	return parts.join(' ')
 })
 
 function cut() {

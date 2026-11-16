@@ -87,6 +87,8 @@ export const en: typeof ru = {
 		move_to_trash_title: 'Move “{name}” to trash?',
 		move_to_trash_description: 'The folder and everything in it can be restored from the trash.',
 		trash_workspace_audience: 'Members lose access, and the Hub listing is removed.',
+		trash_synced_here: 'Only the cloud copy is removed. The folder “{folder}” on this Mac stays as it is; its sync pauses.',
+		trash_synced_elsewhere: 'Only the cloud copy is removed. The folders synced with it on other computers stay as they are.',
 		move_root_warning_title: 'Move shared folder?',
 		joins_pile: 'Becomes part of "{name}" and syncs with it. Its old cloud copy goes to the cloud trash unless someone uses it.',
 		leaves_cloud: 'Leaves the cloud',
