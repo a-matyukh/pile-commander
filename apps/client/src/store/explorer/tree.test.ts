@@ -304,6 +304,40 @@ describe('explorer tree', () => {
 		restore.mockRestore()
 	})
 
+	test('a renamed cloud root shows its new name before the cloud answers, and the old one if refused', async () => {
+		let answer: () => void = () => {}
+		const rename = vi.spyOn(cloud, 'rename').mockImplementation(() => new Promise<void>(resolve => { answer = resolve }))
+		cloud.last_error = null
+		const on_error = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			on_error,
+		})
+		const drive: Drive = {
+			id: 'cloud', kind: 'cloud', name: 'Cloud', icon: '', trash: 'page',
+			roots: async () => [{ id: 'ws-1', name: 'Plans', can_write: true }],
+			store_for: async () => { throw new Error('the root entry is not renamed') },
+		}
+		await tree.show_drive(drive, null)
+		const root = tree.roots[0]!
+		const node = { id: '/', name: 'Plans', type: 'folder' as const }
+
+		const renaming = tree.rename_folder(root, node, 'Ideas')
+		expect(root.root.name).toBe('Ideas')
+		answer()
+		await renaming
+		expect(root.root.name).toBe('Ideas')
+
+		rename.mockImplementation(async () => { cloud.last_error = 'not the owner' })
+		await tree.rename_folder(root, { ...node, name: 'Ideas' }, 'Later')
+		expect(root.root.name).toBe('Ideas')
+		expect(on_error).toHaveBeenCalledOnce()
+		cloud.last_error = null
+		rename.mockRestore()
+	})
+
 	test('a trashed cloud root leaves the tree and offers the undo before the cloud answers', async () => {
 		let answer: () => void = () => {}
 		const trash = vi.spyOn(cloud, 'trash').mockImplementation(() => new Promise<void>(resolve => { answer = resolve }))

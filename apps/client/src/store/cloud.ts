@@ -393,6 +393,8 @@ export function note_cloud_root_look(workspace_id: string, name: keyof RootLook,
 /** The list read in flight, and the one more read asked for while it runs */
 /** Folders being moved to the trash: out of the list while the cloud is told */
 const trashing_ids = new Set<string>()
+/** Folders being renamed: their new name, kept over a list read before the rename landed */
+const renaming_names = new Map<string, string>()
 let workspaces_in_flight: Promise<void> | null = null
 let workspaces_again: Promise<void> | null = null
 
@@ -759,10 +761,11 @@ const cloud: CloudStore = {
 				...shared,
 			]
 			// A folder being trashed stays out, even from a list read before the trash landed
+			// …and a folder being renamed keeps its new name over a list read before the rename landed
 			this.workspaces = rows.filter(ws => !trashing_ids.has(ws.id)).map(ws => ({
 				type: 'cloud' as const,
 				id: ws.id,
-				name: ws.name,
+				name: renaming_names.get(ws.id) ?? ws.name,
 			}))
 			notify_cloud_workspaces_synced()
 
@@ -821,20 +824,45 @@ const cloud: CloudStore = {
 		return workspace_id
 	},
 
+	/**
+	 * The new name shows at once; the cloud is told behind it. A refusal puts
+	 * the old name back, with `last_error` set
+	 */
 	async rename(workspace_id: string, name: string) {
 		this.last_error = null
-		const { error } = await require_supabase()
-			.from('workspaces')
-			.update({ name })
-			.eq('id', workspace_id)
-		if (error) {
-			this.last_error = error.message
+		const old_name = this.workspaces.find(ws => ws.id === workspace_id)?.name
+		const show = (shown: string) => {
+			this.workspaces = this.workspaces.map(ws => (ws.id === workspace_id ? { ...ws, name: shown } : ws))
+			if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
+				store.workspace.name = shown
+			}
+		}
+		renaming_names.set(workspace_id, name)
+		show(name)
+		let refused: string | null = null
+		try {
+			const { error } = await require_supabase()
+				.from('workspaces')
+				.update({ name })
+				.eq('id', workspace_id)
+			if (error) refused = error.message
+		} catch (error) {
+			refused = error instanceof Error ? error.message : String(error)
+		}
+		if (refused !== null) {
+			// A later rename of the same folder owns the name now
+			if (renaming_names.get(workspace_id) === name) {
+				renaming_names.delete(workspace_id)
+				if (old_name !== undefined) show(old_name)
+			}
+			this.last_error = refused
 			return
 		}
-		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
-			store.workspace.name = name
+		try {
+			await this.fetch_workspaces()
+		} finally {
+			if (renaming_names.get(workspace_id) === name) renaming_names.delete(workspace_id)
 		}
-		await this.fetch_workspaces()
 	},
 
 	async remove(workspace_id: string) {

@@ -459,12 +459,17 @@ export function create_explorer_tree(
 			// only the owner may change it. The tree, the header and bookmarks
 			// read that name; the root entry stays '/'.
 			if (item.drive.kind === 'cloud' && node.id === tree_root_folder_id(item)) {
+				// The new name shows at once; a refusal puts the old one back
 				const old_name = item.root.name
-				await cloud.rename(item.root.id, name)
-				if (cloud.last_error) throw new Error(cloud.last_error)
 				item.root.name = name
+				const renaming = cloud.rename(item.root.id, name)
 				// Not undoable yet: undo stops here instead of undoing something older
 				history.barrier(t('undo.op.rename', { name: old_name }))
+				await renaming
+				if (cloud.last_error) {
+					if (item.root.name === name) item.root.name = old_name
+					throw new Error(cloud.last_error)
+				}
 				return
 			}
 			const workspace = await ensure_workspace(item)
