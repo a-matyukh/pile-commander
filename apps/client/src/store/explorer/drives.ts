@@ -52,6 +52,11 @@ export type ExplorerDriveDeps = {
 	 * root opened before it is named then, instead of waiting for the list
 	 */
 	cloud_root_name_later?(root_id: string): Promise<string | undefined>
+	/**
+	 * Whether the cloud's list says this root is writable; undefined when the
+	 * list does not know it. A known answer opens the root without asking again
+	 */
+	cloud_root_can_write?(root_id: string): boolean | undefined
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
 	/** How long the cloud's stores stay open after the user leaves the cloud (tests shorten it) */
@@ -246,9 +251,13 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			const name = deps.cloud_root_name
 				? await active_step('root_name', () => deps.cloud_root_name!(root_id))
 				: (await active_step('cloud_roots', () => deps.cloud_roots())).find(item => item.id === root_id)?.name
+			const known_can_write = deps.cloud_root_can_write?.(root_id)
+			const opts: LoadWorkspaceOptions = {}
+			if (folder_hint) opts.also_read = folder_hint
+			if (known_can_write !== undefined) opts.known_can_write = known_can_write
 			const store = await deps.open_cloud(
 				{ id: root_id, type: 'cloud', name: name ?? root_id },
-				folder_hint ? { also_read: folder_hint } : undefined,
+				Object.keys(opts).length ? opts : undefined,
 			)
 			if (!name && deps.cloud_root_name_later) {
 				void deps.cloud_root_name_later(root_id).then((later) => {
@@ -600,6 +609,12 @@ export const explorer_drives = create_explorer_drives({
 	async cloud_root_name_later(root_id) {
 		await cloud_workspaces_ready()
 		return cloud.workspaces.find(ws => ws.id === root_id)?.name
+	},
+	cloud_root_can_write(root_id) {
+		const role = cloud.role_of(root_id)
+		if (role) return role !== 'viewer'
+		const owner = cloud.user?.id
+		return owner ? kept_cloud_roots(owner)?.find(root => root.id === root_id)?.can_write : undefined
 	},
 	async browser_file_manager() {
 		await ensure_browser_root()

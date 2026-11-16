@@ -73,6 +73,9 @@ export async function open_workspace_store(
 		can_write = false
 		const access = await get_workspace_access(require_supabase(), item.id).catch(() => null)
 		live = access !== null
+	} else if (item.type === 'cloud' && opts?.known_can_write !== undefined) {
+		// Known from the cloud's list: the folder shows without one more round trip
+		can_write = opts.known_can_write
 	} else if (item.type === 'cloud') {
 		let access: Awaited<ReturnType<typeof get_workspace_access>>
 		try {

@@ -28,6 +28,12 @@ type LoadWorkspaceOptions = {
 	 * a deep link does not wait for two reads in a row
 	 */
 	also_read?: string
+	/**
+	 * The access the cloud's list already gave for this workspace (this
+	 * session's list, or the one kept on the device): the store opens
+	 * without asking again. Row-level security still decides every write
+	 */
+	known_can_write?: boolean
 }
 
 /** A picture's upload the look attribute waits for (true: uploaded) */

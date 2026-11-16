@@ -451,3 +451,30 @@ describe('explorer drives: a cloud root does not wait for the list', () => {
 		expect(store.name).toBe('Projects')
 	})
 })
+
+describe('explorer drives: a cloud root with a known access does not ask again', () => {
+	beforeEach(() => {
+		explorer_language.value = 'en'
+	})
+
+	test('the list\'s answer goes to the store; an unknown one leaves the check to it', async () => {
+		const opened: { id: string; known?: boolean }[] = []
+		const drives = create_explorer_drives(deps({
+			cloud_root_name: async id => id,
+			cloud_root_can_write: id => (id === 'mine' ? true : id === 'shared' ? false : undefined),
+			open_cloud: async (item, opts) => {
+				opened.push({ id: item.id, known: opts?.known_can_write })
+				return fake_store()
+			},
+		}))
+		const cloud = drives.drive('cloud')!
+		await cloud.store_for('mine')
+		await cloud.store_for('shared')
+		await cloud.store_for('new')
+		expect(opened).toEqual([
+			{ id: 'mine', known: true },
+			{ id: 'shared', known: false },
+			{ id: 'new', known: undefined },
+		])
+	})
+})
