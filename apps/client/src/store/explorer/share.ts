@@ -267,3 +267,45 @@ export async function open_other_side(ref: FolderRef, link: SyncLink): Promise<v
 		report(error)
 	}
 }
+
+function last_name(path: string): string {
+	return path.split(/[\\/]/).filter(Boolean).pop() ?? path
+}
+
+/**
+ * What trashing this folder does to the other copy of a synced folder, said
+ * in the confirmation, or null when the folder is not synced:
+ * - a cloud folder's top level: the cloud copy only goes, the computers'
+ *   folders stay and their sync pauses;
+ * - a folder inside a synced cloud folder: the sync trashes it on the
+ *   computers too;
+ * - a synced folder on this Mac itself: the cloud copy stays;
+ * - a folder inside one: the sync trashes it in the cloud too.
+ */
+export type TrashSyncNote = {
+	text: string
+	/** The other copy goes to its trash too (a warning), rather than staying (a reassurance) */
+	also_there: boolean
+}
+
+export function trash_sync_note(ref: FolderRef): TrashSyncNote | null {
+	const stays = (text: string): TrashSyncNote => ({ text, also_there: false })
+	const goes = (text: string): TrashSyncNote => ({ text, also_there: true })
+	if (ref.drive_id === 'cloud') {
+		const here = synced_folder_of(ref.root_id)
+		const elsewhere = cloud.synced_on[ref.root_id]
+		if (ref.folder_id === '/') {
+			if (here) return stays(t('tree.trash_synced_here', { folder: last_name(here.root) }))
+			return elsewhere ? stays(t('tree.trash_synced_elsewhere')) : null
+		}
+		if (here) return goes(t('tree.trash_inside_cloud_here', { folder: last_name(here.root) }))
+		return elsewhere ? goes(t('tree.trash_inside_cloud_elsewhere')) : null
+	}
+	if (ref.drive_id !== 'local') return null
+	const link = sync_link_covering(ref)
+	if (!link) return null
+	const cloud_name = cloud.workspaces.find(ws => ws.id === link.workspace_id)?.name ?? link.name
+	return normalize_workspace_id(ref.folder_id) === link.root
+		? stays(t('tree.trash_synced_root_local', { cloud: cloud_name }))
+		: goes(t('tree.trash_inside_local', { cloud: cloud_name }))
+}
