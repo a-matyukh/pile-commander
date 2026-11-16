@@ -1330,6 +1330,38 @@ describe('sync engine', () => {
 		}
 	})
 
+	test('a missing root whose cloud folder was deleted is a stale link; a live or unknown cloud folder keeps it', async () => {
+		for (const [answer, reason] of [
+			['gone', 'link_stale'],
+			['live', 'folder_missing'],
+			['trashed', 'folder_missing'],
+			[null, 'folder_missing'],
+		] as const) {
+			const { local, stat } = make_local()
+			const cloud = make_cloud()
+			const { deps } = make_deps(local, stat, cloud)
+			const statuses: SyncStatus[] = []
+			const engine = create_sync_engine({
+				load_state: async () => new_state(),
+				save_state: async () => {},
+				pass_deps: () => deps,
+				max_file_bytes: () => 1_000_000,
+				root_present: async () => false,
+				workspace_state: async () => {
+					if (answer === null) throw new Error('offline')
+					return answer
+				},
+				watch: async () => () => {},
+				watch_cloud: async () => () => {},
+				on_status: status => statuses.push(status),
+			}, { debounce_ms: 100, interval_ms: 60_000, retry_ms: [1_000] })
+			await engine.start()
+			expect(statuses.at(-1)).toMatchObject({ phase: 'paused', reason })
+			expect(cloud.list_cloud).not.toHaveBeenCalled()
+			engine.stop()
+		}
+	})
+
 	test('a cloud subscribe CHANNEL_ERROR is retried without a log, then live updates arrive', async () => {
 		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {})

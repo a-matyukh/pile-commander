@@ -358,8 +358,12 @@ decided one by one.
   `store/localSync.ts` removes the device's record of the link, so the
   folder stops showing as synced. The folder is not touched. A failed
   check, or a cloud folder that is `live` or `trashed`, keeps the link
-  (`unlinked`). A missing folder never drops its link (a disk may be
-  unplugged).
+  (`unlinked`). A missing folder keeps its link (a disk may be
+  unplugged), unless `workspace_state` answers `gone` as well: with neither
+  the folder nor the cloud folder left, a disk plugged back in would have
+  nothing to sync with, so the engine reports `link_stale` and the record
+  goes the same way. Without that the link could not be removed at all: no
+  folder to open, no cloud folder whose sync menu says Stop.
 - **The system trash is only reached inside the root.** `local_trash` never
   touches the root itself or a `.pile` path, and `store/localSync.ts` checks
   the path again before calling `trash_path`.
