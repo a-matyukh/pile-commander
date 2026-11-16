@@ -71,6 +71,7 @@ import {
 } from '@/services/cloud/client'
 import store from '@/store'
 import {
+	notify_cloud_workspace_trash_changed,
 	notify_cloud_workspaces_synced,
 	register_cloud_workspaces_refetch,
 } from './workspaces_list'
@@ -1113,6 +1114,7 @@ const cloud: CloudStore = {
 			this.last_error = error instanceof Error ? error.message : String(error)
 			return
 		}
+		notify_cloud_workspace_trash_changed(workspace_id)
 		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
 			store.close_workspace()
 		}
@@ -1133,6 +1135,7 @@ const cloud: CloudStore = {
 		}
 		// Back from the trash: the list shows it again even while the trash's own read is still out
 		trashing_ids.delete(workspace_id)
+		notify_cloud_workspace_trash_changed(workspace_id)
 		await this.fetch_workspaces()
 		return true
 	},
@@ -1140,6 +1143,7 @@ const cloud: CloudStore = {
 	async purge_trashed_workspace(workspace_id: string): Promise<boolean> {
 		try {
 			await purge_workspace(require_supabase(), workspace_id)
+			notify_cloud_workspace_trash_changed(workspace_id)
 			return true
 		} catch (error) {
 			this.last_error = error instanceof Error ? error.message : String(error)

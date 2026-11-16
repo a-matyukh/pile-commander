@@ -351,7 +351,9 @@ decided one by one.
   `workspace_trashed` (restore the cloud folder or unlink); `gone` pauses
   as `workspace_missing` (the cloud folder was deleted — unlink). The link
   stays. The interval lists again, and a restored folder syncs on the next
-  pass.
+  pass. A trash, restore or purge made in this app runs that pass at once
+  (`on_cloud_workspace_trash_changed`), so the folder's status changes
+  right away; another computer notices at its next check.
 - **A stale link is dropped.** When the folder has no `.pile/sync.json`
   (nothing can sync: the pass would pause as `unlinked`) and
   `workspace_state` answers `gone`, the engine reports `link_stale` and
