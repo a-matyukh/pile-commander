@@ -1,6 +1,6 @@
 import type { FileManager, FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import { create_device_queue } from '@/services/workspace/deviceQueue'
-import { indexeddb_folder_list_disk, type FolderListDisk } from './folderListDisk'
+import { indexeddb_folder_list_disk, indexeddb_kept_disk, type FolderListDisk, type KeptDisk } from './folderListDisk'
 
 /**
  * What the cloud last said a folder holds, kept on this device per account:
@@ -11,6 +11,11 @@ import { indexeddb_folder_list_disk, type FolderListDisk } from './folderListDis
  */
 
 let disk: FolderListDisk = indexeddb_folder_list_disk()
+/** How many notes the device keeps before the least recently shown go */
+export const DISK_NOTES = 1000
+/** A longer note is not kept: it is read from the cloud each session */
+const NOTE_KEEP_MAX = 200_000
+let note_disk: KeptDisk<string> = indexeddb_kept_disk<string>('pile-commander-notes', DISK_NOTES)
 /**
  * A device read that has not answered by then is a miss. The cloud read runs
  * alongside anyway: this only bounds how long a hung disk is listened to
@@ -21,8 +26,9 @@ const device = create_device_queue()
 let owner: string | null = null
 
 /** Where lists are kept between launches (tests put one in memory, and may change the wait) */
-export function set_folder_list_disk(next: FolderListDisk, options?: { wait_ms?: number }) {
+export function set_folder_list_disk(next: FolderListDisk, options?: { wait_ms?: number; notes?: KeptDisk<string> }) {
 	disk = next
+	if (options?.notes) note_disk = options.notes
 	if (options?.wait_ms !== undefined) disk_wait_ms = options.wait_ms
 }
 
@@ -53,7 +59,11 @@ export function set_folder_list_owner(user_id: string) {
 export function reset_folder_list_cache(): Promise<void> {
 	owner = null
 	const target = disk
-	return device.wipe(() => target.clear())
+	const notes = note_disk
+	return device.wipe(async () => {
+		await target.clear()
+		await notes.clear()
+	})
 }
 
 function key_of(user: string, workspace_id: string, folder_id: string) {
@@ -69,19 +79,40 @@ export function remember_folder_list(workspace_id: string, folder_id: string, li
 	void device.write(device.epoch(), () => target.put(key, snapshot))
 }
 
-/** The list kept for this folder, or null (none, signed out, wiped meanwhile, or the disk is slow) */
-export async function recall_folder_list(workspace_id: string, folder_id: string): Promise<FolderWithChildrenXattrs | null> {
+/** A device read bounded by the wait: null when it misses, fails, or a wipe happened meanwhile */
+async function recall_from<T>(from: KeptDisk<T>, workspace_id: string, entry_id: string): Promise<T | null> {
 	if (!owner) return null
 	const started_in = device.epoch()
-	const key = key_of(owner, workspace_id, folder_id)
-	const list = await new Promise<FolderWithChildrenXattrs | null>((resolve) => {
+	const key = key_of(owner, workspace_id, entry_id)
+	const value = await new Promise<T | null>((resolve) => {
 		const timer = setTimeout(() => resolve(null), disk_wait_ms)
-		disk.get(key).then(
-			(value) => { clearTimeout(timer); resolve(value) },
+		from.get(key).then(
+			(found) => { clearTimeout(timer); resolve(found) },
 			() => { clearTimeout(timer); resolve(null) },
 		)
 	})
-	return started_in === device.epoch() ? list : null
+	return started_in === device.epoch() ? value : null
+}
+
+/** The list kept for this folder, or null (none, signed out, wiped meanwhile, or the disk is slow) */
+export function recall_folder_list(workspace_id: string, folder_id: string): Promise<FolderWithChildrenXattrs | null> {
+	return recall_from(disk, workspace_id, folder_id)
+}
+
+/** Keeps a note's text as the cloud has it (read or just saved) */
+export function remember_note_text(workspace_id: string, note_id: string, text: string) {
+	if (!owner || text.length > NOTE_KEEP_MAX) return
+	const key = key_of(owner, workspace_id, note_id)
+	const target = note_disk
+	void device.write(device.epoch(), () => target.put(key, text))
+}
+
+/**
+ * The text kept for this note, or null. A card shows it at once while the
+ * cloud is read; the cloud's text replaces it
+ */
+export function recall_note_text(workspace_id: string, note_id: string): Promise<string | null> {
+	return recall_from(note_disk, workspace_id, note_id)
 }
 
 /**
@@ -95,6 +126,25 @@ export function keep_folder_lists(fm: FileManager, workspace_id: string): FileMa
 		const list = await read(folder_id)
 		remember_folder_list(workspace_id, folder_id, list)
 		return list
+	}
+	return fm
+}
+
+/**
+ * Every note this cloud file manager reads or saves is kept on the device,
+ * so the card shows its text at once next time (another session too)
+ */
+export function keep_note_texts(fm: FileManager, workspace_id: string): FileManager {
+	const read = fm.read_text_file.bind(fm)
+	const save = fm.save_text_file.bind(fm)
+	fm.read_text_file = async (id: string) => {
+		const text = await read(id)
+		remember_note_text(workspace_id, id, text)
+		return text
+	}
+	fm.save_text_file = async (id: string, content: string) => {
+		await save(id, content)
+		remember_note_text(workspace_id, id, content)
 	}
 	return fm
 }

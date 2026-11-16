@@ -172,3 +172,57 @@ describe('useNoteEditor: a note left unchanged is not written', () => {
 		scope.stop()
 	})
 })
+
+describe('useNoteEditor: a card shows the text without waiting for the cloud', () => {
+	test('the text another editor saved shows at once, without a read', async () => {
+		const { fake, store, id, editor, scope } = await setup('note')
+		await fake.fm.save_text_file(id, 'old')
+		store.content_caches.notes.invalidate(id)
+		await editor.ensureLoaded()
+		expect(editor.text.value).toBe('old')
+
+		const read = vi.spyOn(fake.fm, 'read_text_file')
+		store.content_caches.notes.set(id, 'new')
+		expect(editor.text.value).toBe('new')
+		expect(read).not.toHaveBeenCalled()
+		scope.stop()
+	})
+
+	test('the text this device kept shows while the cloud is read, and the cloud\'s text replaces it', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		store.content_caches.notes.invalidate(id)
+		let answer: (text: string) => void = () => {}
+		;(store as { read_note_content: (id: string) => Promise<string> }).read_note_content = () =>
+			new Promise(resolve => { answer = resolve })
+		;(store as { recall_note_content?: (id: string) => Promise<string | null> }).recall_note_content = async () => 'kept'
+
+		const loading = editor.ensureLoaded()
+		await settle()
+		expect(editor.text.value).toBe('kept')
+		answer('fresh')
+		await loading
+		expect(editor.text.value).toBe('fresh')
+		scope.stop()
+	})
+})
+
+describe('useNoteEditor: leaving an edit shows the new text before the save lands', () => {
+	test('the preview is the typed text while the cloud still saves it', async () => {
+		const { fake, id, editor, scope } = await setup('note')
+		await editor.startEdit()
+		await nextTick()
+		editor.text.value = 'fresh words'
+		let land: () => void = () => {}
+		const save = fake.fm.save_text_file.bind(fake.fm)
+		fake.fm.save_text_file = async (file, content) => {
+			await new Promise<void>(resolve => { land = resolve })
+			return save(file, content)
+		}
+		editor.exitEdit()
+		await vi.waitFor(() => expect(editor.previewHtml.value).toContain('fresh words'))
+		land()
+		await settle()
+		expect(await fake.fm.read_text_file(id)).toBe('fresh words')
+		scope.stop()
+	})
+})

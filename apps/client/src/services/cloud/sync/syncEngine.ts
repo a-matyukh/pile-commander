@@ -180,6 +180,19 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		const here = await deps.root_present()
 		if (stopped) return false
 		if (here) return true
+		// Neither side is left: the folder is not here and the cloud folder was
+		// deleted. Even a disk plugged back in would have nothing to sync it
+		// with, so the link is stale (the caller drops it). A failed check, or
+		// a cloud folder that is live or in the trash, keeps the link
+		const which = await deps.workspace_state?.().catch(() => null)
+		if (stopped) return false
+		if (which === 'gone') {
+			release_watches()
+			if (timer) clearTimeout(timer)
+			timer = null
+			publish({ phase: 'paused', reason: 'link_stale', message: 'The cloud folder this folder was linked to no longer exists.' })
+			return false
+		}
 		pause_for_missing_root()
 		return false
 	}

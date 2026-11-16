@@ -46,6 +46,7 @@ import {
 import type { CloudEntry, SyncState } from '@/services/cloud/sync/types'
 import cloud from '@/store/cloud'
 import { set_synced_folders } from '@/store/history/synced'
+import { on_cloud_workspace_trash_changed } from '@/store/workspaces_list'
 
 /** A local folder kept in sync with a cloud workspace, on this device. */
 export type SyncLink = {
@@ -682,6 +683,12 @@ function link_holding(path: string): SyncLink | null {
 
 if (is_desktop) {
 	watch(() => cloud.user?.id ?? null, sync_engines_with_account, { immediate: true })
+	// The whole cloud folder went to the trash or came back: its folder here
+	// says so at once, not at its next check minutes on
+	on_cloud_workspace_trash_changed((workspace_id) => {
+		const link = synced_folder_of(workspace_id)
+		if (link) void sync_now(link.root).catch(() => {})
+	})
 	// Undo of a delete or a creation in a synced folder writes both sides
 	// while the folder's passes wait (LOCAL_SYNC.md, "Undo")
 	set_synced_folders({

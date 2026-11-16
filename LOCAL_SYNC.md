@@ -351,15 +351,21 @@ decided one by one.
   `workspace_trashed` (restore the cloud folder or unlink); `gone` pauses
   as `workspace_missing` (the cloud folder was deleted — unlink). The link
   stays. The interval lists again, and a restored folder syncs on the next
-  pass.
+  pass. A trash, restore or purge made in this app runs that pass at once
+  (`on_cloud_workspace_trash_changed`), so the folder's status changes
+  right away; another computer notices at its next check.
 - **A stale link is dropped.** When the folder has no `.pile/sync.json`
   (nothing can sync: the pass would pause as `unlinked`) and
   `workspace_state` answers `gone`, the engine reports `link_stale` and
   `store/localSync.ts` removes the device's record of the link, so the
   folder stops showing as synced. The folder is not touched. A failed
   check, or a cloud folder that is `live` or `trashed`, keeps the link
-  (`unlinked`). A missing folder never drops its link (a disk may be
-  unplugged).
+  (`unlinked`). A missing folder keeps its link (a disk may be
+  unplugged), unless `workspace_state` answers `gone` as well: with neither
+  the folder nor the cloud folder left, a disk plugged back in would have
+  nothing to sync with, so the engine reports `link_stale` and the record
+  goes the same way. Without that the link could not be removed at all: no
+  folder to open, no cloud folder whose sync menu says Stop.
 - **The system trash is only reached inside the root.** `local_trash` never
   touches the root itself or a `.pile` path, and `store/localSync.ts` checks
   the path again before calling `trash_path`.

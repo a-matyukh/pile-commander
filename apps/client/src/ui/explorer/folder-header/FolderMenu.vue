@@ -14,6 +14,7 @@ import {
 	toggle_bookmark,
 } from '@/store/explorer/folder_menu'
 import { explorer_tree } from '@/store/explorer/tree'
+import { trash_sync_note } from '@/store/explorer/share'
 import { use_home } from './use_folder_place'
 import { explorer_folder_clipboard as clipboard } from '@/store/explorer/folder_clipboard'
 import { report_error } from '@/store/helpers/reportError'
@@ -25,6 +26,7 @@ import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from '@/ui/explorer/sidebar/RenameFolderDialog.vue'
 import FolderLookItems from './FolderLookItems.vue'
+import TrashSyncNote from './TrashSyncNote.vue'
 import { tree_item_for } from '@/store/explorer/tree_item'
 
 /**
@@ -66,6 +68,8 @@ const cloud_root_audience = computed(() => {
 	const id = folder.root_id
 	return !!cloud.has_members[id] || !!cloud.hub_listed[id] || !!cloud.published_slugs[id]
 })
+/** What the trash does to the synced copy: said apart from the rest, so it is not missed */
+const sync_note = computed(() => (remove_open.value ? trash_sync_note(props.folder) : null))
 const trash_description = computed(() => {
 	const base = t(remove_text.value.description, { name: props.name })
 	return cloud_root_audience.value ? `${base} ${t('tree.trash_workspace_audience')}` : base
@@ -171,6 +175,7 @@ function reveal() {
 		:title="t(remove_text.title, { name })"
 		:description="trash_description"
 	>
+		<TrashSyncNote v-if="sync_note" :note="sync_note" />
 		<template #footer>
 			<Button @click="remove_open = false">{{ t('dialog.cancel') }}</Button>
 			<Button variant="danger" @click="remove">
@@ -179,3 +184,4 @@ function reveal() {
 		</template>
 	</Modal>
 </template>
+

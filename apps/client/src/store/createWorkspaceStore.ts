@@ -413,12 +413,14 @@ export type WorkspaceStoreOptions = {
 	 * answers before the cloud does, and the cloud's answer follows it
 	 */
 	recall_folder?: (folder_id: string) => Promise<FolderWithChildrenXattrs | null>
+	/** What this device kept of a note's text (cloud): shown while the cloud is read */
+	recall_note?: (note_id: string) => Promise<string | null>
 }
 
 export async function createWorkspaceStore(
 	ws: WorkspacesListItem,
 	fm: FileManager,
-	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched, recall_folder }: WorkspaceStoreOptions = {},
+	{ root_folder_id = ws.id, can_write = true, live = true, shallow_root = false, initial_root, prefetched, recall_folder, recall_note }: WorkspaceStoreOptions = {},
 ): Promise<WorkspaceStore | null> {
 	const opened_folder: FolderWithChildrenXattrs = await active_step('root_read', () => initial_root ?? fm.folder_with_children_xattrs(root_folder_id))
 	// A look still being saved in another store of this workspace (the cloud
@@ -2293,9 +2295,9 @@ export async function createWorkspaceStore(
 					return false
 				}
 				if (format === 'svg') content_caches.shapes.set(id, prepare_svg_for_preview(content))
-				// A note on screen reloads on a drop (not on a set), and takes the
-				// reloaded text as its saved one: its next edit starts from it
-				else content_caches.notes.invalidate(id)
+				// A note on screen takes the written text as its saved one at
+				// once: its next edit starts from it
+				else content_caches.notes.set(id, content)
 				return true
 			},
 
@@ -2531,6 +2533,10 @@ export async function createWorkspaceStore(
 					return node.id
 				})
 			},
+
+		recall_note_content(id: string): Promise<string | null> {
+			return recall_note ? recall_note(id).catch(() => null) : Promise.resolve(null)
+		},
 
 		async read_note_content(id: string): Promise<string> {
 			try {

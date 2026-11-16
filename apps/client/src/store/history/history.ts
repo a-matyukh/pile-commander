@@ -462,6 +462,20 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 		return true
 	}
 
+	/**
+	 * Forgets a record kept a moment ago for an action that then failed (an
+	 * optimistic removal the cloud refused): there is nothing to undo. True
+	 * when it was there
+	 */
+	function drop_record(id: number): boolean {
+		const index = undo_stack.findIndex(record => record.id === id)
+		if (index === -1) return false
+		undo_stack.splice(index, 1)
+		if (last_committed === id) last_committed = null
+		commits += 1
+		return true
+	}
+
 	/** Undoes run one after another: five presses, five undos */
 	function enqueue(direction: 'undo' | 'redo'): Promise<void> {
 		queue = queue.then(() => run(direction)).catch((error) => {
@@ -477,6 +491,7 @@ export function create_history<S extends HistoryTarget>(deps: HistoryDeps<S>) {
 		barrier,
 		amend_attr,
 		drop_created,
+		drop_record,
 		undo: () => enqueue('undo'),
 		redo: () => enqueue('redo'),
 		get can_undo() {

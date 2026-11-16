@@ -60,6 +60,11 @@ export function createTextContentCache() {
 		return pending
 	}
 
+	/** The value in memory, without loading it */
+	function peek(id: string): string | undefined {
+		return cache.get(id)
+	}
+
 	function set(id: string, value: string) {
 		cache.set(id, value)
 		pendingLoads.delete(id)
@@ -172,7 +177,7 @@ export function createTextContentCache() {
 		listeners.clear()
 	}
 
-	return { get, set, invalidate, invalidate_tree, drop, drop_tree, rekey, rekey_tree, clear, subscribe }
+	return { get, peek, set, invalidate, invalidate_tree, drop, drop_tree, rekey, rekey_tree, clear, subscribe }
 }
 
 export type TextContentCache = ReturnType<typeof createTextContentCache>

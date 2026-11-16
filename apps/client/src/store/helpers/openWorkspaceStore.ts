@@ -7,7 +7,7 @@ import {
 	type FolderWithChildrenXattrs,
 } from '@pile-commander/file-manager'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
-import { keep_folder_lists, recall_folder_list } from '@/services/cloud/folderListCache'
+import { keep_folder_lists, keep_note_texts, recall_folder_list, recall_note_text } from '@/services/cloud/folderListCache'
 import { gate_pending_entries } from '@/services/cloud/pendingEntries'
 import { create_demo_file_manager } from '@/services/demoPack'
 import type { LoadWorkspaceOptions, WorkspaceStore } from '@/domain/Store'
@@ -43,7 +43,7 @@ export async function open_workspace_store(
 	// cloud workspaces need the shared supabase client; their root
 	// folder id is "/" while item.id stays the workspace UUID (uid)
 	const fm = item.type === 'cloud'
-		? gate_pending_entries(keep_folder_lists(create_app_cloud_file_manager(item.id), item.id))
+		? gate_pending_entries(keep_note_texts(keep_folder_lists(create_app_cloud_file_manager(item.id), item.id), item.id))
 		: item.type === 'browser'
 			// web desktops: item.id is the virtual root path; no access check
 			? createBrowserFileManager(require_browser_storage())
@@ -73,6 +73,9 @@ export async function open_workspace_store(
 		can_write = false
 		const access = await get_workspace_access(require_supabase(), item.id).catch(() => null)
 		live = access !== null
+	} else if (item.type === 'cloud' && opts?.known_can_write !== undefined) {
+		// Known from the cloud's list: the folder shows without one more round trip
+		can_write = opts.known_can_write
 	} else if (item.type === 'cloud') {
 		let access: Awaited<ReturnType<typeof get_workspace_access>>
 		try {
@@ -97,6 +100,7 @@ export async function open_workspace_store(
 			live,
 			...reads,
 			recall_folder: item.type === 'cloud' ? folder_id => recall_folder_list(item.id, folder_id) : undefined,
+			recall_note: item.type === 'cloud' ? note_id => recall_note_text(item.id, note_id) : undefined,
 		}))
 	} catch (error) {
 		if (item.type !== 'cloud') throw error

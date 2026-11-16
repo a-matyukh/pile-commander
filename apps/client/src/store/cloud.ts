@@ -71,6 +71,7 @@ import {
 } from '@/services/cloud/client'
 import store from '@/store'
 import {
+	notify_cloud_workspace_trash_changed,
 	notify_cloud_workspaces_synced,
 	register_cloud_workspaces_refetch,
 } from './workspaces_list'
@@ -88,6 +89,7 @@ import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 import { locale, t } from '@/i18n'
 import { reset_folder_list_cache, set_folder_list_owner } from '@/services/cloud/folderListCache'
+import { forget_cloud_roots } from '@/services/cloud/rootInfoMemory'
 import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
 import { has_unsaved_writes } from '@/services/workspace/xattrs'
 
@@ -389,6 +391,8 @@ export function note_cloud_root_look(workspace_id: string, name: keyof RootLook,
 }
 
 /** The list read in flight, and the one more read asked for while it runs */
+/** Folders being moved to the trash: out of the list while the cloud is told */
+const trashing_ids = new Set<string>()
 let workspaces_in_flight: Promise<void> | null = null
 let workspaces_again: Promise<void> | null = null
 
@@ -473,6 +477,7 @@ const cloud: CloudStore = {
 			// Covers and folder lists stay between visits; the next account must not get them
 			reset_pile_image_cache()
 			void reset_folder_list_cache()
+			forget_cloud_roots()
 			this.workspaces = []
 			this.roles = {}
 			this.published_slugs = {}
@@ -753,7 +758,8 @@ const cloud: CloudStore = {
 				})),
 				...shared,
 			]
-			this.workspaces = rows.map(ws => ({
+			// A folder being trashed stays out, even from a list read before the trash landed
+			this.workspaces = rows.filter(ws => !trashing_ids.has(ws.id)).map(ws => ({
 				type: 'cloud' as const,
 				id: ws.id,
 				name: ws.name,
@@ -1086,18 +1092,37 @@ const cloud: CloudStore = {
 		this.last_error = null
 	},
 
+	/**
+	 * The folder leaves the list at once; the cloud is told behind it. A
+	 * refusal puts it back where it was, with `last_error` set
+	 */
 	async trash(workspace_id: string) {
 		this.last_error = null
+		const index = this.workspaces.findIndex(ws => ws.id === workspace_id)
+		const entry = index === -1 ? null : this.workspaces[index]!
+		trashing_ids.add(workspace_id)
+		if (entry) this.workspaces = this.workspaces.filter(ws => ws.id !== workspace_id)
 		try {
 			await trash_workspace(require_supabase(), workspace_id)
 		} catch (error) {
+			trashing_ids.delete(workspace_id)
+			if (entry && !this.workspaces.some(ws => ws.id === workspace_id)) {
+				const next = [...this.workspaces]
+				next.splice(Math.min(index, next.length), 0, entry)
+				this.workspaces = next
+			}
 			this.last_error = error instanceof Error ? error.message : String(error)
 			return
 		}
+		notify_cloud_workspace_trash_changed(workspace_id)
 		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
 			store.close_workspace()
 		}
-		await this.fetch_workspaces()
+		try {
+			await this.fetch_workspaces()
+		} finally {
+			trashing_ids.delete(workspace_id)
+		}
 	},
 
 	async restore_trashed_workspace(workspace_id: string): Promise<boolean> {
@@ -1108,6 +1133,9 @@ const cloud: CloudStore = {
 			this.last_error = error instanceof Error ? error.message : String(error)
 			return false
 		}
+		// Back from the trash: the list shows it again even while the trash's own read is still out
+		trashing_ids.delete(workspace_id)
+		notify_cloud_workspace_trash_changed(workspace_id)
 		await this.fetch_workspaces()
 		return true
 	},
@@ -1115,6 +1143,7 @@ const cloud: CloudStore = {
 	async purge_trashed_workspace(workspace_id: string): Promise<boolean> {
 		try {
 			await purge_workspace(require_supabase(), workspace_id)
+			notify_cloud_workspace_trash_changed(workspace_id)
 			return true
 		} catch (error) {
 			this.last_error = error instanceof Error ? error.message : String(error)

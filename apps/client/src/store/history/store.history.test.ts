@@ -111,8 +111,8 @@ describe('undo through the workspace store', () => {
 		await act(tx => ws.save_note_content('/ws/a.md', 'bye', { tx, before: 'hello' }))
 		await h.undo()
 		expect(await fake.fm.read_text_file('/ws/a.md')).toBe('hello')
-		// a note on screen reloads on a drop of its cached text, not on a set
-		expect(heard).toEqual([undefined])
+		// a note on screen takes the written text at once, without a read
+		expect(heard).toEqual(['hello'])
 		await h.redo()
 		expect(await fake.fm.read_text_file('/ws/a.md')).toBe('bye')
 	})

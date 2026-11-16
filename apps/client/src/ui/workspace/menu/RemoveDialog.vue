@@ -4,6 +4,8 @@ import { t } from '@/i18n'
 import { explorer_drives } from '@/store/explorer/drives'
 import { remove_confirm_text, remove_file_confirm_text } from '@/store/explorer/folder_menu'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { trash_sync_note } from '@/store/explorer/share'
+import TrashSyncNote from '@/ui/explorer/folder-header/TrashSyncNote.vue'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 
@@ -51,6 +53,13 @@ const explorer_text = computed(() => {
 	return kind.value === 'folder' ? remove_confirm_text(drive) : remove_file_confirm_text(drive)
 })
 
+/** An item of a synced folder: what its trash does to the other copy */
+const sync_note = computed(() => {
+	const location = explorer_navigation.location
+	if (!is_open.value || !target_id.value || location?.kind !== 'folder') return null
+	return trash_sync_note({ ...location.ref, folder_id: target_id.value }, kind.value)
+})
+
 defineExpose({ open })
 </script>
 
@@ -60,6 +69,7 @@ defineExpose({ open })
 		:title="t(explorer_text.title, { name: display_name })"
 		:description="t(explorer_text.description, { name: display_name })"
 	>
+		<TrashSyncNote v-if="sync_note" :note="sync_note" />
 		<template #footer>
 			<Button @click="cancel">{{ t('dialog.cancel') }}</Button>
 			<Button variant="danger" @click="commit">{{ t(explorer_text.confirm) }}</Button>

@@ -62,6 +62,8 @@ function childSignature(children: FolderContainerWidgetChild[]) {
 			child.type === 'file' ? `${child.is_text ?? ''}${child.text_width ?? ''}` : '',
 			// a shape's text and its area are drawn by the node
 			child.type === 'file' ? `${child.text_area ?? ''}\u0001${child.text ?? ''}` : '',
+			// a picture's heading and caption, and a card's padding, are drawn by the node
+			child.type === 'file' ? `${child.title ?? ''}\u0001${child.description ?? ''}\u0001${child.padding ?? ''}` : '',
 		].join(':')
 	}).join('|')
 }

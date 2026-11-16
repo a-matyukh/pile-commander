@@ -7,7 +7,7 @@ import { locale, t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import store from '@/store'
 import cloud from '@/store/cloud'
-import { explorer_drives } from '@/store/explorer/drives'
+import { cloud_roots_revision, explorer_drives } from '@/store/explorer/drives'
 import { explorer_drive_locations, explorer_last_location, explorer_navigation } from '@/store/explorer/navigation'
 import { explorer_settings } from '@/store/explorer/settings'
 import { explorer_drawer_open, explorer_sidebar_width } from '@/store/explorer/sidebar'
@@ -283,6 +283,8 @@ watchEffect(() => {
 		return
 	}
 	const folder = shown_folder.value
+	// The cloud read behind the shown list found its folders changed
+	if (drive.kind === 'cloud') void cloud_roots_revision.value
 	void explorer_tree.show_drive(drive, folder?.drive_id === drive.id ? folder : null)
 })
 </script>

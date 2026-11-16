@@ -893,23 +893,39 @@ export function create_explorer_tree(
 	async function trash_cloud_root(item: ExplorerTreeRoot) {
 		const name = item.root.name
 		const published = deps.cloud_root_published?.(item.root.id) ?? false
-		await send_cloud_root_to_trash(item)
+		// Gone from the screen at once, and the undo offered at once; the
+		// cloud is told behind it. A refusal brings the folder back and
+		// takes the undo away
+		const sending = send_cloud_root_to_trash(item)
+		let record: number | null = null
 		if (published) {
 			history.barrier(t('undo.op.remove_published', { name }))
-			return
+		} else {
+			history.record_custom({
+				label: t('undo.remove_one', { name }),
+				folder: folder_ref(item, tree_root_folder_id(item)),
+				folder_name: name,
+				notice: t('undo.removed', { name }),
+			}, {
+				// An undo pressed before the cloud took the trash waits for it:
+				// the restore must not reach the cloud first
+				undo: async () => {
+					await sending.catch(() => {})
+					return bring_back_cloud_root(item)
+				},
+				redo: async () => {
+					await send_cloud_root_to_trash(item)
+					return true
+				},
+			})
+			record = history.top_id
 		}
-		history.record_custom({
-			label: t('undo.remove_one', { name }),
-			folder: folder_ref(item, tree_root_folder_id(item)),
-			folder_name: name,
-			notice: t('undo.removed', { name }),
-		}, {
-			undo: () => bring_back_cloud_root(item),
-			redo: async () => {
-				await send_cloud_root_to_trash(item)
-				return true
-			},
-		})
+		try {
+			await sending
+		} catch (error) {
+			if (record !== null) history.drop_record(record)
+			throw error
+		}
 	}
 
 	async function bring_back_cloud_root(item: ExplorerTreeRoot): Promise<boolean> {
@@ -920,17 +936,26 @@ export function create_explorer_tree(
 	}
 
 	async function send_cloud_root_to_trash(item: ExplorerTreeRoot) {
-		await cloud.trash(item.root.id)
-		if (cloud.last_error) throw new Error(cloud.last_error)
+		// Leaves cloud.workspaces at once (the list and the Cloud page follow it)
+		const trashing = cloud.trash(item.root.id)
 		const root_folder = tree_root_folder_id(item)
-		deps.forget_bookmarks?.(folder_ref(item, root_folder))
+		const ref = folder_ref(item, root_folder)
+		deps.forget_bookmarks?.(ref)
 		const loc = deps.current_location()
 		const inside = loc?.kind === 'folder'
 			&& loc.ref.drive_id === item.drive.id
 			&& loc.ref.root_id === item.root.id
-		if (state.listed_drive_id === item.drive.id) await show_drive(item.drive, inside ? null : current_ref())
-		else state.roots = state.roots.filter(root => root.drive.id !== item.drive.id || root.root.id !== item.root.id)
-		if (inside) await explorer_navigation.open_page('cloud')
+		state.roots = state.roots.filter(root => root.drive.id !== item.drive.id || root.root.id !== item.root.id)
+		state.expanded_root_ids.delete(item.root.id)
+		if (inside) void explorer_navigation.open_page('cloud')
+		await trashing
+		if (cloud.last_error) {
+			const error = cloud.last_error
+			deps.bring_back_bookmarks?.(ref)
+			if (state.listed_drive_id === item.drive.id) await show_drive(item.drive, current_ref())
+			throw new Error(error)
+		}
+		if (state.listed_drive_id === item.drive.id) await show_drive(item.drive, current_ref())
 	}
 
 	/** The store reports a failure instead of throwing: the folder is gone only without a new error */

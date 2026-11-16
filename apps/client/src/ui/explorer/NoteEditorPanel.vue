@@ -250,9 +250,17 @@ async function flush(id: string | null) {
 		end_write = null
 		return
 	}
-	await ws.save_note_content(id, content)
+	const saved = await ws.save_note_content(id, content)
+	if (saved === false) {
+		// The store showed the error; the text stays and the next edit writes it again
+		if (text.value === content) status.value = null
+		end_write?.()
+		end_write = null
+		return
+	}
 	persisted = content
-	ws.content_caches.notes.invalidate(id)
+	// The board's cards of this note show the saved text at once
+	ws.content_caches.notes.set(id, content)
 	if (text.value === content) status.value = 'saved'
 	end_write?.()
 	end_write = null

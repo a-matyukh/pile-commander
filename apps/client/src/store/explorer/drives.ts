@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import {
 	active_step,
 	createBrowserFileManager,
@@ -16,8 +17,8 @@ import { normalize_workspace_id, path_separator } from '@/services/workspace/pat
 import { pending_entry_xattr } from '@/services/workspace/xattrs'
 import cloud from '@/store/cloud'
 import { require_supabase } from '@/services/cloud/client'
-import { root_info_with_kept } from '@/services/cloud/rootInfoMemory'
-import { cloud_workspaces_ready } from './cloud_list'
+import { keep_cloud_roots, kept_cloud_roots, root_info_with_kept } from '@/services/cloud/rootInfoMemory'
+import { cloud_workspaces_ready, cloud_workspaces_synced } from './cloud_list'
 import { DEMO_ROOT, public_roots } from './public_roots'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
 import { adopt_workspace } from '@/store/index'
@@ -51,9 +52,23 @@ export type ExplorerDriveDeps = {
 	 * root opened before it is named then, instead of waiting for the list
 	 */
 	cloud_root_name_later?(root_id: string): Promise<string | undefined>
+	/**
+	 * Whether the cloud's list says this root is writable; undefined when the
+	 * list does not know it. A known answer opens the root without asking again
+	 */
+	cloud_root_can_write?(root_id: string): boolean | undefined
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
+	/** How long the cloud's stores stay open after the user leaves the cloud (tests shorten it) */
+	cloud_warm_ms?: number
 }
+
+/**
+ * Leaving the cloud for ~ and coming back must not read it all again: the
+ * cloud's open folders stay open (their lists, and the live channel that
+ * keeps them current) this long after the user leaves the cloud
+ */
+export const CLOUD_WARM_MS = 10 * 60_000
 
 /**
  * A root's store opened for a transition but not shown yet. It is held, so
@@ -137,6 +152,11 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 	/** The drive whose tree reported `expanded` */
 	let expanded_drive_id: string | null = null
 	let epoch = 0
+	const warm_ms = deps.cloud_warm_ms ?? CLOUD_WARM_MS
+	/** Cloud stores that were on screen or expanded: only these stay warm */
+	const shown = new Set<string>()
+	/** Cloud stores left behind, with when they close */
+	const warm = new Map<string, { until: number; timer: ReturnType<typeof setTimeout> }>()
 
 	const home_id = async () => {
 		home ??= normalize_workspace_id(await deps.home_path())
@@ -158,10 +178,43 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		return drive_id === expanded_drive_id && expanded.has(root_id)
 	}
 
+	/**
+	 * Away from the cloud: another drive is current, or the tree lists another
+	 * drive. Moving between cloud roots closes the one left, as before
+	 */
+	const away_from_cloud = () =>
+		current_drive_id !== 'cloud' || (expanded_drive_id !== null && expanded_drive_id !== 'cloud')
+
+	const cool = (key: string) => {
+		const entry = warm.get(key)
+		if (!entry) return
+		clearTimeout(entry.timer)
+		warm.delete(key)
+	}
+
+	/** True while the store stays open although nothing keeps it */
+	const stays_warm = (key: string) => {
+		const entry = warm.get(key)
+		if (entry) return Date.now() < entry.until
+		if (!key.startsWith('cloud\0') || !shown.has(key) || !away_from_cloud()) return false
+		warm.set(key, {
+			until: Date.now() + warm_ms,
+			timer: setTimeout(() => sweep(), warm_ms),
+		})
+		return true
+	}
+
 	const sweep = () => {
 		for (const [key, store] of stores) {
 			const root_id = key.slice(key.indexOf('\0') + 1)
-			if (kept_store(key)) continue
+			if (kept_store(key)) {
+				if (!holds.has(root_id)) shown.add(key)
+				cool(key)
+				continue
+			}
+			if (!store.is_disposed && stays_warm(key)) continue
+			cool(key)
+			shown.delete(key)
 			store.dispose()
 			stores.delete(key)
 			outside.delete(root_id)
@@ -198,9 +251,13 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 			const name = deps.cloud_root_name
 				? await active_step('root_name', () => deps.cloud_root_name!(root_id))
 				: (await active_step('cloud_roots', () => deps.cloud_roots())).find(item => item.id === root_id)?.name
+			const known_can_write = deps.cloud_root_can_write?.(root_id)
+			const opts: LoadWorkspaceOptions = {}
+			if (folder_hint) opts.also_read = folder_hint
+			if (known_can_write !== undefined) opts.known_can_write = known_can_write
 			const store = await deps.open_cloud(
 				{ id: root_id, type: 'cloud', name: name ?? root_id },
-				folder_hint ? { also_read: folder_hint } : undefined,
+				Object.keys(opts).length ? opts : undefined,
 			)
 			if (!name && deps.cloud_root_name_later) {
 				void deps.cloud_root_name_later(root_id).then((later) => {
@@ -329,6 +386,9 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		epoch += 1
 		for (const store of stores.values()) store.dispose()
 		stores.clear()
+		for (const entry of warm.values()) clearTimeout(entry.timer)
+		warm.clear()
+		shown.clear()
 		opening.clear()
 		outside.clear()
 		expanded.clear()
@@ -442,9 +502,33 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 
 let cloud_roots_in_flight: Promise<DriveRoot[]> | null = null
 
-async function read_cloud_roots(): Promise<DriveRoot[]> {
+/**
+ * Bumped when a read behind the shown list finds the cloud's top-level
+ * folders changed: whoever lists them (the tree) asks again
+ */
+export const cloud_roots_revision = ref(0)
+
+/** A read behind the list just finished: showing it again does not start another */
+const BEHIND_AGAIN_MS = 2000
+let behind_in_flight: Promise<void> | null = null
+let behind_done_at = 0
+
+function with_info(
+	list: readonly { id: string; name: string; can_write: boolean }[],
+	info: Record<string, WorkspaceRootInfo>,
+): DriveRoot[] {
+	// A view still being saved shows on the closed root too: the list read before the write landed must not put the old one back
+	return list.map((root) => {
+		const pending = pending_entry_xattr('/', 'view', root.id)
+		const view = pending === undefined ? info[root.id]?.view : (pending ?? undefined)
+		return { id: root.id, name: root.name, can_write: root.can_write, view, subfolders: info[root.id]?.subfolders }
+	})
+}
+
+/** The cloud's answer: its list, then each root's view and subfolders. Kept for next time */
+async function read_fresh_cloud_roots(): Promise<DriveRoot[]> {
 	await cloud_workspaces_ready()
-	const roots: DriveRoot[] = cloud.workspaces.map(ws => ({
+	const list = cloud.workspaces.map(ws => ({
 		id: ws.id,
 		name: ws.name,
 		can_write: cloud.role_of(ws.id) !== 'viewer',
@@ -453,16 +537,83 @@ async function read_cloud_roots(): Promise<DriveRoot[]> {
 	// icon and chevron before it is opened. Without them: a plain folder
 	// with a chevron
 	// A failed read keeps what the last one said, so the icons and chevrons do not blink away
-	const ids = roots.map(root => root.id)
+	const ids = list.map(root => root.id)
 	const fresh: Record<string, WorkspaceRootInfo> | null = await workspace_root_info(require_supabase(), ids)
 		.catch(() => null)
-	const info = root_info_with_kept(cloud.user?.id, ids, fresh)
-	// A view still being saved shows on the closed root too: the list read before the write landed must not put the old one back
-	return roots.map((root) => {
-		const pending = pending_entry_xattr('/', 'view', root.id)
-		const view = pending === undefined ? info[root.id]?.view : (pending ?? undefined)
-		return { ...root, view, subfolders: info[root.id]?.subfolders }
+	const owner = cloud.user?.id
+	const info = root_info_with_kept(owner, ids, fresh)
+	if (owner && cloud_workspaces_synced()) keep_cloud_roots(owner, list)
+	return with_info(list, info)
+}
+
+/**
+ * The list of top-level folders is read again at most this often: when the
+ * cloud is shown and when the window comes back. A folder made, renamed,
+ * shared or trashed on another device shows up then, not after a restart
+ */
+const LIST_AGAIN_MS = 10_000
+let list_read_at = 0
+
+export function refresh_cloud_list(): Promise<void> {
+	// The first list is the sign-in's own read; this is only for later ones
+	if (!cloud.user || !cloud_workspaces_synced()) return Promise.resolve()
+	if (Date.now() - list_read_at < LIST_AGAIN_MS) return Promise.resolve()
+	list_read_at = Date.now()
+	return cloud.fetch_workspaces({ join: true }).catch(() => {})
+}
+
+if (typeof window !== 'undefined') {
+	const back = () => { void refresh_cloud_list() }
+	window.addEventListener('focus', back)
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'visible') back()
 	})
+}
+
+/** Reads the cloud behind a list already shown; a different answer asks the tree again */
+function refresh_behind(shown: DriveRoot[]) {
+	if (behind_in_flight || Date.now() - behind_done_at < BEHIND_AGAIN_MS) return
+	const owner = cloud.user?.id
+	behind_in_flight = refresh_cloud_list()
+		.then(() => read_fresh_cloud_roots())
+		.then((fresh) => {
+			if (cloud.user?.id !== owner) return
+			if (JSON.stringify(fresh) !== JSON.stringify(shown)) cloud_roots_revision.value += 1
+		})
+		.catch(() => {})
+		.finally(() => {
+			behind_done_at = Date.now()
+			behind_in_flight = null
+		})
+}
+
+/**
+ * The cloud's top-level folders. What was listed before shows at once —
+ * the list in memory, or the one kept on this device after a restart — and
+ * the cloud is read behind it. Only the very first visit waits for the cloud
+ */
+function read_cloud_roots(): Promise<DriveRoot[]> {
+	const owner = cloud.user?.id
+	// Read before any await: the tree's effect follows the list as it loads
+	void cloud.is_loading
+	const loaded = cloud.workspaces.length > 0 || cloud_workspaces_synced()
+	if (owner) {
+		const list = loaded
+			? cloud.workspaces.map(ws => ({
+				id: ws.id,
+				name: ws.name,
+				can_write: cloud.role_of(ws.id) !== 'viewer',
+			}))
+			: kept_cloud_roots(owner)
+		if (list) {
+			const shown = with_info(list, root_info_with_kept(owner, list.map(root => root.id), null))
+			refresh_behind(shown)
+			return Promise.resolve(shown)
+		}
+	}
+	// The tree asks again on every move; callers at the same time share one read
+	cloud_roots_in_flight ??= read_fresh_cloud_roots().finally(() => { cloud_roots_in_flight = null })
+	return cloud_roots_in_flight
 }
 
 export const explorer_drives = create_explorer_drives({
@@ -474,11 +625,7 @@ export const explorer_drives = create_explorer_drives({
 	local_file_manager: create_explorer_local_file_manager,
 	open_cloud: (item, opts) => open_workspace_store(item, opts),
 	open_demo: () => open_workspace_store({ type: 'demo', id: DEMO_ROOT, name: 'Demo' }),
-	cloud_roots: () => {
-		// The tree asks again on every move; callers at the same time share one read
-		cloud_roots_in_flight ??= read_cloud_roots().finally(() => { cloud_roots_in_flight = null })
-		return cloud_roots_in_flight
-	},
+	cloud_roots: read_cloud_roots,
 	// In hand when the list is loaded; at launch it may not be yet, and the
 	// root opens without waiting for it (its name follows)
 	async cloud_root_name(root_id) {
@@ -487,6 +634,12 @@ export const explorer_drives = create_explorer_drives({
 	async cloud_root_name_later(root_id) {
 		await cloud_workspaces_ready()
 		return cloud.workspaces.find(ws => ws.id === root_id)?.name
+	},
+	cloud_root_can_write(root_id) {
+		const role = cloud.role_of(root_id)
+		if (role) return role !== 'viewer'
+		const owner = cloud.user?.id
+		return owner ? kept_cloud_roots(owner)?.find(root => root.id === root_id)?.can_write : undefined
 	},
 	async browser_file_manager() {
 		await ensure_browser_root()

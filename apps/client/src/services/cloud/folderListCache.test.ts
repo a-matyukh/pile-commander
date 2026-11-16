@@ -3,6 +3,8 @@ import { createFakeFileManager, type FolderWithChildrenXattrs } from '@pile-comm
 import { memory_folder_list_disk, type FolderListDisk } from './folderListDisk'
 import {
 	keep_folder_lists,
+	keep_note_texts,
+	recall_note_text,
 	recall_folder_list,
 	remember_folder_list,
 	reset_folder_list_cache,
@@ -18,6 +20,15 @@ const list = (name: string): FolderWithChildrenXattrs => ({
 	children: [{ id: `/docs/${name}`, name, type: 'file', xattrs: [] }],
 })
 
+function memory_note_disk() {
+	const rows = new Map<string, string>()
+	return {
+		async get(key: string) { return rows.get(key) ?? null },
+		async put(key: string, text: string) { rows.set(key, text) },
+		async clear() { rows.clear() },
+	}
+}
+
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 
 let disk: ReturnType<typeof memory_folder_list_disk>
@@ -32,7 +43,7 @@ beforeEach(async () => {
 	})
 	await reset_folder_list_cache()
 	disk = memory_folder_list_disk()
-	set_folder_list_disk(disk)
+	set_folder_list_disk(disk, { notes: memory_note_disk() })
 	set_folder_list_owner('me')
 })
 
@@ -103,5 +114,36 @@ describe('folder lists kept on this device', () => {
 		set_folder_list_disk({ ...disk, get: () => new Promise(() => {}) }, { wait_ms: 5 })
 		expect(await recall_folder_list('ws', '/docs')).toBeNull()
 		set_folder_list_disk(disk, { wait_ms: 150 })
+	})
+})
+
+describe('a cloud note\'s text kept on the device', () => {
+	test('a read and a save keep the text; the next session shows it before the cloud answers', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_file('/a.md', 'hello')
+		const fm = keep_note_texts(fake.fm, 'ws-1')
+		expect(await recall_note_text('ws-1', '/a.md')).toBeNull()
+
+		await fm.read_text_file('/a.md')
+		await settle()
+		expect(await recall_note_text('ws-1', '/a.md')).toBe('hello')
+
+		await fm.save_text_file('/a.md', 'bye')
+		await settle()
+		expect(await recall_note_text('ws-1', '/a.md')).toBe('bye')
+		// another workspace's note of the same path is another note
+		expect(await recall_note_text('ws-2', '/a.md')).toBeNull()
+	})
+
+	test('sign-out forgets the texts; another account does not see them', async () => {
+		const fake = createFakeFileManager()
+		fake.seed_file('/a.md', 'secret')
+		await keep_note_texts(fake.fm, 'ws-1').read_text_file('/a.md')
+		await settle()
+		set_folder_list_owner('someone-else')
+		await settle()
+		expect(await recall_note_text('ws-1', '/a.md')).toBeNull()
+		set_folder_list_owner('me')
+		expect(await recall_note_text('ws-1', '/a.md')).toBeNull()
 	})
 })

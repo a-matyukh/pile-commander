@@ -304,6 +304,63 @@ describe('explorer tree', () => {
 		restore.mockRestore()
 	})
 
+	test('a trashed cloud root leaves the tree and offers the undo before the cloud answers', async () => {
+		let answer: () => void = () => {}
+		const trash = vi.spyOn(cloud, 'trash').mockImplementation(() => new Promise<void>(resolve => { answer = resolve }))
+		cloud.last_error = null
+		history.clear()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			on_error: () => {},
+		})
+		let listed = [{ id: 'ws-1', name: 'Plans', can_write: true }]
+		const drive: Drive = {
+			id: 'cloud', kind: 'cloud', name: 'Cloud', icon: '', trash: 'page',
+			roots: async () => listed,
+			store_for: async () => { throw new Error('the root entry is not removed') },
+		}
+		await tree.show_drive(drive, null)
+		const removing = tree.remove_folder(tree.roots[0]!, { id: '/', name: 'Plans', type: 'folder' as const })
+		expect(tree.roots).toEqual([])
+		expect(history.can_undo).toBe(true)
+		listed = []
+		answer()
+		await removing
+		expect(tree.roots).toEqual([])
+		expect(history.can_undo).toBe(true)
+		trash.mockRestore()
+	})
+
+	test('a cloud root the cloud refused to trash comes back, and there is nothing to undo', async () => {
+		const trash = vi.spyOn(cloud, 'trash').mockImplementation(async () => { cloud.last_error = 'offline' })
+		cloud.last_error = null
+		history.clear()
+		const on_error = vi.fn()
+		const bring_back_bookmarks = vi.fn()
+		const tree = create_explorer_tree({
+			current_location: () => null,
+			open_folder: async () => {},
+			set_expanded: () => {},
+			on_error,
+			bring_back_bookmarks,
+		})
+		const drive: Drive = {
+			id: 'cloud', kind: 'cloud', name: 'Cloud', icon: '', trash: 'page',
+			roots: async () => [{ id: 'ws-1', name: 'Plans', can_write: true }],
+			store_for: async () => { throw new Error('the root entry is not removed') },
+		}
+		await tree.show_drive(drive, null)
+		await tree.remove_folder(tree.roots[0]!, { id: '/', name: 'Plans', type: 'folder' as const })
+		expect(tree.roots.map(item => item.root.id)).toEqual(['ws-1'])
+		expect(history.can_undo).toBe(false)
+		expect(on_error).toHaveBeenCalledOnce()
+		expect(bring_back_bookmarks).toHaveBeenCalledWith({ drive_id: 'cloud', root_id: 'ws-1', folder_id: '/' })
+		cloud.last_error = null
+		trash.mockRestore()
+	})
+
 	test('renaming a top-level browser folder takes its bookmark along', async () => {
 		const root = '/browser-desktops'
 		const fake = createFakeFileManager()

@@ -74,4 +74,15 @@ describe('useCanvasNodes', () => {
 		await canvas.onNodeResizeEnd('/ws/photo.png', { x: 0, y: 0, width: 260, height: 340 })
 		expect(writes).toEqual([['size', '/ws/photo.png', { width: 260, height: 340 }]])
 	})
+
+	test('a picture\'s new heading or caption shows at once', async () => {
+		const { children, canvas } = setup()
+		children.value = [{ ...card({ width: 200, height: 300 }), title: 'Sunset' } as FolderContainerWidgetChild]
+		await nextTick()
+		expect(canvas.nodes.value[0]!.data.widget).toMatchObject({ title: 'Sunset' })
+
+		children.value = [{ ...card({ width: 200, height: 300 }), title: 'Sunset', description: 'After the rain' } as FolderContainerWidgetChild]
+		await nextTick()
+		expect(canvas.nodes.value[0]!.data.widget).toMatchObject({ title: 'Sunset', description: 'After the rain' })
+	})
 })
