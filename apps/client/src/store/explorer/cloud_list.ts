@@ -9,6 +9,11 @@ import { on_cloud_workspaces_synced } from '@/store/workspaces_list'
 let synced = false
 on_cloud_workspaces_synced(() => { synced = true })
 
+/** True once the cloud's list has been read this session (it may be empty) */
+export function cloud_workspaces_synced(): boolean {
+	return synced
+}
+
 /** How long to wait for the first list before showing what there is */
 const WAIT_MS = 10_000
 

@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import {
 	active_step,
 	createBrowserFileManager,
@@ -16,8 +17,8 @@ import { normalize_workspace_id, path_separator } from '@/services/workspace/pat
 import { pending_entry_xattr } from '@/services/workspace/xattrs'
 import cloud from '@/store/cloud'
 import { require_supabase } from '@/services/cloud/client'
-import { root_info_with_kept } from '@/services/cloud/rootInfoMemory'
-import { cloud_workspaces_ready } from './cloud_list'
+import { keep_cloud_roots, kept_cloud_roots, root_info_with_kept } from '@/services/cloud/rootInfoMemory'
+import { cloud_workspaces_ready, cloud_workspaces_synced } from './cloud_list'
 import { DEMO_ROOT, public_roots } from './public_roots'
 import { createWorkspaceStore } from '@/store/createWorkspaceStore'
 import { adopt_workspace } from '@/store/index'
@@ -492,9 +493,33 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 
 let cloud_roots_in_flight: Promise<DriveRoot[]> | null = null
 
-async function read_cloud_roots(): Promise<DriveRoot[]> {
+/**
+ * Bumped when a read behind the shown list finds the cloud's top-level
+ * folders changed: whoever lists them (the tree) asks again
+ */
+export const cloud_roots_revision = ref(0)
+
+/** A read behind the list just finished: showing it again does not start another */
+const BEHIND_AGAIN_MS = 2000
+let behind_in_flight: Promise<void> | null = null
+let behind_done_at = 0
+
+function with_info(
+	list: readonly { id: string; name: string; can_write: boolean }[],
+	info: Record<string, WorkspaceRootInfo>,
+): DriveRoot[] {
+	// A view still being saved shows on the closed root too: the list read before the write landed must not put the old one back
+	return list.map((root) => {
+		const pending = pending_entry_xattr('/', 'view', root.id)
+		const view = pending === undefined ? info[root.id]?.view : (pending ?? undefined)
+		return { id: root.id, name: root.name, can_write: root.can_write, view, subfolders: info[root.id]?.subfolders }
+	})
+}
+
+/** The cloud's answer: its list, then each root's view and subfolders. Kept for next time */
+async function read_fresh_cloud_roots(): Promise<DriveRoot[]> {
 	await cloud_workspaces_ready()
-	const roots: DriveRoot[] = cloud.workspaces.map(ws => ({
+	const list = cloud.workspaces.map(ws => ({
 		id: ws.id,
 		name: ws.name,
 		can_write: cloud.role_of(ws.id) !== 'viewer',
@@ -503,16 +528,58 @@ async function read_cloud_roots(): Promise<DriveRoot[]> {
 	// icon and chevron before it is opened. Without them: a plain folder
 	// with a chevron
 	// A failed read keeps what the last one said, so the icons and chevrons do not blink away
-	const ids = roots.map(root => root.id)
+	const ids = list.map(root => root.id)
 	const fresh: Record<string, WorkspaceRootInfo> | null = await workspace_root_info(require_supabase(), ids)
 		.catch(() => null)
-	const info = root_info_with_kept(cloud.user?.id, ids, fresh)
-	// A view still being saved shows on the closed root too: the list read before the write landed must not put the old one back
-	return roots.map((root) => {
-		const pending = pending_entry_xattr('/', 'view', root.id)
-		const view = pending === undefined ? info[root.id]?.view : (pending ?? undefined)
-		return { ...root, view, subfolders: info[root.id]?.subfolders }
-	})
+	const owner = cloud.user?.id
+	const info = root_info_with_kept(owner, ids, fresh)
+	if (owner && cloud_workspaces_synced()) keep_cloud_roots(owner, list)
+	return with_info(list, info)
+}
+
+/** Reads the cloud behind a list already shown; a different answer asks the tree again */
+function refresh_behind(shown: DriveRoot[]) {
+	if (behind_in_flight || Date.now() - behind_done_at < BEHIND_AGAIN_MS) return
+	const owner = cloud.user?.id
+	behind_in_flight = read_fresh_cloud_roots()
+		.then((fresh) => {
+			if (cloud.user?.id !== owner) return
+			if (JSON.stringify(fresh) !== JSON.stringify(shown)) cloud_roots_revision.value += 1
+		})
+		.catch(() => {})
+		.finally(() => {
+			behind_done_at = Date.now()
+			behind_in_flight = null
+		})
+}
+
+/**
+ * The cloud's top-level folders. What was listed before shows at once —
+ * the list in memory, or the one kept on this device after a restart — and
+ * the cloud is read behind it. Only the very first visit waits for the cloud
+ */
+function read_cloud_roots(): Promise<DriveRoot[]> {
+	const owner = cloud.user?.id
+	// Read before any await: the tree's effect follows the list as it loads
+	void cloud.is_loading
+	const loaded = cloud.workspaces.length > 0 || cloud_workspaces_synced()
+	if (owner) {
+		const list = loaded
+			? cloud.workspaces.map(ws => ({
+				id: ws.id,
+				name: ws.name,
+				can_write: cloud.role_of(ws.id) !== 'viewer',
+			}))
+			: kept_cloud_roots(owner)
+		if (list) {
+			const shown = with_info(list, root_info_with_kept(owner, list.map(root => root.id), null))
+			refresh_behind(shown)
+			return Promise.resolve(shown)
+		}
+	}
+	// The tree asks again on every move; callers at the same time share one read
+	cloud_roots_in_flight ??= read_fresh_cloud_roots().finally(() => { cloud_roots_in_flight = null })
+	return cloud_roots_in_flight
 }
 
 export const explorer_drives = create_explorer_drives({
@@ -524,11 +591,7 @@ export const explorer_drives = create_explorer_drives({
 	local_file_manager: create_explorer_local_file_manager,
 	open_cloud: (item, opts) => open_workspace_store(item, opts),
 	open_demo: () => open_workspace_store({ type: 'demo', id: DEMO_ROOT, name: 'Demo' }),
-	cloud_roots: () => {
-		// The tree asks again on every move; callers at the same time share one read
-		cloud_roots_in_flight ??= read_cloud_roots().finally(() => { cloud_roots_in_flight = null })
-		return cloud_roots_in_flight
-	},
+	cloud_roots: read_cloud_roots,
 	// In hand when the list is loaded; at launch it may not be yet, and the
 	// root opens without waiting for it (its name follows)
 	async cloud_root_name(root_id) {

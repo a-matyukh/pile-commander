@@ -88,6 +88,7 @@ import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 import { locale, t } from '@/i18n'
 import { reset_folder_list_cache, set_folder_list_owner } from '@/services/cloud/folderListCache'
+import { forget_cloud_roots } from '@/services/cloud/rootInfoMemory'
 import { may_drop_unsaved } from '@/services/workspace/unsavedWrites'
 import { has_unsaved_writes } from '@/services/workspace/xattrs'
 
@@ -473,6 +474,7 @@ const cloud: CloudStore = {
 			// Covers and folder lists stay between visits; the next account must not get them
 			reset_pile_image_cache()
 			void reset_folder_list_cache()
+			forget_cloud_roots()
 			this.workspaces = []
 			this.roles = {}
 			this.published_slugs = {}
