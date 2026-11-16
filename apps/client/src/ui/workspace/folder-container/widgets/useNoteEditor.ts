@@ -292,6 +292,8 @@ export function useNoteEditor(
 		// One handler per id (a second onNoteEditExit would replace this one),
 		// so the empty-text check lives here, after the save.
 		unregisterExit = onNoteEditExit(id, async () => {
+			// The card shows what was typed at once; the cloud's save follows
+			refreshPreview()
 			await save()
 			if (toValue(options?.isText) === true && text.value.trim() === '') {
 				const ws = requireWorkspace()

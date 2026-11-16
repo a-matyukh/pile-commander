@@ -205,3 +205,24 @@ describe('useNoteEditor: a card shows the text without waiting for the cloud', (
 		scope.stop()
 	})
 })
+
+describe('useNoteEditor: leaving an edit shows the new text before the save lands', () => {
+	test('the preview is the typed text while the cloud still saves it', async () => {
+		const { fake, id, editor, scope } = await setup('note')
+		await editor.startEdit()
+		await nextTick()
+		editor.text.value = 'fresh words'
+		let land: () => void = () => {}
+		const save = fake.fm.save_text_file.bind(fake.fm)
+		fake.fm.save_text_file = async (file, content) => {
+			await new Promise<void>(resolve => { land = resolve })
+			return save(file, content)
+		}
+		editor.exitEdit()
+		await vi.waitFor(() => expect(editor.previewHtml.value).toContain('fresh words'))
+		land()
+		await settle()
+		expect(await fake.fm.read_text_file(id)).toBe('fresh words')
+		scope.stop()
+	})
+})
