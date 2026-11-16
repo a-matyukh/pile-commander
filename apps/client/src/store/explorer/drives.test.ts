@@ -249,6 +249,92 @@ describe('explorer drives', () => {
 	})
 })
 
+describe('explorer drives: the cloud stays warm while the user is in ~', () => {
+	beforeEach(() => {
+		explorer_language.value = 'en'
+	})
+
+	function tracked(warm_ms = 1000) {
+		const created: Record<string, WorkspaceStore & { disposed: boolean }> = {}
+		const fake = createFakeFileManager()
+		fake.seed_folder(HOME)
+		const drives = create_explorer_drives(deps({
+			local_file_manager: () => fake.fm,
+			cloud_roots: async () => ['a', 'b'].map(id => ({ id, name: id, can_write: true })),
+			async open_cloud(item: WorkspacesListItem) {
+				const store = {
+					disposed: false,
+					get is_disposed() { return this.disposed },
+					dispose() { this.disposed = true },
+				} as unknown as WorkspaceStore & { disposed: boolean }
+				created[item.id] = store
+				return store
+			},
+			cloud_warm_ms: warm_ms,
+		}))
+		return { drives, created }
+	}
+
+	test('the root on screen and the expanded ones stay open in ~ and are the same stores back in the cloud', async () => {
+		vi.useFakeTimers()
+		try {
+			const { drives, created } = tracked()
+			await drives.open('cloud', 'a')
+			drives.set_expanded(['a', 'b'], 'cloud')
+			await drives.drive('cloud')!.store_for('b')
+			drives.set_expanded(['a', 'b'], 'cloud')
+
+			// The tree lists ~ first, then ~ is shown
+			drives.set_expanded([HOME], 'local')
+			await drives.open('local', HOME)
+			expect(created.a!.disposed).toBe(false)
+			expect(created.b!.disposed).toBe(false)
+
+			vi.advanceTimersByTime(500)
+			expect(await drives.open('cloud', 'a')).toBe(created.a)
+			drives.set_expanded(['a', 'b'], 'cloud')
+			expect(await drives.drive('cloud')!.store_for('b')).toBe(created.b)
+
+			// Back in the cloud the usual rules hold: nothing closes later on its own
+			vi.advanceTimersByTime(5000)
+			expect(created.a!.disposed).toBe(false)
+			expect(created.b!.disposed).toBe(false)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	test('a cloud left for longer than the warm period is closed', async () => {
+		vi.useFakeTimers()
+		try {
+			const { drives, created } = tracked()
+			const first = await drives.open('cloud', 'a')
+			await drives.open('local', HOME)
+			expect(created.a!.disposed).toBe(false)
+			vi.advanceTimersByTime(1001)
+			expect(created.a!.disposed).toBe(true)
+			expect(await drives.open('cloud', 'a')).not.toBe(first)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	test('a cloud root never shown (a dropped transition) closes at once, also from ~', async () => {
+		const { drives, created } = tracked()
+		await drives.open('local', HOME)
+		;(await drives.prepare('cloud', 'b')).release()
+		expect(created.b!.disposed).toBe(true)
+	})
+
+	test('dispose_all closes the warm stores too', async () => {
+		const { drives, created } = tracked()
+		await drives.open('cloud', 'a')
+		await drives.open('local', HOME)
+		drives.dispose_all()
+		expect(created.a!.disposed).toBe(true)
+	})
+})
+
 describe('explorer drives: prepare (a root opened for a transition, shown on commit)', () => {
 	beforeEach(() => {
 		explorer_language.value = 'en'

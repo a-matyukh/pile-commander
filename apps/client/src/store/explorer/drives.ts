@@ -53,7 +53,16 @@ export type ExplorerDriveDeps = {
 	cloud_root_name_later?(root_id: string): Promise<string | undefined>
 	browser_file_manager(): Promise<FileManager>
 	adopt(workspace: WorkspaceStore | null): void
+	/** How long the cloud's stores stay open after the user leaves the cloud (tests shorten it) */
+	cloud_warm_ms?: number
 }
+
+/**
+ * Leaving the cloud for ~ and coming back must not read it all again: the
+ * cloud's open folders stay open (their lists, and the live channel that
+ * keeps them current) this long after the user leaves the cloud
+ */
+export const CLOUD_WARM_MS = 10 * 60_000
 
 /**
  * A root's store opened for a transition but not shown yet. It is held, so
@@ -137,6 +146,11 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 	/** The drive whose tree reported `expanded` */
 	let expanded_drive_id: string | null = null
 	let epoch = 0
+	const warm_ms = deps.cloud_warm_ms ?? CLOUD_WARM_MS
+	/** Cloud stores that were on screen or expanded: only these stay warm */
+	const shown = new Set<string>()
+	/** Cloud stores left behind, with when they close */
+	const warm = new Map<string, { until: number; timer: ReturnType<typeof setTimeout> }>()
 
 	const home_id = async () => {
 		home ??= normalize_workspace_id(await deps.home_path())
@@ -158,10 +172,43 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		return drive_id === expanded_drive_id && expanded.has(root_id)
 	}
 
+	/**
+	 * Away from the cloud: another drive is current, or the tree lists another
+	 * drive. Moving between cloud roots closes the one left, as before
+	 */
+	const away_from_cloud = () =>
+		current_drive_id !== 'cloud' || (expanded_drive_id !== null && expanded_drive_id !== 'cloud')
+
+	const cool = (key: string) => {
+		const entry = warm.get(key)
+		if (!entry) return
+		clearTimeout(entry.timer)
+		warm.delete(key)
+	}
+
+	/** True while the store stays open although nothing keeps it */
+	const stays_warm = (key: string) => {
+		const entry = warm.get(key)
+		if (entry) return Date.now() < entry.until
+		if (!key.startsWith('cloud\0') || !shown.has(key) || !away_from_cloud()) return false
+		warm.set(key, {
+			until: Date.now() + warm_ms,
+			timer: setTimeout(() => sweep(), warm_ms),
+		})
+		return true
+	}
+
 	const sweep = () => {
 		for (const [key, store] of stores) {
 			const root_id = key.slice(key.indexOf('\0') + 1)
-			if (kept_store(key)) continue
+			if (kept_store(key)) {
+				if (!holds.has(root_id)) shown.add(key)
+				cool(key)
+				continue
+			}
+			if (!store.is_disposed && stays_warm(key)) continue
+			cool(key)
+			shown.delete(key)
 			store.dispose()
 			stores.delete(key)
 			outside.delete(root_id)
@@ -329,6 +376,9 @@ export function create_explorer_drives(deps: ExplorerDriveDeps): ExplorerDrives 
 		epoch += 1
 		for (const store of stores.values()) store.dispose()
 		stores.clear()
+		for (const entry of warm.values()) clearTimeout(entry.timer)
+		warm.clear()
+		shown.clear()
 		opening.clear()
 		outside.clear()
 		expanded.clear()
