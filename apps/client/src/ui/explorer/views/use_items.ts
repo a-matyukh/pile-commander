@@ -7,6 +7,7 @@ import { is_desktop } from '@/isDesktop'
 import { explorer_drives } from '@/store/explorer/drives'
 import { standard_folder_icon, system_folder_name } from '@/store/explorer/folder_cover'
 import { entry_can_rename, folder_menu_node, remove_file_confirm_text } from '@/store/explorer/folder_menu'
+import { trash_sync_note } from '@/store/explorer/share'
 import { explorer_tree } from '@/store/explorer/tree'
 import { tree_item_for } from '@/store/explorer/tree_item'
 import { keys_elsewhere, rename_hotkey_target } from '@/ui/explorer/folder_keys'
@@ -153,6 +154,11 @@ export function use_items(source: () => {
 	})
 	/** What the ask before removing a file says: to the drive's trash, or for good where it has none */
 	const trash_text = computed(() => remove_file_confirm_text(explorer_drives.drive(source().location.drive_id)))
+	/** What the trash does to the synced copy of this file */
+	const trash_sync = computed(() => {
+		const child = trashing.value
+		return child ? trash_sync_note(child_ref(child), is_folder(child) ? 'folder' : 'file') : null
+	})
 	function trash() {
 		const child = trashing.value
 		trashing.value = null
@@ -177,6 +183,7 @@ export function use_items(source: () => {
 		trashing,
 		trash_open,
 		trash_text,
+		trash_sync,
 		trash,
 	})
 }

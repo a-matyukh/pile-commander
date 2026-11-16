@@ -288,9 +288,14 @@ export type TrashSyncNote = {
 	also_there: boolean
 }
 
-export function trash_sync_note(ref: FolderRef): TrashSyncNote | null {
+/** What is being trashed, for the pronoun in the note: a folder, a file, or several items */
+export type TrashForm = 'folder' | 'file' | 'items'
+
+export function trash_sync_note(ref: FolderRef, form: TrashForm = 'folder'): TrashSyncNote | null {
 	const stays = (text: string): TrashSyncNote => ({ text, also_there: false })
-	const goes = (text: string): TrashSyncNote => ({ text, also_there: true })
+	const it = t(`tree.trash_it_${form}`)
+	const goes = (key: string, params: Record<string, string> = {}): TrashSyncNote =>
+		({ text: t(key, { it, ...params }), also_there: true })
 	if (ref.drive_id === 'cloud') {
 		const here = synced_folder_of(ref.root_id)
 		const elsewhere = cloud.synced_on[ref.root_id]
@@ -298,8 +303,8 @@ export function trash_sync_note(ref: FolderRef): TrashSyncNote | null {
 			if (here) return stays(t('tree.trash_synced_here', { folder: last_name(here.root) }))
 			return elsewhere ? stays(t('tree.trash_synced_elsewhere')) : null
 		}
-		if (here) return goes(t('tree.trash_inside_cloud_here', { folder: last_name(here.root) }))
-		return elsewhere ? goes(t('tree.trash_inside_cloud_elsewhere')) : null
+		if (here) return goes('tree.trash_inside_cloud_here', { folder: last_name(here.root) })
+		return elsewhere ? goes('tree.trash_inside_cloud_elsewhere') : null
 	}
 	if (ref.drive_id !== 'local') return null
 	const link = sync_link_covering(ref)
@@ -307,5 +312,20 @@ export function trash_sync_note(ref: FolderRef): TrashSyncNote | null {
 	const cloud_name = cloud.workspaces.find(ws => ws.id === link.workspace_id)?.name ?? link.name
 	return normalize_workspace_id(ref.folder_id) === link.root
 		? stays(t('tree.trash_synced_root_local', { cloud: cloud_name }))
-		: goes(t('tree.trash_inside_local', { cloud: cloud_name }))
+		: goes('tree.trash_inside_local', { cloud: cloud_name })
+}
+
+/**
+ * The same for several items trashed at once: the warning when the sync
+ * removes any of them on the other side, else the reassurance (a synced
+ * folder itself among them), else nothing
+ */
+export function trash_sync_note_for_many(refs: readonly FolderRef[]): TrashSyncNote | null {
+	let stays: TrashSyncNote | null = null
+	for (const ref of refs) {
+		const note = trash_sync_note(ref, 'items')
+		if (note?.also_there) return note
+		stays ??= note
+	}
+	return stays
 }

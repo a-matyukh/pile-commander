@@ -4,6 +4,8 @@ import { count_items, t } from '@/i18n'
 import { explorer_drives } from '@/store/explorer/drives'
 import { bulk_remove_confirm_text } from '@/store/explorer/folder_menu'
 import { explorer_navigation } from '@/store/explorer/navigation'
+import { trash_sync_note, trash_sync_note_for_many } from '@/store/explorer/share'
+import TrashSyncNote from '@/ui/explorer/folder-header/TrashSyncNote.vue'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 
@@ -30,6 +32,15 @@ const text = computed(() => {
 		description: t(copy.description),
 		confirm: copy.confirm,
 	}
+})
+
+/** What the trash does to the synced copies of these items */
+const sync_note = computed(() => {
+	const location = explorer_navigation.location
+	if (!is_open.value || location?.kind !== 'folder') return null
+	const [only] = items.value
+	if (items.value.length === 1 && only) return trash_sync_note({ ...location.ref, folder_id: only.id }, only.isFolder ? 'folder' : 'file')
+	return trash_sync_note_for_many(items.value.map(item => ({ ...location.ref, folder_id: item.id })))
 })
 
 function open(nextItems: BulkRemoveItem[]) {
@@ -59,6 +70,7 @@ defineExpose({ open })
 		:title="text.title"
 		:description="text.description"
 	>
+		<TrashSyncNote v-if="sync_note" :note="sync_note" />
 		<template #footer>
 			<Button @click="cancel">{{ t('dialog.cancel') }}</Button>
 			<Button variant="danger" @click="commit">{{ t(text.confirm) }}</Button>

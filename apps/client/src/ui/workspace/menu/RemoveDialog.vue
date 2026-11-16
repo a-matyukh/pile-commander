@@ -53,11 +53,11 @@ const explorer_text = computed(() => {
 	return kind.value === 'folder' ? remove_confirm_text(drive) : remove_file_confirm_text(drive)
 })
 
-/** A folder of a synced folder: what its trash does to the other copy */
+/** An item of a synced folder: what its trash does to the other copy */
 const sync_note = computed(() => {
 	const location = explorer_navigation.location
-	if (!is_open.value || kind.value !== 'folder' || !target_id.value || location?.kind !== 'folder') return null
-	return trash_sync_note({ ...location.ref, folder_id: target_id.value })
+	if (!is_open.value || !target_id.value || location?.kind !== 'folder') return null
+	return trash_sync_note({ ...location.ref, folder_id: target_id.value }, kind.value)
 })
 
 defineExpose({ open })

@@ -3,6 +3,7 @@ import { t } from '@/i18n'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from '@/ui/explorer/sidebar/RenameFolderDialog.vue'
+import TrashSyncNote from '@/ui/explorer/folder-header/TrashSyncNote.vue'
 import type { Items } from './use_items'
 
 /** Renaming a file and moving it to the trash: a menu closes before its dialog opens */
@@ -16,6 +17,7 @@ defineProps<{ items: Items }>()
 		:title="t(items.trash_text.title, { name: items.trashing?.name ?? '' })"
 		:description="t(items.trash_text.description)"
 	>
+		<TrashSyncNote v-if="items.trash_sync" :note="items.trash_sync" />
 		<template #footer>
 			<Button @click="items.trash_open = false">{{ t('dialog.cancel') }}</Button>
 			<Button variant="danger" @click="items.trash">{{ t(items.trash_text.confirm) }}</Button>
