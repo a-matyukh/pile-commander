@@ -390,6 +390,8 @@ export function note_cloud_root_look(workspace_id: string, name: keyof RootLook,
 }
 
 /** The list read in flight, and the one more read asked for while it runs */
+/** Folders being moved to the trash: out of the list while the cloud is told */
+const trashing_ids = new Set<string>()
 let workspaces_in_flight: Promise<void> | null = null
 let workspaces_again: Promise<void> | null = null
 
@@ -755,7 +757,8 @@ const cloud: CloudStore = {
 				})),
 				...shared,
 			]
-			this.workspaces = rows.map(ws => ({
+			// A folder being trashed stays out, even from a list read before the trash landed
+			this.workspaces = rows.filter(ws => !trashing_ids.has(ws.id)).map(ws => ({
 				type: 'cloud' as const,
 				id: ws.id,
 				name: ws.name,
@@ -1088,18 +1091,36 @@ const cloud: CloudStore = {
 		this.last_error = null
 	},
 
+	/**
+	 * The folder leaves the list at once; the cloud is told behind it. A
+	 * refusal puts it back where it was, with `last_error` set
+	 */
 	async trash(workspace_id: string) {
 		this.last_error = null
+		const index = this.workspaces.findIndex(ws => ws.id === workspace_id)
+		const entry = index === -1 ? null : this.workspaces[index]!
+		trashing_ids.add(workspace_id)
+		if (entry) this.workspaces = this.workspaces.filter(ws => ws.id !== workspace_id)
 		try {
 			await trash_workspace(require_supabase(), workspace_id)
 		} catch (error) {
+			trashing_ids.delete(workspace_id)
+			if (entry && !this.workspaces.some(ws => ws.id === workspace_id)) {
+				const next = [...this.workspaces]
+				next.splice(Math.min(index, next.length), 0, entry)
+				this.workspaces = next
+			}
 			this.last_error = error instanceof Error ? error.message : String(error)
 			return
 		}
 		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
 			store.close_workspace()
 		}
-		await this.fetch_workspaces()
+		try {
+			await this.fetch_workspaces()
+		} finally {
+			trashing_ids.delete(workspace_id)
+		}
 	},
 
 	async restore_trashed_workspace(workspace_id: string): Promise<boolean> {
@@ -1110,6 +1131,8 @@ const cloud: CloudStore = {
 			this.last_error = error instanceof Error ? error.message : String(error)
 			return false
 		}
+		// Back from the trash: the list shows it again even while the trash's own read is still out
+		trashing_ids.delete(workspace_id)
 		await this.fetch_workspaces()
 		return true
 	},
