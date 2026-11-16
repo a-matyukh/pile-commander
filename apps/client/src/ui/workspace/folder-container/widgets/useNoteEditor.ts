@@ -74,9 +74,21 @@ export function useNoteEditor(
 		if (isMarkdown.value) void loadNoteRenderer()
 		if (!loadPromise) {
 			const id = toValue(widgetId)
-			loadPromise = requireWorkspace().content_caches.notes
-				.get(id, () => requireWorkspace().read_note_content(id))
+			const ws = requireWorkspace()
+			let read_done = false
+			// A cloud note this device saw before shows its kept text at once,
+			// and the cloud's text replaces it. Not when it is in memory already
+			if (ws.recall_note_content && !ws.content_caches.notes.peek?.(id)) {
+				void ws.recall_note_content(id).then((kept) => {
+					if (kept === null || read_done || isLoaded.value || isEditing.value || toValue(widgetId) !== id) return
+					text.value = kept
+					refreshPreview()
+				})
+			}
+			loadPromise = ws.content_caches.notes
+				.get(id, () => ws.read_note_content(id))
 				.then((content) => {
+					read_done = true
 					// Don't clobber user input if editing started while loading,
 					// or if we already treat the session as loaded (create-from-menu).
 					if (!isEditing.value && !isLoaded.value) {
@@ -299,7 +311,16 @@ export function useNoteEditor(
 		// notes must not fetch on every event
 		unsubscribeCache?.()
 		unsubscribeCache = requireWorkspace().content_caches.notes.subscribe(id, (value) => {
-			if (value !== undefined || isEditing.value || !isLoaded.value) return
+			if (isEditing.value || !isLoaded.value) return
+			// The text another editor just saved (the side panel): shown at
+			// once, without reading the note back from the cloud
+			if (value !== undefined) {
+				if (value === text.value) return
+				text.value = value
+				persisted = value
+				refreshPreview()
+				return
+			}
 			isLoaded.value = false
 			void ensureLoaded()
 		})

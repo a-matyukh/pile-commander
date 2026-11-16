@@ -6,11 +6,13 @@ import type { FolderWithChildrenXattrs } from '@pile-commander/file-manager'
  * Bounded by count (the least recently shown go first). Unavailable storage
  * (a private window, an old webview) means no lists kept, never an error.
  */
-export type FolderListDisk = {
-	get(key: string): Promise<FolderWithChildrenXattrs | null>
-	put(key: string, list: FolderWithChildrenXattrs): Promise<void>
+export type KeptDisk<T> = {
+	get(key: string): Promise<T | null>
+	put(key: string, value: T): Promise<void>
 	clear(): Promise<void>
 }
+
+export type FolderListDisk = KeptDisk<FolderWithChildrenXattrs>
 
 /** How many folders the device keeps before the least recently shown go */
 export const DISK_FOLDERS = 500
@@ -21,7 +23,7 @@ const OPEN_WAIT_MS = 1000
 const DB_NAME = 'pile-commander-folders'
 const STORE = 'folders'
 
-type Row = { key: string; list: FolderWithChildrenXattrs; at: number }
+type Row<T> = { key: string; list: T; at: number }
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
 	return new Promise((resolve, reject) => {
@@ -40,6 +42,11 @@ function done(tx: IDBTransaction): Promise<void> {
 
 /** IndexedDB, in the web app and in the desktop app's webview */
 export function indexeddb_folder_list_disk(limit = DISK_FOLDERS): FolderListDisk {
+	return indexeddb_kept_disk<FolderWithChildrenXattrs>(DB_NAME, limit)
+}
+
+/** The same store for other kept values (a note's text): its own database, bounded by count */
+export function indexeddb_kept_disk<T>(db_name: string, limit: number): KeptDisk<T> {
 	let opened: Promise<IDBDatabase | null> | null = null
 	const db = () => {
 		opened ??= new Promise<IDBDatabase | null>((resolve) => {
@@ -52,7 +59,7 @@ export function indexeddb_folder_list_disk(limit = DISK_FOLDERS): FolderListDisk
 			}
 			try {
 				if (typeof indexedDB === 'undefined') return settle(null)
-				const req = indexedDB.open(DB_NAME, 1)
+				const req = indexedDB.open(db_name, 1)
 				req.onupgradeneeded = () => {
 					const store = req.result.createObjectStore(STORE, { keyPath: 'key' })
 					store.createIndex('at', 'at')
@@ -88,7 +95,7 @@ export function indexeddb_folder_list_disk(limit = DISK_FOLDERS): FolderListDisk
 			try {
 				const database = await db()
 				if (!database) return null
-				const row = await request(database.transaction(STORE, 'readonly').objectStore(STORE).get(key)) as Row | undefined
+				const row = await request(database.transaction(STORE, 'readonly').objectStore(STORE).get(key)) as Row<T> | undefined
 				if (!row) return null
 				// shown now: the last to go. Its own transaction (WebKit closes idle ones)
 				try {
@@ -106,7 +113,7 @@ export function indexeddb_folder_list_disk(limit = DISK_FOLDERS): FolderListDisk
 				const database = await db()
 				if (!database) return
 				const tx = database.transaction(STORE, 'readwrite')
-				tx.objectStore(STORE).put({ key, list, at: Date.now() } satisfies Row)
+				tx.objectStore(STORE).put({ key, list, at: Date.now() } satisfies Row<T>)
 				await done(tx)
 				await evict(database)
 			} catch {

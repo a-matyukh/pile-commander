@@ -398,6 +398,11 @@ type WorkspaceStore = {
 	create_shape(folder_id: string, template: ShapeTemplate, position?: Position, options?: HistoryOptions): Promise<string>
 	/** Creates a line/arrow shape spanning two absolute pane points. */
 	create_line(folder_id: string, start: Position, end: Position, end_plug?: LinePlug, options?: HistoryOptions): Promise<string>
+	/**
+	 * The note's text as this device last saw it (a cloud note), or null:
+	 * a card shows it while `read_note_content` reads the cloud
+	 */
+	recall_note_content?(id: string): Promise<string | null>
 	read_note_content(id: string): Promise<string>
 	/** `preview`: a tile asks for the image's ready preview instead of the original */
 	get_media_src(id: string, filename: string, options?: { preview?: boolean }): Promise<MediaSrc>
