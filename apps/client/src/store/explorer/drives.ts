@@ -546,11 +546,36 @@ async function read_fresh_cloud_roots(): Promise<DriveRoot[]> {
 	return with_info(list, info)
 }
 
+/**
+ * The list of top-level folders is read again at most this often: when the
+ * cloud is shown and when the window comes back. A folder made, renamed,
+ * shared or trashed on another device shows up then, not after a restart
+ */
+const LIST_AGAIN_MS = 10_000
+let list_read_at = 0
+
+export function refresh_cloud_list(): Promise<void> {
+	// The first list is the sign-in's own read; this is only for later ones
+	if (!cloud.user || !cloud_workspaces_synced()) return Promise.resolve()
+	if (Date.now() - list_read_at < LIST_AGAIN_MS) return Promise.resolve()
+	list_read_at = Date.now()
+	return cloud.fetch_workspaces({ join: true }).catch(() => {})
+}
+
+if (typeof window !== 'undefined') {
+	const back = () => { void refresh_cloud_list() }
+	window.addEventListener('focus', back)
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'visible') back()
+	})
+}
+
 /** Reads the cloud behind a list already shown; a different answer asks the tree again */
 function refresh_behind(shown: DriveRoot[]) {
 	if (behind_in_flight || Date.now() - behind_done_at < BEHIND_AGAIN_MS) return
 	const owner = cloud.user?.id
-	behind_in_flight = read_fresh_cloud_roots()
+	behind_in_flight = refresh_cloud_list()
+		.then(() => read_fresh_cloud_roots())
 		.then((fresh) => {
 			if (cloud.user?.id !== owner) return
 			if (JSON.stringify(fresh) !== JSON.stringify(shown)) cloud_roots_revision.value += 1
