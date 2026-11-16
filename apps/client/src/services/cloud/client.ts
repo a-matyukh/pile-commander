@@ -111,10 +111,25 @@ export function cloud_status_message(message: string | null): string | null {
 	return message
 }
 
+/**
+ * A password change waits longer: the server hashes the new password and
+ * may check it against known leaks, and the person is watching the dialog,
+ * not startup
+ */
+export const PASSWORD_CHANGE_TIMEOUT_MS = 30_000
+
+/** How long a Supabase call may take before it is cut off */
+export function supabase_timeout_ms(input: RequestInfo | URL, init?: RequestInit): number {
+	const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+	const href = input instanceof Request ? input.url : String(input)
+	const password_change = method === 'PUT' && /\/auth\/v1\/user(?:\?|$)/.test(href)
+	return password_change ? PASSWORD_CHANGE_TIMEOUT_MS : SUPABASE_FETCH_TIMEOUT_MS
+}
+
 export function fetch_with_timeout(
 	input: RequestInfo | URL,
 	init?: RequestInit,
-	timeout_ms = SUPABASE_FETCH_TIMEOUT_MS,
+	timeout_ms = supabase_timeout_ms(input, init),
 ): Promise<Response> {
 	const timeout = AbortSignal.timeout(timeout_ms)
 	const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout

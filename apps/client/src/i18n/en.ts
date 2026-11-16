@@ -851,6 +851,7 @@ export const en: typeof ru = {
 		submit: 'Change password',
 		updated: 'Password changed',
 		recovery_title: 'Choose a new password',
+		no_answer: 'The server didn’t answer in time, so the password may not have changed. Check your connection and try again.',
 		recovery_description: 'This replaces the password on your account',
 		not_now: 'Not now',
 	},

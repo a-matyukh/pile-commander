@@ -63,6 +63,7 @@ import {
 	CLOUD_UNAVAILABLE,
 	cloud_failure_message,
 	is_cloud_configured,
+	is_offline_error,
 	is_transient_empty_session,
 	require_supabase,
 	supabase,
@@ -589,7 +590,27 @@ const cloud: CloudStore = {
 
 	async update_password(password: string) {
 		this.last_error = null
-		const { error } = await require_supabase().auth.updateUser({ password })
+		const client = require_supabase()
+		const before = this.user?.updated_at ?? null
+		let error: unknown = null
+		try {
+			error = (await client.auth.updateUser({ password })).error
+		} catch (thrown) {
+			error = thrown
+		}
+		if (error && is_offline_error(error)) {
+			// No answer is not a refusal: the change may have landed and only
+			// the answer was lost. The account says whether it changed since
+			const changed = await client.auth.getUser().then(
+				({ data }) => !!data.user?.updated_at && before !== null && data.user.updated_at > before,
+				() => false,
+			)
+			if (!changed) {
+				this.last_error = t('password.no_answer')
+				return false
+			}
+			error = null
+		}
 		if (error) {
 			this.last_error = sign_up_error_message(error, 'Could not update the password')
 			return false

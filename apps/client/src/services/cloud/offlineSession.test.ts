@@ -6,6 +6,9 @@ import {
 	CLOUD_WORKSPACE_OFFLINE,
 	cloud_status_message,
 	fetch_with_timeout,
+	PASSWORD_CHANGE_TIMEOUT_MS,
+	SUPABASE_FETCH_TIMEOUT_MS,
+	supabase_timeout_ms,
 	is_offline_error,
 	is_transient_empty_session,
 	read_cached_session_user,
@@ -105,5 +108,13 @@ describe('supabase fetch timeout', () => {
 		} finally {
 			globalThis.fetch = original
 		}
+	})
+
+	it('a password change waits longer than other calls', () => {
+		const user = 'https://x.supabase.co/auth/v1/user'
+		expect(supabase_timeout_ms(user, { method: 'PUT' })).toBe(PASSWORD_CHANGE_TIMEOUT_MS)
+		expect(supabase_timeout_ms(user)).toBe(SUPABASE_FETCH_TIMEOUT_MS)
+		expect(supabase_timeout_ms('https://x.supabase.co/rest/v1/workspaces', { method: 'PUT' })).toBe(SUPABASE_FETCH_TIMEOUT_MS)
+		expect(PASSWORD_CHANGE_TIMEOUT_MS).toBeGreaterThan(SUPABASE_FETCH_TIMEOUT_MS)
 	})
 })
