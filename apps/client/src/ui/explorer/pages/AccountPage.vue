@@ -47,7 +47,6 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					<div class="name">{{ display_name || email }}</div>
 					<div class="plan">{{ display_name ? email : '' }}{{ display_name && usage ? ' · ' : '' }}{{ usage?.plan ?? '' }}</div>
 				</div>
-				<Button icon="tabler:logout" class="out" @click="cloud.sign_out()">{{ t('account.sign_out') }}</Button>
 			</div>
 			<p v-if="offline" class="muted">{{ notice }}</p>
 			<p v-else-if="cloud.last_error && !delete_open" class="muted bad">{{ cloud.last_error }}</p>
@@ -76,8 +75,9 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					<Icon icon="tabler:chevron-right" class="chev" />
 				</div>
 			</div>
-			<div class="danger">
+			<div class="foot">
 				<Button variant="danger-link" @click="delete_open = true">{{ t('delete_account.link') }}</Button>
+				<Button icon="tabler:logout" @click="cloud.sign_out()">{{ t('account.sign_out') }}</Button>
 			</div>
 			<DeleteAccountDialog v-model:open="delete_open" />
 			<ProfileDialog ref="profile_dialog" />
@@ -140,9 +140,6 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.out {
-	flex: none;
-}
 .list {
 	padding: 4px;
 }
@@ -182,7 +179,11 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 	background: var(--border);
 	margin: 4px 6px;
 }
-.danger {
+.foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
 	padding: 4px 4px 0;
 }
 .explorer.lg .row {
