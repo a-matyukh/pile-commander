@@ -20,11 +20,6 @@ import {
 } from '../folder-container/panePosition'
 import { useCreateChildItems } from './useCreateChildItems'
 import { useFolderViewMenuItems } from './useFolderViewMenuItems'
-import { ai_available } from '@/store/ai'
-import { open_summary } from '@/store/aiSummary'
-import { open_ideas } from '@/store/aiIdeas'
-import { open_sort } from '@/store/aiSort'
-import { summary_entries, summary_position } from '@/services/ai/summarize'
 
 type FolderContainerMenuOptions = {
 	position?: MaybeRefOrGetter<Position | null | undefined>
@@ -90,58 +85,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 			editingNoteId.value = text_id
 		}
 	}
-
-	/**
-	 * The whole board: its summary, and ideas as new notes (an empty board
-	 * too). Both go where the menu was opened.
-	 */
-	const summarizeItems = computed<DropdownMenuItem[]>(() => {
-		const ws = workspace.value
-		const container = scope.container.value
-		if (!ws || !container || !ai_available(ws) || toValue(options?.loading)) return []
-		const at = toValue(options?.position) ?? null
-		return [
-			...(container.children.length
-				? [{
-					label: 'Summarize board',
-					onSelect() {
-						open_summary({
-							workspace: ws,
-							folder_id: container.id,
-							board_name: container.name,
-							entries: summary_entries(container.children),
-							position: at ?? summary_position(container.children),
-						})
-					},
-				}]
-				: []),
-			...(container.children.length > 1
-				? [{
-					label: 'Sort into folders',
-					onSelect() {
-						open_sort({
-							workspace: ws,
-							folder_id: container.id,
-							board_name: container.name,
-							entries: summary_entries(container.children),
-						})
-					},
-				}]
-				: []),
-			{
-				label: at ? 'Generate ideas here' : 'Generate ideas',
-				onSelect() {
-					open_ideas({
-						workspace: ws,
-						folder_id: container.id,
-						board_name: container.name,
-						entries: summary_entries(container.children),
-						anchor: at,
-					})
-				},
-			},
-		]
-	})
 
 	const isMdUp = useMediaQuery('(min-width: 768px)')
 
@@ -225,7 +168,8 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 			],
 			// The folder's grid and background, drawn as in its "⋯" menu (BackgroundItems)
 			readonly ? [] : [{ slot: 'grid-background' as const, raw: true }],
-			summarizeItems.value,
+			// The folder's AI actions in one submenu, as the header's "AI" button (AiItems)
+			readonly || loading || workspace.value?.type === 'demo' ? [] : [{ slot: 'ai' as const, raw: true }],
 		]
 		return groups.filter(group => group.length > 0)
 	})
