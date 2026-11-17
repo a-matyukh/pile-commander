@@ -15,7 +15,7 @@ provide_menu_kind('context')
 			<slot name="trigger" />
 		</ContextMenuTrigger>
 		<ContextMenuPortal to=".explorer">
-			<ContextMenuContent class="mn" :collision-padding="8" :style="{ width: width + 'px' }">
+			<ContextMenuContent class="mn" :collision-padding="8" prioritize-position :style="{ width: width + 'px' }">
 				<slot />
 			</ContextMenuContent>
 		</ContextMenuPortal>

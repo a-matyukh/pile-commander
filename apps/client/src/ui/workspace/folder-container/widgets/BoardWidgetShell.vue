@@ -385,6 +385,14 @@ const { setRootRef, style } = useBoardWidget({
 	border-radius: 0;
 	overflow: visible;
 }
+/* A shape's fill covers the global inset ring (and an accent fill would hide
+ * it anyway): the ring goes around the shape instead. */
+.board-widget.shape-widget.pc-selected {
+	background-color: transparent;
+	box-shadow: none;
+	outline: 2px solid var(--pc-selection-ring);
+	outline-offset: 2px;
+}
 .board-widget.folder-preview-widget {
 	padding: 0;
 }

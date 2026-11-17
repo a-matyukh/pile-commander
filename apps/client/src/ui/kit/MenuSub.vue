@@ -36,6 +36,7 @@ const Content = context ? ContextMenuSubContent : DropdownMenuSubContent
 				class="mn sub"
 				:side-offset="4"
 				:collision-padding="8"
+				prioritize-position
 				:style="{ width: width + 'px' }"
 			>
 				<slot />

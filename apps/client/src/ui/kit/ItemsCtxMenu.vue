@@ -25,7 +25,7 @@ provide_menu_kind('context')
 			<slot />
 		</ContextMenuTrigger>
 		<ContextMenuPortal to=".explorer">
-			<ContextMenuContent class="mn" :collision-padding="8" :style="{ minWidth: width + 'px' }">
+			<ContextMenuContent class="mn" :collision-padding="8" prioritize-position :style="{ minWidth: width + 'px' }">
 				<ItemsMenu :items="items">
 					<template v-for="(_, name) in $slots" #[name]="slot_props">
 						<slot v-if="name !== 'default'" :name="name" v-bind="slot_props" />
