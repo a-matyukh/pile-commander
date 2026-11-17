@@ -4,6 +4,12 @@
     ],
     "headers": [
       {
+        "source": "/changelog/(.*)",
+        "headers": [
+          { "key": "Access-Control-Allow-Origin", "value": "*" }
+        ]
+      },
+      {
         "source": "/demo",
         "headers": [
           {

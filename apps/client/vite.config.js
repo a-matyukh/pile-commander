@@ -6,6 +6,7 @@ import ui from '@nuxt/ui/vite'
 import { offlineIconsPlugin } from './offlineIconsPlugin.ts'
 import { unfurlPlugin } from './unfurlPlugin.ts'
 import { mcp_stdio_path } from './mcpStdioPath.ts'
+import pkg from './package.json' with { type: 'json' }
 
 const cursorGoto = fileURLToPath(new URL('./scripts/cursor-goto.sh', import.meta.url))
 const srcDir = fileURLToPath(new URL('./src', import.meta.url))
@@ -13,6 +14,7 @@ const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
 	define: {
+		__APP_VERSION__: JSON.stringify(pkg.version),
 		// The dev pipe path must not be baked into a production bundle.
 		__MCP_STDIO_PATH__: JSON.stringify(mode === 'production' ? '' : mcp_stdio_path),
 	},

@@ -1,0 +1,61 @@
+{
+  "entries": [
+    {
+      "version": "2.8.0",
+      "date": "2026-11-17",
+      "title": { "ru": "Смотрите, что нового", "en": "See what’s new" },
+      "text": {
+        "ru": "Перед обновлением плашка показывает, что придёт в новой версии, а после — окно с подробностями. Все изменения собраны в Настройки → Обновления.",
+        "en": "Before an update, the banner shows what the new version brings, and after it a window tells more. Every change is in Settings → Updates."
+      }
+    },
+    {
+      "version": "2.8.0",
+      "title": { "ru": "Действия ИИ в одном месте", "en": "AI actions in one place" },
+      "text": {
+        "ru": "В меню доски действия ИИ собраны в одно подменю, как у кнопки ИИ в заголовке, и отмечены одной иконкой.",
+        "en": "In the board’s menu, AI actions sit in one submenu, the same as the header’s AI button, under one icon."
+      }
+    },
+    {
+      "version": "2.8.0",
+      "title": { "ru": "Выделяйте и удаляйте с клавиатуры", "en": "Select and delete from the keyboard" },
+      "text": {
+        "ru": "Cmd/Ctrl+A выделяет всё в открытой папке, Del удаляет выделенное — в любом виде, не только на доске. Правый клик по элементу доски или холста выделяет его.",
+        "en": "Cmd/Ctrl+A selects everything in the open folder and Del deletes the selection, in any view, not only on a board. A right click on a board or canvas item selects it."
+      }
+    },
+    {
+      "version": "2.8.0",
+      "title": { "ru": "Закрепите слои справа", "en": "Pin layers to the right" },
+      "text": {
+        "ru": "На планшете и компьютере меню слоёв можно закрепить панелью справа от доски и менять её ширину. Наведите на элемент доски — его строка подсветится.",
+        "en": "On a tablet or computer, pin the layers menu as a panel right of the board and resize it. Point at an item on the board to light its row."
+      }
+    },
+    {
+      "version": "2.8.0",
+      "title": { "ru": "Сетка и фон — в меню ⋯", "en": "Grid and background in the ⋯ menu" },
+      "text": {
+        "ru": "Сетка и фон папки переехали в меню ⋯. Размер сетки можно вписать любой, а фон — сбросить в один клик.",
+        "en": "A folder’s grid and background moved to the ⋯ menu. Type any grid size, and reset the background in one click."
+      }
+    },
+    {
+      "version": "2.8.0",
+      "title": { "ru": "Заметки из облака открываются быстрее", "en": "Cloud notes open faster" },
+      "text": {
+        "ru": "Заметки папки загружаются разом, а пока текста нет, вместо пустой карточки виден индикатор загрузки.",
+        "en": "A folder’s notes load together, and a note shows a loader instead of an empty card until its text arrives."
+      }
+    },
+    {
+      "version": "2.8.0",
+      "title": { "ru": "Исправления и мелкие улучшения", "en": "Fixes and small improvements" },
+      "text": {
+        "ru": "Перетаскивание группы с папкой больше не роняет заметки в эту папку. Контекстные меню не уходят за край экрана на телефоне. Выделенная фигура на доске видна. В 3D у заметок появились подписи, когда включены имена файлов. Панели холста и 3D стали одинаковыми.",
+        "en": "Dragging a group with a folder in it no longer drops the notes into that folder. Context menus stay on screen on a phone. A selected shape on the board shows its ring. In 3D, notes get names when File names is on. The canvas and 3D panels now match."
+      }
+    }
+  ]
+}

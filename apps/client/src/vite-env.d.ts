@@ -25,6 +25,9 @@ declare module '@google/model-viewer'
 /** Absolute path of `apps/mcp/src/stdio.ts`, injected by Vite and Vitest. */
 declare const __MCP_STDIO_PATH__: string
 
+/** `version` of apps/client/package.json: the desktop and the web build share it. */
+declare const __APP_VERSION__: string
+
 declare namespace JSX {
 	interface IntrinsicElements {
 		'model-viewer': Record<string, unknown>

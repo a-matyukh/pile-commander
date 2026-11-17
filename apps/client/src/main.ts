@@ -6,6 +6,7 @@ import { is_desktop } from './isDesktop'
 import { restore_agent_access } from './store/agentAccess'
 import { check_for_updates } from './store/updater'
 import { browser_storage_available } from './services/workspace/browserStorage'
+import { show_whats_new_after_update } from './store/changelog'
 import { apply_public_route, resolve_public_route, when_not_prerendering } from './services/publicRoute'
 import { public_route_deps } from './services/navigatePublic'
 import { install_document_title } from './services/documentTitle'
@@ -55,7 +56,8 @@ async function bootstrap() {
 	// /invite/<token> a pending share, /<username> a profile page,
 	// /<username>/<slug> a public workspace
 	// read-only (anon included); anything else is the regular app.
-	apply_public_route(resolve_public_route(window.location.pathname), public_route_deps())
+	const public_route = resolve_public_route(window.location.pathname)
+	apply_public_route(public_route, public_route_deps())
 	install_document_title()
 
 	const app = createApp(AppShell)
@@ -67,6 +69,10 @@ async function bootstrap() {
 	app.use(ui)
 	app.mount('#app')
 	notify_demo_embed_ready()
+	// Someone's public folder or the demo is no place for the app's own news.
+	if (public_route.kind === 'app') {
+		void show_whats_new_after_update()
+	}
 }
 
 void bootstrap()

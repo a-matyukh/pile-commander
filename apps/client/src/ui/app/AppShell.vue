@@ -28,6 +28,7 @@ import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
 import UpdateBanner from '@/ui/app/UpdateBanner.vue'
+import WhatsNewDialog from '@/ui/app/changelog/WhatsNewDialog.vue'
 import SyncKeptHiddenToast from '@/ui/workspace/sidebar/SyncKeptHiddenToast.vue'
 import SyncJoinedToast from '@/ui/workspace/sidebar/SyncJoinedToast.vue'
 import PasswordDialog from '@/ui/workspace/sidebar/workspaces-list/PasswordDialog.vue'
@@ -253,6 +254,7 @@ onUnmounted(() => {
 		<SummaryDialog />
 		<AiConsentDialog />
 		<UpdateBanner />
+		<WhatsNewDialog />
 	</UApp>
 </template>
 

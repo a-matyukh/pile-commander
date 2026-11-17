@@ -191,3 +191,13 @@ It writes `apps/client/public/demo-pack/` and `apps/landing/public/demos/*.pile`
 byte-for-byte deterministically (an unchanged `piles/` commits nothing), and it
 refuses to publish any local path. The desktop app gets the new demo only with
 its next release. See `DEMO_FROM_PILES.md`.
+
+## What's new (changelog for users)
+
+`apps/client/public/changelog/changelog.json` holds the entries people see:
+the update banner's headlines, the window after an update, Settings →
+Updates. The owner writes them by hand and decides when; draft one only when
+asked. The format is in the header of `apps/client/src/services/changelog.ts`;
+pictures and videos go next to the file. The web deploy publishes it, and the
+installed desktop app reads it from `https://www.pile-commander.app`, so an
+entry must be deployed before its desktop release is published.

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import { is_desktop } from '@/isDesktop'
 import DesktopUpdateControls from '@/ui/app/DesktopUpdateControls.vue'
+import ChangelogFeed from '@/ui/app/changelog/ChangelogFeed.vue'
 import { t } from '@/i18n'
 import { explorer_language } from '@/store/explorer/language'
 import { explorer_settings, path_in_header, settings_tab, SETTINGS_TABS as TABS } from '@/store/explorer/settings'
@@ -17,7 +18,7 @@ import TextField from '@/ui/kit/TextField.vue'
 import SettingRow from './SettingRow.vue'
 import ViewChoice from './ViewChoice.vue'
 
-const tabs = computed(() => TABS.filter(tab => is_desktop || tab !== 'updates'))
+const tabs = TABS
 
 const path_draft = ref('')
 const path_invalid = ref(false)
@@ -275,9 +276,13 @@ function submit_hidden_path() {
 
 
 			</TabsContent>
-		<TabsContent v-if="is_desktop" value="updates" class="pane">
-			<div class="card pad">
+		<TabsContent value="updates" class="pane">
+			<div v-if="is_desktop" class="card pad">
 				<DesktopUpdateControls />
+			</div>
+			<div class="sh">{{ t('whats_new.title') }}</div>
+			<div class="card pad">
+				<ChangelogFeed />
 			</div>
 		</TabsContent>
 	</TabsRoot>

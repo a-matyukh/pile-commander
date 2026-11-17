@@ -76,7 +76,7 @@ export function motion_3d_enabled(setting: ExplorerSettings['motion_3d'] | undef
 	return !reduced_motion
 }
 
-/** "Updates" is the desktop app's only: the web version updates itself */
+/** "Updates": what's new everywhere; the check-for-updates button on the desktop only */
 export const SETTINGS_TABS = ['interface', 'ai', 'other', 'updates'] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 
