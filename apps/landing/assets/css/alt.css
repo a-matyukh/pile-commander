@@ -1,0 +1,214 @@
+/* The /alt landing. Every rule sits under .alt, so the rest of the site is
+   untouched. Values and their roles: DESIGN.md.
+   The classes are written as :where(.alt) .alt-x: the ancestor adds no
+   weight, so a component's own scoped rule for the same element wins. */
+
+.alt {
+  --alt-paper: #ffffff;
+  --alt-wash: #f6f6f3;
+  --alt-line: #e5e4df;
+  --alt-ink: #14151a;
+  --alt-ink-2: #3d3f47;
+  --alt-ink-3: #6b6e78;
+  --alt-link: #0b6fd0;
+
+  /* The app icon's five colours: fills, not text */
+  --alt-blue: #2194f8;
+  --alt-purple: #6044d9;
+  --alt-pink: #f82194;
+  --alt-green: #21f885;
+  --alt-yellow: #f8f121;
+
+  --alt-font-display: "Geologica Variable", "Onest Variable", system-ui, sans-serif;
+  --alt-font-text: "Onest Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --alt-radius-s: 8px;
+  --alt-radius-m: 16px;
+  --alt-radius-l: 28px;
+  --alt-shadow: 0 30px 60px -32px rgb(20 21 26 / 0.28);
+
+  --alt-width: 75rem;
+  --alt-gutter: 1.25rem;
+  --alt-section: clamp(4rem, 9vw, 7.5rem);
+
+  background: var(--alt-paper);
+  color: var(--alt-ink-2);
+  font-family: var(--alt-font-text);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (min-width: 768px) {
+  .alt {
+    --alt-gutter: 2rem;
+  }
+}
+
+/* The header sticks to the top: keep what gets focus clear of it */
+html:has(.alt) {
+  scroll-padding-top: 5rem;
+}
+
+/* ── Layout ──────────────────────────────────────────── */
+
+:where(.alt) .alt-wrap {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--alt-width) + 2 * var(--alt-gutter));
+  margin-inline: auto;
+  padding-inline: var(--alt-gutter);
+}
+
+/* ── Type ────────────────────────────────────────────── */
+
+:where(.alt) .alt-h1,
+:where(.alt) .alt-h2,
+:where(.alt) .alt-h3 {
+  margin: 0;
+  color: var(--alt-ink);
+  font-family: var(--alt-font-display);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+:where(.alt) .alt-h1 {
+  font-size: clamp(2.75rem, 7vw, 5.75rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+:where(.alt) .alt-h2 {
+  font-size: clamp(2rem, 4.4vw, 3.5rem);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+
+:where(.alt) .alt-h3 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+:where(.alt) .alt-lede {
+  max-width: 40rem;
+  margin: 0;
+  font-size: clamp(1.125rem, 1.6vw, 1.3125rem);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+:where(.alt) .alt-small {
+  margin: 0;
+  color: var(--alt-ink-3);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+:where(.alt) .alt-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--alt-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* ── Buttons and links ───────────────────────────────── */
+
+:where(.alt) .alt-btn {
+  display: inline-flex;
+  height: 3rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  padding: 0 1.4rem;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+:where(.alt) .alt-btn-sm {
+  height: 2.5rem;
+  padding: 0 1.1rem;
+  font-size: 0.9375rem;
+}
+
+:where(.alt) .alt-btn-primary {
+  background: var(--alt-ink);
+  color: #fff;
+}
+
+:where(.alt) .alt-btn-primary:hover {
+  background: #2b2d36;
+}
+
+:where(.alt) .alt-btn-secondary {
+  border-color: var(--alt-ink);
+  background: var(--alt-paper);
+  color: var(--alt-ink);
+}
+
+:where(.alt) .alt-btn-secondary:hover {
+  background: var(--alt-wash);
+}
+
+/* On the ink panel */
+:where(.alt) .alt-btn-light {
+  background: var(--alt-paper);
+  color: var(--alt-ink);
+}
+
+:where(.alt) .alt-btn-light:hover {
+  background: var(--alt-wash);
+}
+
+:where(.alt) .alt-btn-ghost {
+  border-color: rgb(255 255 255 / 0.5);
+  color: #fff;
+}
+
+:where(.alt) .alt-btn-ghost:hover {
+  border-color: #fff;
+  background: rgb(255 255 255 / 0.08);
+}
+
+:where(.alt) .alt-link {
+  color: var(--alt-link);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+:where(.alt) .alt-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.alt :is(a, button, [role="tab"]):focus-visible {
+  outline: 2px solid var(--alt-link);
+  outline-offset: 3px;
+}
+
+/* ── Frame: holds a product scene or a screenshot ────── */
+
+:where(.alt) .alt-frame {
+  overflow: hidden;
+  border: 1px solid var(--alt-line);
+  border-radius: var(--alt-radius-m);
+  background: var(--alt-paper);
+  box-shadow: var(--alt-shadow);
+}
