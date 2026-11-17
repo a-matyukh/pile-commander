@@ -1046,6 +1046,36 @@ describe('createWorkspaceStore: reorder_children', () => {
 		expect(tree_ids(store)).toEqual(new_order)
 	})
 
+	test('shows the new order before the writes finish and writes only moved entries', async () => {
+		const { fake, store } = await makeStore()
+		await store.reorder_children('/ws', ['/ws/docs', '/ws/note.txt', '/ws/pics'])
+		const set_xattrs = vi.spyOn(fake.fm, 'set_xattrs')
+
+		const pending = store.reorder_children('/ws', ['/ws/docs', '/ws/pics', '/ws/note.txt'])
+		expect(store.opened_folder.children.map(c => c.id)).toEqual(['/ws/docs', '/ws/pics', '/ws/note.txt'])
+		expect(tree_ids(store)).toEqual(['/ws/docs', '/ws/pics', '/ws/note.txt'])
+
+		expect(await pending).toBe(true)
+		expect(set_xattrs).toHaveBeenCalledTimes(1)
+		expect(set_xattrs.mock.calls[0]![0].map(item => item.id).sort()).toEqual(['/ws/note.txt', '/ws/pics'])
+		expect(fake.get_xattr('/ws/pics', 'order')).toBe('1')
+		expect(fake.get_xattr('/ws/note.txt', 'order')).toBe('2')
+	})
+
+	test('a failed write keeps the whole old order, on the backend and on screen', async () => {
+		const { fake, store } = await makeStore()
+		const before = ['/ws/docs', '/ws/note.txt', '/ws/pics']
+		await store.reorder_children('/ws', before)
+		fake.fail_once('set_xattrs')
+
+		expect(await store.reorder_children('/ws', ['/ws/pics', '/ws/docs', '/ws/note.txt'])).toBe(false)
+
+		expect(before.map(id => fake.get_xattr(id, 'order'))).toEqual(['0', '1', '2'])
+		expect(store.opened_folder.children.map(c => c.id)).toEqual(before)
+		expect(tree_ids(store)).toEqual(before)
+		expect(store.last_error).toBeTruthy()
+	})
+
 	test('keeps a hidden dotfile when the visible order is saved', async () => {
 		show_hidden_files.value = false
 		const fake = createFakeFileManager()

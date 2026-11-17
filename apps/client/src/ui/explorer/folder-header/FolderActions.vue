@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { FolderRef } from '@/domain/Drive'
 import type { WorkspaceStore } from '@/domain/Store'
-import { to_folder_container } from '@/services/workspace/folderContainer'
+import { is_spatial_folder } from '@/services/workspace/spatialFolder'
 import { t } from '@/i18n'
 import cloud from '@/store/cloud'
 import { is_transient_drive } from '@/store/explorer/public_roots'
@@ -30,11 +30,7 @@ const props = defineProps<{ workspace: WorkspaceStore; folder: FolderRef; name: 
 const own = computed(() => !is_transient_drive(props.folder.drive_id))
 const viewer = computed(() => props.folder.drive_id === 'cloud' && cloud.role_of(props.folder.root_id) === 'viewer')
 /** A board or a canvas has layers and a grid with a background, as in the prototype */
-const spatial = computed(() => {
-	const folder = props.workspace.folders[props.folder.folder_id]
-	const view = folder ? to_folder_container(folder, props.workspace.preview_folders).view : null
-	return view === 'board' || view === 'canvas'
-})
+const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.folder_id))
 </script>
 
 <template>

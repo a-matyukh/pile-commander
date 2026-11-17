@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, toRef } from 'vue'
+import { computed, inject, onBeforeUnmount, toRef } from 'vue'
 import { useBoardWidget } from '../board/useBoardWidget'
 import { canvasEditorToolKey } from '../injectKeys'
 import { useIsCanvasWidgetLayout } from '../useIsCanvasWidgetLayout'
@@ -14,7 +14,7 @@ import { useRequireWorkspace } from '@/ui/workspace/useWorkspace'
 import { useWidgetSelection } from './useWidgetSelection'
 import SelectedItemDots from './SelectedItemDots.vue'
 import { useSelectedItemDots } from './useSelectedItemDots'
-import { layer_peek_id } from '../layerPeek'
+import { board_hover_id, layer_peek_id } from '../layerPeek'
 import type { WidgetShellVariantProps } from './widgetShellProps'
 
 defineOptions({ inheritAttrs: false })
@@ -280,6 +280,17 @@ const { setRootRef, style } = useBoardWidget({
 		}
 	}),
 })
+
+/** A mouse over the item lights its row in the layers list */
+function onShellPointerEnter(event: PointerEvent) {
+	if (event.pointerType === 'mouse') board_hover_id.value = props.widget.id
+}
+
+function onShellPointerLeave() {
+	if (board_hover_id.value === props.widget.id) board_hover_id.value = null
+}
+
+onBeforeUnmount(onShellPointerLeave)
 </script>
 
 <template>
@@ -298,6 +309,8 @@ const { setRootRef, style } = useBoardWidget({
 			:style="style"
 			@click="onShellClick"
 			@pointerdown="onShellPointerDown"
+			@pointerenter="onShellPointerEnter"
+			@pointerleave="onShellPointerLeave"
 			@contextmenu="onShellContextMenu"
 			@dragstart.prevent
 		>

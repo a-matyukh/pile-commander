@@ -17,6 +17,7 @@ import TrashPage from '@/ui/explorer/pages/TrashPage.vue'
 import CloudPage from '@/ui/explorer/pages/CloudPage.vue'
 import FolderContent from '@/ui/explorer/FolderContent.vue'
 import NoteEditorPanel from './NoteEditorPanel.vue'
+import LayersPanel from './LayersPanel.vue'
 import HubPage from '@/ui/explorer/pages/hub/HubPage.vue'
 import ProfilePage from '@/ui/explorer/pages/hub/ProfilePage.vue'
 import cloud from '@/store/cloud'
@@ -291,15 +292,19 @@ onUnmounted(() => {
 				</p>
 				<!-- The note editor lies over the folder content, which stays mounted under it -->
 				<div class="content-box">
-					<div class="content">
-						<SettingsPage v-if="page === 'settings'" />
-						<AccountPage v-else-if="page === 'account'" />
-						<FeedbackPage v-else-if="page === 'feedback'" />
-						<TrashPage v-else-if="page === 'trash'" />
-						<CloudPage v-else-if="page === 'cloud'" />
-						<HubPage v-else-if="page === 'hub'" />
-						<ProfilePage v-else-if="page === 'profile' && page_arg" :username="page_arg" />
-						<FolderContent v-else-if="!page" />
+					<!-- The pinned layers panel sits right of the content and narrows it -->
+					<div class="content-row">
+						<div class="content">
+							<SettingsPage v-if="page === 'settings'" />
+							<AccountPage v-else-if="page === 'account'" />
+							<FeedbackPage v-else-if="page === 'feedback'" />
+							<TrashPage v-else-if="page === 'trash'" />
+							<CloudPage v-else-if="page === 'cloud'" />
+							<HubPage v-else-if="page === 'hub'" />
+							<ProfilePage v-else-if="page === 'profile' && page_arg" :username="page_arg" />
+							<FolderContent v-else-if="!page" />
+						</div>
+						<LayersPanel v-if="!page" />
 					</div>
 					<NoteEditorPanel v-if="!page" />
 				</div>
@@ -361,8 +366,14 @@ onUnmounted(() => {
 	display: flex;
 	flex-direction: column;
 }
+.content-row {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+}
 .content {
 	flex: 1;
+	min-width: 0;
 	min-height: 0;
 	overflow: auto;
 }

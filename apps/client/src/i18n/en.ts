@@ -270,7 +270,9 @@ export const en: typeof ru = {
 		},
 	},
 	layers: {
-		title: 'Layers · drag to reorder',
+		title: 'Layers',
+		dock: 'Pin to the right',
+		undock: 'Show as a menu',
 	},
 	background: {
 		grid: 'Grid',
