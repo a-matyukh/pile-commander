@@ -13,6 +13,7 @@ import CanvasDockButton from './CanvasDockButton.vue'
 import CanvasDockContext from './CanvasDockContext.vue'
 import { DOCK_TOOLS, dock_items, dock_tool, type DockItemId, type DockTool, type DockZoomAction } from './canvasDockItems'
 import { DOCK_METRICS, dock_layout } from './canvasDockLayout'
+import { explorer_settings } from '@/store/explorer/settings'
 import { useCloseOnCanvasPress } from './useCloseOnCanvasPress'
 
 /**
@@ -53,7 +54,10 @@ const emit = defineEmits<{
 const host = ref<HTMLElement | null>(null)
 const { width } = useElementSize(host)
 
-const metrics = computed(() => (props.embedded ? DOCK_METRICS.small : DOCK_METRICS.regular))
+const metrics = computed(() => {
+	if (props.embedded) return DOCK_METRICS.small
+	return explorer_settings.size === 'large' ? DOCK_METRICS.large : DOCK_METRICS.regular
+})
 const items = computed(() => dock_items({ can_write: props.canWrite, embedded: !!props.embedded }))
 const layout = computed(() => dock_layout(items.value, width.value, metrics.value))
 
@@ -212,9 +216,10 @@ const vars = computed(() => ({
 
 <style scoped>
 .canvas-dock {
-	--dock-radius: 14px;
-	--dock-btn-radius: 10px;
-	--dock-icon: 20px;
+	/* A pill, and round buttons in it: the same as the 3D view's panel */
+	--dock-radius: 999px;
+	--dock-btn-radius: 999px;
+	--dock-icon: 18px;
 	position: absolute;
 	left: 8px;
 	right: 8px;
@@ -229,8 +234,6 @@ const vars = computed(() => ({
 	pointer-events: none;
 }
 .canvas-dock--small {
-	--dock-radius: 10px;
-	--dock-btn-radius: 7px;
 	--dock-icon: 16px;
 	bottom: 8px;
 	gap: 6px;

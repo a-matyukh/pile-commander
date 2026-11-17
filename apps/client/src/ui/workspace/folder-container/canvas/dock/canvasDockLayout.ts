@@ -14,7 +14,10 @@ export type DockMetrics = {
 }
 
 export const DOCK_METRICS = {
-	regular: { button: 40, gap: 2, sep: 9, pad: 4, zoom: 64 },
+	/** The same height and buttons as the 3D view's panel */
+	regular: { button: 32, gap: 2, sep: 13, pad: 4, zoom: 56 },
+	/** The large interface size (Settings): bigger buttons, as the 3D panel has there */
+	large: { button: 40, gap: 2, sep: 9, pad: 4, zoom: 64 },
 	/** A folder preview's panel */
 	small: { button: 32, gap: 2, sep: 7, pad: 3, zoom: 52 },
 } satisfies Record<string, DockMetrics>

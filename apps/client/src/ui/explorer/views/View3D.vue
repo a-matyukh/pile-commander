@@ -606,14 +606,15 @@ function open_as_board() {
 	padding: 4px;
 	background: var(--surface-3, #fff);
 	border: 0.5px solid var(--border-strong);
-	border-radius: 12px;
+	border-radius: 999px;
 	box-shadow: 0 6px 20px rgba(0, 0, 0, .10);
 	z-index: 2;
 }
+/* A pill, and round buttons in it */
 .bar :deep(.ib) {
 	height: 32px;
 	min-width: 32px;
-	border-radius: 8px;
+	border-radius: 999px;
 }
 .bar :deep(.ib svg) {
 	font-size: 18px;

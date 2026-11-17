@@ -234,7 +234,7 @@ function on_key_click(event: MouseEvent, what: 'delete-selected' | 'delete-conne
 /* A narrow canvas wraps the sections onto a second row; nothing is cut off */
 .strip {
 	--dock-btn: 32px;
-	--dock-btn-radius: 8px;
+	--dock-btn-radius: 999px;
 	--dock-icon: 18px;
 	display: flex;
 	flex-wrap: wrap;
@@ -245,7 +245,9 @@ function on_key_click(event: MouseEvent, what: 'delete-selected' | 'delete-conne
 	max-width: 100%;
 	padding: 4px;
 	border: 0.5px solid var(--border-strong);
-	border-radius: 12px;
+	/* A pill on one row, as the dock below; on two rows (a narrow canvas) the
+	   same corners, so they don't cut into the buttons */
+	border-radius: calc(var(--dock-btn) / 2 + 4.5px);
 	background: var(--surface-3);
 	box-shadow: 0 8px 24px rgba(0, 0, 0, .1), 0 2px 6px rgba(0, 0, 0, .06);
 	pointer-events: auto;
