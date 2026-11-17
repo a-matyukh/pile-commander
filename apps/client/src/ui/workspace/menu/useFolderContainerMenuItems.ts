@@ -2,7 +2,7 @@ import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Position } from '@/domain/Widget'
-import { DEFAULT_GRID_SIZE, SHAPE_LINE_DEFAULT_SIZE } from '@/services/board/layout'
+import { SHAPE_LINE_DEFAULT_SIZE } from '@/services/board/layout'
 import type { LinePlug } from '@/services/board/shapes'
 import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import {
@@ -18,7 +18,6 @@ import {
 	resolvePaneCenterPosition,
 	setRegisteredEditingNoteId,
 } from '../folder-container/panePosition'
-import { useColorSubmenu } from './useColorSubmenu'
 import { useCreateChildItems } from './useCreateChildItems'
 import { useFolderViewMenuItems } from './useFolderViewMenuItems'
 import { ai_available } from '@/store/ai'
@@ -92,48 +91,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 		}
 	}
 
-	const snapToGrid = computed(
-		() => scope.container.value?.snap_to_grid ?? false,
-	)
-	const gridSize = computed(
-		() => scope.container.value?.grid_size ?? DEFAULT_GRID_SIZE,
-	)
-	const showGridDots = computed(
-		() => scope.container.value?.show_grid_dots ?? true,
-	)
-	const showAxes = computed(
-		() => scope.container.value?.show_axes ?? false,
-	)
-	const isCanvasView = computed(
-		() => scope.container.value?.view === 'canvas',
-	)
-
-	const colorSubmenuOptions = computed(() => {
-		if (!workspace.value) return null
-
-		return {
-			label: 'Background',
-			entityId: scope.folderId.value,
-			mode: 'background' as const,
-			currentColor: scope.container.value?.background,
-		}
-	})
-
-	const {
-		colorMenuItem,
-		applyColor,
-	} = useColorSubmenu(colorSubmenuOptions)
-
-	function onGridSizeChange(value: string | number) {
-		const ws = workspace.value
-		if (!ws) return
-
-		const parsed = typeof value === 'number' ? value : Number(value)
-		if (!Number.isFinite(parsed) || parsed < 1) return
-
-		void ws.change_grid_size(scope.folderId.value, parsed)
-	}
-
 	/**
 	 * The whole board: its summary, and ideas as new notes (an empty board
 	 * too). Both go where the menu was opened.
@@ -192,7 +149,6 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 		const loading = toValue(options?.loading) ?? false
 		const readonly = workspace.value?.can_write === false
 		const mutations_disabled = loading || readonly
-		const backgroundItem = colorMenuItem.value
 		// Hotkey hints only make sense with a physical keyboard (desktop/web).
 		const kbdHint = (key: string) => (isMdUp.value ? [key] : undefined)
 
@@ -267,68 +223,8 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 				},
 				importItem.value,
 			],
-			[
-				{
-					label: 'Grid',
-					disabled: readonly,
-					children: [
-						{
-							label: 'Snap to grid',
-							type: 'checkbox' as const,
-							checked: snapToGrid.value,
-							disabled: readonly,
-							onUpdateChecked(checked: boolean) {
-								const ws = workspace.value
-								if (!ws) return
-								void ws.change_snap_to_grid(scope.folderId.value, checked)
-							},
-							onSelect(e: Event) {
-								e.preventDefault()
-							},
-						},
-						{
-							label: 'Grid size',
-							slot: 'grid-size' as const,
-							disabled: readonly,
-							onSelect(e: Event) {
-								e.preventDefault()
-							},
-						},
-						...(isCanvasView.value
-							? [{
-								label: 'Show grid dots',
-								type: 'checkbox' as const,
-								checked: showGridDots.value,
-								disabled: readonly,
-								onUpdateChecked(checked: boolean) {
-									const ws = workspace.value
-									if (!ws) return
-									void ws.change_show_grid_dots(scope.folderId.value, checked)
-								},
-								onSelect(e: Event) {
-									e.preventDefault()
-								},
-							}, {
-								label: 'Show axes',
-								type: 'checkbox' as const,
-								checked: showAxes.value,
-								disabled: readonly,
-								onUpdateChecked(checked: boolean) {
-									const ws = workspace.value
-									if (!ws) return
-									void ws.change_show_axes(scope.folderId.value, checked)
-								},
-								onSelect(e: Event) {
-									e.preventDefault()
-								},
-							}]
-							: []),
-					],
-				},
-				...(backgroundItem
-					? [{ label: backgroundItem.label, disabled: backgroundItem.disabled, children: [{ slot: 'explorer-color' as const, raw: true }] }]
-					: []),
-			],
+			// The folder's grid and background, drawn as in its "⋯" menu (BackgroundItems)
+			readonly ? [] : [{ slot: 'grid-background' as const, raw: true }],
 			summarizeItems.value,
 		]
 		return groups.filter(group => group.length > 0)
@@ -336,10 +232,5 @@ export function useFolderContainerMenuItems(options?: FolderContainerMenuOptions
 
 	return {
 		items,
-		/** The folder's background, for the Explorer's color panel */
-		background: computed(() => scope.container.value?.background),
-		gridSize,
-		onGridSizeChange,
-		applyColor,
 	}
 }
