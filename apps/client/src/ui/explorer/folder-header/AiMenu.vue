@@ -7,7 +7,7 @@ import IconButton from '@/ui/kit/IconButton.vue'
 import AiItems from './AiItems.vue'
 
 /** "AI" in the folder header: the folder's AI actions (AiItems) */
-defineProps<{ workspace: WorkspaceStore; folder_id: string; name: string; align: 'start' | 'end' }>()
+defineProps<{ workspace: WorkspaceStore; folder_id: string; align: 'start' | 'end' }>()
 
 const open = ref(false)
 </script>
@@ -18,12 +18,12 @@ const open = ref(false)
 			<IconButton
 				class="hb"
 				:active="open"
-				icon="tabler:text-scan-ai"
+				icon="lucide:sparkles"
 				:icon_size="18"
 				:aria-label="t('actions.ai')"
 				:data-tip="t('actions.ai')"
 			/>
 		</template>
-		<AiItems :workspace="workspace" :folder_id="folder_id" :name="name" />
+		<AiItems :workspace="workspace" :folder_id="folder_id" />
 	</DropMenu>
 </template>

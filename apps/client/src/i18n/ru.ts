@@ -288,7 +288,6 @@ export const ru = {
 		custom_size: 'Свой размер',
 	},
 	ai: {
-		folder_title: 'AI · папка «{name}»',
 		file_title: 'Файл «{name}»',
 		selected_file: 'Выбранный файл',
 		pick_file: 'Выберите файл в папке',

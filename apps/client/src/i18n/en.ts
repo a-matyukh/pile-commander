@@ -291,7 +291,6 @@ export const en: typeof ru = {
 		custom_size: 'Custom size',
 	},
 	ai: {
-		folder_title: 'AI · “{name}” folder',
 		file_title: '“{name}” file',
 		selected_file: 'Selected file',
 		pick_file: 'Select a file in the folder',

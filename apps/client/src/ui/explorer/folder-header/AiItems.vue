@@ -14,7 +14,6 @@ import { open_summary } from '@/store/aiSummary'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { settings_tab } from '@/store/explorer/settings'
 import MenuItem from '@/ui/kit/MenuItem.vue'
-import MenuLabel from '@/ui/kit/MenuLabel.vue'
 
 /**
  * The folder's AI actions, the same in its header's "AI" button and in the
@@ -25,8 +24,6 @@ import MenuLabel from '@/ui/kit/MenuLabel.vue'
 const props = defineProps<{
 	workspace: WorkspaceStore
 	folder_id: string
-	/** The folder's name in the title; its own name by default */
-	name?: string
 	/** Where a board's menu was opened: the summary and the ideas go there */
 	anchor?: Position | null
 }>()
@@ -94,7 +91,6 @@ function open_settings() {
 </script>
 
 <template>
-	<MenuLabel :label="t('ai.folder_title', { name: name ?? container?.name ?? '' })" />
 	<template v-if="!ai_ready">
 		<!-- What is missing, exactly: often only the model -->
 		<p class="hint">{{ ai_base_check.ok ? t('ai.setup_model_hint') : t('ai.setup_hint') }}</p>
@@ -117,7 +113,7 @@ function open_settings() {
 <style scoped>
 .hint {
 	margin: 0;
-	padding: 2px 8px 8px;
+	padding: 6px 8px 8px;
 	font-size: 12px;
 	line-height: 1.4;
 	color: var(--text-secondary);

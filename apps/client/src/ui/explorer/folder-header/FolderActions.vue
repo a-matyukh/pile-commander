@@ -45,7 +45,7 @@ const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.f
 		<BackgroundMenu v-if="!own" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	</template>
 	<template v-if="own">
-		<AiMenu v-if="workspace.can_write" :workspace="workspace" :folder_id="folder.folder_id" :name="name" :align="align" />
+		<AiMenu v-if="workspace.can_write" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 		<ShareMenu :folder="folder" :name="name" :align="align" />
 		<SyncMenu v-if="can_sync(folder, workspace.can_write)" :folder="folder" :name="name" :align="align" />
 		<FolderMenu
