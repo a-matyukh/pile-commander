@@ -7,6 +7,7 @@ import {
 	type FolderWithChildrenXattrs,
 } from '@pile-commander/file-manager'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
+import { batch_text_reads } from '@/services/cloud/batchTextReads'
 import { keep_folder_lists, keep_note_texts, recall_folder_list, recall_note_text } from '@/services/cloud/folderListCache'
 import { gate_pending_entries } from '@/services/cloud/pendingEntries'
 import { create_demo_file_manager } from '@/services/demoPack'
@@ -43,7 +44,8 @@ export async function open_workspace_store(
 	// cloud workspaces need the shared supabase client; their root
 	// folder id is "/" while item.id stays the workspace UUID (uid)
 	const fm = item.type === 'cloud'
-		? gate_pending_entries(keep_note_texts(keep_folder_lists(create_app_cloud_file_manager(item.id), item.id), item.id))
+		// Notes asking together are read in one request (batch_text_reads)
+		? batch_text_reads(gate_pending_entries(keep_note_texts(keep_folder_lists(create_app_cloud_file_manager(item.id), item.id), item.id)))
 		: item.type === 'browser'
 			// web desktops: item.id is the virtual root path; no access check
 			? createBrowserFileManager(require_browser_storage())

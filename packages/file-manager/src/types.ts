@@ -214,6 +214,13 @@ interface FileManager {
 	create_text_file(folder_id: string, filename: string, options?: CreateTextFileOptions): Promise<FolderChild>
 	read_text_file(id: string): Promise<string>
 	/**
+	 * Many text files in one round trip (cloud: a folder's notes at once).
+	 * Only what was found comes back; a missing or non-text id is left out
+	 * and read with `read_text_file`. Optional: without it, notes are read
+	 * one by one
+	 */
+	read_text_files?(ids: string[]): Promise<Map<string, string>>
+	/**
 	 * `original`: the file itself where a public-board visitor would be served a
 	 * preview (Download as .pile). The backend signs it only for a signed-in
 	 * caller, where the author allows forks and downloads, and charges the

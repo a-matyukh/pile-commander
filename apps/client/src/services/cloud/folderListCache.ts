@@ -146,5 +146,13 @@ export function keep_note_texts(fm: FileManager, workspace_id: string): FileMana
 		await save(id, content)
 		remember_note_text(workspace_id, id, content)
 	}
+	const read_many = fm.read_text_files?.bind(fm)
+	if (read_many) {
+		fm.read_text_files = async (ids: string[]) => {
+			const found = await read_many(ids)
+			for (const [id, text] of found) remember_note_text(workspace_id, id, text)
+			return found
+		}
+	}
 	return fm
 }

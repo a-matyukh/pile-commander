@@ -89,6 +89,7 @@ const {
 	isEditing,
 	isMarkdown,
 	previewHtml,
+	isWaiting,
 	canToggleTasks,
 	toggleTask,
 	ensureLoaded,
@@ -146,6 +147,7 @@ function onDblClick(event: MouseEvent) {
 					:is-editing="isEditing"
 					:is-markdown="isMarkdown"
 					:preview-html="previewHtml"
+					:waiting="isWaiting"
 					:can-toggle-tasks="canToggleTasks"
 					@visible="ensureLoaded"
 					@blur="onBlur"

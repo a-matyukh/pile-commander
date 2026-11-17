@@ -310,6 +310,11 @@ export type CloudFileManager = FileManager & {
 	watch_workspace(on_change: () => void): Promise<Unwatch>
 }
 
+/** Notes read in one request at most (read_text_files) */
+const TEXT_BATCH_MAX = 60
+/** The paths of one request together, in characters, before URL encoding */
+const TEXT_BATCH_URL_CHARS = 3000
+
 /** PostgREST: the RPC is not in this database (an older schema) */
 function is_missing_function(error: { code?: string; message?: string }): boolean {
 	return error.code === "PGRST202" || /could not find the function/i.test(error.message ?? "")
@@ -1439,6 +1444,45 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 				throw new Error(`not a text file: ${id}`)
 			}
 			return content
+		},
+
+		async read_text_files(ids: string[]) {
+			// One request per batch of paths: the entry and its text together
+			// (the embed rides the entry_contents foreign key; RLS still
+			// applies to both). A path not found, trashed or not text is left
+			// out: the caller reads it on its own and gets the usual error
+			const found = new Map<string, string>()
+			const paths = [...new Set(ids)]
+			for (let start = 0; start < paths.length;) {
+				// Paths travel in the URL: keep each request well under its limit
+				const batch: string[] = []
+				let length = 0
+				while (start < paths.length && batch.length < TEXT_BATCH_MAX) {
+					const next = paths[start]!
+					if (batch.length > 0 && length + next.length > TEXT_BATCH_URL_CHARS) break
+					batch.push(next)
+					length += next.length
+					start++
+				}
+				const { data, error } = await client
+					.from("entries")
+					.select("path, storage_key, entry_contents(content)")
+					.eq("workspace_id", workspace_id)
+					.in("path", batch)
+					.is("deleted_at", null)
+				if (error) throw new Error(`read_text_files failed: ${error.message}`)
+				type Row = {
+					path: string
+					storage_key: string | null
+					entry_contents: { content: string } | { content: string }[] | null
+				}
+				for (const row of (data ?? []) as unknown as Row[]) {
+					if (row.storage_key !== null) continue
+					const embedded = first_embed(row.entry_contents)
+					if (embedded && typeof embedded.content === "string") found.set(row.path, embedded.content)
+				}
+			}
+			return found
 		},
 
 		async get_media_src(id: string, media_options?: { mimeType?: string; original?: boolean; preview?: boolean }) {

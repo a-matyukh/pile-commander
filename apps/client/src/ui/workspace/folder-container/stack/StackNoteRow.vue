@@ -17,6 +17,7 @@ const {
 	isEditing,
 	isMarkdown,
 	previewHtml,
+	isWaiting,
 	canToggleTasks,
 	toggleTask,
 	ensureLoaded,
@@ -57,6 +58,7 @@ const rowStyle = computed(() => ({
 				:is-editing="isEditing"
 				:is-markdown="isMarkdown"
 				:preview-html="previewHtml"
+				:waiting="isWaiting"
 				:can-toggle-tasks="canToggleTasks"
 				variant="stack"
 				@visible="ensureLoaded"

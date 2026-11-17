@@ -891,3 +891,56 @@ describe("cloud pile images", () => {
 		})
 	})
 })
+
+describe("read_text_files", () => {
+	function batch_client(rows: (paths: string[]) => unknown[]) {
+		const calls: { table: string; select: string; filters: string[]; paths: string[] }[] = []
+		const client = {
+			from(table: string) {
+				const call = { table, select: "", filters: [] as string[], paths: [] as string[] }
+				const builder = {
+					select(columns: string) { call.select = columns; return builder },
+					eq(column: string, value: string) { call.filters.push(`${column}=${value}`); return builder },
+					in(_column: string, values: string[]) { call.paths = values; return builder },
+					is(column: string, value: null) {
+						call.filters.push(`${column} is ${value}`)
+						calls.push(call)
+						return Promise.resolve({ data: rows(call.paths), error: null })
+					},
+				}
+				return builder
+			},
+		} as unknown as SupabaseClient
+		const fm = createCloudFileManager({ client, workspace_id: "ws", backend_url: "https://backend.example" })
+		return { fm, calls }
+	}
+
+	test("reads a folder's notes with their text in one request, leaving out files and missing ones", async () => {
+		const { fm, calls } = batch_client(() => [
+			{ path: "/a.md", storage_key: null, entry_contents: { content: "A" } },
+			{ path: "/b.txt", storage_key: null, entry_contents: [{ content: "" }] },
+			{ path: "/pic.png", storage_key: "k", entry_contents: null },
+		])
+		const found = await fm.read_text_files!(["/a.md", "/b.txt", "/pic.png", "/gone.md", "/a.md"])
+		expect([...found]).toEqual([["/a.md", "A"], ["/b.txt", ""]])
+		expect(calls).toHaveLength(1)
+		expect(calls[0]).toMatchObject({
+			table: "entries",
+			select: "path, storage_key, entry_contents(content)",
+			filters: ["workspace_id=ws", "deleted_at is null"],
+			paths: ["/a.md", "/b.txt", "/pic.png", "/gone.md"],
+		})
+	})
+
+	test("splits many or long paths into requests that fit a URL", async () => {
+		const { fm, calls } = batch_client(() => [])
+		const many = Array.from({ length: 130 }, (_, index) => `/n${index}.md`)
+		await fm.read_text_files!(many)
+		expect(calls.map(call => call.paths.length)).toEqual([60, 60, 10])
+
+		calls.length = 0
+		const long = Array.from({ length: 4 }, (_, index) => `/${"x".repeat(1400)}${index}.md`)
+		await fm.read_text_files!(long)
+		expect(calls.map(call => call.paths.length)).toEqual([2, 2])
+	})
+})

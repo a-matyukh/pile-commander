@@ -38,6 +38,7 @@ const {
 	isEditing,
 	isMarkdown,
 	previewHtml,
+	isWaiting,
 	canToggleTasks,
 	toggleTask,
 	ensureLoaded,
@@ -187,6 +188,7 @@ async function resetWidth() {
 				:is-editing="isEditing"
 				:is-markdown="isMarkdown"
 				:preview-html="previewHtml"
+				:waiting="isWaiting"
 				:can-toggle-tasks="canToggleTasks"
 				:canvas-mode="isCanvas"
 				@visible="ensureLoaded"

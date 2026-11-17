@@ -43,7 +43,10 @@ const props = withDefaults(defineProps<{
 	fixedWidth?: boolean
 	/** Task boxes in the preview tick tasks (the folder can be written to). */
 	canToggleTasks?: boolean
+	/** The text is still being read and none is kept: a loader shows a moment later */
+	waiting?: boolean
 }>(), {
+	waiting: false,
 	canToggleTasks: false,
 	isMarkdown: true,
 	canvasMode: false,
@@ -392,6 +395,7 @@ onUnmounted(() => {
 			'note-preview--text': isTextAppearance,
 			'note-preview--text-auto': isTextAppearance && !fixedWidth,
 			'note-preview--fade': isClipped && !isTextAppearance,
+			'note-preview--waiting': waiting,
 			'note-preview--tasks-locked': !canToggleTasks,
 		}"
 		v-html="previewHtml"
@@ -407,6 +411,7 @@ onUnmounted(() => {
 			'note-preview--text': isTextAppearance,
 			'note-preview--text-auto': isTextAppearance && !fixedWidth,
 			'note-preview--fade': isClipped && !isTextAppearance,
+			'note-preview--waiting': waiting,
 		}"
 		@scroll.passive="updateClip"
 	>{{ text }}</div>
@@ -503,6 +508,42 @@ onUnmounted(() => {
 	overscroll-behavior: none;
 	user-select: none;
 	-webkit-user-select: none;
+}
+
+/* While the text is read and none is kept on the device. The loader fades in
+   a moment later, so a note read at once (or kept) does not flash it */
+.note-preview--waiting {
+	position: relative;
+	min-width: 2.5rem;
+	min-height: 2.5rem;
+}
+.note-preview--waiting::before {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 22px;
+	height: 22px;
+	margin: -11px 0 0 -11px;
+	border: 2px solid rgb(0 0 0 / 0.55);
+	border-top-color: transparent;
+	border-radius: 50%;
+	opacity: 0;
+	pointer-events: none;
+	animation:
+		note-wait-in 160ms ease-out 180ms forwards,
+		note-wait-spin 0.9s linear infinite;
+}
+@keyframes note-wait-in {
+	to { opacity: 1; }
+}
+@keyframes note-wait-spin {
+	to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.note-preview--waiting::before {
+		animation-duration: 160ms, 2.4s;
+	}
 }
 
 /* Editing: the same box as the preview, scrolled rather than faded. */

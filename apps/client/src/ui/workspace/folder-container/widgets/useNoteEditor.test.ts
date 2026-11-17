@@ -206,6 +206,47 @@ describe('useNoteEditor: a card shows the text without waiting for the cloud', (
 	})
 })
 
+describe('useNoteEditor: a card waits visibly only while it has nothing to show', () => {
+	test('waits until the cloud answers when no text is kept', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		store.content_caches.notes.invalidate(id)
+		let answer: (text: string) => void = () => {}
+		;(store as { read_note_content: (id: string) => Promise<string> }).read_note_content = () =>
+			new Promise(resolve => { answer = resolve })
+		;(store as { recall_note_content?: (id: string) => Promise<string | null> }).recall_note_content = async () => null
+
+		const loading = editor.ensureLoaded()
+		await settle()
+		expect(editor.isWaiting.value).toBe(true)
+		answer('fresh')
+		await loading
+		expect(editor.isWaiting.value).toBe(false)
+		scope.stop()
+	})
+
+	test('a kept text ends the wait before the cloud answers', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		store.content_caches.notes.invalidate(id)
+		;(store as { read_note_content: (id: string) => Promise<string> }).read_note_content = () => new Promise(() => {})
+		;(store as { recall_note_content?: (id: string) => Promise<string | null> }).recall_note_content = async () => 'kept'
+
+		void editor.ensureLoaded()
+		await settle()
+		expect(editor.isWaiting.value).toBe(false)
+		scope.stop()
+	})
+
+	test('a failed read ends the wait', async () => {
+		const { store, id, editor, scope } = await setup('note')
+		store.content_caches.notes.invalidate(id)
+		;(store as { read_note_content: (id: string) => Promise<string> }).read_note_content = () => Promise.reject(new Error('offline'))
+
+		await editor.ensureLoaded().catch(() => undefined)
+		expect(editor.isWaiting.value).toBe(false)
+		scope.stop()
+	})
+})
+
 describe('useNoteEditor: leaving an edit shows the new text before the save lands', () => {
 	test('the preview is the typed text while the cloud still saves it', async () => {
 		const { fake, id, editor, scope } = await setup('note')

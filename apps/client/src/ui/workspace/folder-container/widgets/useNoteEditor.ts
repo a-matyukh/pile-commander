@@ -33,6 +33,9 @@ export function useNoteEditor(
 	const text = ref('')
 	const previewHtml = ref('')
 	const isLoaded = ref(false)
+	/** Some text is on the card: the kept copy or the read one */
+	const hasShown = ref(false)
+	const loadFailed = ref(false)
 	let loadPromise: Promise<void> | null = null
 	/** The text the file holds as far as this note knows (read or written); null: not known. */
 	let persisted: string | null = null
@@ -45,6 +48,13 @@ export function useNoteEditor(
 	let tapStartY = 0
 
 	const isEditing = computed(() => editingNoteId.value === toValue(widgetId))
+	/**
+	 * Nothing to show yet: the note is being read (from the cloud, say) and
+	 * no copy is kept on the device. A reload after another device's edit
+	 * keeps the old text on screen, so it does not count
+	 */
+	const isWaiting = computed(() =>
+		!hasShown.value && !isLoaded.value && !loadFailed.value && !isEditing.value)
 	const isMarkdown = computed(() => (toValue(fileName) ?? '').endsWith('.md'))
 	/** A task box in the preview ticks the task, where the folder can be written to. */
 	const canToggleTasks = computed(() => workspace.value?.can_write !== false)
@@ -82,6 +92,7 @@ export function useNoteEditor(
 				void ws.recall_note_content(id).then((kept) => {
 					if (kept === null || read_done || isLoaded.value || isEditing.value || toValue(widgetId) !== id) return
 					text.value = kept
+					hasShown.value = true
 					refreshPreview()
 				})
 			}
@@ -96,7 +107,14 @@ export function useNoteEditor(
 					}
 					persisted = content
 					isLoaded.value = true
+					hasShown.value = true
+					loadFailed.value = false
 					refreshPreview()
+				})
+				.catch((error: unknown) => {
+					// The card stops waiting; it shows what it has
+					loadFailed.value = true
+					throw error
 				})
 				.finally(() => {
 					loadPromise = null
@@ -356,6 +374,7 @@ export function useNoteEditor(
 		isEditing,
 		isMarkdown,
 		previewHtml,
+		isWaiting,
 		canToggleTasks,
 		toggleTask,
 		openInEditor,
