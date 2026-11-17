@@ -69,14 +69,20 @@ const scene_items = computed(() => to_scene_items(children.value, child => ({
 	name: items.display_name(child),
 })))
 
+/** Names under pictures, models and notes: the folder's choice in the View menu, off unless turned on */
+const names = computed(() => props.container.names_3d === true)
 /**
- * Folders, notes and other files carry their name on their card, as on the
- * board, where items often touch. Pictures and models have no room for it:
- * theirs is a label under them
+ * Folders and other files carry their name on their card, as on the board,
+ * where items often touch. Pictures and models have no room for it, and a
+ * note shows its text instead: theirs is a label under them
  */
 const labeled = computed(() => {
 	const kinds = new Map(scene_items.value.map(item => [item.key, item.kind]))
-	return children.value.filter(child => kinds.get(child.id) === 'image' || kinds.get(child.id) === 'model')
+	return children.value.filter((child) => {
+		const kind = kinds.get(child.id)
+		// A note shows its text, not its name: the name goes under it once names are on
+		return kind === 'image' || kind === 'model' || (kind === 'note' && names.value)
+	})
 })
 
 // ── Selection ────────────────────────────────────────────────────────────
@@ -220,8 +226,6 @@ function label_ref(key: string, el: unknown) {
 	else labels.delete(key)
 }
 
-/** Names under pictures and models: the folder's choice in the View menu, off unless turned on */
-const names = computed(() => props.container.names_3d === true)
 watch(names, () => scene?.sync())
 
 /** Boxes of the names placed this frame, CSS px */
