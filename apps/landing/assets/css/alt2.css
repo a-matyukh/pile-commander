@@ -1,0 +1,332 @@
+/* The /alt2 landing ("A file manager. The next generation."). Every rule sits
+   under .alt2, so the rest of the site is untouched.
+   The classes are written as :where(.alt2) .a2-x: the ancestor adds no
+   weight, so a component's own scoped rule for the same element wins.
+   Values and their roles: DESIGN-alt2.md.
+
+   While the owner reviews it, two options switch on the live page:
+     ?accent=blue  one blue for every number (the default)
+     ?accent=logo  each idea takes a colour of the app icon
+     ?font=inter   Inter Tight and Inter (the default)
+     ?font=manrope Manrope, the dark showcase's face
+     ?font=geologica Geologica for headings and Onest for text, as on /alt
+   Whatever the font, the mono labels and numbers stay. */
+
+.alt2 {
+  --a2-bg: #f5f6f8;
+  --a2-bg-alt: #ffffff;
+  --a2-surface: #ffffff;
+  --a2-line: #dde1e8;
+  --a2-ink: #0b1220;
+  --a2-ink-2: #3a4356;
+  --a2-ink-3: #5f6b80;
+  --a2-accent: #2453ff;
+  --a2-accent-soft: #e8edff;
+  --a2-on-accent: #ffffff;
+  --a2-link: #2453ff;
+  --a2-grid: rgb(36 83 255 / 0.07);
+
+  --a2-btn-bg: #0b1220;
+  --a2-btn-fg: #ffffff;
+  --a2-btn-hover: #1f2a40;
+  --a2-btn2-border: #b9c1cf;
+  --a2-btn2-fg: #0b1220;
+  --a2-btn2-hover: #ffffff;
+
+  --a2-panel-bg: #0b1220;
+  --a2-panel-fg: #ffffff;
+  --a2-panel-fg-2: rgb(255 255 255 / 0.74);
+  --a2-panel-line: rgb(255 255 255 / 0.16);
+
+  --a2-header-bg: rgb(245 246 248 / 0.86);
+
+  --a2-font-display: "Inter Tight Variable", "Inter Variable", system-ui, sans-serif;
+  --a2-font-text: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --a2-font-label: "JetBrains Mono Variable", ui-monospace, Menlo, monospace;
+  --a2-display-weight: 600;
+  --a2-display-tracking: -0.035em;
+  --a2-h1-size: clamp(2.75rem, 6.4vw, 5.5rem);
+  --a2-h1-leading: 0.98;
+  --a2-h1-em-color: var(--a2-accent);
+  --a2-h1-em-style: normal;
+
+  --a2-label-size: 0.75rem;
+  --a2-label-weight: 500;
+  --a2-label-tracking: 0.08em;
+  --a2-label-transform: uppercase;
+  --a2-label-color: var(--a2-accent);
+
+  --a2-radius-s: 4px;
+  --a2-radius-m: 8px;
+  --a2-radius-l: 14px;
+  /* Pills, like the app's floating panels */
+  --a2-btn-radius: 999px;
+  --a2-marker-radius: 4px;
+  --a2-frame-border: 1px solid #d3d9e3;
+  --a2-frame-shadow: 0 1px 2px rgb(11 18 32 / 0.05), 0 28px 56px -32px rgb(11 18 32 / 0.35);
+
+  --a2-width: 76rem;
+  --a2-gutter: 1.25rem;
+  --a2-section: clamp(4.5rem, 9vw, 8rem);
+
+  background: var(--a2-bg);
+  color: var(--a2-ink-2);
+  font-family: var(--a2-font-text);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+
+/* ── Accent: the app icon's colours, one per numbered idea ── */
+.alt2[data-accent="logo"] {
+  --a2-m1: #2194f8;
+  --a2-m2: #6044d9;
+  --a2-m3: #21f885;
+  --a2-m4: #f82194;
+  --a2-m5: #f8f121;
+  --a2-m6: #ff8a3d;
+
+  /* Yellow and green cannot carry text: the label's word goes ink */
+  --a2-label-color: var(--a2-ink);
+}
+
+/* ── Font: Manrope, from the dark showcase ── */
+.alt2[data-font="manrope"] {
+  --a2-font-display: "Manrope Variable", system-ui, sans-serif;
+  --a2-font-text: "Manrope Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --a2-display-weight: 700;
+  --a2-display-tracking: -0.045em;
+  --a2-h1-size: clamp(2.75rem, 6.6vw, 5.625rem);
+  --a2-h1-leading: 0.96;
+}
+
+/* ── Font: Geologica and Onest, as on /alt ── */
+.alt2[data-font="geologica"] {
+  --a2-font-display: "Geologica Variable", "Onest Variable", system-ui, sans-serif;
+  --a2-font-text: "Onest Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --a2-display-weight: 600;
+  --a2-display-tracking: -0.04em;
+  --a2-h1-size: clamp(2.75rem, 6.2vw, 5.375rem);
+  --a2-h1-leading: 0.98;
+}
+
+@media (min-width: 768px) {
+  .alt2 {
+    --a2-gutter: 2rem;
+  }
+}
+
+/* The page owns the whole window: no light strip when it overscrolls */
+html:has(.alt2),
+html:has(.alt2) body {
+  background: #f5f6f8;
+}
+
+/* The header sticks to the top: keep what gets focus clear of it */
+html:has(.alt2) {
+  scroll-padding-top: 5rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.alt2) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ── Layout ──────────────────────────────────────────── */
+
+:where(.alt2) .a2-wrap {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--a2-width) + 2 * var(--a2-gutter));
+  margin-inline: auto;
+  padding-inline: var(--a2-gutter);
+}
+
+/* ── Type ────────────────────────────────────────────── */
+
+:where(.alt2) .a2-h1,
+:where(.alt2) .a2-h2,
+:where(.alt2) .a2-h3 {
+  margin: 0;
+  color: var(--a2-ink);
+  font-family: var(--a2-font-display);
+  font-weight: var(--a2-display-weight);
+  text-wrap: balance;
+}
+
+:where(.alt2) .a2-h1 {
+  font-size: var(--a2-h1-size);
+  line-height: var(--a2-h1-leading);
+  letter-spacing: var(--a2-display-tracking);
+}
+
+:where(.alt2) .a2-h2 {
+  font-size: clamp(2rem, 4.2vw, 3.375rem);
+  line-height: 1.04;
+  letter-spacing: var(--a2-display-tracking);
+}
+
+:where(.alt2) .a2-h3 {
+  font-size: 1.1875rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+:where(.alt2) .a2-lede {
+  max-width: 40rem;
+  margin: 0;
+  font-size: clamp(1.125rem, 1.6vw, 1.3125rem);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+:where(.alt2) .a2-small {
+  margin: 0;
+  color: var(--a2-ink-3);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Section label: its number, then one word */
+:where(.alt2) .a2-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  color: var(--a2-label-color);
+  font-family: var(--a2-font-label);
+  font-size: var(--a2-label-size);
+  font-weight: var(--a2-label-weight);
+  letter-spacing: var(--a2-label-tracking);
+  line-height: 1.2;
+  text-transform: var(--a2-label-transform);
+}
+
+/* ── Numbered marker ─────────────────────────────────── */
+
+:where(.alt2) .a2-marker {
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: var(--a2-marker-radius);
+  background: var(--mk, var(--a2-accent));
+  color: var(--mk-fg, var(--a2-on-accent));
+  font-family: var(--a2-font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+}
+
+/* With the logo accent each idea keeps its own colour; the numbers stay
+   dark except on purple */
+.alt2[data-accent="logo"] [data-n="1"] { --mk: var(--a2-m1); --mk-fg: var(--a2-ink); }
+.alt2[data-accent="logo"] [data-n="2"] { --mk: var(--a2-m2); --mk-fg: #ffffff; }
+.alt2[data-accent="logo"] [data-n="3"] { --mk: var(--a2-m3); --mk-fg: var(--a2-ink); }
+.alt2[data-accent="logo"] [data-n="4"] { --mk: var(--a2-m4); --mk-fg: var(--a2-ink); }
+.alt2[data-accent="logo"] [data-n="5"] { --mk: var(--a2-m5); --mk-fg: var(--a2-ink); }
+.alt2[data-accent="logo"] [data-n="6"] { --mk: var(--a2-m6); --mk-fg: var(--a2-ink); }
+
+/* ── Buttons and links ───────────────────────────────── */
+
+:where(.alt2) .a2-btn {
+  display: inline-flex;
+  height: 3rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  border: 1.5px solid transparent;
+  border-radius: var(--a2-btn-radius);
+  padding: 0 1.35rem;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+:where(.alt2) .a2-btn-sm {
+  height: 2.5rem;
+  padding: 0 1.05rem;
+  font-size: 0.9375rem;
+}
+
+:where(.alt2) .a2-btn-primary {
+  background: var(--a2-btn-bg);
+  color: var(--a2-btn-fg);
+}
+
+:where(.alt2) .a2-btn-primary:hover {
+  background: var(--a2-btn-hover);
+}
+
+:where(.alt2) .a2-btn-secondary {
+  border-color: var(--a2-btn2-border);
+  background: transparent;
+  color: var(--a2-btn2-fg);
+}
+
+:where(.alt2) .a2-btn-secondary:hover {
+  border-color: var(--a2-btn2-fg);
+  background: var(--a2-btn2-hover);
+}
+
+/* On the final panel, whose colours are the page's turned around */
+:where(.alt2) .a2-btn-inverse {
+  background: var(--a2-panel-fg);
+  color: var(--a2-panel-bg);
+}
+
+:where(.alt2) .a2-btn-inverse:hover {
+  opacity: 0.9;
+}
+
+:where(.alt2) .a2-btn-inverse-ghost {
+  border-color: var(--a2-panel-line);
+  color: var(--a2-panel-fg);
+}
+
+:where(.alt2) .a2-btn-inverse-ghost:hover {
+  border-color: var(--a2-panel-fg);
+}
+
+:where(.alt2) .a2-link {
+  color: var(--a2-link);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+:where(.alt2) .a2-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.alt2 :is(a, button, [role="tab"]):focus-visible {
+  outline: 2px solid var(--a2-link);
+  outline-offset: 3px;
+}
+
+/* ── Frame: holds a product scene ────────────────────── */
+
+:where(.alt2) .a2-frame {
+  overflow: hidden;
+  border: var(--a2-frame-border);
+  border-radius: var(--a2-radius-l);
+  background: #ffffff;
+  box-shadow: var(--a2-frame-shadow);
+}
