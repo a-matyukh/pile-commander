@@ -458,7 +458,11 @@ export function bindBoardDrag(el: HTMLElement, options: BoardDragBindingOptions)
 		}
 
 		// Multi-drag can still drop into a folder (the pointer hit-tests).
-		const folder = findDropFolder(el, { x: event.clientX, y: event.clientY })
+		const folder = findDropFolder(
+			el,
+			{ x: event.clientX, y: event.clientY },
+			groupIds.length > 0 ? groupIds : [activeId],
+		)
 		if (folder !== highlightedFolder) {
 			clearFolderHighlight()
 			highlightedFolder = folder

@@ -55,9 +55,16 @@ export function isSameBoardFolderDropTarget(
  * The folder the drag would drop into: the one under the pointer, as the
  * person sees it. Without a pointer, the one under the dragged widget's
  * centre (a big note's centre can be far from the cursor, so callers that
- * know the pointer pass it).
+ * know the pointer pass it). A folder that is itself being dragged (it was
+ * selected together with the notes) rides under the pointer with them, so
+ * it is never the target: `draggedIds` names the whole moving group.
  */
-export function findDropFolder(dragged: HTMLElement, pointer?: ClientPoint | null): HTMLElement | null {
+export function findDropFolder(
+	dragged: HTMLElement,
+	pointer?: ClientPoint | null,
+	draggedIds?: Iterable<string>,
+): HTMLElement | null {
+	const moving = new Set(draggedIds)
 	let centerX: number
 	let centerY: number
 	if (pointer) {
@@ -74,6 +81,8 @@ export function findDropFolder(dragged: HTMLElement, pointer?: ClientPoint | nul
 	for (const folder of scope.querySelectorAll<HTMLElement>('.board-widget.container')) {
 		const folderBoard = folder.closest<HTMLElement>('section[data-path]')
 		if (!isSameBoardFolderDropTarget(dragged, folder, scope, folderBoard)) continue
+		const folderId = folder.dataset?.id
+		if (folderId && moving.has(folderId)) continue
 		const folderRect = folder.getBoundingClientRect()
 		if (
 			centerX >= folderRect.left
@@ -133,7 +142,8 @@ export async function tryDropOnFolder(
 	widgetIdOrIds: string | string[],
 	options: FolderDropOptions,
 ): Promise<boolean> {
-	const folder = findDropFolder(dragged, options.pointer)
+	const draggedIds = Array.isArray(widgetIdOrIds) ? widgetIdOrIds : [widgetIdOrIds]
+	const folder = findDropFolder(dragged, options.pointer, draggedIds)
 	if (!folder) return false
 
 	const ws = options.getWorkspace()
@@ -145,10 +155,7 @@ export async function tryDropOnFolder(
 	const sourceFolderId = resolve_source_folder_id(dragged)
 	if (!sourceFolderId) return false
 
-	const ids = droppableWidgetIds(
-		Array.isArray(widgetIdOrIds) ? widgetIdOrIds : [widgetIdOrIds],
-		targetFolderId,
-	)
+	const ids = droppableWidgetIds(draggedIds, targetFolderId)
 	if (ids.length === 0) return false
 
 	const isFolderPreview = folder.classList.contains('folder-preview-widget')

@@ -117,6 +117,13 @@ describe('findDropFolder', () => {
 		const { note } = board()
 		expect(findDropFolder(note, { x: 400, y: 400 })).toBeNull()
 	})
+
+	test('a folder dragged along with the notes is not their target', () => {
+		const { folder, note } = board()
+		;(folder as unknown as { dataset: Record<string, string> }).dataset = { id: 'menu' }
+		expect(findDropFolder(note, { x: 160, y: 110 }, ['note', 'menu'])).toBeNull()
+		expect(findDropFolder(note, { x: 160, y: 110 }, ['note'])).toBe(folder)
+	})
 })
 
 describe('eventClientPoint', () => {

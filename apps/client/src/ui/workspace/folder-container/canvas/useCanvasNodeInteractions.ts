@@ -81,7 +81,8 @@ export function useCanvasNodeInteractions(options: UseCanvasNodeInteractionsOpti
 			return
 		}
 
-		const folder = findDropFolder(el, eventClientPoint(event.event))
+		const moving = event.nodes.length > 0 ? event.nodes : [event.node]
+		const folder = findDropFolder(el, eventClientPoint(event.event), moving.map(node => node.id))
 		if (folder !== highlightedFolder) {
 			clearFolderHighlight()
 			highlightedFolder = folder
