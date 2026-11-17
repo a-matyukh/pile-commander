@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["bun"],
+    // @types/bun already installed for the backend. Kept out of the client
+    // tsconfig so the Bun globals do not leak into the Vue app.
+    "typeRoots": ["../../backend/node_modules/@types"]
+  },
+  "include": ["./*.ts"]
+}

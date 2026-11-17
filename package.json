@@ -23,6 +23,7 @@
     "build:desktop": "TAURI_SIGNING_PRIVATE_KEY=\"$(git rev-parse --show-toplevel)/.tauri/pile-commander.key\" bun --filter @pile-commander/client tauri:build",
     "icon:desktop": "bun --filter @pile-commander/client tauri icon",
     "version:desktop": "bun apps/client/scripts/set-desktop-version.ts",
+    "ship:desktop": "bun apps/client/scripts/ship-desktop.ts",
     "demo:pack": "bun apps/client/scripts/export-demo-pack.ts",
     "demo:publish": "bun apps/client/scripts/publish-demo-pack.ts"
   }
