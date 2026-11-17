@@ -20,6 +20,8 @@ const props = defineProps<{
 	/** Offer a file picker. The parent stores the chosen file. */
 	choose?: boolean
 	reset_label: string
+	/** Offer the reset even when nothing is set */
+	reset_always?: boolean
 }>()
 
 const emit = defineEmits<{ set: [value: string]; choose: [] }>()
@@ -77,11 +79,11 @@ function pick_start() {
 			spellcheck="false"
 			@keydown.stop
 		>
-		<p class="hn">{{ picture ? t('style.cover_hint') : t('style.color_hint') }}</p>
 	</form>
 	<MenuItem v-if="choose" icon="tabler:photo-plus" :label="t('style.choose_picture')" @select="emit('choose')" />
-	<MenuItem v-if="choose && current()" icon="tabler:photo-off" :label="t('style.remove_cover')" @select="set('')" />
-	<MenuItem v-if="!choose && current()" icon="tabler:arrow-back-up" :label="reset_label" @select="set('')" />
+	<MenuItem v-if="reset_always" icon="tabler:eraser" :label="reset_label" @select="set('')" />
+	<MenuItem v-else-if="choose && current()" icon="tabler:photo-off" :label="reset_label" @select="set('')" />
+	<MenuItem v-else-if="current()" icon="tabler:arrow-back-up" :label="reset_label" @select="set('')" />
 </template>
 
 <style scoped>
@@ -142,13 +144,5 @@ function pick_start() {
 }
 .in:focus {
 	border-color: var(--border-accent);
-}
-.hn {
-	margin: 0;
-	padding: 0 2px;
-	font-size: 11px;
-	line-height: 1.4;
-	color: var(--text-muted);
-	white-space: normal;
 }
 </style>

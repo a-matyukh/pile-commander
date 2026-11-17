@@ -41,13 +41,20 @@ const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.f
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
 	<template v-if="spatial && workspace.can_write">
 		<LayersMenu :workspace="workspace" :folder="folder" :align="align" />
-		<BackgroundMenu :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+		<!-- The user's own folders keep grid and background in "⋯" -->
+		<BackgroundMenu v-if="!own" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	</template>
 	<template v-if="own">
 		<AiMenu v-if="workspace.can_write" :workspace="workspace" :folder_id="folder.folder_id" :name="name" :align="align" />
 		<ShareMenu :folder="folder" :name="name" :align="align" />
 		<SyncMenu v-if="can_sync(folder, workspace.can_write)" :folder="folder" :name="name" :align="align" />
-		<FolderMenu :folder="folder" :name="name" :align="align" :can_write="workspace.can_write" />
+		<FolderMenu
+			:folder="folder"
+			:name="name"
+			:align="align"
+			:can_write="workspace.can_write"
+			:spatial_workspace="spatial && workspace.can_write ? workspace : null"
+		/>
 	</template>
 </template>
 

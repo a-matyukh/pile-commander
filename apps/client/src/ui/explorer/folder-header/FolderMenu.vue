@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FolderRef } from '@/domain/Drive'
+import type { WorkspaceStore } from '@/domain/Store'
 import { t } from '@/i18n'
 import { is_desktop } from '@/isDesktop'
 import store from '@/store'
@@ -25,6 +26,7 @@ import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from '@/ui/explorer/sidebar/RenameFolderDialog.vue'
+import BackgroundItems from './BackgroundItems.vue'
 import FolderLookItems from './FolderLookItems.vue'
 import TrashSyncNote from './TrashSyncNote.vue'
 import { tree_item_for } from '@/store/explorer/tree_item'
@@ -45,6 +47,8 @@ const props = defineProps<{
 	rename_shortcut?: string
 	/** Set where Delete / Backspace trashes this folder: a row in the list or gallery */
 	remove_shortcut?: string
+	/** The open board or canvas, from the folder header: its grid and background follow the look */
+	spatial_workspace?: WorkspaceStore | null
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -144,6 +148,10 @@ function reveal() {
 		<template v-if="items.rename && item">
 			<MenuSeparator />
 			<FolderLookItems :item="item" :folder="folder" />
+		</template>
+		<template v-if="spatial_workspace">
+			<MenuSeparator />
+			<BackgroundItems :workspace="spatial_workspace" :folder_id="folder.folder_id" />
 		</template>
 		<template v-if="items.cut || items.copy || items.paste || items.duplicate">
 			<MenuSeparator />
