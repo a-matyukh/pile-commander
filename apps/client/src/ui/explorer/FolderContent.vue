@@ -15,6 +15,7 @@ import { use_folder_keys } from './folder_keys'
 import FolderPlaceholder from './FolderPlaceholder.vue'
 import ListView from './views/ListView.vue'
 import GalleryView from './views/GalleryView.vue'
+import DeleteSelectedKeys from './views/DeleteSelectedKeys.vue'
 
 /** three.js comes in its own chunk, only when a folder opens in 3D */
 const View3D = defineAsyncComponent(() => import('./views/View3D.vue'))
@@ -119,6 +120,11 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 			<FolderContainer :key="workspace.uid" />
 			<FolderActionsPanel />
 		</template>
+		<!-- The current views have their own Delete (FolderActionsPanel); the prototype's get it here -->
+		<DeleteSelectedKeys
+			v-if="scope.container.value && ['list', 'grid', '3d'].includes(scope.container.value.view)"
+			:children="scope.container.value.children"
+		/>
 	</div>
 </template>
 

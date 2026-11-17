@@ -44,3 +44,27 @@ describe('click_select', () => {
 		expect(s.selection).toEqual(['b'])
 	})
 })
+
+describe('context_select', () => {
+	test('a right click on an item that is not selected picks it alone', () => {
+		const s = makeSelection()
+		s.set_selection(['a', 'b'])
+		s.context_select('c')
+		expect(s.selection).toEqual(['c'])
+	})
+
+	test('a right click on a selected item keeps the whole selection', () => {
+		const s = makeSelection()
+		s.set_selection(['a', 'b'])
+		s.context_select('b')
+		expect(s.selection).toEqual(['a', 'b'])
+	})
+
+	test('in Select mode a right click adds the item', () => {
+		const s = makeSelection()
+		s.enter_selection_mode()
+		s.select('a')
+		s.context_select('b')
+		expect(s.selection).toEqual(['a', 'b'])
+	})
+})

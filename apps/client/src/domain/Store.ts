@@ -433,6 +433,8 @@ export interface SelectionStore {
 	exit_selection_mode(): void
 	/** A click on an item: picks it alone; with Shift, ⌘, Ctrl or in Select mode adds or takes it away */
 	click_select(id: string, event?: SelectClick): void
+	/** A right click on an item: a selected one keeps the selection, another is picked alone (added in Select mode) */
+	context_select(id: string): void
 }
 
 export type SelectClick = { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }

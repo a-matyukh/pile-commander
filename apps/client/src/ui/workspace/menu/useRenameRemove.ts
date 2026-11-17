@@ -1,5 +1,6 @@
 import { computed } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { delete_key_hint } from '@/ui/kit/delete_key'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 
 export function useRenameRemove(
@@ -29,6 +30,7 @@ export function useRenameRemove(
 			{
 				label: 'Remove',
 				disabled,
+				kbds: [delete_key_hint],
 				onSelect: open_remove,
 			},
 		]

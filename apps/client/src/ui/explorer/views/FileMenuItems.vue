@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { delete_key_hint } from '@/ui/kit/delete_key'
 import { t } from '@/i18n'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
@@ -35,6 +36,6 @@ const emit = defineEmits<{
 	<MenuItem v-if="can_write" icon="tabler:copy-plus" :label="t('menu.duplicate')" @select="emit('duplicate')" />
 	<template v-if="can_write">
 		<MenuSeparator />
-		<MenuItem icon="tabler:trash" :label="trash_label" @select="emit('trash')" />
+		<MenuItem icon="tabler:trash" :label="trash_label" :shortcut="delete_key_hint" @select="emit('trash')" />
 	</template>
 </template>

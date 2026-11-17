@@ -52,5 +52,11 @@ export default function makeSelection(): SelectionStore {
 			if (this.selection.length === 1 && this.selection[0] === id) this.clear_selection()
 			else this.set_selection([id])
 		},
+		context_select(id: string) {
+			// As in Finder: the menu acts on what is selected, so a selected item keeps the others
+			if (this.is_selected(id)) return
+			if (this.selection_mode) this.select(id)
+			else this.set_selection([id])
+		},
 	}
 }

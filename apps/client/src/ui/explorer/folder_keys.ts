@@ -100,7 +100,8 @@ export function rename_hotkey_target<T extends { id: string }>(
  * Keyboard in a folder, as in the prototype:
  * - ⌘↑ opens the parent folder; ⌘↓ or Enter opens the one selected item;
  * - arrows move the selection in the list, gallery, stack and masonry.
- *   In a single column ← / → step to the previous / next item
+ *   In a single column ← / → step to the previous / next item;
+ * - ⌘A / Ctrl+A selects every item of the folder, in any view
  */
 export function use_folder_keys(
 	root: () => HTMLElement | null,
@@ -160,10 +161,22 @@ export function use_folder_keys(
 		return true
 	}
 
+	function select_all(ws: WorkspaceStore): boolean {
+		const children = container.value?.children
+		if (!children) return false
+		ws.set_selection(children.map(child => child.id))
+		return true
+	}
+
 	useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 		const ws = workspace.value
 		if (!ws || event.altKey || event.shiftKey || keys_elsewhere(event)) return
 		const command = event.metaKey || event.ctrlKey
+		// By the key's place, so ⌘A works in any keyboard layout (ф in Russian)
+		if (command && event.code === 'KeyA') {
+			if (select_all(ws)) event.preventDefault()
+			return
+		}
 		const dir = DIRS[event.key]
 		const step = layer_step_from_key(event)
 		let handled = false

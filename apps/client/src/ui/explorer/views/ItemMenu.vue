@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { delete_key_hint } from '@/ui/kit/delete_key'
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import type { WorkspaceStore } from '@/domain/Store'
@@ -32,6 +33,7 @@ const preview_label = computed(() => {
 		align="end"
 		:can_write="workspace.can_write"
 		rename_shortcut="F2"
+		:remove_shortcut="delete_key_hint"
 	>
 		<template #trigger>
 			<span class="idt" :class="{ on: items.menus[child.id] }" :data-tip="t('item.actions')" @click.stop="items.select(child)" @dblclick.stop>

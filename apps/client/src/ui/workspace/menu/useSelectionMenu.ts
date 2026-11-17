@@ -7,6 +7,7 @@ import type { BulkRemoveItem } from '@/ui/workspace/menu/BulkRemoveDialog.vue'
 import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFolderContainerScope'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { clipboardIdsForMenu } from './clipboardIdsForMenu'
+import { delete_key_hint } from '@/ui/kit/delete_key'
 import { t } from '@/i18n'
 import { record_action } from '@/store/history'
 import { selectionCanSetSharedBackground } from './canHaveWidgetBackground'
@@ -273,6 +274,7 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		[{
 			label: 'Remove',
 			disabled: readonly.value,
+			kbds: [delete_key_hint],
 			onSelect: openBulkRemove,
 		}],
 	])

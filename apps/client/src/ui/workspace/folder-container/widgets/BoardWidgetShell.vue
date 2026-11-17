@@ -126,6 +126,8 @@ const canvasLineClickSelects = computed(
 )
 
 function onShellContextMenu(event: MouseEvent) {
+	// The menu is about the item under the pointer: it becomes the selection, unless already in it
+	if (props.interactionsEnabled) ws.context_select(props.widget.id)
 	if (showWidgetMenu.value) return
 	event.preventDefault()
 }

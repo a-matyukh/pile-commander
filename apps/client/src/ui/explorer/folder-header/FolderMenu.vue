@@ -43,6 +43,8 @@ const props = defineProps<{
 	new_folder?: boolean
 	/** Set where F2 renames this folder: a row in the list or gallery */
 	rename_shortcut?: string
+	/** Set where Delete / Backspace trashes this folder: a row in the list or gallery */
+	remove_shortcut?: string
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -165,7 +167,7 @@ function reveal() {
 				:data-tip="t('menu.ungroup_folder_tip')"
 				@select="ungroup"
 			/>
-			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t(remove_text.confirm)" @select="remove_open = true" />
+			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t(remove_text.confirm)" :shortcut="remove_shortcut" @select="remove_open = true" />
 		</template>
 	</DropMenu>
 	<RenameFolderDialog v-model:open="rename_open" :name="name" @confirm="rename" />
