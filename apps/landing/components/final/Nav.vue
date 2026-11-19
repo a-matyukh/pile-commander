@@ -1,6 +1,6 @@
 <!-- The blocks 1–6 as a plain list, like a repository's feature list: the
      number (the window's marker), a name and a short line. On a wide screen it
-     is pinned on the left, centred on the intro's window, and a click glides to the
+     is pinned on the left, level with the top of the intro's window, and a click glides to the
      block; the pointer on a line lights its place in the window (lf-active).
      The block on screen is marked. Narrower, the intro shows the same list
      under the window instead (Legend.vue). -->
@@ -59,11 +59,9 @@ onMounted(() => {
 @media (min-width: 1100px) {
   .nav {
     position: fixed;
-    /* Centred on the intro's window, which fills the first screen
-       (Intro.vue): from under the header to the screen's bottom margin.
-       It stays there while the page scrolls */
-    top: calc((var(--lf-header-h) + var(--lf-intro-top) + var(--lf-screen) - var(--lf-intro-bottom)) / 2);
-    translate: 0 -50%;
+    /* Level with the top of the intro's window (Intro.vue), close under
+       the desktop icon. It stays there while the page scrolls */
+    top: calc(var(--lf-header-h) + var(--lf-intro-top));
     /* The header's left edge: the wrap is centred */
     left: max(var(--lf-gutter), calc((100vw - var(--lf-wrap) - var(--lf-nav) - var(--lf-nav-gap)) / 2 + var(--lf-gutter)));
     z-index: 2;

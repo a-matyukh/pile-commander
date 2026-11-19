@@ -1,7 +1,7 @@
 <!-- Not sticky: the page gives the whole screen to the content. One row on
      a wide screen: the app's icon on the desktop (as far from the OS bar as
-     from the page's edge), the tagline over the window, the ways in
-     (download and the browser). Narrower, the tagline takes a row of its own. A phone cannot run the desktop
+     from the page's edge), the tagline beside it, the ways in (download and
+     the browser). Narrower, the tagline takes a row of its own. A phone cannot run the desktop
      app, so there the browser comes first and the download leaves. -->
 <script setup lang="ts">
 const { demoUrl } = useAppLinks();
@@ -14,10 +14,9 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 <template>
   <header class="bar">
     <div class="lf-wrap bar-in">
-      <!-- The logo is the app's icon on the desktop, its name under it -->
+      <!-- The logo is the app's icon on the desktop; the tagline names it -->
       <NuxtLink to="/final" class="brand" aria-label="Pile Commander">
         <img src="/app-icon.png" alt="" width="64" height="64" class="brand-icon">
-        <span class="brand-name">Pile Commander</span>
       </NuxtLink>
 
       <!-- The name and what it is, in one rhythm -->
@@ -53,57 +52,34 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 0 1rem;
-  /* The icon's top is a gutter under the OS bar (the name's box adds 0.25rem) */
-  padding-top: calc(var(--lf-gutter) - 0.25rem);
+  /* The icon's top is a gutter under the OS bar */
+  padding-top: var(--lf-gutter);
 }
 
-/* A desktop icon: the icon, the name under it */
 .brand {
   grid-area: brand;
   justify-self: start;
-  display: flex;
-  width: 6.25rem;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.3rem;
-  /* The icon lines up with the page's edge; the name may reach past it */
-  margin-left: calc(-1 * min(1.375rem, var(--lf-gutter) - 0.25rem));
-  border-radius: 8px;
-  padding: 0.25rem 0;
-  color: var(--lf-ink);
-  text-decoration: none;
+  display: block;
+  border-radius: 22.5%;
 }
 
 /* Rounded like an app icon on the desktop */
 .brand-icon {
+  display: block;
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 22.5%;
   filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.18));
 }
 
-.brand-name {
-  border-radius: 4px;
-  padding: 0 0.25rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.3;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.brand:hover .brand-name {
-  background: rgb(0 0 0 / 0.08);
-}
-
-/* Buttons: their middle on the icon's (2rem down the name's box) */
+/* Buttons: their middle on the icon's */
 .nav {
   grid-area: nav;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 0.625rem;
-  margin-top: 0.875rem;
+  margin-top: 0.625rem;
 }
 
 .tag {
@@ -117,36 +93,21 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   color: var(--lf-accent);
 }
 
-/* Wide: one row; the tagline starts where the window does, over it */
+/* Wide: one row, the tagline right beside the icon */
 @media (min-width: 1100px) {
   .bar-in {
     height: calc(var(--lf-header-h) - var(--lf-os-h));
     box-sizing: border-box;
     grid-template-areas: "brand tag nav";
-    grid-template-columns: calc(var(--lf-nav) + var(--lf-nav-gap) - 1.5rem) minmax(0, 1fr) auto;
-    gap: 0 1.5rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0 1.25rem;
   }
 
   .tag {
-    margin-top: calc(2rem - var(--lf-tag-size) * 0.51);
+    margin-top: calc(1.75rem - var(--lf-tag-size) * 0.51);
     font-size: var(--lf-tag-size);
     text-align: left;
     white-space: nowrap;
-  }
-}
-
-/* Not wide enough for the tagline beside the buttons: it goes under them,
-   still over the window, within the header's height */
-@media (min-width: 1100px) and (max-width: 1359px) {
-  .bar-in {
-    grid-template-areas:
-      "brand nav nav"
-      "brand tag tag";
-    grid-template-rows: auto 1fr;
-  }
-
-  .tag {
-    margin-top: 0.75rem;
   }
 }
 
@@ -170,7 +131,7 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 }
 
 /* The tagline needs the room: the repository keeps its icon */
-@media (max-width: 1600px) {
+@media (max-width: 1360px) {
   .repo-name {
     display: none;
   }
@@ -180,7 +141,8 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   }
 }
 
-@media (max-width: 720px) {
+/* Pricing is in the footer too: it gives way first */
+@media (max-width: 1240px) {
   .nav-link {
     display: none;
   }

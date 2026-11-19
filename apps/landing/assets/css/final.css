@@ -37,10 +37,10 @@
   --lf-screen: clamp(40rem, 100svh, 64rem);
   /* The OS's bar on top (OsBar.vue) */
   --lf-os-h: 1.75rem;
-  /* The OS bar and the header (the desktop icon with its name, the tagline,
-     the buttons) on a wide screen: the icon sits as far from the OS bar as
-     from the page's left edge (the gutter) */
-  --lf-header-h: calc(var(--lf-os-h) + var(--lf-gutter) + 6.5rem);
+  /* The OS bar and the header (the desktop icon, the tagline, the buttons)
+     on a wide screen: the icon sits as far from the OS bar as from the
+     page's left edge (the gutter) */
+  --lf-header-h: calc(var(--lf-os-h) + var(--lf-gutter) + 3.5rem + 1.5rem);
   --lf-tag-size: clamp(1.5rem, 1.8vw, 2.25rem);
   /* The intro (Intro.vue): the space above and under the window. The pinned
      menu centres on the window with them */
