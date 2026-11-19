@@ -22,6 +22,8 @@ export function file_icon(name: string): string {
 	if (kind === 'image') return 'tabler:photo'
 	if (kind === 'video') return 'tabler:movie'
 	if (kind === 'audio') return 'tabler:music'
+	// A 3D model: the box 3D view draws for one that has not loaded
+	if (kind === 'model') return 'tabler:box'
 	const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''
 	return BY_EXTENSION[ext] ?? 'tabler:file'
 }
