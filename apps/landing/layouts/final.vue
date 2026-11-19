@@ -11,6 +11,5 @@ import "~/assets/css/final.css";
       <slot />
     </main>
     <FinalFooter />
-    <FinalReviewSwitch />
   </div>
 </template>

@@ -17,7 +17,7 @@
 definePageMeta({ layout: "final" });
 
 useSeoMeta({
-  title: "A file manager and a creative space",
+  title: "File manager. Creative space.",
   description:
     "A file manager for your home folder and the cloud, where files and folders are not boring.",
   robots: "noindex, nofollow",
