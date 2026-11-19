@@ -3,8 +3,10 @@
      and the compact folder header — the path in one row, ~ for the home
      folder (a cloud icon for the cloud), the open folder last — with the
      folder's buttons in the app's order for a folder of your own
-     (FolderActions.vue): view, add, layers, AI, share, sync, more.
-     The content goes in the default slot. It keeps the app's own palette and
+     (FolderActions.vue): view, add, layers (a board or a canvas only), AI,
+     sync, share, more.
+     The content goes in the default slot; the `over` slot sits over the
+     folder (a menu open from its header). It keeps the app's own palette and
      scales with its width (container units), like a screenshot.
      On a narrow screen it zooms into the folder: the sidebar and the
      bookmarks leave. -->
@@ -25,7 +27,7 @@ export interface TreeItem {
   selected?: boolean;
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     crumbs: Crumb[];
     title: string;
@@ -37,10 +39,16 @@ withDefaults(
     drive?: "local" | "cloud";
     synced?: boolean;
     label?: string;
-    /** pin the blocks' numbers on the window (the intro's map) */
-    markers?: boolean;
+    /** pin the blocks' numbers on the window: all (the intro's map) or some */
+    markers?: boolean | number[];
     /** take the height of its box (the intro fits the screen); the content stretches */
     fill?: boolean;
+    /** a board or a canvas: the header has the layers button */
+    spatial?: boolean;
+    /** the view menu is open: its button is pressed */
+    viewOpen?: boolean;
+    /** the visitor can use something in it: no longer a picture to screen readers */
+    interactive?: boolean;
   }>(),
   {
     viewIcon: "i-tabler-template",
@@ -52,8 +60,13 @@ withDefaults(
     label: undefined,
     markers: false,
     fill: false,
+    spatial: true,
+    viewOpen: false,
+    interactive: false,
   },
 );
+
+const pin = (n: number) => props.markers === true || (Array.isArray(props.markers) && props.markers.includes(n));
 
 /** The block under the pointer: its place in the window gets a ring */
 const active = useState<number | null>("lf-active", () => null);
@@ -61,7 +74,7 @@ const active = useState<number | null>("lf-active", () => null);
 
 <template>
   <div class="shot" :class="{ pins: markers, fill }" :data-active="markers ? active ?? undefined : undefined">
-  <div class="lf-frame" role="img" :aria-label="label">
+  <div class="lf-frame" :role="interactive ? undefined : 'img'" :aria-label="interactive ? undefined : label">
     <div class="win">
       <div class="topbar">
         <span class="tb"><UIcon name="i-tabler-layout-sidebar" class="ic" /></span>
@@ -111,17 +124,17 @@ const active = useState<number | null>("lf-active", () => null);
             </div>
 
             <div class="acts">
-              <span class="act" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="markers" :n="1" /></span>
+              <span class="act" :class="{ on: viewOpen }" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="pin(1)" :n="1" /></span>
               <!-- ② files and folders: what you add and the layers they sit on -->
               <span class="pair" data-anchor="2">
                 <span class="act"><UIcon name="i-tabler-plus" class="ic" /></span>
-                <span class="act"><UIcon name="i-tabler-stack-2" class="ic" /></span>
-                <FinalMarker v-if="markers" :n="2" />
+                <span v-if="spatial" class="act"><UIcon name="i-tabler-stack-2" class="ic" /></span>
+                <FinalMarker v-if="pin(2)" :n="2" />
               </span>
-              <span class="act" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="markers" :n="3" /></span>
+              <span class="act" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="pin(3)" :n="3" /></span>
               <!-- Sync before share, as in the app: a private cloud copy comes first -->
-              <span v-if="synced" class="act" data-anchor="4"><UIcon name="i-tabler-cloud-check" class="ic" /><FinalMarker v-if="markers" :n="4" /></span>
-              <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="markers" :n="5" /></span>
+              <span v-if="synced" class="act" data-anchor="4"><UIcon name="i-tabler-cloud-check" class="ic" /><FinalMarker v-if="pin(4)" :n="4" /></span>
+              <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="pin(5)" :n="5" /></span>
               <span class="act"><UIcon name="i-tabler-dots" class="ic" /></span>
             </div>
           </div>
@@ -129,11 +142,12 @@ const active = useState<number | null>("lf-active", () => null);
           <div class="content">
             <slot />
           </div>
+          <slot name="over" />
         </div>
       </div>
 
       <!-- The window's corner: it fits any screen -->
-      <span v-if="markers" class="grip" data-anchor="6"><FinalMarker :n="6" class="mk-grip" /></span>
+      <span v-if="pin(6)" class="grip" data-anchor="6"><FinalMarker :n="6" class="mk-grip" /></span>
     </div>
   </div>
   </div>
@@ -354,6 +368,7 @@ const active = useState<number | null>("lf-active", () => null);
 /* ── The compact folder header (FolderHeader.vue, Breadcrumbs.vue) ── */
 
 .main {
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
   min-width: 0;
@@ -418,6 +433,12 @@ const active = useState<number | null>("lf-active", () => null);
   color: var(--ts);
 }
 
+/* The view button while its menu is open (IconButton .on) */
+.act.on {
+  border: 1px solid var(--bd);
+  background: var(--s0);
+}
+
 .pair {
   position: relative;
   display: flex;
@@ -427,6 +448,7 @@ const active = useState<number | null>("lf-active", () => null);
 
 .act {
   position: relative;
+  box-sizing: border-box;
   display: grid;
   width: 2.3em;
   height: 2.3em;
