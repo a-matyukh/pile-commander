@@ -4,9 +4,9 @@
      files all along. Delete the app and they are unchanged; install it again
      and the board is back, because views and places live in the files' own
      attributes and drawings in the hidden .pile folder (README.md, local.ts;
-     as /alt2 states it). The cloud step: files are stored with Backblaze B2,
-     encrypted at rest (the owner's statement; it is the bucket's own
-     setting, not in this repository), and travel over HTTPS. -->
+     as /alt2 states it). The cloud step says what the home page says
+     (WhereItLives.vue): a private B2 bucket, AES-256 at rest, short-lived
+     signed links, thumbnails for anonymous visitors of a public folder. -->
 <script setup lang="ts">
 import { FOLDER_ITEMS, homeBookmarks, homeTree } from "~/utils/finalFolder";
 import type { Crumb } from "./AppWindow.vue";
@@ -19,7 +19,7 @@ const steps: { id: YoursStep; label: string; icon: string; caption: string }[] =
   { id: "files", label: "Plain files", icon: "i-tabler-files", caption: "On your computer the app opens real folders. A note is a .md file, a picture is a picture." },
   { id: "deleted", label: "Delete the app", icon: "i-tabler-trash", caption: "Delete Pile Commander, and every file stays where it was. Nothing to export, nothing locked in." },
   { id: "back", label: "Install it again", icon: "i-tabler-download", caption: "Views and places live in the files' own attributes and a small hidden .pile folder, so every board comes back as it was." },
-  { id: "cloud", label: "In the cloud", icon: "i-tabler-lock", caption: "Cloud copies are stored with Backblaze B2, encrypted, and travel over HTTPS. Only you and the people you invite see them." },
+  { id: "cloud", label: "In the cloud", icon: "i-tabler-lock", caption: "Cloud copies sit in a private Backblaze B2 bucket, encrypted at rest, and open through short-lived signed links." },
 ];
 
 const step = ref<YoursStep>("files");
@@ -151,11 +151,12 @@ const kinds: Record<string, string> = { folder: "Folder", image: "JPEG image", t
             <span class="lock"><UIcon name="i-tabler-lock" class="lk" /></span>
             <p class="vt">Backblaze B2</p>
             <ul class="vl">
-              <li><UIcon name="i-tabler-shield-lock" class="vi" />Files encrypted where they are stored</li>
-              <li><UIcon name="i-tabler-arrows-exchange" class="vi" />Sent to and from it over HTTPS</li>
-              <li><UIcon name="i-tabler-users" class="vi" />Seen only by you and the people you invite</li>
-              <li><UIcon name="i-tabler-device-desktop" class="vi" />Bookmarks, settings and AI keys stay on your device</li>
+              <li><UIcon name="i-tabler-shield-lock" class="vi" />A private bucket, encrypted at rest with AES-256</li>
+              <li><UIcon name="i-tabler-link" class="vi" />The app opens files through short-lived signed links</li>
+              <li><UIcon name="i-tabler-photo" class="vi" />Visitors to a public folder see thumbnails, not your originals</li>
+              <li><UIcon name="i-tabler-device-desktop" class="vi" />Files that stay on your computer never go there</li>
             </ul>
+            <a href="https://www.backblaze.com/blog/backblaze-b2-to-encrypt-new-uploads-by-default/" target="_blank" rel="noopener noreferrer" class="vlink">How Backblaze encrypts files at rest</a>
           </div>
         </div>
       </div>
@@ -562,6 +563,16 @@ const kinds: Record<string, string> = { folder: "Folder", image: "JPEG image", t
   align-items: flex-start;
   gap: 0.5rem;
   line-height: 1.4;
+}
+
+.vlink {
+  color: var(--lf-accent);
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+
+.vlink:hover {
+  text-decoration: underline;
 }
 
 .vi {
