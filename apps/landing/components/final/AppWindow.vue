@@ -46,7 +46,9 @@ const props = withDefaults(
     /** a board or a canvas: the header has the layers button */
     spatial?: boolean;
     /** a header menu is open: its button is pressed */
-    open?: "view" | "add" | "layers" | null;
+    open?: "view" | "add" | "layers" | "ai" | null;
+    /** the folder's buttons; a page (Settings) has none */
+    actions?: boolean;
     /** the visitor can use something in it: no longer a picture to screen readers */
     interactive?: boolean;
   }>(),
@@ -62,6 +64,7 @@ const props = withDefaults(
     fill: false,
     spatial: true,
     open: null,
+    actions: true,
     interactive: false,
   },
 );
@@ -123,7 +126,7 @@ const active = useState<number | null>("lf-active", () => null);
               <span class="cur">{{ title }}</span>
             </div>
 
-            <div class="acts">
+            <div v-if="actions" class="acts">
               <span class="act" :class="{ on: open === 'view' }" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="pin(1)" :n="1" /></span>
               <!-- ② files and folders: what you add and the layers they sit on -->
               <span class="pair" data-anchor="2">
@@ -131,7 +134,7 @@ const active = useState<number | null>("lf-active", () => null);
                 <span v-if="spatial" class="act" :class="{ on: open === 'layers' }"><UIcon name="i-tabler-stack-2" class="ic" /></span>
                 <FinalMarker v-if="pin(2)" :n="2" />
               </span>
-              <span class="act" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="pin(3)" :n="3" /></span>
+              <span class="act" :class="{ on: open === 'ai' }" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="pin(3)" :n="3" /></span>
               <!-- Sync before share, as in the app: a private cloud copy comes first -->
               <span v-if="synced" class="act" data-anchor="4"><UIcon name="i-tabler-cloud-check" class="ic" /><FinalMarker v-if="pin(4)" :n="4" /></span>
               <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="pin(5)" :n="5" /></span>
@@ -149,6 +152,9 @@ const active = useState<number | null>("lf-active", () => null);
           <slot name="over" />
         </div>
       </div>
+
+      <!-- A dialog over the whole window, as the app's Modal -->
+      <slot name="modal" />
 
       <!-- The window's corner: it fits any screen -->
       <span v-if="pin(6)" class="grip" data-anchor="6"><FinalMarker :n="6" class="mk-grip" /></span>

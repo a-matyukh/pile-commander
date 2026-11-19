@@ -30,5 +30,6 @@ useSeoMeta({
     <FinalIntro />
     <FinalViews />
     <FinalAlive />
+    <FinalAi />
   </div>
 </template>
