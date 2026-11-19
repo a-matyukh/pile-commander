@@ -260,3 +260,10 @@
   margin: 0.31em 0.31em;
   background: rgb(0 0 0 / 0.08);
 }
+
+/* A block's number stands at its title's first line, also when the title
+   row wraps (Play and the hint go under it on a phone) */
+:where(.lf) .head > .lf-marker {
+  align-self: start;
+  margin-top: calc((clamp(1.75rem, 2.6vw, 2.25rem) * 1.15 - 1.5rem) / 2);
+}

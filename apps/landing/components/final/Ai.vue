@@ -574,6 +574,7 @@ const ideas = [
 
 /* ── Your agent: its terminal beside the app ─────────── */
 
+
 .term {
   position: absolute;
   bottom: 0;
@@ -587,6 +588,20 @@ const ideas = [
   color: #d6d9e0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8125rem;
+}
+
+/* On a phone the terminal would cover the app: it goes under the window */
+@media (max-width: 760px) {
+  .stage {
+    padding-bottom: 0;
+  }
+
+  .term {
+    position: relative;
+    left: 0;
+    width: auto;
+    margin-top: 0.75rem;
+  }
 }
 
 .tbar {

@@ -343,6 +343,18 @@ const layers: { name: string; icon?: string; color?: string; thumb?: string; ste
   transition: outline-color 0.2s ease;
 }
 
+/* In a phone-sized window the panel would squeeze the canvas: it shows
+   on its own step only */
+@container (max-width: 760px) {
+  .lp:not(.ring) {
+    display: none;
+  }
+
+  .lp {
+    width: 13em;
+  }
+}
+
 .lp.ring {
   outline-color: #2453ff;
 }
