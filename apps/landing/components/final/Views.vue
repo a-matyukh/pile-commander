@@ -59,7 +59,7 @@ onMounted(() => {
             <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
             {{ playing ? "Pause" : "Play" }}
           </button>
-          <p class="hint">Pick a view in the menu to try it</p>
+          <p class="hint"><UIcon name="i-tabler-pointer" class="pi" />Pick a view in the menu to try it</p>
         </div>
         <p class="lede">One folder, nine ways to see it. Each folder keeps its own view, and switching never moves a file.</p>
         <!-- The view on screen, right under the lede where the eye already is -->
@@ -161,6 +161,7 @@ onMounted(() => {
   align-items: center;
   margin: 0;
   border: 1px solid var(--lf-line-strong);
+  gap: 0.375rem;
   border-radius: 999px;
   padding: 0.375rem 0.875rem;
   color: var(--lf-ink-3);
