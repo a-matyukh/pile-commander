@@ -34,5 +34,6 @@ useSeoMeta({
     <FinalSync />
     <FinalShare />
     <FinalDevices />
+    <FinalYours />
   </div>
 </template>
