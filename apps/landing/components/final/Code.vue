@@ -1,5 +1,5 @@
-<!-- Block 8, transparency: the code is public to read. Not "open source":
-     the repository has no license file. Static, the last block: the
+<!-- Block 8, transparency: source available, the code public to read. Not
+     "open source": the repository has no license file. Static, the last block: the
      repository as its folders, the stack from README.md's badges, how the
      app keeps things from the home page's "Under the hood"
      (UnderTheHood.vue), then the ways in once more. -->
@@ -41,7 +41,7 @@ const facts = [
           <span class="rh">
             <UIcon name="i-tabler-brand-github" class="rgi" />
             <span class="rn">a-matyukh/pile-commander</span>
-            <span class="rp">Public</span>
+            <span class="rp">Source available</span>
           </span>
           <ul class="rf">
             <li v-for="f in folders" :key="f.name">
@@ -55,8 +55,12 @@ const facts = [
           <span class="rgo">View the code on GitHub<UIcon name="i-tabler-arrow-up-right" class="rga" /></span>
         </a>
 
-        <!-- How it keeps things -->
-        <ul class="facts">
+        <!-- How the folder keeps its layout -->
+        <FinalXattrTree />
+      </div>
+
+      <!-- How it keeps things -->
+      <ul class="facts">
           <li v-for="f in facts" :key="f.title" class="fact">
             <span class="fic"><UIcon :name="f.icon" class="fii" /></span>
             <span>
@@ -65,7 +69,6 @@ const facts = [
             </span>
           </li>
         </ul>
-      </div>
 
       <!-- The ways in, once more -->
       <div class="end">
@@ -117,7 +120,7 @@ const facts = [
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.5rem;
 }
 
@@ -247,9 +250,9 @@ const facts = [
 
 .facts {
   display: grid;
-  gap: 1rem;
-  align-content: start;
-  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0 0;
   padding: 0;
   list-style: none;
 }
@@ -286,6 +289,12 @@ const facts = [
   color: var(--lf-ink-2);
   font-size: 0.9375rem;
   line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── The ways in ─────────────────────────────────────── */
