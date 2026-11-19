@@ -1,12 +1,16 @@
 <!-- The final landing: its own tokens (assets/css/final.css, scoped under .lf),
-     a header that scrolls away with the page and a footer. -->
+     a header that scrolls away with the page, the pinned menu of the blocks
+     (wide screens) and a footer. The first screen is a desktop: the
+     wallpaper sits behind the header and the intro. -->
 <script setup lang="ts">
 import "~/assets/css/final.css";
 </script>
 
 <template>
-  <div class="lf flex min-h-dvh flex-col">
+  <div class="lf relative flex min-h-dvh flex-col">
+    <FinalWallpaper />
     <FinalHeader />
+    <FinalNav />
     <main class="flex-1">
       <slot />
     </main>

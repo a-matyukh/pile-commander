@@ -1,4 +1,5 @@
-<!-- Not sticky: the page gives the whole screen to the content. The ways in
+<!-- Not sticky: the page gives the whole screen to the content. It sits on
+     the desktop's wallpaper. The ways in
      live here: download and the browser. A phone cannot run the desktop
      app, so there the browser comes first and the download leaves. -->
 <script setup lang="ts">
@@ -12,8 +13,9 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 <template>
   <header class="bar">
     <div class="lf-wrap bar-in">
+      <!-- The logo is the app's icon on the desktop, its name under it -->
       <NuxtLink to="/final" class="brand" aria-label="Pile Commander">
-        <img src="/app-icon.png" alt="" width="32" height="32" class="brand-icon">
+        <img src="/app-icon.png" alt="" width="64" height="64" class="brand-icon">
         <span class="brand-name">Pile Commander</span>
       </NuxtLink>
 
@@ -41,36 +43,54 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 <style scoped>
 .bar-in {
   display: flex;
-  min-height: 4rem;
-  align-items: center;
+  height: var(--lf-header-h);
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  padding-top: 0.875rem;
 }
 
+/* A desktop icon: the icon, the name under it */
 .brand {
   display: flex;
+  width: 6.25rem;
+  flex-direction: column;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.3rem;
+  /* The icon lines up with the page's edge; the name may reach past it */
+  margin-left: calc(-1 * min(1.375rem, var(--lf-gutter) - 0.25rem));
+  border-radius: 8px;
+  padding: 0.25rem 0;
   color: var(--lf-ink);
   text-decoration: none;
 }
 
 .brand-icon {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.5rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.18));
 }
 
 .brand-name {
-  font-size: 1rem;
-  font-weight: 600;
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: center;
+  text-shadow: 0 1px 2px rgb(255 255 255 / 0.6);
   white-space: nowrap;
+}
+
+.brand:hover .brand-name {
+  background: rgb(0 0 0 / 0.08);
 }
 
 .nav {
   display: flex;
   align-items: center;
   gap: 0.625rem;
+  margin-top: 0.875rem;
 }
 
 .nav-link {
@@ -108,9 +128,5 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   }
 }
 
-@media (max-width: 420px) {
-  .brand-name {
-    display: none;
-  }
-}
+
 </style>

@@ -1,8 +1,9 @@
-<!-- Block 0, the pitch: what Pile Commander is, and the app itself — a folder
+<!-- Block 0: the tagline and the app itself, open on the desktop — a folder
      in your home folder laid out as a board, with the blocks 1–6 pinned where
-     they live. On a computer the whole block fits one screen (a MacBook's
-     included): the window takes the height that is left. The ways in
-     (download, the browser) are in the header. -->
+     they live. No marketing copy: the blocks are listed plainly, in the
+     pinned menu on a wide screen, under the window otherwise. On a computer
+     the whole block fits one screen (a MacBook's included): the window takes
+     the height that is left. The ways in are in the header. -->
 <script setup lang="ts">
 import type { Crumb, TreeItem } from "./AppWindow.vue";
 
@@ -35,14 +36,7 @@ const tree: TreeItem[] = [
 <template>
   <section class="intro">
     <div class="lf-wrap in">
-      <div class="copy">
-        <h1 class="lf-h1 tag">File manager. <span class="em">Creative space.</span></h1>
-        <p class="lf-lede">
-          Pile Commander is a file manager for your home folder and the cloud.
-          See any folder nine ways, lay it out like a board, and keep every
-          file an ordinary file on your disk.
-        </p>
-      </div>
+      <h1 class="lf-h1 tag">File manager. <span class="em">Creative space.</span></h1>
 
       <FinalAppWindow
         class="shot"
@@ -72,14 +66,15 @@ const tree: TreeItem[] = [
           <img src="/landing-alt2/jellyfish.jpg" alt="" class="card c-jelly" width="416" height="520">
         </div>
       </FinalAppWindow>
-      <FinalLegend />
+      <!-- Wide screens have the pinned menu (Nav.vue) instead -->
+      <FinalLegend class="legend" />
     </div>
   </section>
 </template>
 
 <style scoped>
 .intro {
-  padding: clamp(1.25rem, 3vh, 2.5rem) 0 var(--lf-section);
+  padding: 0.5rem 0 var(--lf-section);
 }
 
 .in {
@@ -87,16 +82,10 @@ const tree: TreeItem[] = [
   flex-direction: column;
 }
 
-.copy {
-  display: grid;
-  justify-items: center;
-  gap: 0.875rem;
-  text-align: center;
-}
-
 /* The tagline in one row on a computer */
 .tag {
   font-size: clamp(2.25rem, 3.6vw, 3.5rem);
+  text-align: center;
 }
 
 @media (min-width: 900px) {
@@ -109,23 +98,25 @@ const tree: TreeItem[] = [
   color: var(--lf-accent);
 }
 
-.copy .lf-lede {
-  max-width: 46rem;
-}
-
 .shot {
-  margin-top: clamp(1.25rem, 3vh, 2.25rem);
+  margin-top: clamp(1.25rem, 3vh, 2rem);
 }
 
-/* A computer: header, copy, window and legend fill one screen; the window
-   takes what is left, within reason */
+@media (min-width: 1100px) {
+  .legend {
+    display: none;
+  }
+}
+
+/* A computer: header, tagline and window fill one screen; the window takes
+   what is left */
 @media (min-width: 761px) and (min-height: 560px) {
   .intro {
-    padding-bottom: clamp(1rem, 2.5vh, 2rem);
+    padding-bottom: clamp(1.5rem, 4vh, 3rem);
   }
 
   .in {
-    height: clamp(36rem, calc(100svh - 4rem - clamp(2.25rem, 5.5vh, 4.5rem)), 62rem);
+    height: calc(var(--lf-screen) - var(--lf-header-h) - 0.5rem - clamp(1.5rem, 4vh, 3rem));
   }
 
   .shot {

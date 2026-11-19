@@ -9,7 +9,11 @@
    - one accent, the blue of /alt2;
    - every picture of the product is the app's real interface: ~ for the home
      folder in the path (a cloud icon for the cloud), the path in one row
-     (the compact folder header), menus drawn as the app draws them. */
+     (the compact folder header), menus drawn as the app draws them;
+   - the first screen is a computer's desktop: a wallpaper, the app's icon
+     with its name, and the app's window open on it;
+   - on a wide screen the blocks are a menu pinned on the left (Nav.vue),
+     under the desktop icon; the content moves right to make room. */
 
 .lf {
   --lf-bg: #f0f0f0;
@@ -29,6 +33,12 @@
   --lf-gutter: clamp(1rem, 4vw, 2.5rem);
   --lf-section: clamp(4rem, 9vw, 8rem);
   --lf-radius: 10px;
+  /* The first screen: header and intro fill it, within reason */
+  --lf-screen: clamp(40rem, 100svh, 64rem);
+  --lf-header-h: 6.5rem;
+  /* The pinned menu's column on a wide screen */
+  --lf-nav: 0rem;
+  --lf-nav-gap: 0rem;
 
   background: var(--lf-bg);
   color: var(--lf-ink);
@@ -39,7 +49,7 @@
 
 :where(.lf) .lf-wrap {
   width: 100%;
-  max-width: var(--lf-wrap);
+  max-width: calc(var(--lf-wrap) + var(--lf-nav) + var(--lf-nav-gap));
   margin-inline: auto;
   padding-inline: var(--lf-gutter);
 }
@@ -163,4 +173,32 @@
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-decoration: none;
+}
+
+/* Above the wallpaper */
+:where(.lf) > header,
+:where(.lf) > main,
+:where(.lf) > footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* Wide: the menu takes a column on the left, the content moves right */
+@media (min-width: 1100px) {
+  .lf {
+    --lf-nav: 13rem;
+    --lf-nav-gap: 2.5rem;
+  }
+
+  :where(.lf) main .lf-wrap,
+  :where(.lf) footer .lf-wrap {
+    padding-left: calc(var(--lf-gutter) + var(--lf-nav) + var(--lf-nav-gap));
+  }
+}
+
+/* A click in the menu glides to its block */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.lf) {
+    scroll-behavior: smooth;
+  }
 }
