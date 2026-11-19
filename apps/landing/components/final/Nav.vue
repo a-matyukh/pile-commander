@@ -60,9 +60,9 @@ onMounted(() => {
   .nav {
     position: fixed;
     /* Centred on the intro's window, which fills the first screen
-       (Intro.vue): from under the tagline to the screen's bottom margin.
+       (Intro.vue): from under the header to the screen's bottom margin.
        It stays there while the page scrolls */
-    top: calc((var(--lf-header-h) + var(--lf-intro-top) + var(--lf-tag-size) * 1.02 + var(--lf-tag-gap) + var(--lf-screen) - var(--lf-intro-bottom)) / 2);
+    top: calc((var(--lf-header-h) + var(--lf-intro-top) + var(--lf-screen) - var(--lf-intro-bottom)) / 2);
     translate: 0 -50%;
     /* The header's left edge: the wrap is centred */
     left: max(var(--lf-gutter), calc((100vw - var(--lf-wrap) - var(--lf-nav) - var(--lf-nav-gap)) / 2 + var(--lf-gutter)));

@@ -29,18 +29,22 @@
 
   --lf-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  --lf-wrap: 76rem;
+  --lf-wrap: 86rem;
   --lf-gutter: clamp(1rem, 4vw, 2.5rem);
   --lf-section: clamp(4rem, 9vw, 8rem);
   --lf-radius: 10px;
   /* The first screen: header and intro fill it, within reason */
   --lf-screen: clamp(40rem, 100svh, 64rem);
-  --lf-header-h: 6.5rem;
-  /* The intro's rows (Intro.vue): the tagline, the gap under it and the
-     space under the window. The pinned menu centres on the window with them */
-  --lf-intro-top: 0.5rem;
-  --lf-tag-size: clamp(2.25rem, 3.6vw, 3.5rem);
-  --lf-tag-gap: clamp(1.25rem, 3vh, 2rem);
+  /* The OS's bar on top (OsBar.vue) */
+  --lf-os-h: 1.5rem;
+  /* The OS bar and the header (the desktop icon with its name, the tagline,
+     the buttons) on a wide screen: the icon sits as far from the OS bar as
+     from the page's left edge (the gutter) */
+  --lf-header-h: calc(var(--lf-os-h) + var(--lf-gutter) + 6.5rem);
+  --lf-tag-size: clamp(1.75rem, 2.1vw, 2.5rem);
+  /* The intro (Intro.vue): the space above and under the window. The pinned
+     menu centres on the window with them */
+  --lf-intro-top: 0.25rem;
   --lf-intro-bottom: clamp(1.5rem, 4vh, 3rem);
   /* The pinned menu's column on a wide screen */
   --lf-nav: 0rem;

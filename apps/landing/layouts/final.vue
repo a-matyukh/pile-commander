@@ -8,6 +8,7 @@ import "~/assets/css/final.css";
 
 <template>
   <div class="lf relative flex min-h-dvh flex-col">
+    <FinalOsBar />
     <FinalHeader />
     <FinalNav />
     <main class="flex-1">

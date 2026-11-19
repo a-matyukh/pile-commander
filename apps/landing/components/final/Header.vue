@@ -1,5 +1,7 @@
-<!-- Not sticky: the page gives the whole screen to the content. The ways in
-     live here: download and the browser. A phone cannot run the desktop
+<!-- Not sticky: the page gives the whole screen to the content. One row on
+     a wide screen: the app's icon on the desktop (as far from the OS bar as
+     from the page's edge), the tagline over the window, the ways in
+     (download and the browser). Narrower, the tagline takes a row of its own. A phone cannot run the desktop
      app, so there the browser comes first and the download leaves. -->
 <script setup lang="ts">
 const { demoUrl } = useAppLinks();
@@ -17,6 +19,8 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
         <img src="/app-icon.png" alt="" width="64" height="64" class="brand-icon">
         <span class="brand-name">Pile Commander</span>
       </NuxtLink>
+
+      <h1 class="lf-h1 tag">File manager. <span class="em">Creative space.</span></h1>
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>
@@ -41,16 +45,21 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 
 <style scoped>
 .bar-in {
-  display: flex;
-  height: var(--lf-header-h);
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-top: 0.875rem;
+  display: grid;
+  grid-template-areas:
+    "brand nav"
+    "tag tag";
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0 1rem;
+  /* The icon's top is a gutter under the OS bar (the name's box adds 0.25rem) */
+  padding-top: calc(var(--lf-gutter) - 0.25rem);
 }
 
 /* A desktop icon: the icon, the name under it */
 .brand {
+  grid-area: brand;
+  justify-self: start;
   display: flex;
   width: 6.25rem;
   flex-direction: column;
@@ -75,8 +84,8 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 .brand-name {
   border-radius: 4px;
   padding: 0 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 600;
   line-height: 1.3;
   text-align: center;
   white-space: nowrap;
@@ -86,11 +95,43 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   background: rgb(0 0 0 / 0.08);
 }
 
+/* Buttons: their middle on the icon's (2rem down the name's box) */
 .nav {
+  grid-area: nav;
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 0.625rem;
   margin-top: 0.875rem;
+}
+
+.tag {
+  grid-area: tag;
+  margin-top: 1rem;
+  font-size: clamp(2rem, 7vw, 2.75rem);
+  text-align: center;
+}
+
+.em {
+  color: var(--lf-accent);
+}
+
+/* Wide: one row; the tagline starts where the window does, over it */
+@media (min-width: 1100px) {
+  .bar-in {
+    height: calc(var(--lf-header-h) - var(--lf-os-h));
+    box-sizing: border-box;
+    grid-template-areas: "brand tag nav";
+    grid-template-columns: calc(var(--lf-nav) + var(--lf-nav-gap) - 1.5rem) minmax(0, 1fr) auto;
+    gap: 0 1.5rem;
+  }
+
+  .tag {
+    margin-top: calc(2rem - var(--lf-tag-size) * 0.51);
+    font-size: var(--lf-tag-size);
+    text-align: left;
+    white-space: nowrap;
+  }
 }
 
 .nav-link {
@@ -112,7 +153,8 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   font-weight: 500;
 }
 
-@media (max-width: 1000px) {
+/* The tagline needs the room: the repository keeps its icon */
+@media (max-width: 1400px) {
   .repo-name {
     display: none;
   }

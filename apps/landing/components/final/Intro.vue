@@ -1,4 +1,5 @@
-<!-- Block 0: the tagline and the app itself, open on the desktop — a folder
+<!-- Block 0: the app itself, open on the desktop (the tagline is in the
+     header, over the window) — a folder
      in your home folder laid out as a board, with the blocks 1–6 pinned where
      they live. No marketing copy: the blocks are listed plainly, in the
      pinned menu on a wide screen, under the window otherwise. On a computer
@@ -36,8 +37,6 @@ const tree: TreeItem[] = [
 <template>
   <section class="intro">
     <div class="lf-wrap in">
-      <h1 class="lf-h1 tag">File manager. <span class="em">Creative space.</span></h1>
-
       <FinalAppWindow
         class="shot"
         :crumbs="crumbs"
@@ -82,35 +81,23 @@ const tree: TreeItem[] = [
   flex-direction: column;
 }
 
-/* The tagline in one row on a computer */
-.tag {
-  font-size: var(--lf-tag-size);
-  text-align: center;
-}
-
-@media (min-width: 900px) {
-  .tag {
-    white-space: nowrap;
-  }
-}
-
-.em {
-  color: var(--lf-accent);
-}
-
 .shot {
-  margin-top: var(--lf-tag-gap);
+  margin-top: 1.5rem;
 }
 
 @media (min-width: 1100px) {
+  .shot {
+    margin-top: 0;
+  }
+
   .legend {
     display: none;
   }
 }
 
-/* A computer: header, tagline and window fill one screen; the window takes
-   what is left */
-@media (min-width: 761px) and (min-height: 560px) {
+/* A wide screen: OS bar, header and window fill one screen; the window
+   takes what is left */
+@media (min-width: 1100px) and (min-height: 560px) {
   .intro {
     padding-bottom: var(--lf-intro-bottom);
   }
