@@ -5,7 +5,7 @@ export const finalIdeas = [
   { n: 1, id: "views", title: "Nine views", hint: "One folder, nine ways to see it" },
   { n: 2, id: "files", title: "Files come alive", hint: "Notes, previews, covers, the pen" },
   { n: 3, id: "ai", title: "AI", hint: "Summarize, rename, sort, ideas" },
-  { n: 4, id: "sync", title: "Sync", hint: "A cloud copy of any folder" },
+  { n: 4, id: "sync", title: "Sync", hint: "A cloud copy of any folder, cloud folders" },
   { n: 5, id: "share", title: "Share", hint: "A file, a person, a link, the Hub" },
   { n: 6, id: "screens", title: "Any screen", hint: "Desktop, tablet, phone, browser" },
 ] as const;

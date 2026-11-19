@@ -46,7 +46,9 @@ const props = withDefaults(
     /** a board or a canvas: the header has the layers button */
     spatial?: boolean;
     /** a header menu is open: its button is pressed */
-    open?: "view" | "add" | "layers" | "ai" | null;
+    open?: "view" | "add" | "layers" | "ai" | "sync" | null;
+    /** the sync button's icon (SyncMenu.vue): cloud-up before syncing */
+    syncIcon?: string;
     /** the folder's buttons; a page (Settings) has none */
     actions?: boolean;
     /** the visitor can use something in it: no longer a picture to screen readers */
@@ -65,6 +67,7 @@ const props = withDefaults(
     spatial: true,
     open: null,
     actions: true,
+    syncIcon: "i-tabler-cloud-check",
     interactive: false,
   },
 );
@@ -136,7 +139,7 @@ const active = useState<number | null>("lf-active", () => null);
               </span>
               <span class="act" :class="{ on: open === 'ai' }" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="pin(3)" :n="3" /></span>
               <!-- Sync before share, as in the app: a private cloud copy comes first -->
-              <span v-if="synced" class="act" data-anchor="4"><UIcon name="i-tabler-cloud-check" class="ic" /><FinalMarker v-if="pin(4)" :n="4" /></span>
+              <span v-if="synced" class="act" :class="{ on: open === 'sync' }" data-anchor="4"><UIcon :name="syncIcon" class="ic" /><FinalMarker v-if="pin(4)" :n="4" /></span>
               <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="pin(5)" :n="5" /></span>
               <span class="act"><UIcon name="i-tabler-dots" class="ic" /></span>
             </div>
