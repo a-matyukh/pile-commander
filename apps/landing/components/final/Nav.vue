@@ -1,6 +1,7 @@
 <!-- The blocks 1–8 as a plain list, like a repository's feature list: the
      number (the window's marker), a name and a short line. On a wide screen it
-     is pinned on the left, level with the top of the intro's window, and a click glides to the
+     is pinned on the left: level with the top of the intro's window at first,
+     then sticky near the top of the browser; a click glides to the
      block; the pointer on a line lights its place in the window (lf-active).
      The block on screen is marked. Narrower, the intro shows the same list
      under the window instead (Legend.vue). -->
@@ -11,19 +12,35 @@ const active = useState<number | null>("lf-active", () => null);
 /** The block on screen, if any */
 const current = ref<string | null>(null);
 
-/** The line under the intro window's top bar, in page coordinates */
+const nav = useTemplateRef<HTMLElement>("nav");
+/** Where it stands on screen: under the intro window's top bar at first,
+ *  then, as the page scrolls, it rises and sticks as far from the top of
+ *  the browser as it is from its left edge */
 const top = ref<string | null>(null);
 
 onMounted(() => {
   const bar = document.querySelector<HTMLElement>(".intro .topbar");
   if (bar) {
+    /** The line under the window's top bar, in page coordinates */
+    let start = 0;
+    const place = () => {
+      const left = nav.value?.getBoundingClientRect().left ?? 0;
+      top.value = `${Math.round(Math.max(left, start - window.scrollY))}px`;
+    };
     const measure = () => {
-      top.value = `${Math.round(bar.getBoundingClientRect().bottom + window.scrollY)}px`;
+      start = bar.getBoundingClientRect().bottom + window.scrollY;
+      place();
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(document.documentElement);
-    onBeforeUnmount(() => ro.disconnect());
+    window.addEventListener("scroll", place, { passive: true });
+    window.addEventListener("resize", measure);
+    onBeforeUnmount(() => {
+      ro.disconnect();
+      window.removeEventListener("scroll", place);
+      window.removeEventListener("resize", measure);
+    });
   }
 
   const sections = finalIdeas
@@ -41,7 +58,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <nav class="nav" aria-label="What Pile Commander does" :style="top ? { '--nav-top': top } : undefined">
+  <nav ref="nav" class="nav" aria-label="What Pile Commander does" :style="top ? { '--nav-top': top } : undefined">
     <ol class="list">
       <li v-for="idea in finalIdeas" :key="idea.n">
         <a
@@ -70,12 +87,19 @@ onMounted(() => {
   display: none;
 }
 
+/* A low screen: names only, the second lines go */
+@media (min-width: 1100px) and (max-height: 760px) {
+  .hi {
+    display: none;
+  }
+}
+
 @media (min-width: 1100px) {
   .nav {
     position: fixed;
-    /* Level with the line under the window's top bar (Intro.vue), measured
-       after load; before that, about there. It stays put while the page
-       scrolls */
+    /* Level with the line under the window's top bar (Intro.vue) at first,
+       then sticky near the top as the page scrolls (measured in the script);
+       before that, about there */
     top: var(--nav-top, calc(var(--lf-header-h) + var(--lf-intro-top) + 2.5rem));
     /* The header's left edge: the wrap is centred */
     left: max(var(--lf-gutter), calc((100vw - var(--lf-wrap) - var(--lf-nav) - var(--lf-nav-gap)) / 2 + var(--lf-gutter)));
