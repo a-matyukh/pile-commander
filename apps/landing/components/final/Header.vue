@@ -20,7 +20,7 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
       </NuxtLink>
 
       <!-- The name and what it is, in one rhythm -->
-      <h1 class="lf-h1 tag">Pile Commander. File manager. <span class="em">Creative space.</span></h1>
+      <h1 class="lf-h1 tag"><span class="pc">Pile Commander.</span> File manager. <span class="em">Creative space.</span></h1>
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>
@@ -84,6 +84,8 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 
 .tag {
   grid-area: tag;
+  /* A soft light halo keeps it clear of the photo behind */
+  text-shadow: 0 0 18px rgb(255 255 255 / 0.55);
   margin-top: 1rem;
   font-size: clamp(2rem, 7vw, 2.75rem);
   text-align: center;
@@ -91,6 +93,11 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 
 .em {
   color: var(--lf-accent);
+}
+
+/* The purple of the app's icon */
+.pc {
+  color: #6044d9;
 }
 
 /* Wide: one row, the tagline right beside the icon */
@@ -114,13 +121,21 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 .nav-link {
   display: inline-flex;
   margin-right: 0.5rem;
-  color: var(--lf-ink-2);
+  color: var(--lf-ink);
+  font-weight: 500;
   font-size: 0.9375rem;
   text-decoration: none;
 }
 
 .nav-link:hover {
   color: var(--lf-ink);
+}
+
+/* The header sits on the wallpaper: the outlined button gets a frosted fill */
+.repo {
+  background: rgb(255 255 255 / 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* The repository's name, as GitHub writes it */

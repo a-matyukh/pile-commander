@@ -11,7 +11,21 @@ const active = useState<number | null>("lf-active", () => null);
 /** The block on screen, if any */
 const current = ref<string | null>(null);
 
+/** The line under the intro window's top bar, in page coordinates */
+const top = ref<string | null>(null);
+
 onMounted(() => {
+  const bar = document.querySelector<HTMLElement>(".intro .topbar");
+  if (bar) {
+    const measure = () => {
+      top.value = `${Math.round(bar.getBoundingClientRect().bottom + window.scrollY)}px`;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(document.documentElement);
+    onBeforeUnmount(() => ro.disconnect());
+  }
+
   const sections = finalIdeas
     .map(i => document.getElementById(i.id))
     .filter((el): el is HTMLElement => !!el);
@@ -27,7 +41,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <nav class="nav" aria-label="What Pile Commander does">
+  <nav class="nav" aria-label="What Pile Commander does" :style="top ? { '--nav-top': top } : undefined">
     <ol class="list">
       <li v-for="idea in finalIdeas" :key="idea.n">
         <a
@@ -59,9 +73,10 @@ onMounted(() => {
 @media (min-width: 1100px) {
   .nav {
     position: fixed;
-    /* Level with the top of the intro's window (Intro.vue), close under
-       the desktop icon. It stays there while the page scrolls */
-    top: calc(var(--lf-header-h) + var(--lf-intro-top));
+    /* Level with the line under the window's top bar (Intro.vue), measured
+       after load; before that, about there. It stays put while the page
+       scrolls */
+    top: var(--nav-top, calc(var(--lf-header-h) + var(--lf-intro-top) + 2.5rem));
     /* The header's left edge: the wrap is centred */
     left: max(var(--lf-gutter), calc((100vw - var(--lf-wrap) - var(--lf-nav) - var(--lf-nav-gap)) / 2 + var(--lf-gutter)));
     z-index: 2;
@@ -70,20 +85,26 @@ onMounted(() => {
   }
 }
 
+/* A frosted panel: it reads on the wallpaper and on the gray page alike */
 .list {
   display: grid;
   gap: 0.125rem;
   margin: 0;
-  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.72);
+  padding: 0.375rem;
   list-style: none;
+  box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.25);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .it {
   display: flex;
   align-items: flex-start;
   gap: 0.625rem;
-  border-radius: 8px;
-  margin-left: -0.5rem;
+  border-radius: 9px;
   padding: 0.5rem;
   color: var(--lf-ink-2);
   text-decoration: none;

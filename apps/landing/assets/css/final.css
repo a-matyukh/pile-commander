@@ -185,6 +185,12 @@
   text-decoration: none;
 }
 
+/* Above the wallpaper */
+:where(.lf) > :not(.wall, nav) {
+  position: relative;
+  z-index: 1;
+}
+
 /* Wide: the menu takes a column on the left, the content moves right */
 @media (min-width: 1100px) {
   .lf {

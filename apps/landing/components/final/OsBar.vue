@@ -26,7 +26,7 @@ onMounted(() => {
         <img src="/app-icon.png" alt="" width="16" height="16" class="task-icon">
         Pile Commander
       </span>
-      <span class="task"><UIcon name="i-tabler-world" class="ic" /></span>
+      <span class="task"><UIcon name="i-tabler-mail" class="ic" /></span>
       <span class="task"><UIcon name="i-tabler-music" class="ic" /></span>
     </span>
 
