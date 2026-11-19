@@ -20,7 +20,7 @@ import ViewMenu from './ViewMenu.vue'
 
 /**
  * Actions of the open folder: the view switch, "Add" and AI (writable folders
- * only: every AI action writes), sharing, sync and the "⋯" menu. A folder
+ * only: every AI action writes), sync, sharing and the "⋯" menu. A folder
  * shared with me to view says so first. A publication or the demo is not one of
  * the user's places: it shows only its view and, for a publication, its own
  * actions (author, copy to my cloud, download, report)
@@ -46,8 +46,9 @@ const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.f
 	</template>
 	<template v-if="own">
 		<AiMenu v-if="workspace.can_write" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
-		<ShareMenu :folder="folder" :name="name" :align="align" />
+		<!-- Sync first: a folder can have a private cloud copy before it is shared -->
 		<SyncMenu v-if="can_sync(folder, workspace.can_write)" :folder="folder" :name="name" :align="align" />
+		<ShareMenu :folder="folder" :name="name" :align="align" />
 		<FolderMenu
 			:folder="folder"
 			:name="name"
