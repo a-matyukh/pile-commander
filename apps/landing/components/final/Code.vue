@@ -2,11 +2,9 @@
      "open source": the repository has no license file. Static, the last block: the
      repository as its folders, the stack from README.md's badges, how the
      app keeps things from the home page's "Under the hood"
-     (UnderTheHood.vue), then the ways in once more. -->
+     (UnderTheHood.vue). The page ends with Finale.vue. -->
 <script setup lang="ts">
 const githubUrl = "https://github.com/a-matyukh/pile-commander";
-const { demoUrl } = useAppLinks();
-const { os, downloadLabel } = useDownloadCta();
 const external = { target: "_blank", rel: "noopener noreferrer" };
 
 const folders = [
@@ -70,20 +68,6 @@ const facts = [
           </li>
         </ul>
 
-      <!-- The ways in, once more -->
-      <div class="end">
-        <p class="et">File manager. <span class="em">Creative space.</span></p>
-        <div class="eb">
-          <a v-if="os === 'mobile'" :href="demoUrl" v-bind="external" class="lf-btn lf-btn-primary">Try in the browser</a>
-          <template v-else>
-            <NuxtLink to="/download" class="lf-btn lf-btn-primary">
-              <UIcon name="i-lucide-download" class="size-[1.1em]" />
-              {{ downloadLabel }}
-            </NuxtLink>
-            <a :href="demoUrl" v-bind="external" class="lf-btn lf-btn-secondary">Try in the browser</a>
-          </template>
-        </div>
-      </div>
     </div>
   </section>
 </template>
@@ -297,33 +281,4 @@ const facts = [
   }
 }
 
-/* ── The ways in ─────────────────────────────────────── */
-
-.end {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem 2rem;
-  margin-top: clamp(3rem, 6vw, 5rem);
-  border-top: 1px solid var(--lf-line);
-  padding-top: 2rem;
-}
-
-.et {
-  margin: 0;
-  font-size: clamp(1.5rem, 2.4vw, 2rem);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
-
-.em {
-  color: var(--lf-accent);
-}
-
-.eb {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
 </style>
