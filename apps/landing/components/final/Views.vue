@@ -55,6 +55,16 @@ onMounted(() => {
         <span class="lf-marker" aria-hidden="true">1</span>
         <h2 id="views-title" class="title">Nine views</h2>
         <p class="lede">One folder, nine ways to see it. Each folder keeps its own view, and switching never moves a file.</p>
+        <!-- The view on screen, right under the lede where the eye already is -->
+        <div class="now">
+          <p class="caption" aria-live="polite">
+            <span class="cname">{{ meta.label }}.</span> {{ meta.caption }}
+          </p>
+          <button type="button" class="play" :aria-pressed="playing" @click="toggle">
+            <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
+            {{ playing ? "Pause" : "Play" }}
+          </button>
+        </div>
       </header>
 
       <FinalAppWindow
@@ -81,15 +91,6 @@ onMounted(() => {
         </template>
       </FinalAppWindow>
 
-      <div class="foot">
-        <p class="caption" aria-live="polite">
-          <span class="cname">{{ meta.label }}.</span> {{ meta.caption }}
-        </p>
-        <button type="button" class="play" :aria-pressed="playing" @click="toggle">
-          <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
-          {{ playing ? "Pause" : "Play" }}
-        </button>
-      </div>
     </div>
   </section>
 </template>
@@ -119,10 +120,16 @@ onMounted(() => {
 .lede {
   grid-column: 2;
   margin: 0;
-  max-width: 40rem;
   color: var(--lf-ink-2);
   font-size: 1.0625rem;
   line-height: 1.5;
+}
+
+/* One row on a computer */
+@media (min-width: 1100px) {
+  .lede {
+    white-space: nowrap;
+  }
 }
 
 /* The menu under the view button, its right edge on the button's */
@@ -132,17 +139,17 @@ onMounted(() => {
   z-index: 3;
 }
 
-.foot {
+.now {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 1rem;
+  grid-column: 2;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .caption {
   margin: 0;
-  color: var(--lf-ink-2);
+  color: var(--lf-ink);
   font-size: 0.9375rem;
   line-height: 1.5;
 }
@@ -152,7 +159,9 @@ onMounted(() => {
   font-weight: 600;
 }
 
+/* Before the caption: it keeps its place while the caption changes length */
 .play {
+  order: -1;
   display: inline-flex;
   flex: none;
   align-items: center;
