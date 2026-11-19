@@ -71,28 +71,28 @@ const images = FOLDER_ITEMS.filter(i => i.kind === "image");
 
       <!-- Canvas.vue's dock: tools, then the zoom -->
       <div v-if="view === 'canvas'" class="dock">
-        <UIcon name="i-tabler-hand-stop" class="di" />
-        <UIcon name="i-tabler-pointer" class="di on" />
-        <UIcon name="i-tabler-lasso" class="di" />
+        <span class="db"><UIcon name="i-tabler-hand-stop" class="di" /></span>
+        <span class="db on"><UIcon name="i-tabler-pointer" class="di" /></span>
+        <span class="db"><UIcon name="i-tabler-lasso" class="di" /></span>
         <span class="dsep" />
-        <UIcon name="i-tabler-vector-spline" class="di" />
-        <UIcon name="i-tabler-unlink" class="di" />
+        <span class="db"><UIcon name="i-tabler-vector-spline" class="di" /></span>
+        <span class="db"><UIcon name="i-tabler-unlink" class="di" /></span>
         <span class="dsep" />
-        <UIcon name="i-tabler-pencil" class="di" />
-        <UIcon name="i-tabler-eraser" class="di" />
+        <span class="db"><UIcon name="i-tabler-pencil" class="di" /></span>
+        <span class="db"><UIcon name="i-tabler-eraser" class="di" /></span>
         <span class="dsep" />
         <span class="dz">74%<UIcon name="i-tabler-chevron-up" class="dzc" /></span>
       </div>
 
       <!-- View3D.vue's bar: the camera, then the zoom and the tips -->
       <div v-if="view === '3d'" class="dock">
-        <UIcon name="i-tabler-perspective" class="di" />
-        <UIcon name="i-tabler-template" class="di" />
+        <span class="db"><UIcon name="i-tabler-perspective" class="di" /></span>
+        <span class="db"><UIcon name="i-tabler-template" class="di" /></span>
         <span class="dsep" />
-        <UIcon name="i-tabler-minus" class="di" />
-        <UIcon name="i-tabler-plus" class="di" />
+        <span class="db"><UIcon name="i-tabler-minus" class="di" /></span>
+        <span class="db"><UIcon name="i-tabler-plus" class="di" /></span>
         <span class="dsep" />
-        <UIcon name="i-tabler-help-circle" class="di" />
+        <span class="db"><UIcon name="i-tabler-help-circle" class="di" /></span>
       </div>
     </div>
 
@@ -463,17 +463,25 @@ img {
   translate: -50% 0;
 }
 
-.di {
+/* A tool: the icon on a pill; the picked one is filled. The icons are masks
+   in currentColor, so the fill goes on the pill, not on the icon */
+.db {
+  display: grid;
   width: 2em;
-  height: 1.25em;
+  height: 1.95em;
   flex: none;
-  padding: 0.35em 0;
+  place-items: center;
   border-radius: 999px;
 }
 
-.di.on {
+.db.on {
   background: #e6f1fb;
   color: #185fa5;
+}
+
+.di {
+  width: 1.25em;
+  height: 1.25em;
 }
 
 .dsep {

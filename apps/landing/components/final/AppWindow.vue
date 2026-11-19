@@ -45,8 +45,8 @@ const props = withDefaults(
     fill?: boolean;
     /** a board or a canvas: the header has the layers button */
     spatial?: boolean;
-    /** the view menu is open: its button is pressed */
-    viewOpen?: boolean;
+    /** a header menu is open: its button is pressed */
+    open?: "view" | "add" | "layers" | null;
     /** the visitor can use something in it: no longer a picture to screen readers */
     interactive?: boolean;
   }>(),
@@ -61,7 +61,7 @@ const props = withDefaults(
     markers: false,
     fill: false,
     spatial: true,
-    viewOpen: false,
+    open: null,
     interactive: false,
   },
 );
@@ -124,11 +124,11 @@ const active = useState<number | null>("lf-active", () => null);
             </div>
 
             <div class="acts">
-              <span class="act" :class="{ on: viewOpen }" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="pin(1)" :n="1" /></span>
+              <span class="act" :class="{ on: open === 'view' }" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="pin(1)" :n="1" /></span>
               <!-- ② files and folders: what you add and the layers they sit on -->
               <span class="pair" data-anchor="2">
-                <span class="act"><UIcon name="i-tabler-plus" class="ic" /></span>
-                <span v-if="spatial" class="act"><UIcon name="i-tabler-stack-2" class="ic" /></span>
+                <span class="act" :class="{ on: open === 'add' }"><UIcon name="i-tabler-plus" class="ic" /></span>
+                <span v-if="spatial" class="act" :class="{ on: open === 'layers' }"><UIcon name="i-tabler-stack-2" class="ic" /></span>
                 <FinalMarker v-if="pin(2)" :n="2" />
               </span>
               <span class="act" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="pin(3)" :n="3" /></span>

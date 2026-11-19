@@ -204,3 +204,59 @@
     scroll-behavior: smooth;
   }
 }
+
+/* The app's menus inside a window picture (apps/client/src/ui/kit/menu.css,
+   MenuItem.vue, MenuLabel.vue), sized in em of the window (13px in the app):
+   a white panel, 28px rows, 16px icons */
+:where(.lf) .am {
+  box-sizing: border-box;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 0.62em;
+  background: #fff;
+  padding: 0.31em;
+  box-shadow: 0 0.62em 1.85em rgb(0 0 0 / 0.1), 0 0.15em 0.46em rgb(0 0 0 / 0.06);
+  color: #1f1f1e;
+  user-select: none;
+}
+
+:where(.lf) .am-h {
+  display: flex;
+  min-height: 2.15em;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  padding: 0 0.62em;
+  color: #9a9893;
+  font-size: 0.846em;
+}
+
+:where(.lf) .am-i {
+  display: flex;
+  height: 2.15em;
+  align-items: center;
+  gap: 0.62em;
+  border-radius: 0.46em;
+  padding: 0 0.62em;
+  white-space: nowrap;
+}
+
+:where(.lf) .am-i.hl {
+  background: #f8f8f7;
+}
+
+:where(.lf) .am-ic {
+  width: 1.23em;
+  height: 1.23em;
+  flex: none;
+  color: #5f5e5a;
+}
+
+:where(.lf) .am-end {
+  margin-left: auto;
+}
+
+:where(.lf) .am-sep {
+  height: 1px;
+  margin: 0.31em 0.31em;
+  background: rgb(0 0 0 / 0.08);
+}

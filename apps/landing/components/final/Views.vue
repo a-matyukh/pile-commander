@@ -83,7 +83,7 @@ onMounted(() => {
         :view-color="meta.color ?? '#5f5e5a'"
         :spatial="spatial"
         :markers="[1]"
-        view-open
+        open="view"
         interactive
       >
         <FinalFolderViews :view="view" />

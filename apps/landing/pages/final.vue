@@ -29,5 +29,6 @@ useSeoMeta({
   <div>
     <FinalIntro />
     <FinalViews />
+    <FinalAlive />
   </div>
 </template>
