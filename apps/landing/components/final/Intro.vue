@@ -1,61 +1,47 @@
-<!-- Block 0, the pitch: what Pile Commander is, the two ways in, and the app
-     itself — a folder in your home folder, laid out as a board. -->
+<!-- Block 0, the pitch: what Pile Commander is, and the app itself — a folder
+     in your home folder laid out as a board, with the blocks 1–6 pinned where
+     they live. On a computer the whole block fits one screen (a MacBook's
+     included): the window takes the height that is left. The ways in
+     (download, the browser) are in the header. -->
 <script setup lang="ts">
 import type { Crumb, TreeItem } from "./AppWindow.vue";
-
-const { demoUrl } = useAppLinks();
-const { os, downloadLabel } = useDownloadCta();
-
-const external = { target: "_blank", rel: "noopener noreferrer" };
 
 const crumbs: Crumb[] = [{ glyph: "home" }, { name: "Pictures" }];
 
 const bookmarks: TreeItem[] = [
   { name: "Harbor moodboard", icon: "i-tabler-template", color: "#534ab7", selected: true },
   { name: "Projects" },
-  { name: "Downloads" },
+  { name: "Downloads", icon: "i-tabler-download" },
 ];
 
+/* A typical home folder, its standard folders with the app's icons
+   (STANDARD_FOLDERS in apps/client/src/store/explorer/folder_cover.ts) */
 const tree: TreeItem[] = [
-  { name: "Documents", open: false },
-  { name: "Pictures", open: true },
+  { name: "Applications", icon: "i-tabler-apps", open: false },
+  { name: "Desktop", icon: "i-tabler-device-desktop", open: false },
+  { name: "Documents", icon: "i-tabler-file-text", open: false },
+  { name: "Downloads", icon: "i-tabler-download", open: false },
+  { name: "Library", icon: "i-tabler-building-warehouse", open: false },
+  { name: "Movies", icon: "i-tabler-movie", open: false },
+  { name: "Music", icon: "i-tabler-music", open: false },
+  { name: "Pictures", icon: "i-tabler-photo", open: true },
   { name: "Harbor moodboard", icon: "i-tabler-template", color: "#534ab7", depth: 1, open: true, selected: true },
   { name: "References", icon: "i-tabler-layout-grid", color: "#d4537e", depth: 2 },
-  { name: "Recipes", icon: "i-tabler-layout-cards", color: "#d85a30", depth: 1, open: false },
-  { name: "Trip to Lisbon", icon: "i-tabler-artboard", color: "#1d9e75", depth: 1, open: false },
   { name: "Projects", open: false },
+  { name: "Public", icon: "i-tabler-users", open: false },
 ];
 </script>
 
 <template>
   <section class="intro">
-    <div class="lf-wrap">
+    <div class="lf-wrap in">
       <div class="copy">
-        <h1 class="lf-h1">
-          Your files and folders,<br>
-          <span class="em">no longer boring.</span>
-        </h1>
+        <h1 class="lf-h1 tag">Your files and folders, <span class="em">no longer boring.</span></h1>
         <p class="lf-lede">
           Pile Commander is a file manager for your home folder and the cloud.
           See any folder nine ways, lay it out like a board, and keep every
           file an ordinary file on your disk.
         </p>
-
-        <!-- A phone cannot run the desktop app: the web demo leads there -->
-        <div class="actions">
-          <template v-if="os === 'mobile'">
-            <a :href="demoUrl" v-bind="external" class="lf-btn lf-btn-primary">Try it in the browser</a>
-            <NuxtLink to="/download" class="lf-btn lf-btn-secondary">Get the desktop app</NuxtLink>
-          </template>
-          <template v-else>
-            <NuxtLink to="/download" class="lf-btn lf-btn-primary">
-              <UIcon name="i-lucide-download" class="size-[1.1em]" />
-              {{ downloadLabel }}
-            </NuxtLink>
-            <a :href="demoUrl" v-bind="external" class="lf-btn lf-btn-secondary">Try it in the browser</a>
-          </template>
-        </div>
-        <p class="lf-small">Free on your computer · No account · macOS, Windows, Linux and the web</p>
       </div>
 
       <FinalAppWindow
@@ -65,6 +51,7 @@ const tree: TreeItem[] = [
         :bookmarks="bookmarks"
         :tree="tree"
         markers
+        fill
         label="The Pile Commander window: the folder ~/Pictures/Harbor moodboard laid out as a board, with photos, a note and a folder."
       >
         <div class="board">
@@ -73,9 +60,7 @@ const tree: TreeItem[] = [
           <img src="/landing-alt2/sea-horizon.jpg" alt="" class="card c-sea" width="520" height="346">
           <img src="/landing-alt2/lemon-tea.jpg" alt="" class="card c-tea" width="416" height="520">
           <img src="/landing-alt2/pink-blossom.jpg" alt="" class="card c-blossom" width="416" height="520">
-          <!-- ② a file shown by its content; it stays on a narrow screen -->
-          <div class="card c-note" data-anchor="2">
-            <FinalMarker :n="2" />
+          <div class="card c-note">
             <p>Warm light, salty air. One object on the table.</p>
             <span>Mood.md</span>
           </div>
@@ -94,47 +79,76 @@ const tree: TreeItem[] = [
 
 <style scoped>
 .intro {
-  padding: clamp(2.5rem, 6vw, 5.5rem) 0 var(--lf-section);
+  padding: clamp(1.25rem, 3vh, 2.5rem) 0 var(--lf-section);
+}
+
+.in {
+  display: flex;
+  flex-direction: column;
 }
 
 .copy {
   display: grid;
   justify-items: center;
-  gap: 1.5rem;
+  gap: 0.875rem;
   text-align: center;
 }
 
-.copy .lf-lede {
-  margin-top: -0.25rem;
+/* The tagline in one row on a computer */
+.tag {
+  font-size: clamp(2.25rem, 3.6vw, 3.5rem);
+}
+
+@media (min-width: 900px) {
+  .tag {
+    white-space: nowrap;
+  }
 }
 
 .em {
   color: var(--lf-accent);
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+.copy .lf-lede {
+  max-width: 46rem;
 }
 
 .shot {
-  margin-top: clamp(2.5rem, 5vw, 4rem);
+  margin-top: clamp(1.25rem, 3vh, 2.25rem);
+}
+
+/* A computer: header, copy, window and legend fill one screen; the window
+   takes what is left, within reason */
+@media (min-width: 761px) and (min-height: 560px) {
+  .intro {
+    padding-bottom: clamp(1rem, 2.5vh, 2rem);
+  }
+
+  .in {
+    height: clamp(36rem, calc(100svh - 4rem - clamp(2.25rem, 5.5vh, 4.5rem)), 62rem);
+  }
+
+  .shot {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .shot .board {
+    height: 100%;
+  }
 }
 
 /* ── The board (the window scales its own font) ──────── */
 
 .board {
   position: relative;
-  height: 33em;
+  height: 27em;
   background: #ebe9e6;
 }
 
 .b-title {
   position: absolute;
-  top: 6%;
+  top: 0.9em;
   left: 4%;
   margin: 0;
   font-size: 2.1em;
@@ -144,7 +158,7 @@ const tree: TreeItem[] = [
 
 .b-sub {
   position: absolute;
-  top: 17%;
+  top: 4.4em;
   left: 4%;
   margin: 0;
   color: #5f5e5a;
@@ -222,6 +236,5 @@ const tree: TreeItem[] = [
   .c-tea { top: 12%; left: 58%; width: 22%; }
   .c-note { top: 60%; left: 58%; width: 36%; }
   .c-blossom, .c-rasp, .c-folder, .c-jelly, .b-sub { display: none; }
-  .b-title { top: 9%; }
 }
 </style>

@@ -39,6 +39,8 @@ withDefaults(
     label?: string;
     /** pin the blocks' numbers on the window (the intro's map) */
     markers?: boolean;
+    /** take the height of its box (the intro fits the screen); the content stretches */
+    fill?: boolean;
   }>(),
   {
     viewIcon: "i-tabler-template",
@@ -49,6 +51,7 @@ withDefaults(
     synced: true,
     label: undefined,
     markers: false,
+    fill: false,
   },
 );
 
@@ -57,7 +60,7 @@ const active = useState<number | null>("lf-active", () => null);
 </script>
 
 <template>
-  <div class="shot" :class="{ pins: markers }" :data-active="markers ? active ?? undefined : undefined">
+  <div class="shot" :class="{ pins: markers, fill }" :data-active="markers ? active ?? undefined : undefined">
   <div class="lf-frame" role="img" :aria-label="label">
     <div class="win">
       <div class="topbar">
@@ -78,7 +81,8 @@ const active = useState<number | null>("lf-active", () => null);
       <div class="body">
         <aside class="side">
           <div class="drives">
-            <span class="dr" :class="{ on: drive === 'local' }"><UIcon name="i-tabler-device-desktop" class="ic" /></span>
+            <!-- The home folder is ~, as in the path (HomeGlyph.vue) -->
+            <span class="dr" :class="{ on: drive === 'local' }"><span class="hm">~</span></span>
             <span class="dr" :class="{ on: drive === 'cloud' }"><UIcon name="i-tabler-cloud" class="ic" /></span>
             <span class="dr"><UIcon name="i-tabler-world" class="ic" /></span>
           </div>
@@ -98,7 +102,7 @@ const active = useState<number | null>("lf-active", () => null);
             <div class="bc">
               <template v-for="(c, i) in crumbs" :key="i">
                 <UIcon v-if="i > 0" name="i-tabler-chevron-right" class="chev" />
-                <span v-if="c.glyph === 'home'" class="hm" data-anchor="7">~<FinalMarker v-if="markers" :n="7" class="mk-below" /></span>
+                <span v-if="c.glyph === 'home'" class="hm">~</span>
                 <UIcon v-else-if="c.glyph === 'cloud'" name="i-tabler-cloud" class="cl" />
                 <span v-else>{{ c.name }}</span>
               </template>
@@ -108,11 +112,16 @@ const active = useState<number | null>("lf-active", () => null);
 
             <div class="acts">
               <span class="act" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="markers" :n="1" /></span>
-              <span class="act"><UIcon name="i-tabler-plus" class="ic" /></span>
-              <span class="act"><UIcon name="i-tabler-stack-2" class="ic" /></span>
+              <!-- ② files and folders: what you add and the layers they sit on -->
+              <span class="pair" data-anchor="2">
+                <span class="act"><UIcon name="i-tabler-plus" class="ic" /></span>
+                <span class="act"><UIcon name="i-tabler-stack-2" class="ic" /></span>
+                <FinalMarker v-if="markers" :n="2" />
+              </span>
               <span class="act" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="markers" :n="3" /></span>
-              <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="markers" :n="5" /></span>
+              <!-- Sync before share, as in the app: a private cloud copy comes first -->
               <span v-if="synced" class="act" data-anchor="4"><UIcon name="i-tabler-cloud-check" class="ic" /><FinalMarker v-if="markers" :n="4" /></span>
+              <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="markers" :n="5" /></span>
               <span class="act"><UIcon name="i-tabler-dots" class="ic" /></span>
             </div>
           </div>
@@ -135,6 +144,26 @@ const active = useState<number | null>("lf-active", () => null);
   container-type: inline-size;
 }
 
+/* Fill: the window takes its box's height, the sidebar and content cut off */
+.fill,
+.fill .lf-frame,
+.fill .win {
+  height: 100%;
+}
+
+.fill .lf-frame {
+  box-sizing: border-box;
+}
+
+/* The tree cuts off; the body may not, or it would clip the markers */
+.fill .body {
+  min-height: 0;
+}
+
+.fill .side {
+  overflow: hidden;
+}
+
 /* ⑥ lights the whole window */
 .lf-frame {
   outline: 3px solid transparent;
@@ -151,8 +180,7 @@ const active = useState<number | null>("lf-active", () => null);
 .shot[data-active="2"] :deep([data-anchor="2"]),
 .shot[data-active="3"] :deep([data-anchor="3"]),
 .shot[data-active="4"] :deep([data-anchor="4"]),
-.shot[data-active="5"] :deep([data-anchor="5"]),
-.shot[data-active="7"] :deep([data-anchor="7"]) {
+.shot[data-active="5"] :deep([data-anchor="5"]) {
   box-shadow: 0 0 0 2px var(--lf-accent);
 }
 
@@ -246,41 +274,67 @@ const active = useState<number | null>("lf-active", () => null);
 .side {
   border-right: 1px solid var(--bd);
   background: var(--s1);
-  padding: 0.6em 0.5em;
 }
 
+/* The sources (Sidebar.vue .hd): as tall as the folder header, the open
+   one underlined */
 .drives {
   display: flex;
+  height: 3.55em;
+  box-sizing: border-box;
+  align-items: center;
   justify-content: space-between;
-  padding: 0.2em 0.5em 0.7em;
+  border-bottom: 1px solid var(--bd);
+  padding: 0 0.45em;
   color: var(--ts);
 }
 
 .dr {
+  position: relative;
   display: grid;
-  width: 2.1em;
-  height: 2.1em;
+  width: 2.8em;
+  height: 2.3em;
   place-items: center;
-  border-radius: 0.45em;
+}
+
+.dr .ic {
+  width: 1.38em;
+  height: 1.38em;
+}
+
+.dr .hm {
+  font-size: 1.38em;
 }
 
 .dr.on {
-  background: var(--s0);
   color: var(--tp);
+}
+
+.dr.on::after {
+  position: absolute;
+  right: 0.6em;
+  bottom: -0.6em;
+  left: 0.6em;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tp);
+  content: "";
 }
 
 .tree {
   margin: 0;
-  padding: 0;
+  padding: 0.45em 0.45em;
   list-style: none;
 }
 
+/* TreeRow.vue: 28px rows */
 .tree li {
   display: flex;
+  height: 2.15em;
   align-items: center;
   gap: 0.35em;
   border-radius: 0.45em;
-  padding: 0.45em 0.4em;
+  padding: 0 0.4em;
   white-space: nowrap;
 }
 
@@ -332,11 +386,6 @@ const active = useState<number | null>("lf-active", () => null);
   flex: none;
 }
 
-/* Markers sit above the path: it may not clip them */
-.pins .bc {
-  overflow: visible;
-}
-
 /* ~ as the app draws it (HomeGlyph.vue): mono, a touch larger */
 .hm {
   position: relative;
@@ -366,6 +415,13 @@ const active = useState<number | null>("lf-active", () => null);
   align-items: center;
   gap: 0.3em;
   color: var(--ts);
+}
+
+.pair {
+  position: relative;
+  display: flex;
+  gap: 0.3em;
+  border-radius: 0.45em;
 }
 
 .act {
@@ -398,12 +454,6 @@ const active = useState<number | null>("lf-active", () => null);
   height: 1.4em;
   background:
     linear-gradient(135deg, transparent 45%, rgb(0 0 0 / 0.28) 45% 52%, transparent 52% 64%, rgb(0 0 0 / 0.28) 64% 71%, transparent 71%);
-}
-
-/* ⑦ under the ~: above it are the bookmarks */
-.hm :deep(.mk-below) {
-  top: calc(100% + 0.45rem);
-  bottom: auto;
 }
 
 .grip :deep(.mk-grip) {

@@ -1,9 +1,12 @@
-<!-- Not sticky: the page gives the whole screen to the content. -->
+<!-- Not sticky: the page gives the whole screen to the content. The ways in
+     live here: download and the browser. A phone cannot run the desktop
+     app, so there the browser comes first and the download leaves. -->
 <script setup lang="ts">
 const { demoUrl } = useAppLinks();
-const { os } = useDownloadCta();
+const { os, downloadLabel } = useDownloadCta();
 
 const githubUrl = "https://github.com/a-matyukh/pile-commander";
+const external = { target: "_blank", rel: "noopener noreferrer" };
 </script>
 
 <template>
@@ -16,16 +19,19 @@ const githubUrl = "https://github.com/a-matyukh/pile-commander";
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>
-        <a :href="githubUrl" target="_blank" rel="noopener noreferrer" class="nav-icon" aria-label="Pile Commander on GitHub">
+        <a :href="githubUrl" v-bind="external" class="nav-icon" aria-label="Pile Commander on GitHub">
           <UIcon name="i-tabler-brand-github" class="size-5" />
         </a>
-        <!-- A phone cannot run the desktop app: its one action is the web demo -->
-        <a v-if="os === 'mobile'" :href="demoUrl" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-sm lf-btn-primary">
-          Try the demo
+        <a v-if="os === 'mobile'" :href="demoUrl" v-bind="external" class="lf-btn lf-btn-sm lf-btn-primary">
+          Try in the browser
         </a>
-        <NuxtLink v-else to="/download" class="lf-btn lf-btn-sm lf-btn-primary">
-          Download
-        </NuxtLink>
+        <template v-else>
+          <a :href="demoUrl" v-bind="external" class="lf-btn lf-btn-sm lf-btn-secondary">Try in the browser</a>
+          <NuxtLink to="/download" class="lf-btn lf-btn-sm lf-btn-primary">
+            <UIcon name="i-lucide-download" class="size-[1.1em]" />
+            {{ downloadLabel }}
+          </NuxtLink>
+        </template>
       </nav>
     </div>
   </header>
@@ -63,12 +69,13 @@ const githubUrl = "https://github.com/a-matyukh/pile-commander";
 .nav {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.625rem;
 }
 
 .nav-link,
 .nav-icon {
   display: inline-flex;
+  margin-right: 0.5rem;
   color: var(--lf-ink-2);
   font-size: 0.9375rem;
   text-decoration: none;
@@ -79,8 +86,14 @@ const githubUrl = "https://github.com/a-matyukh/pile-commander";
   color: var(--lf-ink);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 720px) {
   .nav-link {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand-name {
     display: none;
   }
 }

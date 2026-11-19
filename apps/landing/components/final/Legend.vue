@@ -1,4 +1,4 @@
-<!-- The blocks 1–7 under the intro's window, numbered as the markers on it. -->
+<!-- The blocks 1–6 under the intro's window, numbered as the markers on it. -->
 <script setup lang="ts">
 import { finalIdeas } from "~/utils/finalIdeas";
 
@@ -32,20 +32,20 @@ const active = useState<number | null>("lf-active", () => null);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.25rem 1rem;
-  margin: 1.5rem 0 0;
+  margin: 0.75rem 0 0;
   padding: 0;
   list-style: none;
 }
 
 @media (min-width: 640px) {
   .legend {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1100px) {
   .legend {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
