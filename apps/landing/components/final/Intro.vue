@@ -5,6 +5,10 @@
      (download, the browser) are in the header. -->
 <script setup lang="ts">
 import type { Crumb, TreeItem } from "./AppWindow.vue";
+import { useFinalTagline } from "~/utils/finalTaglines";
+
+/** Under review: ?tag=1|2|3 (ReviewSwitch.vue) */
+const tagline = useFinalTagline();
 
 const crumbs: Crumb[] = [{ glyph: "home" }, { name: "Pictures" }];
 
@@ -36,7 +40,7 @@ const tree: TreeItem[] = [
   <section class="intro">
     <div class="lf-wrap in">
       <div class="copy">
-        <h1 class="lf-h1 tag">Your files and folders, <span class="em">no longer boring.</span></h1>
+        <h1 class="lf-h1 tag">{{ tagline.lead }} <span class="em">{{ tagline.accent }}</span></h1>
         <p class="lf-lede">
           Pile Commander is a file manager for your home folder and the cloud.
           See any folder nine ways, lay it out like a board, and keep every

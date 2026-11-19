@@ -17,7 +17,7 @@
 definePageMeta({ layout: "final" });
 
 useSeoMeta({
-  title: "Files and folders, no longer boring",
+  title: "A file manager and a creative space",
   description:
     "A file manager for your home folder and the cloud, where files and folders are not boring.",
   robots: "noindex, nofollow",
