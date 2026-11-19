@@ -53,11 +53,11 @@ onMounted(() => {
         <button type="button" class="art" :class="{ together }" aria-label="The app icon's shapes coming together" @click="play">
           <svg viewBox="0 0 3000 1100" aria-hidden="true" focusable="false">
             <g v-for="s in shapes" :key="s.key" class="sh" :style="{ transform: together ? s.icon : s.row }">
-              <line v-if="s.key === 'line'" x1="0" y1="-554" x2="0" y2="554" stroke="#2194f8" stroke-width="32" />
+              <line v-if="s.key === 'line'" x1="0" y1="-554" x2="0" y2="554" stroke="#2194f8" :style="{ strokeWidth: together ? 32 : 220 }" />
               <rect v-else-if="s.key === 'rect'" x="-138" y="-83.5" width="276" height="167" fill="#6044d9" />
               <rect v-else-if="s.key === 'square'" x="-128.5" y="-109.5" width="257" height="219" fill="#21f885" />
               <circle v-else-if="s.key === 'circle'" r="143" fill="#f82194" />
-              <path v-else d="M -274 0 C -210 95, 150 110, 274 0" fill="none" stroke="#f5ef24" stroke-width="70" />
+              <path v-else d="M -274 0 C -210 95, 150 110, 274 0" fill="none" stroke="#f5ef24" :style="{ strokeWidth: together ? 70 : 150 }" />
             </g>
           </svg>
         </button>
@@ -117,6 +117,13 @@ onMounted(() => {
 
 .sh {
   transition: transform 1.6s cubic-bezier(0.45, 0, 0.25, 1);
+}
+
+/* The line and the arc: thicker in the row, where they are drawn smaller,
+   so they weigh as much as the others; the icon's own width in the icon */
+.sh line,
+.sh path {
+  transition: stroke-width 1.6s cubic-bezier(0.45, 0, 0.25, 1);
 }
 
 .title {
