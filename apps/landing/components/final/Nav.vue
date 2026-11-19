@@ -1,11 +1,11 @@
-<!-- The blocks 1–6 as a plain list, like a repository's feature list: the
+<!-- The blocks 1–8 as a plain list, like a repository's feature list: the
      number (the window's marker), a name and a short line. On a wide screen it
      is pinned on the left, level with the top of the intro's window, and a click glides to the
      block; the pointer on a line lights its place in the window (lf-active).
      The block on screen is marked. Narrower, the intro shows the same list
      under the window instead (Legend.vue). -->
 <script setup lang="ts">
-import { finalIdeas } from "~/utils/finalIdeas";
+import { finalBlocks as finalIdeas } from "~/utils/finalIdeas";
 
 const active = useState<number | null>("lf-active", () => null);
 /** The block on screen, if any */

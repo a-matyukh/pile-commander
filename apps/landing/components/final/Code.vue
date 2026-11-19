@@ -31,8 +31,8 @@ const facts = [
     <div class="lf-wrap">
       <header class="head">
         <span class="lf-marker" aria-hidden="true">8</span>
-        <h2 id="code-title" class="title">The code is open to read</h2>
-        <p class="lede">See how Pile Commander works and what it does with your files: all of it is in one public repository.</p>
+        <h2 id="code-title" class="title">Source available</h2>
+        <p class="lede">The code is open to read: see how Pile Commander works and what it does with your files, all in one public repository.</p>
       </header>
 
       <div class="grid">
@@ -41,7 +41,7 @@ const facts = [
           <span class="rh">
             <UIcon name="i-tabler-brand-github" class="rgi" />
             <span class="rn">a-matyukh/pile-commander</span>
-            <span class="rp">Source available</span>
+            <span class="rp">Public</span>
           </span>
           <ul class="rf">
             <li v-for="f in folders" :key="f.name">

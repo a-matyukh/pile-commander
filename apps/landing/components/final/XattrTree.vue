@@ -56,27 +56,46 @@ const on = (key: string) => (hover.value ?? lit.value) === key;
 
 <template>
   <figure ref="root" class="xt">
-    <ul class="tree" aria-label="A folder and the attributes on each of its files">
-      <li
-        v-for="n in nodes"
-        :key="n.key"
-        class="node"
-        :class="{ on: on(n.key), dim: n.dim, child: n.depth > 0 }"
-        :style="{ '--d': n.depth }"
-        @mouseenter="hover = n.key"
-        @mouseleave="hover = null"
-      >
-        <span class="row">
-          <UIcon :name="n.icon" class="ni" :style="{ color: n.tint }" />
-          <span class="nn">{{ n.name }}</span>
-          <span v-if="n.tag" class="ntag">{{ n.tag }}</span>
-          <span v-if="n.note" class="nnote">{{ n.note }}</span>
-        </span>
-        <span v-if="n.attrs" class="attrs">
-          <span v-for="[k, v] in n.attrs" :key="k" class="kv"><span class="k">{{ k }}</span><span class="v">{{ v }}</span></span>
-        </span>
-      </li>
-    </ul>
+    <!-- The folder, then its things on branches from it -->
+    <div class="tree" role="list" aria-label="A folder and the attributes on each of its files">
+      <template v-for="n in nodes.slice(0, 1)" :key="n.key">
+        <div
+          class="node top"
+          role="listitem"
+          :class="{ on: on(n.key) }"
+          @mouseenter="hover = n.key"
+          @mouseleave="hover = null"
+        >
+          <span class="row">
+            <span class="badge"><UIcon :name="n.icon" class="ni" :style="{ color: n.tint }" /></span>
+            <span class="nn">{{ n.name }}</span>
+            <span v-if="n.tag" class="ntag">{{ n.tag }}</span>
+          </span>
+          <span v-if="n.attrs" class="attrs">
+            <span v-for="[k, v] in n.attrs" :key="k" class="kv"><span class="k">{{ k }}</span><span class="v">{{ v }}</span></span>
+          </span>
+        </div>
+      </template>
+      <ul class="kids">
+        <li
+          v-for="n in nodes.slice(1)"
+          :key="n.key"
+          class="node kid"
+          :class="{ on: on(n.key), dim: n.dim }"
+          @mouseenter="hover = n.key"
+          @mouseleave="hover = null"
+        >
+          <span class="row">
+            <span class="badge"><UIcon :name="n.icon" class="ni" :style="{ color: n.tint }" /></span>
+            <span class="nn">{{ n.name }}</span>
+            <span v-if="n.note" class="nnote">{{ n.note }}</span>
+          </span>
+          <span v-if="n.attrs" class="attrs">
+            <span v-for="[k, v] in n.attrs" :key="k" class="kv"><span class="k">{{ k }}</span><span class="v">{{ v }}</span></span>
+          </span>
+        </li>
+      </ul>
+    </div>
     <figcaption class="cap">
       <UIcon name="i-tabler-tag" class="ci" />
       <span><b>xattrs</b>: a key:value map on every file and folder, the folder itself included. Drawings and connections live in its hidden <code>.pile</code> folder.</span>
@@ -97,53 +116,104 @@ const on = (key: string) => (hover.value ?? lit.value) === key;
 }
 
 .tree {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  --line: #c9cdd6;
+  --badge: 1.9rem;
 }
 
-/* A node: indented by depth, a line down from its parent */
 .node {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-left: calc(var(--d) * 1.75rem);
+  gap: 0.4rem;
   border-radius: 10px;
-  padding: 0.45rem 0.6rem;
+  padding: 0.35rem 0.5rem;
   transition: background-color 0.25s ease;
-}
-
-.node + .node {
-  margin-top: 0.15rem;
-}
-
-.node.child::before {
-  position: absolute;
-  top: -0.3rem;
-  bottom: 50%;
-  left: -1rem;
-  width: 0.85rem;
-  border-bottom: 1.5px solid var(--lf-line-strong);
-  border-left: 1.5px solid var(--lf-line-strong);
-  border-bottom-left-radius: 6px;
-  content: "";
 }
 
 .node.on {
   background: rgb(36 83 255 / 0.06);
 }
 
+/* Each thing's icon on a small tile, so the branches have a point to meet */
+.badge {
+  display: grid;
+  width: var(--badge);
+  height: var(--badge);
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--lf-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+/* The branches: one trunk down from the folder's tile to the last thing,
+   and a branch to each thing's tile; the last one ends in a curve */
+.kids {
+  position: relative;
+  margin: 0 0 0 calc(0.5rem + var(--badge) / 2 - 1px);
+  padding: 0 0 0 1.4rem;
+  list-style: none;
+}
+
+.kid {
+  margin-top: 0.35rem;
+}
+
+.kid::before {
+  position: absolute;
+  top: -0.35rem;
+  bottom: 0;
+  left: -1.4rem;
+  border-left: 2px solid var(--line);
+  content: "";
+}
+
+.kid::after {
+  position: absolute;
+  top: calc(0.35rem + var(--badge) / 2 - 1px);
+  left: -1.4rem;
+  width: 1.4rem;
+  border-top: 2px solid var(--line);
+  content: "";
+}
+
+.kid:last-child::before {
+  bottom: auto;
+  height: calc(0.7rem + var(--badge) / 2 - 1px);
+  border-bottom: 2px solid var(--line);
+  border-bottom-left-radius: 8px;
+  width: 1.4rem;
+}
+
+.kid:last-child::after {
+  display: none;
+}
+
+/* The trunk starts under the folder's tile */
+.top::after {
+  position: absolute;
+  top: calc(0.35rem + var(--badge));
+  bottom: 0;
+  left: calc(0.5rem + var(--badge) / 2 - 1px);
+  border-left: 2px solid var(--line);
+  content: "";
+}
+
+.top .badge {
+  border-color: rgb(83 74 183 / 0.35);
+  background: rgb(83 74 183 / 0.06);
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 
 .ni {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.15rem;
+  height: 1.15rem;
   flex: none;
 }
 
@@ -178,7 +248,7 @@ const on = (key: string) => (hover.value ?? lit.value) === key;
   max-width: 100%;
   grid-template-columns: auto auto;
   gap: 0.15rem 1rem;
-  margin-left: 1.75rem;
+  margin-left: calc(var(--badge) + 0.6rem);
   border: 1px solid var(--lf-line);
   border-radius: 8px;
   background: var(--lf-bg);

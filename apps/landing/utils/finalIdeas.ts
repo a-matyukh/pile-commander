@@ -1,6 +1,5 @@
 /** The final landing's blocks 1–6, in order: their anchors and the legend
- *  under the intro's window. The numbers match the markers on the window.
- *  Blocks 7 (your files stay yours) and 8 (open source) have no marker. */
+ *  under the intro's window. The numbers match the markers on the window. */
 export const finalIdeas = [
   { n: 1, id: "views", title: "Nine views", hint: "One folder, nine ways to see it" },
   { n: 2, id: "files", title: "Files come alive", hint: "Notes, previews, covers, the pen" },
@@ -8,6 +7,14 @@ export const finalIdeas = [
   { n: 4, id: "sync", title: "Sync", hint: "A cloud copy of any folder, cloud folders" },
   { n: 5, id: "share", title: "Share", hint: "A file, a person, a link, the Hub" },
   { n: 6, id: "screens", title: "Any screen", hint: "Desktop, tablet, phone, browser" },
+] as const;
+
+/** Every block for the pinned menu: 1–6, then 7 and 8, which have no place
+ *  in the window and so no marker on it */
+export const finalBlocks = [
+  ...finalIdeas,
+  { n: 7, id: "yours", title: "Your files stay yours", hint: "On your disk and in the cloud" },
+  { n: 8, id: "code", title: "Source available", hint: "The code, open to read" },
 ] as const;
 
 export type FinalIdea = (typeof finalIdeas)[number];
