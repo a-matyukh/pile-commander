@@ -51,6 +51,8 @@ const props = withDefaults(
     syncIcon?: string;
     /** the folder's buttons; a page (Settings) has none */
     actions?: boolean;
+    /** a tablet's screen: narrow, but 640px and wider keep the sidebar */
+    keepSidebar?: boolean;
     /** the visitor can use something in it: no longer a picture to screen readers */
     interactive?: boolean;
   }>(),
@@ -69,6 +71,7 @@ const props = withDefaults(
     actions: true,
     syncIcon: "i-tabler-cloud-check",
     interactive: false,
+    keepSidebar: false,
   },
 );
 
@@ -79,7 +82,7 @@ const active = useState<number | null>("lf-active", () => null);
 </script>
 
 <template>
-  <div class="shot" :class="{ pins: markers, fill }" :data-active="markers ? active ?? undefined : undefined">
+  <div class="shot" :class="{ pins: markers, fill, keep: keepSidebar }" :data-active="markers ? active ?? undefined : undefined">
   <div class="lf-frame" :role="interactive ? undefined : 'img'" :aria-label="interactive ? undefined : label">
     <div class="win">
       <div class="topbar">
@@ -522,4 +525,19 @@ const active = useState<number | null>("lf-active", () => null);
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* A tablet keeps its sidebar at this width (the app: 640px and wider) */
+@container (max-width: 760px) {
+  .keep .win {
+    font-size: clamp(7px, 1.7cqw, 13px);
+  }
+
+  .keep .side {
+    display: block;
+  }
+
+  .keep .body {
+    grid-template-columns: 15em minmax(0, 1fr);
+  }
+}
+
 </style>

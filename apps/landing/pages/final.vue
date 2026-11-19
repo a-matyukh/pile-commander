@@ -33,5 +33,6 @@ useSeoMeta({
     <FinalAi />
     <FinalSync />
     <FinalShare />
+    <FinalDevices />
   </div>
 </template>
