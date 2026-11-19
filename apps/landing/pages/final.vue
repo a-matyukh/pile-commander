@@ -32,5 +32,6 @@ useSeoMeta({
     <FinalAlive />
     <FinalAi />
     <FinalSync />
+    <FinalShare />
   </div>
 </template>

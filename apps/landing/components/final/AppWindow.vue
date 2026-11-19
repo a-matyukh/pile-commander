@@ -36,7 +36,7 @@ const props = withDefaults(
     bookmarks?: TreeItem[];
     tree?: TreeItem[];
     /** which drive is open in the sidebar */
-    drive?: "local" | "cloud";
+    drive?: "local" | "cloud" | "hub";
     synced?: boolean;
     label?: string;
     /** pin the blocks' numbers on the window: all (the intro's map) or some */
@@ -46,7 +46,7 @@ const props = withDefaults(
     /** a board or a canvas: the header has the layers button */
     spatial?: boolean;
     /** a header menu is open: its button is pressed */
-    open?: "view" | "add" | "layers" | "ai" | "sync" | null;
+    open?: "view" | "add" | "layers" | "ai" | "sync" | "share" | null;
     /** the sync button's icon (SyncMenu.vue): cloud-up before syncing */
     syncIcon?: string;
     /** the folder's buttons; a page (Settings) has none */
@@ -103,7 +103,7 @@ const active = useState<number | null>("lf-active", () => null);
             <!-- The home folder is ~, as in the path (HomeGlyph.vue) -->
             <span class="dr" :class="{ on: drive === 'local' }"><span class="hm">~</span></span>
             <span class="dr" :class="{ on: drive === 'cloud' }"><UIcon name="i-tabler-cloud" class="ic" /></span>
-            <span class="dr"><UIcon name="i-tabler-world" class="ic" /></span>
+            <span class="dr" :class="{ on: drive === 'hub' }"><UIcon name="i-tabler-world" class="ic" /></span>
           </div>
           <ul class="tree">
             <li v-for="item in tree" :key="item.name" :class="{ sel: item.selected }" :style="{ paddingLeft: `${0.4 + (item.depth ?? 0) * 1.2}em` }">
@@ -140,7 +140,7 @@ const active = useState<number | null>("lf-active", () => null);
               <span class="act" :class="{ on: open === 'ai' }" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="pin(3)" :n="3" /></span>
               <!-- Sync before share, as in the app: a private cloud copy comes first -->
               <span v-if="synced" class="act" :class="{ on: open === 'sync' }" data-anchor="4"><UIcon :name="syncIcon" class="ic" /><FinalMarker v-if="pin(4)" :n="4" /></span>
-              <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="pin(5)" :n="5" /></span>
+              <span class="act" :class="{ on: open === 'share' }" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="pin(5)" :n="5" /></span>
               <span class="act"><UIcon name="i-tabler-dots" class="ic" /></span>
             </div>
           </div>
