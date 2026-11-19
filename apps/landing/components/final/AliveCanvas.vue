@@ -6,15 +6,18 @@
      Sizes are em of the window and % of the canvas, so it scales like a
      screenshot. Decoration for screen readers: the section says it in words. -->
 <script setup lang="ts">
-export type AliveStep = "previews" | "covers" | "folder" | "shapes" | "layers" | "pen";
+export type AliveStep = "notes" | "previews" | "covers" | "folder" | "shapes" | "layers" | "connections" | "pen";
 
 defineProps<{ step: AliveStep; drawing?: boolean }>();
 </script>
 
 <template>
   <div class="cv" :data-step="step" aria-hidden="true">
-    <p class="ttl">Coastal summer</p>
-    <p class="sub">Sun, salty air, fresh fruit</p>
+    <!-- A text block: the preview of Title.md -->
+    <div class="w w-title" data-f="notes">
+      <p class="ttl">Coastal summer</p>
+      <p class="sub">Sun, salty air, fresh fruit</p>
+    </div>
 
     <!-- Previews: a photo, a video and its player, a sound, a 3D model -->
     <img src="/landing-alt2/sea-horizon.jpg" alt="" class="w w-photo" data-f="previews layers">
@@ -50,7 +53,7 @@ defineProps<{ step: AliveStep; drawing?: boolean }>();
     </svg>
 
     <!-- Covers: a note with a colour, a folder with a picture, a folder with a colour -->
-    <div class="w w-note" data-f="covers">
+    <div class="w w-note" data-f="notes covers">
       <p>Warm light, salty air. One object on the table.</p>
       <span class="nf"><UIcon name="i-tabler-file-text" class="nfi" />md</span>
     </div>
@@ -84,6 +87,14 @@ defineProps<{ step: AliveStep; drawing?: boolean }>();
       <path d="M86 3 L98 10 L86 17" fill="none" stroke="#d85a30" stroke-width="3" vector-effect="non-scaling-stroke" />
     </svg>
 
+    <!-- A connection (Canvas.vue, CanvasLabeledEdge.vue): a dashed curve
+         with an arrow and its label, from Palette to Inspiration -->
+    <svg class="edge" :class="{ lit: step === 'connections' }" viewBox="0 0 1000 400" preserveAspectRatio="none">
+      <path d="M665 252 C 665 300, 700 318, 760 300" />
+      <path d="M748 290 L762 300 L748 310" />
+    </svg>
+    <span class="elabel" :class="{ lit: step === 'connections' }">colours</span>
+
     <!-- The pen, over everything -->
     <svg class="ink" :class="{ drawing }" data-f="pen" viewBox="0 0 1000 400" preserveAspectRatio="none">
       <path class="s1" d="M30 248 C 60 218, 90 278, 120 248 S 180 218, 210 248 S 250 270, 270 250" />
@@ -95,10 +106,10 @@ defineProps<{ step: AliveStep; drawing?: boolean }>();
     <!-- Canvas.vue's dock: the pen is picked on the Pen step -->
     <div class="dock">
       <span class="db"><UIcon name="i-tabler-hand-stop" class="di" /></span>
-      <span class="db" :class="{ on: step !== 'pen' }"><UIcon name="i-tabler-pointer" class="di" /></span>
+      <span class="db" :class="{ on: step !== 'pen' && step !== 'connections' }"><UIcon name="i-tabler-pointer" class="di" /></span>
       <span class="db"><UIcon name="i-tabler-lasso" class="di" /></span>
       <span class="dsep" />
-      <span class="db"><UIcon name="i-tabler-vector-spline" class="di" /></span>
+      <span class="db" :class="{ on: step === 'connections' }" data-f="connections"><UIcon name="i-tabler-vector-spline" class="di" /></span>
       <span class="db"><UIcon name="i-tabler-unlink" class="di" /></span>
       <span class="dsep" />
       <span class="db" :class="{ on: step === 'pen' }" data-f="pen"><UIcon name="i-tabler-pencil" class="di" /></span>
@@ -139,6 +150,7 @@ img {
 }
 
 /* The step on screen: its things get a ring */
+.cv[data-step="notes"] [data-f~="notes"],
 .cv[data-step="previews"] [data-f~="previews"],
 .cv[data-step="covers"] [data-f~="covers"],
 .cv[data-step="folder"] [data-f~="folder"],
@@ -146,10 +158,12 @@ img {
   outline-color: var(--ring);
 }
 
-.ttl {
-  position: absolute;
+.w-title {
   top: 4%;
   left: 3%;
+}
+
+.ttl {
   margin: 0;
   font-size: 1.8em;
   font-weight: 700;
@@ -157,10 +171,7 @@ img {
 }
 
 .sub {
-  position: absolute;
-  top: 15%;
-  left: 3%;
-  margin: 0;
+  margin: 0.4em 0 0;
   color: var(--ts);
 }
 
@@ -420,6 +431,51 @@ img {
 .w-diamond { top: 68%; left: 20%; width: 6.5%; }
 .w-arrow { top: 62%; left: 47%; width: 11%; height: 1.6em; overflow: visible; }
 
+/* The connection: grey and dashed; its step draws it in the accent */
+.edge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edge path {
+  fill: none;
+  stroke: #9a9893;
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.2s ease;
+}
+
+.edge path:last-child {
+  stroke-dasharray: none;
+}
+
+.edge.lit path {
+  stroke: var(--ring);
+  stroke-width: 2px;
+}
+
+.elabel {
+  position: absolute;
+  top: 70%;
+  left: 66.5%;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 0.3em;
+  background: #fff;
+  padding: 0.15em 0.45em;
+  font-size: 0.85em;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.elabel.lit {
+  border-color: var(--ring);
+  color: var(--ring);
+}
+
 /* The pen's strokes */
 .ink {
   position: absolute;
@@ -499,7 +555,8 @@ img {
   height: 1.25em;
 }
 
-.cv[data-step="pen"] .db[data-f~="pen"] {
+.cv[data-step="pen"] .db[data-f~="pen"],
+.cv[data-step="connections"] .db[data-f~="connections"] {
   outline-color: var(--ring);
 }
 

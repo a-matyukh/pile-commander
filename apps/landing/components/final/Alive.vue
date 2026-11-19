@@ -1,6 +1,6 @@
 <!-- Block 2, files come alive. Your own files and folders, on your disk or in
      the cloud, shown as what they hold. The same window, the folder as a
-     canvas; a tour of six things, like block 1's views: each lights its
+     canvas; a tour of eight things, like block 1's views: each lights its
      place in the window and opens what the app opens for it — the + menu
      with its shapes, the canvas's pen. The layers panel is pinned open (an
      option in the app): it shows that every thing on the canvas, shapes
@@ -14,15 +14,17 @@ import type { Crumb } from "./AppWindow.vue";
 const crumbs: Crumb[] = [{ glyph: "home" }, { name: "Pictures" }];
 
 const steps: { id: AliveStep; label: string; icon: string; caption: string }[] = [
+  { id: "notes", label: "Notes", icon: "i-tabler-note", caption: "A note or a text block is just the preview of a .md or .txt file: write right in it on the canvas." },
   { id: "previews", label: "Previews", icon: "i-tabler-photo", caption: "Photos, videos, sound and 3D models show what they are, and play right in the folder." },
   { id: "covers", label: "Covers", icon: "i-tabler-palette", caption: "Give a folder or a file a colour or a picture, and it becomes its card." },
   { id: "folder", label: "Folder preview", icon: "i-tabler-layout-grid", caption: "A folder can open in place: its things in a frame, right among yours." },
-  { id: "shapes", label: "Shapes", icon: "i-tabler-shape", caption: "Add a note, text or a shape from +. A shape is an SVG file any editor opens." },
+  { id: "shapes", label: "Shapes", icon: "i-tabler-shape", caption: "Add a shape from +: it is an SVG file, and any editor opens it." },
   { id: "layers", label: "Layers", icon: "i-tabler-stack-2", caption: "Every thing here is a plain file or folder, shapes too. Drag one above another to change the order." },
+  { id: "connections", label: "Connections", icon: "i-tabler-vector-spline", caption: "Connect two things with a line and a label, as on a mind map." },
   { id: "pen", label: "Pen", icon: "i-tabler-pencil", caption: "Draw over anything on a canvas: circle a detail, point at it, write a word." },
 ];
 
-const step = ref<AliveStep>("previews");
+const step = ref<AliveStep>("notes");
 const meta = computed(() => steps.find(s => s.id === step.value)!);
 const playing = ref(true);
 
@@ -80,12 +82,12 @@ const shapes = [
    folder's things, top first; a picture shows its thumbnail, anything else
    the icon List uses. Each row lights up on the steps it belongs to */
 const layers: { name: string; icon?: string; color?: string; thumb?: string; steps: AliveStep[] }[] = [
-  { name: "Title.md", icon: "i-tabler-file-text", steps: [] },
+  { name: "Title.md", icon: "i-tabler-file-text", steps: ["notes"] },
   { name: "sea-horizon.jpg", thumb: "/landing-alt2/sea-horizon.jpg", steps: ["previews"] },
   { name: "waves.mp4", icon: "i-tabler-movie", steps: ["previews"] },
   { name: "gulls.mp3", icon: "i-tabler-music", steps: ["previews"] },
-  { name: "sailboat.glb", icon: "i-tabler-file", steps: ["previews"] },
-  { name: "Mood.md", icon: "i-tabler-file-text", steps: ["covers"] },
+  { name: "sailboat.glb", icon: "i-tabler-box", steps: ["previews"] },
+  { name: "Mood.md", icon: "i-tabler-file-text", steps: ["notes", "covers"] },
   { name: "References", icon: "i-tabler-folder", steps: ["covers"] },
   { name: "Palette", icon: "i-tabler-palette", color: "#1d9e75", steps: ["covers"] },
   { name: "Inspiration", icon: "i-tabler-layout-grid", color: "#d4537e", steps: ["folder"] },
