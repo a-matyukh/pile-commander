@@ -365,7 +365,8 @@ const active = useState<number | null>("lf-active", () => null);
   align-items: center;
   gap: 0.3em;
   border-bottom: 1px solid var(--bd);
-  background: var(--s2);
+  /* Gray like the window's other panels (the app's gray panels) */
+  background: var(--s1);
   padding: 0 1.25em;
 }
 

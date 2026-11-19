@@ -143,7 +143,7 @@ const tree: TreeItem[] = [
 .board {
   position: relative;
   height: 27em;
-  background: #ebe9e6;
+  background: #fff;
 }
 
 .b-title {

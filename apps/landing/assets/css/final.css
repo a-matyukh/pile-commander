@@ -120,6 +120,16 @@
   border-color: rgb(0 0 0 / 0.3);
 }
 
+:where(.lf) .lf-btn-outline {
+  border-color: rgb(0 0 0 / 0.28);
+  background: transparent;
+  color: var(--lf-ink);
+}
+
+:where(.lf) .lf-btn-outline:hover {
+  border-color: rgb(0 0 0 / 0.5);
+}
+
 :where(.lf) a:focus-visible,
 :where(.lf) button:focus-visible {
   outline: 2px solid var(--lf-accent);

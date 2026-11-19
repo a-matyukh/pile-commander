@@ -19,8 +19,9 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>
-        <a :href="githubUrl" v-bind="external" class="nav-icon" aria-label="Pile Commander on GitHub">
-          <UIcon name="i-tabler-brand-github" class="size-5" />
+        <a :href="githubUrl" v-bind="external" class="lf-btn lf-btn-sm lf-btn-outline repo" aria-label="Pile Commander on GitHub: a-matyukh/pile-commander">
+          <UIcon name="i-tabler-brand-github" class="size-[1.15em]" />
+          <span class="repo-name">a-matyukh/pile-commander</span>
         </a>
         <a v-if="os === 'mobile'" :href="demoUrl" v-bind="external" class="lf-btn lf-btn-sm lf-btn-primary">
           Try in the browser
@@ -72,8 +73,7 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   gap: 0.625rem;
 }
 
-.nav-link,
-.nav-icon {
+.nav-link {
   display: inline-flex;
   margin-right: 0.5rem;
   color: var(--lf-ink-2);
@@ -81,9 +81,25 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   text-decoration: none;
 }
 
-.nav-link:hover,
-.nav-icon:hover {
+.nav-link:hover {
   color: var(--lf-ink);
+}
+
+/* The repository's name, as GitHub writes it */
+.repo-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+@media (max-width: 1000px) {
+  .repo-name {
+    display: none;
+  }
+
+  .repo {
+    padding: 0 0.625rem;
+  }
 }
 
 @media (max-width: 720px) {
