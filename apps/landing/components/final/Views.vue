@@ -64,8 +64,12 @@ onMounted(() => {
         <p class="lede">One folder, nine ways to see it. Each folder keeps its own view, and switching never moves a file.</p>
         <!-- The view on screen, right under the lede where the eye already is -->
         <p class="caption" aria-live="polite">
-          <UIcon :name="meta.icon" class="ci" :style="{ color: meta.color ?? undefined }" />
-          <span><b class="cname">{{ meta.label }}.</b> {{ meta.caption }}</span>
+          <!-- The view as the menu shows it: its icon and its name, on a chip -->
+          <span class="chip">
+            <UIcon :name="meta.icon" class="ci" :style="{ color: meta.color ?? undefined }" />
+            <b class="cname">{{ meta.label }}</b>
+          </span>
+          <span>{{ meta.caption }}</span>
         </p>
       </header>
 
@@ -119,9 +123,11 @@ onMounted(() => {
   line-height: 1.15;
 }
 
+/* The title row stands apart from the lines under it (a margin here, so
+   the number stays centred on the title row) */
 .lede {
   grid-column: 2;
-  margin: 0;
+  margin: 0.625rem 0 0;
   color: var(--lf-ink-2);
   font-size: 1.0625rem;
   line-height: 1.5;
@@ -159,12 +165,23 @@ onMounted(() => {
 .caption {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   grid-column: 2;
-  margin: 0.25rem 0 0;
+  margin: 0.5rem 0 0;
   color: var(--lf-ink-2);
   font-size: 1.0625rem;
   line-height: 1.5;
+}
+
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid var(--lf-line);
+  border-radius: 6px;
+  background: var(--lf-surface);
+  padding: 0.125rem 0.625rem 0.125rem 0.5rem;
 }
 
 .cname {
