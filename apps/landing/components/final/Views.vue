@@ -155,10 +155,17 @@ onMounted(() => {
   gap: 0.5rem 1rem;
 }
 
+/* A capsule like Pause, outlined only: a note, not a button */
 .hint {
+  display: inline-flex;
+  align-items: center;
   margin: 0;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 999px;
+  padding: 0.375rem 0.875rem;
   color: var(--lf-ink-3);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 /* As the lede above it, with the view's icon from the menu */
@@ -178,7 +185,8 @@ onMounted(() => {
   flex: none;
   align-items: center;
   gap: 0.375rem;
-  border: 1px solid var(--lf-line);
+  /* The same border as Pause */
+  border: 1px solid var(--lf-line-strong);
   border-radius: 6px;
   background: var(--lf-surface);
   padding: 0.125rem 0.625rem 0.125rem 0.5rem;
