@@ -53,19 +53,20 @@ onMounted(() => {
     <div class="lf-wrap">
       <header class="head">
         <span class="lf-marker" aria-hidden="true">1</span>
-        <h2 id="views-title" class="title">Nine views</h2>
-        <p class="lede">One folder, nine ways to see it. Each folder keeps its own view, and switching never moves a file.</p>
-        <!-- The view on screen, right under the lede where the eye already is -->
-        <div class="now">
-          <p class="caption" aria-live="polite">
-            <UIcon :name="meta.icon" class="ci" :style="{ color: meta.color ?? undefined }" />
-            <span>{{ meta.label }}. {{ meta.caption }}</span>
-          </p>
+        <div class="trow">
+          <h2 id="views-title" class="title">Nine views</h2>
           <button type="button" class="play" :aria-pressed="playing" @click="toggle">
             <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
             {{ playing ? "Pause" : "Play" }}
           </button>
+          <p class="hint">Pick a view in the menu to try it</p>
         </div>
+        <p class="lede">One folder, nine ways to see it. Each folder keeps its own view, and switching never moves a file.</p>
+        <!-- The view on screen, right under the lede where the eye already is -->
+        <p class="caption" aria-live="polite">
+          <UIcon :name="meta.icon" class="ci" :style="{ color: meta.color ?? undefined }" />
+          <span><b class="cname">{{ meta.label }}.</b> {{ meta.caption }}</span>
+        </p>
       </header>
 
       <FinalAppWindow
@@ -140,12 +141,18 @@ onMounted(() => {
   z-index: 3;
 }
 
-.now {
+/* The title, then the tour's switch and how to take over from it */
+.trow {
   display: flex;
-  grid-column: 2;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 0.5rem 1rem;
+}
+
+.hint {
+  margin: 0;
+  color: var(--lf-ink-3);
+  font-size: 0.9375rem;
 }
 
 /* As the lede above it, with the view's icon from the menu */
@@ -153,10 +160,16 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 0;
+  grid-column: 2;
+  margin: 0.25rem 0 0;
   color: var(--lf-ink-2);
   font-size: 1.0625rem;
   line-height: 1.5;
+}
+
+.cname {
+  color: var(--lf-ink);
+  font-weight: 600;
 }
 
 .ci {
@@ -166,9 +179,7 @@ onMounted(() => {
   color: var(--lf-ink-2);
 }
 
-/* Before the caption: it keeps its place while the caption changes length */
 .play {
-  order: -1;
   display: inline-flex;
   flex: none;
   align-items: center;
