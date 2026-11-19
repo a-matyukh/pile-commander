@@ -93,9 +93,9 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   color: var(--lf-accent);
 }
 
-/* The purple of the app's icon */
+/* The name in the page's blue, as «Creative space.» */
 .pc {
-  color: #6044d9;
+  color: var(--lf-accent);
 }
 
 /* Wide: one row, the tagline right beside the icon */
