@@ -3,15 +3,16 @@
    rule for the same element wins.
 
    Cross-cutting rules for the whole page:
-   - the page is the app's gray (--surface-0 in apps/client/src/ui/explorer/tokens.css)
-     and the app's own font (the system stack);
+   - the page is a neutral gray, as light as the app's (--surface-0 in
+     apps/client/src/ui/explorer/tokens.css is warm: #f0f0ee), and the app's
+     own font (the system stack);
    - one accent, the blue of /alt2;
    - every picture of the product is the app's real interface: ~ for the home
      folder in the path (a cloud icon for the cloud), the path in one row
      (the compact folder header), menus drawn as the app draws them. */
 
 .lf {
-  --lf-bg: #f0f0ee;
+  --lf-bg: #f0f0f0;
   --lf-surface: #ffffff;
   --lf-line: rgb(0 0 0 / 0.08);
   --lf-line-strong: rgb(0 0 0 / 0.15);
@@ -132,4 +133,24 @@
   border-radius: 12px;
   background: var(--lf-surface);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 24px 60px -24px rgb(0 0 0 / 0.22);
+}
+
+/* A block's number: on the window it marks where the block lives in the app */
+:where(.lf) .lf-marker {
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--lf-accent);
+  color: var(--lf-on-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-decoration: none;
 }

@@ -37,6 +37,8 @@ withDefaults(
     drive?: "local" | "cloud";
     synced?: boolean;
     label?: string;
+    /** pin the blocks' numbers on the window (the intro's map) */
+    markers?: boolean;
   }>(),
   {
     viewIcon: "i-tabler-template",
@@ -46,12 +48,17 @@ withDefaults(
     drive: "local",
     synced: true,
     label: undefined,
+    markers: false,
   },
 );
+
+/** The block under the pointer: its place in the window gets a ring */
+const active = useState<number | null>("lf-active", () => null);
 </script>
 
 <template>
-  <div class="lf-frame shot" role="img" :aria-label="label">
+  <div class="shot" :class="{ pins: markers }" :data-active="markers ? active ?? undefined : undefined">
+  <div class="lf-frame" role="img" :aria-label="label">
     <div class="win">
       <div class="topbar">
         <span class="tb"><UIcon name="i-tabler-layout-sidebar" class="ic" /></span>
@@ -91,7 +98,7 @@ withDefaults(
             <div class="bc">
               <template v-for="(c, i) in crumbs" :key="i">
                 <UIcon v-if="i > 0" name="i-tabler-chevron-right" class="chev" />
-                <span v-if="c.glyph === 'home'" class="hm">~</span>
+                <span v-if="c.glyph === 'home'" class="hm" data-anchor="7">~<FinalMarker v-if="markers" :n="7" class="mk-below" /></span>
                 <UIcon v-else-if="c.glyph === 'cloud'" name="i-tabler-cloud" class="cl" />
                 <span v-else>{{ c.name }}</span>
               </template>
@@ -100,12 +107,12 @@ withDefaults(
             </div>
 
             <div class="acts">
-              <span class="act"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /></span>
+              <span class="act" data-anchor="1"><UIcon :name="viewIcon" class="ic" :style="{ color: viewColor }" /><FinalMarker v-if="markers" :n="1" /></span>
               <span class="act"><UIcon name="i-tabler-plus" class="ic" /></span>
               <span class="act"><UIcon name="i-tabler-stack-2" class="ic" /></span>
-              <span class="act"><UIcon name="i-lucide-sparkles" class="ic" /></span>
-              <span class="act"><UIcon name="i-tabler-share-2" class="ic" /></span>
-              <span v-if="synced" class="act"><UIcon name="i-tabler-cloud-check" class="ic" /></span>
+              <span class="act" data-anchor="3"><UIcon name="i-lucide-sparkles" class="ic" /><FinalMarker v-if="markers" :n="3" /></span>
+              <span class="act" data-anchor="5"><UIcon name="i-tabler-share-2" class="ic" /><FinalMarker v-if="markers" :n="5" /></span>
+              <span v-if="synced" class="act" data-anchor="4"><UIcon name="i-tabler-cloud-check" class="ic" /><FinalMarker v-if="markers" :n="4" /></span>
               <span class="act"><UIcon name="i-tabler-dots" class="ic" /></span>
             </div>
           </div>
@@ -115,13 +122,38 @@ withDefaults(
           </div>
         </div>
       </div>
+
+      <!-- The window's corner: it fits any screen -->
+      <span v-if="markers" class="grip" data-anchor="6"><FinalMarker :n="6" class="mk-grip" /></span>
     </div>
+  </div>
   </div>
 </template>
 
 <style scoped>
 .shot {
   container-type: inline-size;
+}
+
+/* ⑥ lights the whole window */
+.lf-frame {
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color 0.15s ease;
+}
+
+.shot[data-active="6"] .lf-frame {
+  outline-color: var(--lf-accent);
+}
+
+/* The block in focus: its place in the app gets a ring */
+.shot[data-active="1"] :deep([data-anchor="1"]),
+.shot[data-active="2"] :deep([data-anchor="2"]),
+.shot[data-active="3"] :deep([data-anchor="3"]),
+.shot[data-active="4"] :deep([data-anchor="4"]),
+.shot[data-active="5"] :deep([data-anchor="5"]),
+.shot[data-active="7"] :deep([data-anchor="7"]) {
+  box-shadow: 0 0 0 2px var(--lf-accent);
 }
 
 /* The app's palette (apps/client/src/ui/explorer/tokens.css) */
@@ -136,6 +168,7 @@ withDefaults(
   --acc-bg: #e6f1fb;
   --acc-tx: #185fa5;
 
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
   background: var(--s2);
@@ -299,8 +332,16 @@ withDefaults(
   flex: none;
 }
 
+/* Markers sit above the path: it may not clip them */
+.pins .bc {
+  overflow: visible;
+}
+
 /* ~ as the app draws it (HomeGlyph.vue): mono, a touch larger */
 .hm {
+  position: relative;
+  border-radius: 0.3em;
+  padding: 0 0.15em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 1.08em;
   line-height: 1;
@@ -328,6 +369,7 @@ withDefaults(
 }
 
 .act {
+  position: relative;
   display: grid;
   width: 2.3em;
   height: 2.3em;
@@ -344,6 +386,31 @@ withDefaults(
   position: relative;
   min-height: 0;
   overflow: hidden;
+}
+
+/* ── ⑥ the corner ────────────────────────────────────── */
+
+.grip {
+  position: absolute;
+  right: 0.5em;
+  bottom: 0.5em;
+  width: 1.4em;
+  height: 1.4em;
+  background:
+    linear-gradient(135deg, transparent 45%, rgb(0 0 0 / 0.28) 45% 52%, transparent 52% 64%, rgb(0 0 0 / 0.28) 64% 71%, transparent 71%);
+}
+
+/* ⑦ under the ~: above it are the bookmarks */
+.hm :deep(.mk-below) {
+  top: calc(100% + 0.45rem);
+  bottom: auto;
+}
+
+.grip :deep(.mk-grip) {
+  right: calc(100% + 0.4rem);
+  bottom: 0;
+  left: auto;
+  translate: 0 0;
 }
 
 /* ── Narrow: zoom into the folder ────────────────────── */

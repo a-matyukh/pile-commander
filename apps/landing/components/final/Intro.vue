@@ -64,6 +64,7 @@ const tree: TreeItem[] = [
         title="Harbor moodboard"
         :bookmarks="bookmarks"
         :tree="tree"
+        markers
         label="The Pile Commander window: the folder ~/Pictures/Harbor moodboard laid out as a board, with photos, a note and a folder."
       >
         <div class="board">
@@ -72,7 +73,9 @@ const tree: TreeItem[] = [
           <img src="/landing-alt2/sea-horizon.jpg" alt="" class="card c-sea" width="520" height="346">
           <img src="/landing-alt2/lemon-tea.jpg" alt="" class="card c-tea" width="416" height="520">
           <img src="/landing-alt2/pink-blossom.jpg" alt="" class="card c-blossom" width="416" height="520">
-          <div class="card c-note">
+          <!-- ② a file shown by its content; it stays on a narrow screen -->
+          <div class="card c-note" data-anchor="2">
+            <FinalMarker :n="2" />
             <p>Warm light, salty air. One object on the table.</p>
             <span>Mood.md</span>
           </div>
@@ -84,6 +87,7 @@ const tree: TreeItem[] = [
           <img src="/landing-alt2/jellyfish.jpg" alt="" class="card c-jelly" width="416" height="520">
         </div>
       </FinalAppWindow>
+      <FinalLegend />
     </div>
   </section>
 </template>
