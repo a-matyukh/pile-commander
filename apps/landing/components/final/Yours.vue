@@ -167,7 +167,7 @@ const kinds: Record<string, string> = { folder: "Folder", image: "JPEG image", t
 
 <style scoped>
 .sec {
-  padding: var(--lf-section) 0 var(--lf-section);
+  padding: var(--lf-section) 0 0;
   scroll-margin-top: 1rem;
 }
 

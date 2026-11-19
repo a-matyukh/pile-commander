@@ -35,5 +35,6 @@ useSeoMeta({
     <FinalShare />
     <FinalDevices />
     <FinalYours />
+    <FinalCode />
   </div>
 </template>
