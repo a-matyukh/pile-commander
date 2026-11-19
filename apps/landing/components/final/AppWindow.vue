@@ -139,8 +139,12 @@ const active = useState<number | null>("lf-active", () => null);
             </div>
           </div>
 
-          <div class="content">
-            <slot />
+          <!-- The content, and a panel pinned right of it (layers) -->
+          <div class="crow">
+            <div class="content">
+              <slot />
+            </div>
+            <slot name="aside" />
           </div>
           <slot name="over" />
         </div>
@@ -461,7 +465,14 @@ const active = useState<number | null>("lf-active", () => null);
   height: 1.4em;
 }
 
+.crow {
+  display: flex;
+  min-height: 0;
+}
+
 .content {
+  flex: 1;
+  min-width: 0;
   position: relative;
   min-height: 0;
   overflow: hidden;

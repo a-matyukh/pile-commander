@@ -86,10 +86,10 @@ defineProps<{ step: AliveStep; drawing?: boolean }>();
 
     <!-- The pen, over everything -->
     <svg class="ink" :class="{ drawing }" data-f="pen" viewBox="0 0 1000 400" preserveAspectRatio="none">
-      <path class="s1" d="M30 258 C 60 228, 90 288, 120 258 S 180 228, 210 258 S 270 288, 300 258" />
-      <path class="s2" d="M560 160 C 500 165, 490 250, 520 290 C 550 325, 660 322, 690 285 C 718 248, 700 170, 640 158 C 610 152, 585 155, 568 165" />
-      <path class="s3" d="M470 330 C 520 300, 560 300, 600 330" />
-      <path class="s3" d="M585 315 L602 331 L580 338" />
+      <path class="s1" d="M30 248 C 60 218, 90 278, 120 248 S 180 218, 210 248 S 250 270, 270 250" />
+      <path class="s2" d="M350 212 C 290 218, 280 300, 310 330 C 340 358, 440 352, 462 318 C 484 284, 468 222, 420 210 C 395 204, 372 205, 358 214" />
+      <path class="s3" d="M560 360 C 520 368, 492 352, 478 330" />
+      <path class="s3" d="M473 344 L477 328 L492 334" />
     </svg>
 
     <!-- Canvas.vue's dock: the pen is picked on the Pen step -->
@@ -164,13 +164,13 @@ img {
   color: var(--ts);
 }
 
-.w-photo { top: 26%; left: 3%; width: 22%; aspect-ratio: 520 / 346; }
+.w-photo { top: 28%; left: 3%; width: 24%; aspect-ratio: 520 / 346; }
 
 /* The browser's own video player, as the app shows it */
 .w-video {
-  top: 7%;
-  left: 28%;
-  width: 21%;
+  top: 5%;
+  left: 31%;
+  width: 25%;
   aspect-ratio: 16 / 10;
   background: #000;
 }
@@ -226,10 +226,10 @@ img {
 
 /* The browser's own audio player */
 .w-audio {
-  top: 52%;
-  left: 28%;
+  top: 38%;
+  left: 31%;
   display: flex;
-  width: 21%;
+  width: 25%;
   height: 2.6em;
   align-items: center;
   gap: 0.55em;
@@ -259,14 +259,14 @@ img {
   width: 0;
 }
 
-.w-model { top: 4%; left: 52%; width: 11%; }
+.w-model { top: 5%; left: 60%; width: 12%; }
 
 /* A note with a yellow cover: the card takes its colour */
 .w-note {
-  top: 44%;
-  left: 52%;
+  top: 55%;
+  left: 31%;
   display: flex;
-  width: 15%;
+  width: 14%;
   aspect-ratio: 1;
   flex-direction: column;
   justify-content: space-between;
@@ -294,9 +294,9 @@ img {
 
 /* A picture cover is the whole card; the name on a dark strip (CoverCaption.vue) */
 .w-pic {
-  top: 6%;
-  left: 67%;
-  width: 12%;
+  top: 5%;
+  left: 76%;
+  width: 15%;
   aspect-ratio: 1;
   overflow: hidden;
 }
@@ -320,8 +320,8 @@ img {
 
 /* A colour cover: the folder, tab and all, takes it */
 .w-fold {
-  top: 6%;
-  left: 82%;
+  top: 40%;
+  left: 60%;
   display: flex;
   width: 13%;
   flex-direction: column;
@@ -354,10 +354,10 @@ img {
 
 /* A folder open in place (LazyFolderPreview.vue): a frame, its name, its things */
 .w-prev {
-  top: 46%;
-  left: 70%;
+  top: 38%;
+  left: 76%;
   display: flex;
-  width: 26%;
+  width: 21%;
   height: 40%;
   flex-direction: column;
   border: 1px solid var(--bd);
@@ -408,17 +408,17 @@ img {
 
 /* Shapes */
 .w-circle {
-  top: 72%;
-  left: 4%;
+  top: 70%;
+  left: 3%;
   width: 6.5%;
   aspect-ratio: 1;
   border-radius: 50%;
   background: #f4b9b2;
 }
 
-.w-tri { top: 72%; left: 12.5%; width: 7%; }
-.w-diamond { top: 70%; left: 21%; width: 6.5%; }
-.w-arrow { top: 60%; left: 48%; width: 8%; height: 1.6em; overflow: visible; }
+.w-tri { top: 70%; left: 11.5%; width: 7%; }
+.w-diamond { top: 68%; left: 20%; width: 6.5%; }
+.w-arrow { top: 62%; left: 47%; width: 11%; height: 1.6em; overflow: visible; }
 
 /* The pen's strokes */
 .ink {

@@ -2,7 +2,9 @@
      the cloud, shown as what they hold. The same window, the folder as a
      canvas; a tour of six things, like block 1's views: each lights its
      place in the window and opens what the app opens for it — the + menu
-     with its shapes, the layers menu, the canvas's pen. The tour runs on its
+     with its shapes, the canvas's pen. The layers panel is pinned open (an
+     option in the app): it shows that every thing on the canvas, shapes
+     included, is an ordinary file or folder. The tour runs on its
      own while the block is on screen; a click on a step takes over. -->
 <script setup lang="ts">
 import { homeBookmarks, homeTree } from "~/utils/finalFolder";
@@ -16,7 +18,7 @@ const steps: { id: AliveStep; label: string; icon: string; caption: string }[] =
   { id: "covers", label: "Covers", icon: "i-tabler-palette", caption: "Give a folder or a file a colour or a picture, and it becomes its card." },
   { id: "folder", label: "Folder preview", icon: "i-tabler-layout-grid", caption: "A folder can open in place: its things in a frame, right among yours." },
   { id: "shapes", label: "Shapes", icon: "i-tabler-shape", caption: "Add a note, text or a shape from +. A shape is an SVG file any editor opens." },
-  { id: "layers", label: "Layers", icon: "i-tabler-stack-2", caption: "Things lie in layers: drag one above another, or pin the list to the right." },
+  { id: "layers", label: "Layers", icon: "i-tabler-stack-2", caption: "Every thing here is a plain file or folder, shapes too. Drag one above another to change the order." },
   { id: "pen", label: "Pen", icon: "i-tabler-pencil", caption: "Draw over anything on a canvas: circle a detail, point at it, write a word." },
 ];
 
@@ -24,8 +26,8 @@ const step = ref<AliveStep>("previews");
 const meta = computed(() => steps.find(s => s.id === step.value)!);
 const playing = ref(true);
 
-/** Which header menu the step opens */
-const open = computed(() => (step.value === "shapes" ? "add" : step.value === "layers" ? "layers" : null));
+/** Which header menu the step opens; the layers are pinned open anyway */
+const open = computed(() => (step.value === "shapes" ? "add" : null));
 
 function pick(id: AliveStep) {
   playing.value = false;
@@ -74,18 +76,23 @@ const shapes = [
   { icon: "i-tabler-arrow-narrow-right", label: "Arrow" },
 ];
 
-/* The layers menu (LayersMenu.vue, LayersList.vue): the folder's things, top first */
-const layers = [
-  { icon: "i-tabler-file-text", name: "Title.md" },
-  { icon: "i-tabler-photo", name: "sea-horizon.jpg" },
-  { icon: "i-tabler-movie", name: "waves.mp4" },
-  { icon: "i-tabler-music", name: "gulls.mp3" },
-  { icon: "i-tabler-file", name: "sailboat.glb" },
-  { icon: "i-tabler-file-text", name: "Mood.md", current: true },
-  { icon: "i-tabler-folder", name: "References" },
-  { icon: "i-tabler-folder", name: "Palette" },
-  { icon: "i-tabler-layout-grid", name: "Inspiration", color: "#d4537e" },
-  { icon: "i-tabler-file", name: "Circle.svg" },
+/* The layers panel (LayersPanel.vue, LayersList.vue, LayerGlyph.vue): the
+   folder's things, top first; a picture shows its thumbnail, anything else
+   the icon List uses. Each row lights up on the steps it belongs to */
+const layers: { name: string; icon?: string; color?: string; thumb?: string; steps: AliveStep[] }[] = [
+  { name: "Title.md", icon: "i-tabler-file-text", steps: [] },
+  { name: "sea-horizon.jpg", thumb: "/landing-alt2/sea-horizon.jpg", steps: ["previews"] },
+  { name: "waves.mp4", icon: "i-tabler-movie", steps: ["previews"] },
+  { name: "gulls.mp3", icon: "i-tabler-music", steps: ["previews"] },
+  { name: "sailboat.glb", icon: "i-tabler-file", steps: ["previews"] },
+  { name: "Mood.md", icon: "i-tabler-file-text", steps: ["covers"] },
+  { name: "References", icon: "i-tabler-folder", steps: ["covers"] },
+  { name: "Palette", icon: "i-tabler-palette", color: "#1d9e75", steps: ["covers"] },
+  { name: "Inspiration", icon: "i-tabler-layout-grid", color: "#d4537e", steps: ["folder"] },
+  { name: "Circle.svg", icon: "i-tabler-file", steps: ["shapes"] },
+  { name: "Triangle.svg", icon: "i-tabler-file", steps: ["shapes"] },
+  { name: "Diamond.svg", icon: "i-tabler-file", steps: ["shapes"] },
+  { name: "Arrow.svg", icon: "i-tabler-file", steps: ["shapes"] },
 ];
 </script>
 
@@ -146,16 +153,22 @@ const layers = [
             </div>
           </div>
 
-          <!-- Layers: the folder's things, top first, each with its grip -->
-          <div v-if="open === 'layers'" class="pop layers">
-            <div class="am laym">
-              <div class="am-h"><span>Layers</span><span class="pin"><UIcon name="i-tabler-layout-sidebar-right" class="am-ic" />Pin to the right</span></div>
-              <div v-for="l in layers" :key="l.name" class="am-i" :class="{ hl: l.current }">
-                <UIcon name="i-tabler-grip-vertical" class="am-ic grip" />
-                <UIcon :name="l.icon" class="am-ic" :style="{ color: l.color }" />{{ l.name }}
+        </template>
+
+        <!-- The layers panel, pinned right (LayersPanel.vue): every thing on
+             the canvas is a file or a folder in it, shapes included -->
+        <template #aside>
+          <aside class="lp" :class="{ ring: step === 'layers' }">
+            <div class="lh"><span>Layers</span><span class="lu"><UIcon name="i-tabler-layout-sidebar-right-collapse" class="am-ic" />Show as a menu</span></div>
+            <div class="lb">
+              <div v-for="l in layers" :key="l.name" class="ly" :class="{ on: l.steps.includes(step) }">
+                <UIcon name="i-tabler-grip-vertical" class="gp" />
+                <img v-if="l.thumb" :src="l.thumb" alt="" class="th">
+                <UIcon v-else :name="l.icon!" class="gi" :style="{ color: l.color }" />
+                <span class="ln">{{ l.name }}</span>
               </div>
             </div>
-          </div>
+          </aside>
         </template>
       </FinalAppWindow>
     </div>
@@ -302,11 +315,6 @@ const layers = [
   right: 14.25em;
 }
 
-/* Layers is followed by AI, sync, share and more */
-.layers {
-  right: 11.65em;
-}
-
 .addm {
   width: 16.9em;
 }
@@ -319,19 +327,92 @@ const layers = [
   width: 11em;
 }
 
-.laym {
-  width: 20em;
+/* The pinned layers panel: 240px, the window's gray, a thin left border */
+.lp {
+  display: flex;
+  width: 18.5em;
+  flex: none;
+  flex-direction: column;
+  border-left: 1px solid rgb(0 0 0 / 0.08);
+  background: #f8f8f7;
+  color: #1f1f1e;
+  outline: 2px solid transparent;
+  outline-offset: -3px;
+  transition: outline-color 0.2s ease;
 }
 
-.pin {
+.lp.ring {
+  outline-color: #2453ff;
+}
+
+.lh {
+  display: flex;
+  min-height: 2.77em;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.62em 0 0.92em;
+  color: #9a9893;
+  font-size: 0.846em;
+}
+
+.lu {
   display: inline-flex;
   align-items: center;
   gap: 0.35em;
   color: #5f5e5a;
 }
 
-.grip {
-  width: 1em;
+.lb {
+  overflow: hidden;
+  padding: 0 0.46em 0.62em;
+}
+
+/* A row as a menu item, 28px */
+.ly {
+  display: flex;
+  height: 2.15em;
+  align-items: center;
+  gap: 0.62em;
+  border-radius: 0.46em;
+  padding: 0 0.62em 0 0.3em;
+  white-space: nowrap;
+  transition: background-color 0.2s ease;
+}
+
+/* The rows of the step on screen */
+.ly.on {
+  background: #e6f1fb;
+  color: #185fa5;
+}
+
+.gp {
+  width: 1.08em;
+  height: 1.08em;
+  flex: none;
   color: #9a9893;
+}
+
+.gi {
+  width: 1.23em;
+  height: 1.23em;
+  flex: none;
+  color: #5f5e5a;
+}
+
+.ly.on .gi {
+  color: inherit;
+}
+
+.th {
+  width: 1.23em;
+  height: 1.23em;
+  flex: none;
+  border-radius: 0.2em;
+  object-fit: cover;
+}
+
+.ln {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
