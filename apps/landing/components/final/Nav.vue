@@ -85,26 +85,20 @@ onMounted(() => {
   }
 }
 
-/* A frosted panel: it reads on the wallpaper and on the gray page alike */
 .list {
   display: grid;
   gap: 0.125rem;
   margin: 0;
-  border: 1px solid rgb(255 255 255 / 0.6);
-  border-radius: 14px;
-  background: rgb(255 255 255 / 0.72);
-  padding: 0.375rem;
+  padding: 0;
   list-style: none;
-  box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.25);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .it {
   display: flex;
   align-items: flex-start;
   gap: 0.625rem;
-  border-radius: 9px;
+  border-radius: 8px;
+  margin-left: -0.5rem;
   padding: 0.5rem;
   color: var(--lf-ink-2);
   text-decoration: none;

@@ -84,8 +84,6 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 
 .tag {
   grid-area: tag;
-  /* A soft light halo keeps it clear of the photo behind */
-  text-shadow: 0 0 18px rgb(255 255 255 / 0.55);
   margin-top: 1rem;
   font-size: clamp(2rem, 7vw, 2.75rem);
   text-align: center;
@@ -121,21 +119,13 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 .nav-link {
   display: inline-flex;
   margin-right: 0.5rem;
-  color: var(--lf-ink);
-  font-weight: 500;
+  color: var(--lf-ink-2);
   font-size: 0.9375rem;
   text-decoration: none;
 }
 
 .nav-link:hover {
   color: var(--lf-ink);
-}
-
-/* The header sits on the wallpaper: the outlined button gets a frosted fill */
-.repo {
-  background: rgb(255 255 255 / 0.55);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 /* The repository's name, as GitHub writes it */
