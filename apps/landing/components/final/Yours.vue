@@ -155,6 +155,7 @@ const kinds: Record<string, string> = { folder: "Folder", image: "JPEG image", t
               <li><UIcon name="i-tabler-link" class="vi" />The app opens files through short-lived signed links</li>
               <li><UIcon name="i-tabler-photo" class="vi" />Visitors to a public folder see thumbnails, not your originals</li>
               <li><UIcon name="i-tabler-device-desktop" class="vi" />Files that stay on your computer never go there</li>
+              <li><UIcon name="i-tabler-key" class="vi" />Bookmarks, settings and AI keys stay on your device</li>
             </ul>
             <a href="https://www.backblaze.com/blog/backblaze-b2-to-encrypt-new-uploads-by-default/" target="_blank" rel="noopener noreferrer" class="vlink">How Backblaze encrypts files at rest</a>
           </div>
