@@ -58,7 +58,8 @@ onMounted(() => {
         <!-- The view on screen, right under the lede where the eye already is -->
         <div class="now">
           <p class="caption" aria-live="polite">
-            <span class="cname">{{ meta.label }}.</span> {{ meta.caption }}
+            <UIcon :name="meta.icon" class="ci" :style="{ color: meta.color ?? undefined }" />
+            <span>{{ meta.label }}. {{ meta.caption }}</span>
           </p>
           <button type="button" class="play" :aria-pressed="playing" @click="toggle">
             <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
@@ -147,16 +148,22 @@ onMounted(() => {
   margin-top: 0.5rem;
 }
 
+/* As the lede above it, with the view's icon from the menu */
 .caption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin: 0;
-  color: var(--lf-ink);
-  font-size: 0.9375rem;
+  color: var(--lf-ink-2);
+  font-size: 1.0625rem;
   line-height: 1.5;
 }
 
-.cname {
-  color: var(--lf-ink);
-  font-weight: 600;
+.ci {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  color: var(--lf-ink-2);
 }
 
 /* Before the caption: it keeps its place while the caption changes length */

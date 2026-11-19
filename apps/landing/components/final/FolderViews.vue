@@ -207,8 +207,9 @@ img {
 
 /* ── List (ListView.vue): a 30px header, 32px rows ─────── */
 
+/* Edge to edge, as in the app */
 .list {
-  padding: 0 0.6em;
+  padding: 0;
 }
 
 .lh,
