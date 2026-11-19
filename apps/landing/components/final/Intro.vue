@@ -74,7 +74,7 @@ const tree: TreeItem[] = [
 
 <style scoped>
 .intro {
-  padding: 0.5rem 0 var(--lf-section);
+  padding: var(--lf-intro-top) 0 var(--lf-section);
 }
 
 .in {
@@ -84,7 +84,7 @@ const tree: TreeItem[] = [
 
 /* The tagline in one row on a computer */
 .tag {
-  font-size: clamp(2.25rem, 3.6vw, 3.5rem);
+  font-size: var(--lf-tag-size);
   text-align: center;
 }
 
@@ -99,7 +99,7 @@ const tree: TreeItem[] = [
 }
 
 .shot {
-  margin-top: clamp(1.25rem, 3vh, 2rem);
+  margin-top: var(--lf-tag-gap);
 }
 
 @media (min-width: 1100px) {
@@ -112,11 +112,11 @@ const tree: TreeItem[] = [
    what is left */
 @media (min-width: 761px) and (min-height: 560px) {
   .intro {
-    padding-bottom: clamp(1.5rem, 4vh, 3rem);
+    padding-bottom: var(--lf-intro-bottom);
   }
 
   .in {
-    height: calc(var(--lf-screen) - var(--lf-header-h) - 0.5rem - clamp(1.5rem, 4vh, 3rem));
+    height: calc(var(--lf-screen) - var(--lf-header-h) - var(--lf-intro-top) - var(--lf-intro-bottom));
   }
 
   .shot {

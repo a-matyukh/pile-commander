@@ -10,8 +10,8 @@
    - every picture of the product is the app's real interface: ~ for the home
      folder in the path (a cloud icon for the cloud), the path in one row
      (the compact folder header), menus drawn as the app draws them;
-   - the first screen is a computer's desktop: a wallpaper, the app's icon
-     with its name, and the app's window open on it;
+   - the first screen is a computer's desktop: the app's icon with its name
+     and the app's window open on it;
    - on a wide screen the blocks are a menu pinned on the left (Nav.vue),
      under the desktop icon; the content moves right to make room. */
 
@@ -36,6 +36,12 @@
   /* The first screen: header and intro fill it, within reason */
   --lf-screen: clamp(40rem, 100svh, 64rem);
   --lf-header-h: 6.5rem;
+  /* The intro's rows (Intro.vue): the tagline, the gap under it and the
+     space under the window. The pinned menu centres on the window with them */
+  --lf-intro-top: 0.5rem;
+  --lf-tag-size: clamp(2.25rem, 3.6vw, 3.5rem);
+  --lf-tag-gap: clamp(1.25rem, 3vh, 2rem);
+  --lf-intro-bottom: clamp(1.5rem, 4vh, 3rem);
   /* The pinned menu's column on a wide screen */
   --lf-nav: 0rem;
   --lf-nav-gap: 0rem;
@@ -173,14 +179,6 @@
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-decoration: none;
-}
-
-/* Above the wallpaper */
-:where(.lf) > header,
-:where(.lf) > main,
-:where(.lf) > footer {
-  position: relative;
-  z-index: 1;
 }
 
 /* Wide: the menu takes a column on the left, the content moves right */

@@ -1,5 +1,4 @@
-<!-- Not sticky: the page gives the whole screen to the content. It sits on
-     the desktop's wallpaper. The ways in
+<!-- Not sticky: the page gives the whole screen to the content. The ways in
      live here: download and the browser. A phone cannot run the desktop
      app, so there the browser comes first and the download leaves. -->
 <script setup lang="ts">
@@ -65,9 +64,11 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   text-decoration: none;
 }
 
+/* Rounded like an app icon on the desktop */
 .brand-icon {
   width: 3.5rem;
   height: 3.5rem;
+  border-radius: 22.5%;
   filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.18));
 }
 
@@ -78,7 +79,6 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   font-weight: 500;
   line-height: 1.3;
   text-align: center;
-  text-shadow: 0 1px 2px rgb(255 255 255 / 0.6);
   white-space: nowrap;
 }
 
