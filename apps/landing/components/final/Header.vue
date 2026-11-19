@@ -20,7 +20,8 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
         <span class="brand-name">Pile Commander</span>
       </NuxtLink>
 
-      <h1 class="lf-h1 tag">File manager. <span class="em">Creative space.</span></h1>
+      <!-- The name and what it is, in one rhythm -->
+      <h1 class="lf-h1 tag">Pile Commander. File manager. <span class="em">Creative space.</span></h1>
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>
@@ -134,6 +135,21 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   }
 }
 
+/* Not wide enough for the tagline beside the buttons: it goes under them,
+   still over the window, within the header's height */
+@media (min-width: 1100px) and (max-width: 1359px) {
+  .bar-in {
+    grid-template-areas:
+      "brand nav nav"
+      "brand tag tag";
+    grid-template-rows: auto 1fr;
+  }
+
+  .tag {
+    margin-top: 0.75rem;
+  }
+}
+
 .nav-link {
   display: inline-flex;
   margin-right: 0.5rem;
@@ -154,7 +170,7 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
 }
 
 /* The tagline needs the room: the repository keeps its icon */
-@media (max-width: 1400px) {
+@media (max-width: 1600px) {
   .repo-name {
     display: none;
   }

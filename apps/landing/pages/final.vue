@@ -16,8 +16,9 @@
 <script setup lang="ts">
 definePageMeta({ layout: "final" });
 
+useHead({ titleTemplate: null });
 useSeoMeta({
-  title: "File manager. Creative space.",
+  title: "Pile Commander. File manager. Creative space.",
   description:
     "A file manager for your home folder and the cloud, where files and folders are not boring.",
   robots: "noindex, nofollow",
