@@ -1,0 +1,135 @@
+/* The final landing (/final). Every rule sits under .lf, so the rest of the
+   site is untouched. :where(.lf) adds no weight: a component's own scoped
+   rule for the same element wins.
+
+   Cross-cutting rules for the whole page:
+   - the page is the app's gray (--surface-0 in apps/client/src/ui/explorer/tokens.css)
+     and the app's own font (the system stack);
+   - one accent, the blue of /alt2;
+   - every picture of the product is the app's real interface: ~ for the home
+     folder in the path (a cloud icon for the cloud), the path in one row
+     (the compact folder header), menus drawn as the app draws them. */
+
+.lf {
+  --lf-bg: #f0f0ee;
+  --lf-surface: #ffffff;
+  --lf-line: rgb(0 0 0 / 0.08);
+  --lf-line-strong: rgb(0 0 0 / 0.15);
+  --lf-ink: #1f1f1e;
+  --lf-ink-2: #5f5e5a;
+  --lf-ink-3: #77756f;
+  --lf-accent: #2453ff;
+  --lf-accent-hover: #1a43e0;
+  --lf-on-accent: #ffffff;
+
+  --lf-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --lf-wrap: 76rem;
+  --lf-gutter: clamp(1rem, 4vw, 2.5rem);
+  --lf-section: clamp(4rem, 9vw, 8rem);
+  --lf-radius: 10px;
+
+  background: var(--lf-bg);
+  color: var(--lf-ink);
+  font-family: var(--lf-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:where(.lf) .lf-wrap {
+  width: 100%;
+  max-width: var(--lf-wrap);
+  margin-inline: auto;
+  padding-inline: var(--lf-gutter);
+}
+
+:where(.lf) .lf-h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+:where(.lf) .lf-h2 {
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 3.25rem);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+:where(.lf) .lf-lede {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--lf-ink-2);
+  font-size: clamp(1.0625rem, 1.6vw, 1.25rem);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+:where(.lf) .lf-small {
+  margin: 0;
+  color: var(--lf-ink-3);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Pill buttons, like the app's panels */
+:where(.lf) .lf-btn {
+  display: inline-flex;
+  min-height: 2.875rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 1.375rem;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+:where(.lf) .lf-btn-sm {
+  min-height: 2.25rem;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+}
+
+:where(.lf) .lf-btn-primary {
+  background: var(--lf-accent);
+  color: var(--lf-on-accent);
+}
+
+:where(.lf) .lf-btn-primary:hover {
+  background: var(--lf-accent-hover);
+}
+
+:where(.lf) .lf-btn-secondary {
+  border-color: var(--lf-line-strong);
+  background: var(--lf-surface);
+  color: var(--lf-ink);
+}
+
+:where(.lf) .lf-btn-secondary:hover {
+  border-color: rgb(0 0 0 / 0.3);
+}
+
+:where(.lf) a:focus-visible,
+:where(.lf) button:focus-visible {
+  outline: 2px solid var(--lf-accent);
+  outline-offset: 2px;
+}
+
+/* A picture of the app: a window with the app's own shadow and radius */
+:where(.lf) .lf-frame {
+  overflow: hidden;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 12px;
+  background: var(--lf-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 24px 60px -24px rgb(0 0 0 / 0.22);
+}
