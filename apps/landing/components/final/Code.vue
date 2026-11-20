@@ -1,8 +1,9 @@
 <!-- Block 8, transparency: source available, the code public to read. Not
-     "open source": the repository has no license file. Static, the last block: the
-     repository as its folders, the stack from README.md's badges, how the
-     app keeps things from the home page's "Under the hood"
-     (UnderTheHood.vue). The page ends with Finale.vue. -->
+     "open source": the repository has no license file. Static, the last block:
+     the repository as its folders and the stack from README.md's badges. How
+     the files keep their layout (xattrs, .pile) is in the README; the
+     browser's storage is in block 6, .pile files in block 5. The page ends
+     with Finale.vue. -->
 <script setup lang="ts">
 const githubUrl = "https://github.com/a-matyukh/pile-commander";
 const external = { target: "_blank", rel: "noopener noreferrer" };
@@ -17,11 +18,6 @@ const folders = [
 
 const stack = ["Vue 3.5", "Tauri 2", "TypeScript", "Bun", "Supabase: Postgres + RLS", "Backblaze B2"];
 
-const facts = [
-  { icon: "i-tabler-tag", title: "Layout on the files", text: "Position, size, view and background are written on the files themselves: xattrs on macOS and Linux, alternate data streams on Windows (NTFS)." },
-  { icon: "i-tabler-folder", title: "Your file system", text: "The desktop app works in the same folders you see in Finder or Explorer. The browser keeps its folders in IndexedDB." },
-  { icon: "i-tabler-file-zip", title: ".pile archives", text: "A zip of the folder with its attributes, so the layout survives email, USB sticks and file systems that drop them." },
-];
 </script>
 
 <template>
@@ -33,40 +29,26 @@ const facts = [
         <p class="lede">The code is open to read: see how Pile Commander works and what it does with your files, all in one public repository.</p>
       </header>
 
-      <div class="grid">
-        <!-- The repository, as its folders -->
-        <a :href="githubUrl" v-bind="external" class="repo">
+      <!-- The repository: its name, stack and link beside its folders -->
+      <a :href="githubUrl" v-bind="external" class="repo">
+        <span class="rl">
           <span class="rh">
             <UIcon name="i-tabler-brand-github" class="rgi" />
             <span class="rn">a-matyukh/pile-commander</span>
             <span class="rp">Public</span>
           </span>
-          <ul class="rf">
-            <li v-for="f in folders" :key="f.name">
-              <span class="fn"><UIcon name="i-tabler-folder" class="fi" />{{ f.name }}</span>
-              <span class="ft">{{ f.text }}</span>
-            </li>
-          </ul>
           <span class="rs">
             <span v-for="s in stack" :key="s" class="st">{{ s }}</span>
           </span>
           <span class="rgo">View the code on GitHub<UIcon name="i-tabler-arrow-up-right" class="rga" /></span>
-        </a>
-
-        <!-- How the folder keeps its layout -->
-        <FinalXattrTree />
-      </div>
-
-      <!-- How it keeps things -->
-      <ul class="facts">
-          <li v-for="f in facts" :key="f.title" class="fact">
-            <span class="fic"><UIcon :name="f.icon" class="fii" /></span>
-            <span>
-              <span class="fti">{{ f.title }}</span>
-              <span class="fte">{{ f.text }}</span>
-            </span>
+        </span>
+        <ul class="rf">
+          <li v-for="f in folders" :key="f.name">
+            <span class="fn"><UIcon name="i-tabler-folder" class="fi" />{{ f.name }}</span>
+            <span class="ft">{{ f.text }}</span>
           </li>
         </ul>
+      </a>
 
     </div>
   </section>
@@ -102,24 +84,15 @@ const facts = [
   line-height: 1.5;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.5rem;
-}
-
-@media (max-width: 900px) {
-  .grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* ── The repository ──────────────────────────────────── */
 
+/* Wide: the name, the stack and the link on the left, the folders on the
+   right; narrower, one column */
 .repo {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  align-items: start;
+  gap: 1.5rem 2.5rem;
   border: 1px solid var(--lf-line-strong);
   border-radius: 12px;
   background: var(--lf-surface);
@@ -131,6 +104,18 @@ const facts = [
 
 .repo:hover {
   border-color: rgb(0 0 0 / 0.3);
+}
+
+@media (max-width: 900px) {
+  .repo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.rl {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .rh {
@@ -220,7 +205,6 @@ const facts = [
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: auto;
   color: var(--lf-accent);
   font-weight: 600;
 }
@@ -228,57 +212,6 @@ const facts = [
 .rga {
   width: 1.1rem;
   height: 1.1rem;
-}
-
-/* ── How it keeps things ─────────────────────────────── */
-
-.facts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.5rem;
-  margin: 2rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fact {
-  display: flex;
-  gap: 0.875rem;
-}
-
-.fic {
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  flex: none;
-  place-items: center;
-  border: 1px solid var(--lf-line-strong);
-  border-radius: 8px;
-  background: var(--lf-surface);
-}
-
-.fii {
-  width: 1.15rem;
-  height: 1.15rem;
-}
-
-.fti {
-  display: block;
-  font-weight: 600;
-}
-
-.fte {
-  display: block;
-  margin-top: 0.2rem;
-  color: var(--lf-ink-2);
-  font-size: 0.9375rem;
-  line-height: 1.5;
-}
-
-@media (max-width: 900px) {
-  .facts {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 </style>

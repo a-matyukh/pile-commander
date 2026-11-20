@@ -53,13 +53,7 @@ manifest.
 `FileManager` interface has a disk backend, an IndexedDB backend and a
 Postgres backend. The UI does not know which one it is talking to.
 
-```text
-Research/                     user.view = "board"   user.background = "dots"
-├── References/               user.view = "grid"
-│   └── harbor-01.jpg         user.position = {"x":120,"y":48}  user.size = {"w":240,"h":180}
-├── Mood.md                   user.position = {"x":40,"y":300}  user.order = 2
-└── .pile/                    ink strokes and connector lines for the canvas view
-```
+<img src="docs/xattrs.svg" width="600" alt="A folder, Harbor moodboard, with user.view and user.background on it; its files carry user.position, user.size and user.order; drawings and connections sit in its hidden .pile folder">
 
 If you delete Pile Commander, your folders, files and their names stay
 exactly as they were.

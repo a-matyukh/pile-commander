@@ -13,7 +13,7 @@
 <script setup lang="ts">
 export interface Crumb {
   /** home: ~ ; cloud: the cloud icon; otherwise the folder's name */
-  glyph?: "home" | "cloud";
+  glyph?: "home" | "cloud" | "browser";
   name?: string;
 }
 
@@ -55,6 +55,9 @@ const props = withDefaults(
     keepSidebar?: boolean;
     /** the visitor can use something in it: no longer a picture to screen readers */
     interactive?: boolean;
+    /** the web app: no disk, so the first source is the browser's own
+     *  storage (IndexedDB), a database icon instead of ~ */
+    web?: boolean;
   }>(),
   {
     viewIcon: "i-tabler-template",
@@ -103,8 +106,12 @@ const active = useState<number | null>("lf-active", () => null);
       <div class="body">
         <aside class="side">
           <div class="drives">
-            <!-- The home folder is ~, as in the path (HomeGlyph.vue) -->
-            <span class="dr" :class="{ on: drive === 'local' }"><span class="hm">~</span></span>
+            <!-- The home folder is ~, as in the path (HomeGlyph.vue); the web
+                 app has the browser's storage there (Breadcrumbs.vue) -->
+            <span class="dr" :class="{ on: drive === 'local' }">
+              <UIcon v-if="web" name="i-tabler-database" class="ic" />
+              <span v-else class="hm">~</span>
+            </span>
             <span class="dr" :class="{ on: drive === 'cloud' }"><UIcon name="i-tabler-cloud" class="ic" /></span>
             <span class="dr" :class="{ on: drive === 'hub' }"><UIcon name="i-tabler-world" class="ic" /></span>
           </div>
@@ -126,6 +133,7 @@ const active = useState<number | null>("lf-active", () => null);
                 <UIcon v-if="i > 0" name="i-tabler-chevron-right" class="chev" />
                 <span v-if="c.glyph === 'home'" class="hm">~</span>
                 <UIcon v-else-if="c.glyph === 'cloud'" name="i-tabler-cloud" class="cl" />
+                <UIcon v-else-if="c.glyph === 'browser'" name="i-tabler-database" class="db" />
                 <span v-else>{{ c.name }}</span>
               </template>
               <UIcon v-if="crumbs.length" name="i-tabler-chevron-right" class="chev" />
@@ -431,6 +439,13 @@ const active = useState<number | null>("lf-active", () => null);
 .cl {
   width: 1.3em;
   height: 1.3em;
+  flex: none;
+}
+
+/* The browser's storage in the path: 14px in the app's 12px row */
+.db {
+  width: 1.1em;
+  height: 1.1em;
   flex: none;
 }
 

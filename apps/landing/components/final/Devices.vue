@@ -13,6 +13,8 @@ type ScreenStep = "desktop" | "browser" | "tablet" | "phone";
 
 const localCrumbs: Crumb[] = [{ glyph: "home" }, { name: "Pictures" }];
 const cloudCrumbs: Crumb[] = [{ glyph: "cloud" }];
+/** The web app has no disk: its own folders live in the browser's storage */
+const browserCrumbs: Crumb[] = [{ glyph: "browser" }];
 
 const cloudTree: TreeRow[] = [
   { name: "Family trip", icon: "i-tabler-template", color: "#534ab7", open: false },
@@ -23,7 +25,7 @@ const cloudTree: TreeRow[] = [
 
 const steps: { id: ScreenStep; label: string; icon: string; caption: string }[] = [
   { id: "desktop", label: "Desktop app", icon: "i-tabler-device-desktop", caption: "macOS, Windows and Linux. Folders on your disk and sync live here." },
-  { id: "browser", label: "In the browser", icon: "i-tabler-browser", caption: "Nothing to install: open the web app in any browser and work with your cloud folders." },
+  { id: "browser", label: "In the browser", icon: "i-tabler-browser", caption: "Nothing to install. The browser cannot open your disk, so its folders live in its own storage (IndexedDB), and your cloud folders are one click away." },
   { id: "tablet", label: "Tablet", icon: "i-tabler-device-ipad-horizontal", caption: "On a tablet the sidebar stays beside the folder, and everything works by touch." },
   { id: "phone", label: "Phone", icon: "i-tabler-device-mobile", caption: "On a phone the sidebar slides in from the edge, menus fit the screen, and you pinch to zoom a canvas." },
 ];
@@ -118,10 +120,11 @@ onMounted(() => {
           <FinalAppWindow
             class="bare"
             fill
-            :crumbs="cloudCrumbs"
+            web
+            :crumbs="browserCrumbs"
             title="Harbor moodboard"
             :tree="cloudTree"
-            drive="cloud"
+            drive="local"
           >
             <FinalFolderViews view="board" />
           </FinalAppWindow>
@@ -134,6 +137,7 @@ onMounted(() => {
               class="bare"
               fill
               keep-sidebar
+              web
               :crumbs="cloudCrumbs"
               title="Harbor moodboard"
               :tree="cloudTree"
@@ -150,6 +154,7 @@ onMounted(() => {
             <FinalAppWindow
               class="bare"
               fill
+              web
               :crumbs="cloudCrumbs"
               title="Harbor moodboard"
               drive="cloud"
