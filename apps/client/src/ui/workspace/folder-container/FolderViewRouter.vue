@@ -48,7 +48,10 @@ const { folderId } = useFolderContainerScope()
 	<FolderViewScope :key="folderId">
 		<List v-if="view === 'list'" />
 		<Grid v-else-if="view === 'grid'" />
-		<Board v-else-if="view === 'board'" />
+		<!-- A 3D folder in a preview: its board, the same places seen from above
+		     (one WebGL scene per preview would be too heavy; the open folder
+		     shows the 3D itself, FolderContent.vue) -->
+		<Board v-else-if="view === 'board' || view === '3d'" />
 		<Canvas v-else-if="view === 'canvas'" />
 		<Stack v-else-if="view === 'stack'" />
 		<Slides v-else-if="view === 'slides'" />

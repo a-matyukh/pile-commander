@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ layout: "final" })
+
 const { abuseEmail } = useSiteLegal()
 
 useSeoMeta({
@@ -9,7 +11,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <LegalArticle title="Support, reports, and DMCA" updated="16 September 2026">
+  <LegalArticle title="Support, reports, and DMCA" updated="20 November 2026">
     <p>
       One address does all of it:
       <a :href="`mailto:${abuseEmail}`">{{ abuseEmail }}</a> — account
@@ -18,11 +20,11 @@ useSeoMeta({
       and anything about a minor jump the queue.
     </p>
 
-    <h2>Report a public workspace</h2>
+    <h2>Report a publication</h2>
     <p>
-      Signed in, use Report on the Hub card or on the public workspace itself.
+      Signed in, use Report on the Hub card or on the published folder itself.
       The form takes up to 280 characters, you cannot report your own
-      workspace, and there is a cap of 20 reports a day per account.
+      publication, and there is a cap of 20 reports a day per account.
     </p>
     <p>
       Not signed in, send mail to the address above. Include the URL
@@ -35,14 +37,14 @@ useSeoMeta({
       Three reports from accounts older than seven days hide the Hub card and
       its cover image until a moderator looks at it; the owner is emailed when
       that happens. The public link keeps working until a moderator makes the
-      workspace private, which is what we do when content is unlawful. Owners
+      folder private, which is what we do when content is unlawful. Owners
       can appeal at the same address.
     </p>
 
     <h2>Copyright (DMCA)</h2>
     <p>
       Send a notice that identifies the work, the URL of the allegedly
-      infringing workspace, your contact details, a statement that you have a
+      infringing publication, your contact details, a statement that you have a
       good faith belief the use is not authorized, and a statement under penalty
       of perjury that you are the owner or authorized to act. We aim to review
       notices within two business days. Repeat infringement can lead to account
@@ -80,12 +82,11 @@ useSeoMeta({
     <h2>Account help</h2>
     <ul>
       <li>
-        <strong>Getting your files out.</strong> In the desktop app, Export in
-        the workspace menu writes the whole workspace — local or cloud — as a
-        <code>.pile</code>. In the browser that item is off, because the writing
-        is done by the desktop app. Someone else’s public workspace has
-        Download as <code>.pile</code> instead, and only while its author leaves
-        forks and downloads on.
+        <strong>Getting your files out.</strong> Export in a folder’s Share
+        menu writes the whole folder — local or cloud — as a
+        <code>.pile</code>; in the browser it goes to your downloads. Someone
+        else’s published folder has Download <code>.pile</code> instead, and only
+        while its author allows forks and <code>.pile</code> downloads.
       </li>
       <li>
         <strong>Deleting the account.</strong> It is in the app and it asks you
@@ -97,8 +98,8 @@ useSeoMeta({
       </li>
       <li>
         <strong>Running into a limit.</strong> Free is 100 MB across your
-        workspaces and trash, one file up to 25 MB, and 3 Hub
-        listings. A public link also has a monthly fair-use budget for what it
+        cloud folders and trash, one file up to 25 MB, and 3 publications on
+        the Hub. A public link also has a monthly fair-use budget for what it
         serves to visitors. Details on
         <NuxtLink to="/pricing">Pricing</NuxtLink>.
       </li>
@@ -109,7 +110,7 @@ useSeoMeta({
       Found a way to read or change something you should not? Write to
       <a :href="`mailto:${abuseEmail}`">{{ abuseEmail }}</a> with the steps to
       reproduce it. Please test against your own account and your own data —
-      not against other people’s workspaces — and give us a chance to fix it
+      not against other people’s folders — and give us a chance to fix it
       before you publish.
     </p>
   </LegalArticle>

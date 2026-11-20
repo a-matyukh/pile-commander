@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ layout: "final" })
+
 const { operatorName, operatorLocation, abuseEmail } = useSiteLegal()
 
 useSeoMeta({
@@ -11,7 +13,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Privacy"
-    updated="13 November 2026"
+    updated="20 November 2026"
     note="Written against what the code actually does. It changes when the product does."
   >
     <p>
@@ -22,7 +24,7 @@ useSeoMeta({
 
     <h2>Who is responsible</h2>
     <p>
-      {{ operatorName }}, established in {{ operatorLocation }}, decides what is
+      <a href="https://www.kmcn-lab.com/" target="_blank" rel="noopener noreferrer">{{ operatorName }}</a>, established in {{ operatorLocation }}, decides what is
       collected here and why. Questions, requests, complaints:
       <a :href="`mailto:${abuseEmail}`">{{ abuseEmail }}</a>.
     </p>
@@ -35,7 +37,7 @@ useSeoMeta({
         you set them.
       </li>
       <li>
-        <strong>What you put in a workspace</strong> — files, notes, ink,
+        <strong>What you put in cloud folders</strong> — files, notes, ink,
         connectors, names, and file attributes.
       </li>
       <li>
@@ -44,11 +46,11 @@ useSeoMeta({
         with their role.
       </li>
       <li>
-        <strong>Hub listings</strong> — slug, description, tags, the cover image
-        you upload, and how many times the workspace was forked.
+        <strong>Hub publications</strong> — slug, description, tags, the cover image
+        you upload, and how many times the folder was copied by others.
       </li>
       <li>
-        <strong>Reports</strong> — who reported which workspace and the text
+        <strong>Reports</strong> — who reported which publication and the text
         they wrote. Visible to moderators, not to other visitors.
       </li>
       <li>
@@ -60,8 +62,8 @@ useSeoMeta({
       </li>
       <li>
         <strong>Metering</strong> — per day, the number of bytes served from
-        your public workspaces to people who are not members, and the bytes your
-        account downloads from other people’s public workspaces.
+        your public folders to people they are not shared with, and the bytes
+        your account downloads from other people’s public folders.
       </li>
       <li>
         <strong>Technical records</strong> — server logs and the counters that
@@ -83,12 +85,12 @@ useSeoMeta({
     <h2>Where it is stored</h2>
     <p>
       The database and the sign-in system run on Supabase in Ireland
-      (<code>eu-west-1</code>). Your workspace files sit in a private Backblaze
+      (<code>eu-west-1</code>). The files in your cloud folders sit in a private Backblaze
       B2 bucket in the United States (<code>us-east-005</code>) and are served
       only through links that we sign for one reader at a time. Screenshots
       attached to a feedback note stay in the same Irish
       Supabase project as the note, not in that US bucket. By using the cloud
-      service you accept that workspace files are stored in the US.
+      service you accept that the files in your cloud folders are stored in the US.
     </p>
 
     <h2>Who else processes it</h2>
@@ -111,15 +113,16 @@ useSeoMeta({
 
     <h2>What other people see</h2>
     <p>
-      A private workspace is visible to you and the people you invite. An
+      A private cloud folder is visible to you and the people you share it
+      with. An
       unlisted public link is visible to anyone who has the URL, live, as you
-      keep writing. A Hub listing is visible in the public gallery, with your
+      keep writing. A Hub publication is visible in the public gallery, with your
       username and display name on it. Reports are not shown to other visitors.
     </p>
     <p>
-      Two things are easy to miss. Everyone who shares a workspace with you can
-      see the email address of every other member of it, including yours. And
-      preview images are generated only for workspaces that are public — a
+      Two things are easy to miss. Everyone who shares a folder with you can
+      see the email address of every other person in it, including yours. And
+      preview images are generated only for folders that are public — a
       private one is never rendered on our servers.
     </p>
 
@@ -139,7 +142,7 @@ useSeoMeta({
       </li>
       <li>Pending invites: 14 days, then the row goes.</li>
       <li>
-        Deleting a workspace deletes what is inside it. Deleting your account
+        Deleting a cloud folder deletes what is inside it. Deleting your account
         (in the app, after a fresh sign-in) removes the account and everything
         attached to it, including usage records and metering counters.
       </li>
@@ -165,8 +168,8 @@ useSeoMeta({
 
     <h2>Your choices</h2>
     <p>
-      You can read and correct your profile in the app, export a whole workspace
-      as a <code>.pile</code> from the desktop app, delete a workspace, and
+      You can read and correct your profile in the app, export a whole folder
+      as a <code>.pile</code>, delete a cloud folder, and
       delete the account itself.
       For anything you cannot do from the app — a copy of what we hold, a
       correction, an objection, or a deletion you want confirmed — write to

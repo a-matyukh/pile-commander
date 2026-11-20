@@ -1,13 +1,15 @@
 <script setup lang="ts">
+definePageMeta({ layout: "final" })
+
 const { clientUrl, desktopAppLink } = useAppLinks();
 
 useSeoMeta({
   title: "Pricing",
   description:
-    "Local use is free forever. Cloud Free is 100 MB, files up to 25 MB, invites, unlisted links, and Hub for up to 3 workspaces. Paid plans will sit next to Free later.",
+    "Local use is free forever. Cloud Free is 100 MB, files up to 25 MB, invites, unlisted links, and up to 3 publications on the Hub. Paid plans will sit next to Free later.",
   ogTitle: "Pricing — Pile Commander",
   ogDescription:
-    "Work on your computer for free. Cloud Free is a lasting plan — paid tiers open after beta.",
+    "Work on your computer for free. Cloud Free is a lasting plan — paid plans will come later.",
   ogImage: "/app-icon.png",
   twitterCard: "summary",
 });
@@ -19,162 +21,337 @@ const localFeatures = [
 ];
 
 const cloudFeatures = [
-  "100 MB in the cloud (workspaces and trash)",
+  "100 MB in the cloud (folders and trash)",
   "Files up to 25 MB",
-  "Your own cloud workspaces",
-  "Invite people and join other workspaces",
+  "Your own cloud folders",
+  "Share folders with people, and open the ones shared with you",
   "Unlisted public live link",
-  "Hub — up to 3 workspaces",
+  "Hub — up to 3 publications",
 ];
 
 const notes = [
   {
     icon: "i-lucide-user-check",
     title: "The owner pays",
-    body: "The person who owns the workspace pays. Invited people do not need their own plan.",
+    body: "The person who owns the folder pays. People it is shared with do not need their own plan.",
   },
   {
     icon: "i-lucide-shield-check",
     title: "Nothing gets locked",
-    body: "Paid plans will open after this beta and sit next to Free. We will not silently lock or delete what you uploaded.",
+    body: "When paid plans come, they sit next to Free. We will not silently lock or delete what you uploaded.",
   },
   {
     icon: "i-lucide-infinity",
     title: "Free stays",
-    body: "Free is a lasting plan, not a beta trial. 100 MB across workspaces and trash; one original up to 25 MB.",
+    body: "Free is a lasting plan, not a trial. 100 MB across cloud folders and trash; one original up to 25 MB.",
   },
 ];
 </script>
 
 <template>
-  <div>
-    <section class="relative overflow-hidden px-5 pt-16 pb-12 md:pt-24">
-      <div
-        class="pointer-events-none absolute -top-32 left-1/2 size-[32rem] -translate-x-1/2 rounded-full bg-pc-400/20 blur-3xl"
-        aria-hidden="true"
-      />
-      <div class="relative mx-auto max-w-3xl text-center">
-        <p
-          class="mb-5 inline-flex items-center gap-2 rounded-full border border-pc-200 bg-white/80 px-3 py-1 text-xs font-medium text-pc-700"
-        >
-          <span class="size-1.5 rounded-full bg-pc-500" />
-          Local and Cloud Free stay free after beta
-        </p>
-        <h1 class="text-4xl tracking-tight text-slate-900 md:text-5xl">
-          Free on your computer. Cloud when you need it.
-        </h1>
-        <p class="mx-auto mt-5 max-w-xl text-base leading-relaxed text-slate-600 md:text-lg">
+  <div class="lf-page">
+    <div class="lf-wrap">
+      <header class="lf-page-head">
+        <p class="badge"><span class="bdot" />Local and Cloud Free stay free</p>
+        <h1 class="lf-page-title">Free on your computer. Cloud when you need it.</h1>
+        <p class="lf-lede">
           Work on your computer without an account, or sign in for a free
-          cloud plan. Paid plans will sit next to them after beta — we are
-          not quoting their prices yet.
+          cloud plan. Paid plans will sit next to them later — we are not
+          quoting their prices yet.
         </p>
-      </div>
-    </section>
+      </header>
 
-    <section class="px-5 pb-16">
-      <div class="mx-auto grid max-w-4xl gap-5 md:grid-cols-2">
-        <article class="flex flex-col rounded-2xl border border-[var(--pc-gray-border)] bg-white p-7">
-          <div class="flex size-10 items-center justify-center rounded-xl bg-slate-100">
-            <UIcon name="i-lucide-laptop" class="size-5 text-slate-700" />
-          </div>
-          <p class="mt-5 text-sm font-semibold text-slate-500">On your computer or browser</p>
-          <p class="mt-2 text-4xl font-semibold tracking-tight text-slate-900">Free</p>
-          <p class="mt-1 text-sm text-slate-500">Always, no account</p>
-          <ul class="mt-6 flex-1 space-y-3 border-t border-[var(--pc-gray-border)] pt-6 text-sm leading-relaxed text-slate-600">
-            <li v-for="item in localFeatures" :key="item" class="flex gap-2.5">
-              <UIcon name="i-lucide-check" class="mt-0.5 size-4 shrink-0 text-pc-500" />
+      <div class="plans">
+        <article class="lf-card plan">
+          <span class="pic"><UIcon name="i-lucide-laptop" class="pii" /></span>
+          <p class="pname">On your computer or browser</p>
+          <p class="price">Free</p>
+          <p class="lf-small">Always, no account</p>
+          <ul class="feats">
+            <li v-for="item in localFeatures" :key="item">
+              <UIcon name="i-lucide-check" class="ck" />
               <span>{{ item }}</span>
             </li>
           </ul>
-          <div class="mt-8 grid gap-2.5">
-            <UButton
-              v-bind="desktopAppLink"
-              color="primary"
-              size="lg"
-              icon="i-lucide-download"
-              block
-            >
+          <div class="acts">
+            <NuxtLink v-bind="desktopAppLink" class="lf-btn lf-btn-primary">
+              <UIcon name="i-lucide-download" class="size-[1.1em]" />
               Download desktop app
-            </UButton>
-            <UButton
-              :href="clientUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              color="neutral"
-              variant="outline"
-              size="lg"
-              block
-            >
-              Open web app
-            </UButton>
+            </NuxtLink>
+            <a :href="clientUrl" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-secondary">Open web app</a>
           </div>
         </article>
 
-        <article
-          class="flex flex-col rounded-2xl border border-[var(--pc-gray-border)] bg-white p-7"
-        >
-          <div class="flex size-10 items-center justify-center rounded-xl bg-pc-50">
-            <UIcon name="i-lucide-cloud" class="size-5 text-pc-600" />
-          </div>
-          <p class="mt-5 text-sm font-semibold text-pc-600">Cloud Free</p>
-          <p class="mt-2 text-4xl font-semibold tracking-tight text-slate-900">Free</p>
-          <p class="mt-1 text-sm text-slate-500">A lasting plan, not a trial</p>
-          <ul class="mt-6 flex-1 space-y-3 border-t border-[var(--pc-gray-border)] pt-6 text-sm leading-relaxed text-slate-600">
-            <li v-for="item in cloudFeatures" :key="item" class="flex gap-2.5">
-              <UIcon name="i-lucide-check" class="mt-0.5 size-4 shrink-0 text-pc-500" />
+        <article class="lf-card plan">
+          <span class="pic accent"><UIcon name="i-lucide-cloud" class="pii" /></span>
+          <p class="pname accent">Cloud Free</p>
+          <p class="price">Free</p>
+          <p class="lf-small">A lasting plan, not a trial</p>
+          <ul class="feats">
+            <li v-for="item in cloudFeatures" :key="item">
+              <UIcon name="i-lucide-check" class="ck" />
               <span>{{ item }}</span>
             </li>
           </ul>
-          <UButton
-            class="mt-8"
-            :href="clientUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            color="primary"
-            size="lg"
-            block
-          >
-            Open web app
-          </UButton>
+          <div class="acts">
+            <a :href="clientUrl" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary">Open web app</a>
+          </div>
         </article>
 
-        <article
-          class="grid gap-8 rounded-2xl border border-dashed border-slate-300 bg-[var(--pc-gray-muted)] p-7 md:col-span-2 md:grid-cols-[1fr_minmax(0,22rem)] md:items-center md:gap-12 md:p-9"
-        >
-          <div class="flex gap-5">
-            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white">
-              <UIcon name="i-lucide-sparkles" class="size-5 text-slate-500" />
-            </div>
+        <article class="paid">
+          <div class="paid-text">
+            <span class="pic"><UIcon name="i-lucide-sparkles" class="pii" /></span>
             <div>
-              <div class="flex flex-wrap items-center gap-3">
-                <h2 class="text-xl font-semibold tracking-tight text-slate-900">Paid plans</h2>
-                <span class="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                  After beta
-                </span>
+              <div class="paid-h">
+                <h2 class="ph2">Paid plans</h2>
+                <span class="chip">Coming later</span>
               </div>
-              <p class="mt-2 max-w-md text-sm leading-relaxed text-slate-600">
-                We will announce them after beta. Leave your email and we will
-                write when they are ready — nothing else.
+              <p class="pp">
+                They are not here yet. Leave your email and we will write when
+                they are ready — nothing else.
               </p>
             </div>
           </div>
           <PricingNotifyForm />
         </article>
       </div>
-    </section>
 
-    <section class="px-5 pb-20">
-      <div class="mx-auto grid max-w-4xl gap-4 md:grid-cols-3">
-        <div
-          v-for="note in notes"
-          :key="note.title"
-          class="rounded-2xl border border-[var(--pc-gray-border)] bg-white p-6"
-        >
-          <UIcon :name="note.icon" class="size-5 text-pc-500" />
-          <h3 class="mt-3 text-base font-semibold text-slate-900">{{ note.title }}</h3>
-          <p class="mt-1.5 text-sm leading-relaxed text-slate-600">{{ note.body }}</p>
-        </div>
-      </div>
-    </section>
+      <ul class="notes">
+        <li v-for="note in notes" :key="note.title" class="note">
+          <span class="nic"><UIcon :name="note.icon" class="nii" /></span>
+          <span>
+            <span class="nt">{{ note.title }}</span>
+            <span class="nb">{{ note.body }}</span>
+          </span>
+        </li>
+      </ul>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 99em;
+  background: var(--lf-surface);
+  padding: 0.3rem 0.8rem;
+  color: var(--lf-ink-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.bdot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--lf-accent);
+}
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  max-width: 64rem;
+  margin-inline: auto;
+}
+
+@media (max-width: 760px) {
+  .plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+}
+
+.pic {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--lf-line);
+  border-radius: 10px;
+  background: var(--lf-bg);
+  color: var(--lf-ink-2);
+}
+
+.pic.accent {
+  border-color: rgb(36 83 255 / 0.2);
+  background: rgb(36 83 255 / 0.06);
+  color: var(--lf-accent);
+}
+
+.pii {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.pname {
+  margin: 1.25rem 0 0;
+  color: var(--lf-ink-2);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.pname.accent {
+  color: var(--lf-accent);
+}
+
+.price {
+  margin: 0.4rem 0 0.15rem;
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.feats {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 0.7rem;
+  margin: 1.5rem 0 0;
+  border-top: 1px solid var(--lf-line);
+  padding: 1.5rem 0 0;
+  list-style: none;
+  color: var(--lf-ink-2);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.feats li {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.ck {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--lf-accent);
+}
+
+.acts {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 2rem;
+}
+
+/* Paid plans: not here yet, so a dashed card on the page's gray */
+.paid {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  align-items: center;
+  gap: 2rem 3rem;
+  border: 1px dashed rgb(0 0 0 / 0.25);
+  border-radius: 12px;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+@media (max-width: 760px) {
+  .paid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.paid-text {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.paid .pic {
+  background: var(--lf-surface);
+}
+
+.paid-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ph2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.chip {
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 99em;
+  background: var(--lf-surface);
+  padding: 0.15rem 0.65rem;
+  color: var(--lf-ink-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.pp {
+  max-width: 28rem;
+  margin: 0.5rem 0 0;
+  color: var(--lf-ink-2);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+/* The notes: as the landing's facts, an icon tile and two lines */
+.notes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  max-width: 64rem;
+  margin: clamp(2.5rem, 5vw, 3.5rem) auto 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 900px) {
+  .notes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.note {
+  display: flex;
+  gap: 0.875rem;
+}
+
+.nic {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 8px;
+  background: var(--lf-surface);
+}
+
+.nii {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.nt {
+  display: block;
+  font-weight: 600;
+}
+
+.nb {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--lf-ink-2);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+</style>

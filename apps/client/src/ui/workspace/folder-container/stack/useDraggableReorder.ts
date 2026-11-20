@@ -2,7 +2,16 @@ import { computed, ref, toValue, watch, type ComputedRef, type MaybeRefOrGetter 
 import type { FolderContainerWidget, FolderContainerWidgetChild } from '@/domain/Widget'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { t } from '@/i18n'
-import { record_action } from '@/store/history'
+import { entries_label, record_action } from '@/store/history'
+import { parent_folder_id_from_node_id } from '@/services/workspace/paths'
+import type { DragChangeEvent, DragEndEvent } from '../widgets/DraggableWidgetList.vue'
+
+/**
+ * Bumped after a card moved between stacks, done or not: every stack reads
+ * its list from the store again, so the one the card left gets it back if
+ * the move failed (Sortable already took it out of that list's array).
+ */
+const stacks_resync = ref(0)
 
 function ordersMatch(a: string[], b: string[]): boolean {
 	return a.length === b.length && a.every((id, i) => id === b[i])
@@ -26,7 +35,11 @@ function childrenSyncKey(children: FolderContainerWidgetChild[] | undefined): st
 }
 
 /**
- * Sortable/vuedraggable list reorder for Stack.
+ * Sortable/vuedraggable list reorder for Stack, and moves between stacks:
+ * every stack of a workspace shares one Sortable group, so a card can be
+ * dragged from one folder preview into another (a kanban's columns). The
+ * list it lands in moves the file there and keeps the order it was dropped
+ * in; the list it left only lets go.
  *
  * Uses a stable mutable `children` ref (like the workspace tree `:list` pattern).
  * Do not reset the list on drag start — vuedraggable emits `start` on nextTick,
@@ -63,14 +76,25 @@ export function useDraggableReorder(
 		{ immediate: true },
 	)
 
+	watch(stacks_resync, () => {
+		if (is_dragging.value || is_persisting.value) return
+		sync_children_from_store()
+	})
+
 	const dragGroup = computed(() => toValue(group))
 
 	function on_start() {
 		is_dragging.value = true
 	}
 
-	async function on_end() {
+	async function on_end(event?: DragEndEvent) {
 		if (!is_dragging.value) return
+
+		// The card left for another stack: that stack moves the file
+		if (event && event.from !== event.to) {
+			is_dragging.value = false
+			return
+		}
 
 		const orderedIds = children.value.map(c => c.id)
 		const storeIds = getStoreChildren().map(c => c.id)
@@ -95,6 +119,43 @@ export function useDraggableReorder(
 		}
 	}
 
+	/** A card from another stack landed here: move its file into this folder, at that place */
+	async function on_change(event: DragChangeEvent) {
+		const added = event.added
+		if (!added) return
+		const ws = workspace.value
+		const folder_id = folderId.value
+		if (!ws || ws.can_write === false) {
+			sync_children_from_store()
+			return
+		}
+		const id = added.element.id
+		const source_id = parent_folder_id_from_node_id(id, ws.id)
+		is_persisting.value = true
+		try {
+			// A preview's files are not in the tree until the folder is shown there
+			await ws.show_folder_children(source_id)
+			const moved = await record_action(
+				ws,
+				{ folder_id },
+				entries_label(ws, [id], 'undo.move_entry', 'undo.move_entries'),
+				async tx => {
+					const new_id = await ws.move(id, folder_id, added.newIndex, undefined, undefined, { tx })
+					if (!new_id) return false
+					const ordered = children.value.map(child => child.id === id ? new_id : child.id)
+					await ws.reorder_children(folder_id, ordered, { tx })
+					return true
+				},
+				{ notice: entries_label(ws, [id], 'undo.moved', 'undo.moved_many') },
+			)
+			if (!moved) sync_children_from_store()
+		} finally {
+			is_persisting.value = false
+			sync_children_from_store()
+			stacks_resync.value++
+		}
+	}
+
 	return {
 		children,
 		is_dragging,
@@ -103,5 +164,6 @@ export function useDraggableReorder(
 		sync_children_from_store,
 		on_start,
 		on_end,
+		on_change,
 	}
 }

@@ -241,7 +241,8 @@ export function load_env(): Env {
 		plunk_from_email: process.env.PLUNK_FROM_EMAIL?.trim() || null,
 		plunk_from_name: process.env.PLUNK_FROM_NAME?.trim() || null,
 		public_app_url: process.env.PUBLIC_APP_URL?.trim().replace(/\/$/, "") || null,
-		abuse_email: process.env.ABUSE_EMAIL?.trim() || null,
+		// Where outside questions, reports and appeals go: one address for all
+		abuse_email: process.env.ABUSE_EMAIL?.trim() || "support@kmcn-lab.com",
 		moderation_digest_email: process.env.MODERATION_DIGEST_EMAIL?.trim() || null,
 		moderation_digest_cron: process.env.MODERATION_DIGEST_CRON?.trim() || "0 9 * * 1",
 		moderation_mail_cron: process.env.MODERATION_MAIL_CRON?.trim() || "* * * * *",

@@ -21,7 +21,8 @@ const { container, folderId } = useFolderContainerScope()
 const children = computed(() => container.value?.children ?? [])
 
 const isSpatialView = computed(
-	() => props.view === 'canvas' || props.view === 'board',
+	// A 3D folder's preview shows its board (FolderViewRouter.vue)
+	() => props.view === 'canvas' || props.view === 'board' || props.view === '3d',
 )
 
 const { newItems, importItem } = useCreateChildItems(folderId, {

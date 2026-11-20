@@ -1,25 +1,102 @@
+<!-- Terms, Privacy and Support: the final landing's page (layouts/final.vue,
+     assets/css/final.css) with a column of text on a white card. The pages
+     themselves stay plain markup; their headings, lists and links are
+     styled here. -->
 <script setup lang="ts">
 defineProps<{
   title: string
   updated: string
-  /** Short line under the date, e.g. the beta caveat */
+  /** Short line under the date */
   note?: string
 }>()
 </script>
 
 <template>
-  <article class="mx-auto max-w-3xl px-5 py-16">
-    <p class="mb-3 text-xs font-semibold tracking-[0.08em] text-pc-600 uppercase">
-      Legal
-    </p>
-    <h1 class="text-4xl tracking-tight text-slate-900">{{ title }}</h1>
-    <p class="mt-3 text-sm text-slate-500">Last updated {{ updated }}</p>
-    <p v-if="note" class="mt-1 text-sm text-slate-500">{{ note }}</p>
-    <!-- Section styling lives here so the pages themselves stay plain markup -->
-    <div
-      class="mt-10 space-y-6 text-base leading-relaxed text-slate-700 [&_a]:text-pc-600 [&_a]:underline [&_code]:text-sm [&_h2]:pt-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-slate-900 [&_li]:leading-relaxed [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5"
-    >
-      <slot />
+  <div class="lf-page">
+    <div class="lf-wrap">
+      <header class="lf-page-head">
+        <p class="lf-eyebrow">Legal</p>
+        <h1 class="lf-page-title">{{ title }}</h1>
+        <p class="lf-small meta">Last updated {{ updated }}</p>
+        <p v-if="note" class="lf-small">{{ note }}</p>
+      </header>
+      <article class="lf-card prose">
+        <slot />
+      </article>
     </div>
-  </article>
+  </div>
 </template>
+
+<style scoped>
+.meta {
+  margin-top: 1rem;
+}
+
+.prose {
+  max-width: 46rem;
+  margin-inline: auto;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  color: var(--lf-ink-2);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}
+
+.prose :deep(> * + *) {
+  margin-top: 1.1em;
+}
+
+.prose :deep(h2) {
+  margin-top: 2em;
+  color: var(--lf-ink);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+.prose :deep(h2:first-child) {
+  margin-top: 0;
+}
+
+.prose :deep(p),
+.prose :deep(ul) {
+  margin-bottom: 0;
+}
+
+.prose :deep(ul) {
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.prose :deep(li + li) {
+  margin-top: 0.4em;
+}
+
+.prose :deep(li::marker) {
+  color: var(--lf-ink-3);
+}
+
+.prose :deep(a) {
+  color: var(--lf-accent);
+  text-decoration: underline;
+  text-decoration-color: rgb(36 83 255 / 0.35);
+  text-underline-offset: 0.2em;
+}
+
+.prose :deep(a:hover) {
+  text-decoration-color: currentColor;
+}
+
+.prose :deep(strong),
+.prose :deep(b) {
+  color: var(--lf-ink);
+}
+
+.prose :deep(code) {
+  border-radius: 4px;
+  background: var(--lf-bg);
+  padding: 0.1em 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+</style>

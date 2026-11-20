@@ -1,11 +1,31 @@
+<!-- The home page: the landing built block by block (it lived at /final
+     while it was made; the previous home page is /old). Indexed or not as
+     NUXT_PUBLIC_ALLOW_INDEXING says, like the rest of the site.
+
+     The blocks, in order (each lands as its own component):
+       0 Intro: the pitch
+       1 Nine views
+       2 Files and folders that aren't boring: icons, previews, covers,
+         layers, shapes, the pen
+       3 AI with a folder and its files
+       4 Sync and cloud folders
+       5 Share: a .pile file, a shared cloud folder, a public link, the Hub
+       6 Any screen, even only in the browser
+       7 Your files stay yours: on disk after uninstall; the cloud is encrypted
+       8 Source available: the repository
+     Then, outside the numbered blocks, the demo to play with (Demo.vue)
+     and the closing panel (Finale.vue). -->
 <script setup lang="ts">
+definePageMeta({ layout: "final", blocks: true });
+
+useHead({ titleTemplate: null });
 useSeoMeta({
-  title: "File manager with unusual possibilities",
+  title: "Pile Commander. File manager. Creative space.",
   description:
-    "Folders that open as a list, a grid, a board, a canvas, a space in 3D, a stack, a tiled wall, or slides. On your computer for free, or in the cloud to invite people and publish.",
-  ogTitle: "Pile Commander — File manager with unusual possibilities",
+    "A file manager for your home folder and the cloud, where files and folders are not boring.",
+  ogTitle: "Pile Commander. File manager. Creative space.",
   ogDescription:
-    "One folder, eight ways to look at it. Files stay ordinary files; the board is just how you arrange them.",
+    "A file manager for your home folder and the cloud, where files and folders are not boring.",
   ogImage: "/app-icon.png",
   twitterCard: "summary",
 });
@@ -13,29 +33,16 @@ useSeoMeta({
 
 <template>
   <div>
-    <HeroSection />
-
-    <FeatureSection
-      eyebrow="Eight views"
-      title="One folder. Eight ways to look at it."
-      lede="Every folder remembers its own view. Switch whenever the work changes — the files stay put, only the way of looking moves. Two classic file-manager views, List and Gallery; three spatial ones, Board, Canvas and 3D; and three based on sorting, Stack, Masonry and Slides."
-      muted
-    >
-      <HomeViewSwitcher />
-    </FeatureSection>
-
-    <HomeFolder3d />
-
-    <HomeFilesStayFiles />
-    <HomeWhatLivesHere />
-    <HomeCanvasTools />
-    <HomeAiTools />
-    <HomeSharePublish />
-    <HomeWhereItLives />
-    <HomeFolderSync />
-    <HomeAnyDevice />
-    <HomeStartCta />
-    <HomeTryDemos />
-    <HomeUnderTheHood />
+    <FinalIntro />
+    <FinalViews />
+    <FinalAlive />
+    <FinalAi />
+    <FinalSync />
+    <FinalShare />
+    <FinalDevices />
+    <FinalYours />
+    <FinalCode />
+    <FinalDemo />
+    <FinalFinale />
   </div>
 </template>

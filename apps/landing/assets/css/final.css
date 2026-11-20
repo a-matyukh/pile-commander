@@ -1,0 +1,323 @@
+/* The final landing (the home page, /). Every rule sits under .lf, so the rest of the
+   site is untouched. :where(.lf) adds no weight: a component's own scoped
+   rule for the same element wins.
+
+   Cross-cutting rules for the whole page:
+   - the page is a neutral gray, as light as the app's (--surface-0 in
+     apps/client/src/ui/explorer/tokens.css is warm: #f0f0ee), and the app's
+     own font (the system stack);
+   - one accent, the blue of /alt2;
+   - every picture of the product is the app's real interface: ~ for the home
+     folder in the path (a cloud icon for the cloud), the path in one row
+     (the compact folder header), menus drawn as the app draws them;
+   - the first screen is a computer's desktop: the app's icon with its name
+     and the app's window open on it;
+   - on a wide screen the blocks are a menu pinned on the left (Nav.vue),
+     under the desktop icon; the content moves right to make room. */
+
+.lf {
+  --lf-bg: #f0f0f0;
+  --lf-surface: #ffffff;
+  --lf-line: rgb(0 0 0 / 0.08);
+  --lf-line-strong: rgb(0 0 0 / 0.15);
+  --lf-ink: #1f1f1e;
+  --lf-ink-2: #5f5e5a;
+  --lf-ink-3: #77756f;
+  --lf-accent: #2453ff;
+  --lf-accent-hover: #1a43e0;
+  --lf-on-accent: #ffffff;
+
+  --lf-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --lf-wrap: 86rem;
+  --lf-gutter: clamp(1rem, 4vw, 2.5rem);
+  --lf-section: clamp(4rem, 9vw, 8rem);
+  --lf-radius: 10px;
+  /* The first screen: header and intro fill it, within reason */
+  --lf-screen: clamp(40rem, 100svh, 64rem);
+  /* The OS's bar on top (OsBar.vue) */
+  --lf-os-h: 1.75rem;
+  /* The OS bar and the header (the desktop icon, the tagline, the buttons)
+     on a wide screen: the icon sits as far from the OS bar as from the
+     page's left edge (the gutter) */
+  --lf-header-h: calc(var(--lf-os-h) + var(--lf-gutter) + 3.5rem + 1.5rem);
+  --lf-tag-size: clamp(1.5rem, 1.8vw, 2.25rem);
+  /* The intro (Intro.vue): the space above and under the window. The pinned
+     menu centres on the window with them */
+  --lf-intro-top: 0.25rem;
+  --lf-intro-bottom: clamp(1.5rem, 4vh, 3rem);
+  /* The pinned menu's column on a wide screen */
+  --lf-nav: 0rem;
+  --lf-nav-gap: 0rem;
+
+  background: var(--lf-bg);
+  color: var(--lf-ink);
+  font-family: var(--lf-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:where(.lf) .lf-wrap {
+  width: 100%;
+  max-width: calc(var(--lf-wrap) + var(--lf-nav) + var(--lf-nav-gap));
+  margin-inline: auto;
+  padding-inline: var(--lf-gutter);
+}
+
+:where(.lf) .lf-h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+:where(.lf) .lf-h2 {
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 3.25rem);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+:where(.lf) .lf-lede {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--lf-ink-2);
+  font-size: clamp(1.0625rem, 1.6vw, 1.25rem);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+:where(.lf) .lf-small {
+  margin: 0;
+  color: var(--lf-ink-3);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Pill buttons, like the app's panels */
+:where(.lf) .lf-btn {
+  display: inline-flex;
+  min-height: 2.875rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 1.375rem;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+:where(.lf) .lf-btn-sm {
+  min-height: 2.25rem;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+}
+
+:where(.lf) .lf-btn-primary {
+  background: var(--lf-accent);
+  color: var(--lf-on-accent);
+}
+
+:where(.lf) .lf-btn-primary:hover {
+  background: var(--lf-accent-hover);
+}
+
+:where(.lf) .lf-btn-secondary {
+  border-color: var(--lf-line-strong);
+  background: var(--lf-surface);
+  color: var(--lf-ink);
+}
+
+:where(.lf) .lf-btn-secondary:hover {
+  border-color: rgb(0 0 0 / 0.3);
+}
+
+:where(.lf) .lf-btn-outline {
+  border-color: rgb(0 0 0 / 0.28);
+  background: transparent;
+  color: var(--lf-ink);
+}
+
+:where(.lf) .lf-btn-outline:hover {
+  border-color: rgb(0 0 0 / 0.5);
+}
+
+:where(.lf) a:focus-visible,
+:where(.lf) button:focus-visible {
+  outline: 2px solid var(--lf-accent);
+  outline-offset: 2px;
+}
+
+/* A picture of the app: a window with the app's own shadow and radius */
+:where(.lf) .lf-frame {
+  overflow: hidden;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 12px;
+  background: var(--lf-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 24px 60px -24px rgb(0 0 0 / 0.22);
+}
+
+/* A block's number: on the window it marks where the block lives in the app */
+:where(.lf) .lf-marker {
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--lf-accent);
+  color: var(--lf-on-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-decoration: none;
+}
+
+/* Wide: the menu takes a column on the left, the content moves right
+   (the landing only; the footer's pages have no menu) */
+@media (min-width: 1100px) {
+  .lf.lf-blocks {
+    --lf-nav: 13rem;
+    --lf-nav-gap: 2.5rem;
+  }
+
+  :where(.lf) main .lf-wrap,
+  :where(.lf) footer .lf-wrap {
+    padding-left: calc(var(--lf-gutter) + var(--lf-nav) + var(--lf-nav-gap));
+  }
+}
+
+/* A click in the menu glides to its block */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.lf) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* The app's menus inside a window picture (apps/client/src/ui/kit/menu.css,
+   MenuItem.vue, MenuLabel.vue), sized in em of the window (13px in the app):
+   a white panel, 28px rows, 16px icons */
+:where(.lf) .am {
+  box-sizing: border-box;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 0.62em;
+  background: #fff;
+  padding: 0.31em;
+  box-shadow: 0 0.62em 1.85em rgb(0 0 0 / 0.1), 0 0.15em 0.46em rgb(0 0 0 / 0.06);
+  color: #1f1f1e;
+  user-select: none;
+}
+
+:where(.lf) .am-h {
+  display: flex;
+  min-height: 2.15em;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+  padding: 0 0.62em;
+  color: #9a9893;
+  font-size: 0.846em;
+}
+
+:where(.lf) .am-i {
+  display: flex;
+  height: 2.15em;
+  align-items: center;
+  gap: 0.62em;
+  border-radius: 0.46em;
+  padding: 0 0.62em;
+  white-space: nowrap;
+}
+
+:where(.lf) .am-i.hl {
+  background: #f8f8f7;
+}
+
+:where(.lf) .am-ic {
+  width: 1.23em;
+  height: 1.23em;
+  flex: none;
+  color: #5f5e5a;
+}
+
+:where(.lf) .am-end {
+  margin-left: auto;
+}
+
+:where(.lf) .am-sep {
+  height: 1px;
+  margin: 0.31em 0.31em;
+  background: rgb(0 0 0 / 0.08);
+}
+
+/* A block's number stands at its title's first line, also when the title
+   row wraps (Play and the hint go under it on a phone) */
+:where(.lf) .head > .lf-marker {
+  align-self: start;
+  margin-top: calc((clamp(1.75rem, 2.6vw, 2.25rem) * 1.15 - 1.5rem) / 2);
+}
+
+/* ── The footer's pages (pricing, download, the legal ones) ──
+   The landing's header and footer, no menu of the blocks: a title and a
+   lede on the page's gray, then white cards like the landing's */
+:where(.lf) .lf-page {
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0 var(--lf-section);
+}
+
+:where(.lf) .lf-page-head {
+  max-width: 46rem;
+  margin: 0 auto clamp(2rem, 4vw, 3rem);
+  text-align: center;
+}
+
+:where(.lf) .lf-eyebrow {
+  margin: 0 0 0.75rem;
+  color: var(--lf-accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+:where(.lf) .lf-page-title {
+  margin: 0;
+  font-size: clamp(2.25rem, 4.4vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+:where(.lf) .lf-page-head .lf-lede {
+  margin: 1rem auto 0;
+}
+
+:where(.lf) .lf-card {
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 12px;
+  background: var(--lf-surface);
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+:where(.lf) .lf-link {
+  color: var(--lf-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+:where(.lf) .lf-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}

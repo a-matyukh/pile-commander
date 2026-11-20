@@ -38,15 +38,15 @@ export default defineNuxtConfig({
       desktopAppUrl:
         "https://github.com/a-matyukh/pile-commander/releases/latest",
       // Overridden by NUXT_PUBLIC_ABUSE_EMAIL
-      abuseEmail: "abuse@pile-commander.app",
-      // Who operates the service, for /terms and /privacy. The defaults are
-      // deliberately unmissable placeholders: fill them in before launch.
+      abuseEmail: "support@kmcn-lab.com",
+      // Who operates the service, for /terms and /privacy: the company
+      // (composables/useSiteLegal.ts holds the same defaults).
       // Overridden by NUXT_PUBLIC_OPERATOR_NAME
-      operatorName: "[LEGAL ENTITY — beta, not yet registered]",
+      operatorName: "KMCN Lab LLC",
       // Overridden by NUXT_PUBLIC_OPERATOR_LOCATION
-      operatorLocation: "[COUNTRY]",
+      operatorLocation: "Wyoming, United States",
       // Overridden by NUXT_PUBLIC_GOVERNING_LAW
-      governingLaw: "[COUNTRY]",
+      governingLaw: "the State of Wyoming, United States",
       // Search indexing. False sends noindex (meta + X-Robots-Tag).
       // Overridden by NUXT_PUBLIC_ALLOW_INDEXING — set true to allow indexing.
       allowIndexing: false,
@@ -57,6 +57,8 @@ export default defineNuxtConfig({
   routeRules: {
     "/vision": { redirect: "/" },
     "/feedback": { redirect: "/" },
+    // The landing was built at /final before it became the home page
+    "/final": { redirect: "/" },
   },
   app: {
     head: {

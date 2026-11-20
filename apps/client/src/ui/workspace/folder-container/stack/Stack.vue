@@ -33,10 +33,12 @@ const {
 	dragGroup,
 	on_start,
 	on_end,
+	on_change,
 } = useDraggableReorder(
 	folderId,
 	container,
-	() => ({ name: `folder-stack-${folderId.value}` }),
+	// One group for the workspace's stacks: cards move between folder previews
+	() => ({ name: `folder-stack-${workspace.value?.id ?? ''}` }),
 )
 
 const { onSectionClick } = useClickOutsideEditingNote('.stack-note-row', editingNoteId)
@@ -58,6 +60,7 @@ const { onSectionClick } = useClickOutsideEditingNote('.stack-note-row', editing
 			list-class="stack-list"
 			@start="on_start"
 			@end="on_end"
+			@change="on_change"
 		>
 			<template #item="{ element: widget }">
 				<WidgetTypeSwitch

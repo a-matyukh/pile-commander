@@ -41,17 +41,13 @@ async function submit() {
 
 <template>
   <div>
-    <p
-      v-if="status === 'success'"
-      class="rounded-xl bg-white px-4 py-3 text-sm font-medium text-pc-600 ring-1 ring-pc-200"
-      role="status"
-    >
+    <p v-if="status === 'success'" class="done" role="status">
       You are on the list. We will write to this email when paid plans open.
     </p>
 
-    <form v-else class="flex flex-col gap-2.5" @submit.prevent="submit">
+    <form v-else class="form" @submit.prevent="submit">
       <label class="sr-only" for="pricing-notify-email">Email</label>
-      <UInput
+      <input
         id="pricing-notify-email"
         v-model="email"
         type="email"
@@ -59,37 +55,98 @@ async function submit() {
         autocomplete="email"
         required
         placeholder="you@example.com"
-        size="lg"
-        class="w-full"
-      />
+        class="field"
+      >
       <div class="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
         <label>
           Website
-          <input v-model="website" type="text" name="website" tabindex="-1" autocomplete="off" />
+          <input v-model="website" type="text" name="website" tabindex="-1" autocomplete="off">
         </label>
       </div>
-      <UButton
-        type="submit"
-        color="neutral"
-        size="lg"
-        icon="i-lucide-bell"
-        :loading="pending"
-        :disabled="pending"
-        block
-      >
+      <button type="submit" class="lf-btn lf-btn-secondary" :disabled="pending">
+        <UIcon :name="pending ? 'i-lucide-loader-circle' : 'i-lucide-bell'" class="size-[1.1em]" :class="{ 'animate-spin': pending }" />
         Notify me
-      </UButton>
+      </button>
     </form>
 
-    <p v-if="errorText" class="mt-2 text-sm text-red-600" role="alert">
+    <p v-if="errorText" class="err" role="alert">
       {{ errorText }}
     </p>
 
-    <p class="mt-3 text-xs leading-relaxed text-slate-500">
+    <p class="fine">
       We keep your email only to send that one message, and drop it whenever
       you ask. More on the
-      <NuxtLink to="/privacy" class="text-pc-600 underline">Privacy</NuxtLink>
+      <NuxtLink to="/privacy" class="fl">Privacy</NuxtLink>
       page.
     </p>
   </div>
 </template>
+
+<style scoped>
+.form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.875rem;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 999px;
+  background: var(--lf-surface);
+  padding: 0 1.25rem;
+  color: var(--lf-ink);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.field::placeholder {
+  color: var(--lf-ink-3);
+}
+
+.field:focus {
+  border-color: var(--lf-accent);
+  outline: 2px solid rgb(36 83 255 / 0.2);
+  outline-offset: 0;
+}
+
+.form .lf-btn {
+  cursor: pointer;
+}
+
+.form .lf-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.done {
+  margin: 0;
+  border: 1px solid rgb(36 83 255 / 0.25);
+  border-radius: 12px;
+  background: var(--lf-surface);
+  padding: 0.75rem 1rem;
+  color: var(--lf-accent);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.err {
+  margin: 0.5rem 0 0;
+  color: #c4320a;
+  font-size: 0.875rem;
+}
+
+.fine {
+  margin: 0.75rem 0 0;
+  color: var(--lf-ink-3);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.fl {
+  color: var(--lf-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+</style>

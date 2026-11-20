@@ -22,7 +22,7 @@ const sent = ref(false)
 const already = ref(false)
 const error = ref<string | null>(null)
 
-const email = (import.meta.env.VITE_ABUSE_EMAIL as string | undefined)?.trim() || ABUSE_EMAIL
+const email = ABUSE_EMAIL
 const is_own = computed(() => !!cloud.user && cloud.my_profile?.username === props.username)
 const mailto = computed(() => abuse_mailto(
 	`Report: ${props.username}/${props.slug}`,

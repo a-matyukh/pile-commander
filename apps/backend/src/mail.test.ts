@@ -344,11 +344,11 @@ describe("hub moderation copy", () => {
 			username: "ada",
 			slug: "mood",
 			url: "https://app.example/ada/mood",
-			abuse_email: "abuse@pile-commander.app",
+			abuse_email: "support@kmcn-lab.com",
 		});
 		expect(copy.subject).toContain("Moodboard");
 		expect(copy.body).toContain("https://app.example/ada/mood");
-		expect(copy.body).toContain("abuse@pile-commander.app");
+		expect(copy.body).toContain("support@kmcn-lab.com");
 	});
 
 	test("make_private letter includes the reason", () => {
@@ -358,7 +358,7 @@ describe("hub moderation copy", () => {
 				username: "ada",
 				slug: "mood",
 				url: null,
-				abuse_email: "abuse@pile-commander.app",
+				abuse_email: "support@kmcn-lab.com",
 			},
 			"illegal content",
 		);

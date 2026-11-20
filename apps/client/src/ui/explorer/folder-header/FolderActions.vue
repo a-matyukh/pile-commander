@@ -20,7 +20,7 @@ import ViewMenu from './ViewMenu.vue'
 
 /**
  * Actions of the open folder: the view switch, "Add" and AI (writable folders
- * only: every AI action writes), sharing, sync and the "⋯" menu. A folder
+ * only: every AI action writes), sync, sharing and the "⋯" menu. A folder
  * shared with me to view says so first. A publication or the demo is not one of
  * the user's places: it shows only its view and, for a publication, its own
  * actions (author, copy to my cloud, download, report)
@@ -28,6 +28,8 @@ import ViewMenu from './ViewMenu.vue'
 const props = defineProps<{ workspace: WorkspaceStore; folder: FolderRef; name: string; align: 'start' | 'end' }>()
 
 const own = computed(() => !is_transient_drive(props.folder.drive_id))
+/** The demo has the user's own "⋯" (no bookmarks), to feel like the app */
+const demo = computed(() => props.folder.drive_id === 'demo')
 const viewer = computed(() => props.folder.drive_id === 'cloud' && cloud.role_of(props.folder.root_id) === 'viewer')
 /** A board or a canvas has layers and a grid with a background, as in the prototype */
 const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.folder_id))
@@ -41,13 +43,14 @@ const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.f
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
 	<template v-if="spatial && workspace.can_write">
 		<LayersMenu :workspace="workspace" :folder="folder" :align="align" />
-		<!-- The user's own folders keep grid and background in "⋯" -->
-		<BackgroundMenu v-if="!own" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
+		<!-- A publication's "⋯" holds only grid and background -->
+		<BackgroundMenu v-if="!own && !demo" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	</template>
 	<template v-if="own">
 		<AiMenu v-if="workspace.can_write" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
-		<ShareMenu :folder="folder" :name="name" :align="align" />
+		<!-- Sync first: a folder can have a private cloud copy before it is shared -->
 		<SyncMenu v-if="can_sync(folder, workspace.can_write)" :folder="folder" :name="name" :align="align" />
+		<ShareMenu :folder="folder" :name="name" :align="align" />
 		<FolderMenu
 			:folder="folder"
 			:name="name"
@@ -56,6 +59,14 @@ const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.f
 			:spatial_workspace="spatial && workspace.can_write ? workspace : null"
 		/>
 	</template>
+	<FolderMenu
+		v-else-if="demo"
+		:folder="folder"
+		:name="name"
+		:align="align"
+		:can_write="workspace.can_write"
+		:spatial_workspace="spatial && workspace.can_write ? workspace : null"
+	/>
 </template>
 
 <style scoped>

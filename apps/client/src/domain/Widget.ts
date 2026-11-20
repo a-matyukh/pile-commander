@@ -115,12 +115,12 @@ export function folder_view_from_stored(raw: unknown): FolderView {
  */
 export type Floor3D = 'table' | 'infinite'
 
-/** Anything but "infinite", or none, is the table */
 /** A folder's on/off choices of the 3D view, kept in its attributes; absent is off */
 export type Option3D = 'names_3d' | 'horizon_3d'
 
+/** The table only where it was chosen ("table"); none, or anything else, is the endless floor */
 export function floor_3d_from_stored(raw: unknown): Floor3D {
-	return raw === 'infinite' ? 'infinite' : 'table'
+	return raw === 'table' ? 'table' : 'infinite'
 }
 
 export function stored_folder_view(view: FolderView): string {
