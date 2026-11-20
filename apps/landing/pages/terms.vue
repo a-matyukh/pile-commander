@@ -24,7 +24,7 @@ useSeoMeta({
 
     <h2>Who we are</h2>
     <p>
-      The service is operated by {{ operatorName }}, established in
+      The service is operated by <a href="https://www.kmcn-lab.com/" target="_blank" rel="noopener noreferrer">{{ operatorName }}</a>, established in
       {{ operatorLocation }}. Questions about these terms go to
       <a :href="`mailto:${abuseEmail}`">{{ abuseEmail }}</a>.
     </p>

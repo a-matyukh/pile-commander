@@ -1,9 +1,7 @@
 <!-- The same links as the site's footer (components/SiteFooter.vue), and the
-     company behind the app: the same name /terms and /privacy give
-     (useSiteLegal, from the env), with the year. -->
+     company behind the app with the year. -->
 <script setup lang="ts">
 const { clientUrl } = useAppLinks();
-const { operatorName } = useSiteLegal();
 const year = new Date().getFullYear();
 
 const links = [
@@ -20,7 +18,7 @@ const links = [
     <div class="lf-wrap foot-in">
       <div class="who">
         <p class="name">Pile Commander</p>
-        <p class="copy">© {{ year }} {{ operatorName }}</p>
+        <p class="copy">© {{ year }} <a href="https://www.kmcn-lab.com/" target="_blank" rel="noopener noreferrer" class="co">KMCN Lab LLC</a></p>
       </div>
       <nav class="links" aria-label="Footer">
         <NuxtLink v-for="link in links" :key="link.to" :to="link.to" class="link">
@@ -61,6 +59,18 @@ const links = [
   margin: 0;
   color: var(--lf-ink-3);
   font-size: 0.8125rem;
+}
+
+.co {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgb(0 0 0 / 0.2);
+  text-underline-offset: 0.2em;
+}
+
+.co:hover {
+  color: var(--lf-ink);
+  text-decoration-color: currentColor;
 }
 
 .links {

@@ -22,7 +22,7 @@ useSeoMeta({
 
     <h2>Who is responsible</h2>
     <p>
-      {{ operatorName }}, established in {{ operatorLocation }}, decides what is
+      <a href="https://www.kmcn-lab.com/" target="_blank" rel="noopener noreferrer">{{ operatorName }}</a>, established in {{ operatorLocation }}, decides what is
       collected here and why. Questions, requests, complaints:
       <a :href="`mailto:${abuseEmail}`">{{ abuseEmail }}</a>.
     </p>
