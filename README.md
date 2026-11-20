@@ -11,7 +11,7 @@ folders are not boring:
 
 - **Nine views** of any folder: list, gallery, board, canvas, 3D, stack,
 masonry, dashboard and slides.
-- **Files come alive**: notes, pictures, video, audio and 3D models as live
+- **Files and folders come alive**: notes, pictures, video, audio and 3D models as live
 previews, folder covers, shapes, arrows and ink.
 - **AI** with a model you pick: summarize, rename, sort, generate ideas. Or
 let your AI agent work with your folders over MCP.
