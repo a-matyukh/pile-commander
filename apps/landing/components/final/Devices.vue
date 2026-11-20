@@ -3,13 +3,16 @@
      app (ExplorerShell.vue, TopBar.vue): the desktop app on macOS, Windows
      and Linux; tablets and phones use the web app in the browser, with cloud
      folders; 640px and wider keep the sidebar, a phone keeps it in a drawer
-     that slides in from the edge; a canvas pinches to zoom. The stage keeps
-     one height on every step, so the page does not jump. -->
+     that slides in from the edge; a canvas pinches to zoom. The last step
+     puts them side by side: a cloud folder is live, so a note added on the
+     phone (the folder header's + → Note) shows up on the others at once, as
+     /alt2's DevicesScene.vue tells it. The stage keeps one height on every
+     step, so the page does not jump. -->
 <script setup lang="ts">
 import { homeBookmarks, homeTree, type TreeRow } from "~/utils/finalFolder";
 import type { Crumb } from "./AppWindow.vue";
 
-type ScreenStep = "desktop" | "browser" | "tablet" | "phone";
+type ScreenStep = "desktop" | "browser" | "tablet" | "phone" | "together";
 
 const localCrumbs: Crumb[] = [{ glyph: "home" }, { name: "Pictures" }];
 const cloudCrumbs: Crumb[] = [{ glyph: "cloud" }];
@@ -28,6 +31,7 @@ const steps: { id: ScreenStep; label: string; icon: string; caption: string }[] 
   { id: "browser", label: "In the browser", icon: "i-tabler-browser", caption: "Nothing to install. The browser cannot open your disk, so its folders live in its own storage (IndexedDB), and your cloud folders are one click away." },
   { id: "tablet", label: "Tablet", icon: "i-tabler-device-ipad-horizontal", caption: "On a tablet the sidebar stays beside the folder, and everything works by touch." },
   { id: "phone", label: "Phone", icon: "i-tabler-device-mobile", caption: "On a phone the sidebar slides in from the edge, menus fit the screen, and you pinch to zoom a canvas." },
+  { id: "together", label: "All at once", icon: "i-tabler-devices", caption: "A cloud folder is live: add a note on the phone, and it shows up on every other screen at once." },
 ];
 
 const step = ref<ScreenStep>("desktop");
@@ -51,17 +55,64 @@ function toggle() {
 
 const root = useTemplateRef<HTMLElement>("root");
 
+const visible = ref(false);
+const reduced = ref(false);
+
 onMounted(() => {
-  let visible = false;
-  const io = new IntersectionObserver(([e]) => { visible = !!e?.isIntersecting; }, { threshold: 0.35 });
+  const io = new IntersectionObserver(([e]) => { visible.value = !!e?.isIntersecting; }, { threshold: 0.35 });
   if (root.value) io.observe(root.value);
-  const timer = window.setInterval(() => {
-    if (visible && playing.value) next();
-  }, 3600);
+  reduced.value = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // A step stays 3.6 s; "All at once" stays until its story has played
+  let tour: number | undefined;
+  const schedule = () => {
+    window.clearTimeout(tour);
+    tour = window.setTimeout(() => {
+      if (visible.value && playing.value) next();
+      schedule();
+    }, step.value === "together" ? 5600 : 3600);
+  };
+  schedule();
+  watch(step, schedule);
   onBeforeUnmount(() => {
     io.disconnect();
-    window.clearInterval(timer);
+    window.clearTimeout(tour);
+    stopLive();
   });
+});
+
+/* ── "All at once": a note added on the phone reaches the others ──
+   Without motion, and before it starts, the settled frame: the note on
+   every screen */
+const live = reactive({ adding: false, phone: true, others: true, flash: "" as "" | "phone" | "others" });
+let liveTimers: number[] = [];
+
+function stopLive() {
+  liveTimers.forEach(t => window.clearTimeout(t));
+  liveTimers = [];
+}
+
+function playLive() {
+  stopLive();
+  Object.assign(live, { adding: false, phone: false, others: false, flash: "" });
+  const at = (ms: number, fn: () => void) => liveTimers.push(window.setTimeout(fn, ms));
+  at(400, () => Object.assign(live, { adding: true }));
+  at(1100, () => Object.assign(live, { adding: false, phone: true, flash: "phone" }));
+  at(2000, () => Object.assign(live, { others: true, flash: "others" }));
+  at(3300, () => Object.assign(live, { flash: "" }));
+}
+
+watch([step, visible], ([s, v]) => {
+  if (s !== "together") return stopLive();
+  if (reduced.value || !v) {
+    stopLive();
+    return Object.assign(live, { adding: false, phone: true, others: true, flash: "" });
+  }
+  playLive();
+});
+
+const noteClass = (where: "phone" | "others") => ({
+  off: where === "phone" ? !live.phone : !live.others,
+  flash: live.flash === where,
 });
 </script>
 
@@ -145,6 +196,55 @@ onMounted(() => {
             >
               <FinalFolderViews view="board" />
             </FinalAppWindow>
+          </div>
+        </div>
+
+        <!-- All at once: one cloud folder on three screens, live -->
+        <div v-else-if="step === 'together'" class="trio">
+          <FinalAppWindow
+            class="dev tdesk"
+            fill
+            keep-sidebar
+            :crumbs="cloudCrumbs"
+            title="Harbor moodboard"
+            :tree="cloudTree"
+            drive="cloud"
+          >
+            <FinalFolderViews view="board" />
+            <span class="live" :class="noteClass('others')"><b>Sunset at 19:40</b><span>Shoot from the pier</span><i>Note.md</i></span>
+          </FinalAppWindow>
+          <div class="dev tablet tsm">
+            <div class="screen">
+              <FinalAppWindow
+                class="bare"
+                fill
+                keep-sidebar
+                web
+                :crumbs="cloudCrumbs"
+                title="Harbor moodboard"
+                :tree="cloudTree"
+                drive="cloud"
+              >
+                <FinalFolderViews view="board" />
+                <span class="live" :class="noteClass('others')"><b>Sunset at 19:40</b><span>Shoot from the pier</span><i>Note.md</i></span>
+              </FinalAppWindow>
+            </div>
+          </div>
+          <div class="dev phone psm">
+            <div class="screen">
+              <FinalAppWindow
+                class="bare"
+                fill
+                web
+                :crumbs="cloudCrumbs"
+                title="Harbor moodboard"
+                drive="cloud"
+                :open="live.adding ? 'add' : null"
+              >
+                <FinalFolderViews view="board" />
+                <span class="live" :class="noteClass('phone')"><b>Sunset at 19:40</b><span>Shoot from the pier</span><i>Note.md</i></span>
+              </FinalAppWindow>
+            </div>
           </div>
         </div>
 
@@ -425,6 +525,102 @@ onMounted(() => {
 
 .screen .bare {
   height: 100%;
+}
+
+/* ── All at once: the three side by side, standing on one line ── */
+
+.trio {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.trio .tdesk {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 46rem;
+  height: 100%;
+}
+
+.trio .tsm {
+  height: 74%;
+  flex: none;
+  padding: 0.6rem;
+  border-radius: 1.2rem;
+}
+
+.trio .psm {
+  height: 62%;
+  flex: none;
+  padding: 0.4rem;
+  border-radius: 1rem;
+}
+
+/* A phone's page: the tablet and the phone, sized by the width they share */
+@media (max-width: 760px) {
+  .trio {
+    align-items: center;
+  }
+
+  .trio .tdesk {
+    display: none;
+  }
+
+  .trio .tsm {
+    width: 64%;
+    height: auto;
+  }
+
+  .trio .psm {
+    width: 26%;
+    height: auto;
+  }
+
+  .trio .live {
+    top: 7em;
+  }
+}
+
+/* The note just added: as the app's note on a board, the same place on
+   every screen (the board's own em) */
+.live {
+  position: absolute;
+  top: 12.5em;
+  left: 2.2em;
+  z-index: 2;
+  display: grid;
+  width: 11em;
+  gap: 0.2em;
+  border-radius: 0.5em;
+  background: #fef3c7;
+  box-shadow: 0 0.15em 0.5em rgb(0 0 0 / 0.12);
+  padding: 0.75em 0.9em;
+  color: #1f1f1e;
+  font-size: 0.95em;
+  line-height: 1.3;
+  transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1), box-shadow 0.3s ease;
+}
+
+.live b {
+  font-weight: 600;
+}
+
+.live i {
+  color: #9a9893;
+  font-size: 0.8em;
+  font-style: normal;
+}
+
+.live.off {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.live.flash {
+  box-shadow: 0 0 0 0.25em rgb(36 83 255 / 0.5), 0 0.15em 0.5em rgb(0 0 0 / 0.12);
 }
 
 /* Two fingers pinching on the phone's board */
