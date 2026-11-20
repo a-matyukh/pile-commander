@@ -1,6 +1,47 @@
 {
   "entries": [
     {
+      "version": "2.8.1",
+      "date": "2026-11-20",
+      "title": { "ru": "Новый лендинг", "en": "A new landing" },
+      "text": {
+        "ru": "На pile-commander.com — новая главная: что умеет Pile Commander, как выглядит приложение и демо, которое можно открыть прямо в браузере.",
+        "en": "pile-commander.com has a new home page: what Pile Commander does, how the app looks, and a demo you can open right in the browser."
+      }
+    },
+    {
+      "version": "2.8.1",
+      "title": { "ru": "Перетаскивайте между папками на доске", "en": "Drag between folders on a board" },
+      "text": {
+        "ru": "Файлы и папки можно перетаскивать из превью одной папки в превью другой — не открывая ни одну из них.",
+        "en": "Drag files and folders from one folder’s preview into another’s, without opening either."
+      }
+    },
+    {
+      "version": "2.8.1",
+      "title": { "ru": "Переименование без лишнего", "en": "Renaming without the extension" },
+      "text": {
+        "ru": "При переименовании файла выделяется только имя, без расширения, — можно сразу печатать новое.",
+        "en": "When you rename a file, only its name is selected, not the extension, so you can type the new one right away."
+      }
+    },
+    {
+      "version": "2.8.1",
+      "title": { "ru": "Иконки папок в закладках", "en": "Folder icons in bookmarks" },
+      "text": {
+        "ru": "Закладка на папку показывает её собственную иконку — нужную папку проще найти глазами.",
+        "en": "A bookmarked folder shows its own icon, so it’s easier to spot."
+      }
+    },
+    {
+      "version": "2.8.1",
+      "title": { "ru": "Исправления и мелкие улучшения", "en": "Fixes and small improvements" },
+      "text": {
+        "ru": "Превью папки с 3D-видом показывает её доску. В 3D по умолчанию включён бесконечный пол. Жалобы на опубликованное и апелляции принимаем на support@kmcn-lab.com.",
+        "en": "The preview of a folder in 3D view shows its board. The endless floor is on by default in 3D. Reports about published content and appeals go to support@kmcn-lab.com."
+      }
+    },
+    {
       "version": "2.8.0",
       "date": "2026-11-17",
       "title": { "ru": "Смотрите, что нового", "en": "See what’s new" },
