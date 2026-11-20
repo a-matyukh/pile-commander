@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ layout: "final" })
+
 const { operatorName, operatorLocation, abuseEmail } = useSiteLegal()
 
 useSeoMeta({

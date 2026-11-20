@@ -4,6 +4,9 @@
      the browser). Narrower, the tagline takes a row of its own. A phone cannot run the desktop
      app, so there the browser comes first and the download leaves. -->
 <script setup lang="ts">
+/** The landing's own header: the tagline is the page's h1. On the other
+ *  pages it is a line, and the page's title is the h1 */
+const props = defineProps<{ main?: boolean }>();
 const { demoUrl } = useAppLinks();
 const { os, downloadLabel } = useDownloadCta();
 
@@ -20,7 +23,7 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
       </NuxtLink>
 
       <!-- The name and what it is, in one rhythm -->
-      <h1 class="lf-h1 tag"><span class="pc">Pile Commander.</span> File manager. <span class="em">Creative space.</span></h1>
+      <component :is="props.main ? 'h1' : 'p'" class="lf-h1 tag"><span class="pc">Pile Commander.</span> File manager. <span class="em">Creative space.</span></component>
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>

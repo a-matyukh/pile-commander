@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ layout: "final" })
+
 type DesktopAsset = { name: string; url: string; size: number };
 type Platform = "mac" | "windows" | "linux";
 
@@ -89,179 +91,336 @@ async function copy(text: string) {
 </script>
 
 <template>
-  <div>
-    <section class="relative overflow-hidden px-5 pt-16 pb-10 md:pt-24">
-      <div
-        class="pointer-events-none absolute -top-32 left-1/2 size-[32rem] -translate-x-1/2 rounded-full bg-pc-400/20 blur-3xl"
-        aria-hidden="true"
-      />
-      <div class="relative mx-auto max-w-2xl text-center">
-        <img src="/app-icon.png" alt="" width="80" height="80" class="mx-auto size-20 rounded-2xl" />
-        <h1 class="mt-6 text-4xl tracking-tight text-slate-900 md:text-5xl">
-          Download Pile Commander
-        </h1>
-        <p class="mx-auto mt-4 max-w-xl text-base leading-relaxed text-slate-600 md:text-lg">
-          The desktop app works directly on the folders on your disk. It is
-          free, needs no account, and updates itself.
-        </p>
-        <p v-if="release" class="mt-3 text-sm text-slate-500">
-          Version {{ release.version }}<template v-if="publishedOn"> · {{ publishedOn }}</template>
-        </p>
-      </div>
-    </section>
+  <div class="lf-page">
+    <div class="lf-wrap">
+      <header class="lf-page-head head">
+        <img src="/app-icon.png" alt="" width="80" height="80" class="icon">
+        <div>
+          <h1 class="lf-page-title">Download Pile Commander</h1>
+          <p class="lf-lede">
+            The desktop app works directly on the folders on your disk. It is
+            free, needs no account, and updates itself.
+          </p>
+          <p v-if="release" class="lf-small ver">
+            Version {{ release.version }}<template v-if="publishedOn"> · {{ publishedOn }}</template>
+          </p>
+        </div>
+      </header>
 
-    <section class="px-5 pb-12">
-      <div class="mx-auto max-w-2xl">
-        <div
-          v-if="!isDesktop"
-          class="mb-5 rounded-2xl border border-[var(--pc-gray-border)] bg-white p-6 text-center"
-        >
-          <p class="text-sm leading-relaxed text-slate-600">
+      <div class="col">
+        <div v-if="!isDesktop" class="lf-card web">
+          <p class="wt">
             The desktop app runs on macOS, Windows and Linux. On this device,
             use Pile Commander in the browser.
           </p>
-          <div class="mt-4 flex flex-wrap justify-center gap-2.5">
-            <UButton :href="clientUrl" target="_blank" rel="noopener noreferrer" color="primary">
-              Open web app
-            </UButton>
-            <UButton
-              :href="demoUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              color="neutral"
-              variant="outline"
-            >
-              Try a web demo
-            </UButton>
+          <div class="row">
+            <a :href="clientUrl" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary">Open web app</a>
+            <a :href="demoUrl" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-secondary">Try a web demo</a>
           </div>
         </div>
 
-        <article class="rounded-2xl border border-[var(--pc-gray-border)] bg-white p-6 md:p-8">
-          <div
-            class="mx-auto grid max-w-sm grid-cols-3 gap-1 rounded-xl bg-[var(--pc-gray-muted)] p-1"
-            role="tablist"
-            aria-label="Operating system"
-          >
+        <article class="lf-card get">
+          <!-- The app's segmented control: the system to download for -->
+          <div class="seg" role="tablist" aria-label="Operating system">
             <button
               v-for="p in platforms"
               :key="p.id"
               type="button"
               role="tab"
               :aria-selected="platform === p.id"
-              class="flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm transition-colors"
-              :class="
-                platform === p.id
-                  ? 'bg-white font-semibold text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              "
+              class="sb"
               @click="pick(p.id)"
             >
-              <UIcon :name="p.icon" class="size-4" />
+              <UIcon :name="p.icon" class="sbi" />
               {{ p.label }}
             </button>
           </div>
 
-          <div class="mt-8 text-center">
+          <div class="main">
             <template v-if="choice.primary">
-              <UButton
-                :href="choice.primary.asset.url"
-                external
-                color="primary"
-                size="xl"
-                icon="i-lucide-download"
-                class="px-8 py-4 text-lg"
-              >
+              <a :href="choice.primary.asset.url" class="lf-btn lf-btn-primary big">
+                <UIcon name="i-lucide-download" class="size-[1.15em]" />
                 Download for {{ choice.primary.label }}
-              </UButton>
-              <p class="mt-3 text-xs break-all text-slate-500">
+              </a>
+              <p class="file">
                 {{ choice.primary.asset.name }} · {{ megabytes(choice.primary.asset.size) }}
               </p>
 
-              <div v-if="choice.others.length" class="mt-5 flex flex-wrap justify-center gap-2.5">
-                <UButton
+              <div v-if="choice.others.length" class="row">
+                <a
                   v-for="other in choice.others"
                   :key="other.asset.url"
                   :href="other.asset.url"
-                  external
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-download"
+                  class="lf-btn lf-btn-secondary"
                 >
+                  <UIcon name="i-lucide-download" class="size-[1.1em]" />
                   {{ platform === "mac" ? `For ${other.label}` : other.label }}
-                </UButton>
+                </a>
               </div>
             </template>
 
             <template v-else>
-              <UButton
-                :href="releasePageUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                color="primary"
-                size="xl"
-                icon="i-lucide-external-link"
-                class="px-8 py-4 text-lg"
-              >
+              <a :href="releasePageUrl" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary big">
+                <UIcon name="i-lucide-external-link" class="size-[1.15em]" />
                 Open the release page
-              </UButton>
-              <p class="mt-3 text-sm text-slate-500">
-                Pick the file for your system there.
-              </p>
+              </a>
+              <p class="file">Pick the file for your system there.</p>
             </template>
           </div>
 
-          <p
-            v-if="choice.primary && releasePageUrl"
-            class="mt-8 border-t border-[var(--pc-gray-border)] pt-5 text-center text-sm text-slate-500"
-          >
+          <p v-if="choice.primary && releasePageUrl" class="more">
             Need another file?
-            <a
-              :href="releasePageUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="font-medium text-pc-600 hover:text-pc-700"
-            >
-              All files on the release page
-            </a>
+            <a :href="releasePageUrl" target="_blank" rel="noopener noreferrer" class="lf-link">All files on the release page</a>
           </p>
         </article>
-      </div>
-    </section>
 
-    <section class="px-5 pb-20">
-      <div class="mx-auto max-w-2xl rounded-2xl border border-[var(--pc-gray-border)] bg-white p-6 md:p-8">
-        <h2 class="text-xl font-semibold tracking-tight text-slate-900">After you install</h2>
+        <section class="lf-card after">
+          <h2 class="h2">After you install</h2>
 
-        <div v-if="platform === 'windows'" class="mt-4 text-sm leading-relaxed text-slate-600">
-          <p>
-            Windows SmartScreen says the publisher is unknown: choose
-            <strong>More info</strong>, then <strong>Run anyway</strong>.
-          </p>
-        </div>
-
-        <div v-else-if="platform === 'linux'" class="mt-4 space-y-3 text-sm leading-relaxed text-slate-600">
-          <p>
-            A downloaded <code>.AppImage</code> is not executable until you make
-            it so:
-          </p>
-          <div class="flex items-center gap-2 rounded-xl bg-[var(--pc-gray-muted)] py-2 pr-2 pl-4">
-            <code class="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-slate-800">{{ appImageCommand }}</code>
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :icon="copied === appImageCommand ? 'i-lucide-check' : 'i-lucide-copy'"
-              :aria-label="copied === appImageCommand ? 'Copied' : 'Copy command'"
-              @click="copy(appImageCommand)"
-            />
+          <div v-if="platform === 'windows'" class="tx">
+            <p>
+              Windows SmartScreen says the publisher is unknown: choose
+              <strong>More info</strong>, then <strong>Run anyway</strong>.
+            </p>
           </div>
-          <p><code>.deb</code> and <code>.rpm</code> install as usual.</p>
-        </div>
 
-        <p class="mt-5 border-t border-[var(--pc-gray-border)] pt-5 text-sm leading-relaxed text-slate-600">
-          The desktop app updates itself when a new release comes out.
-        </p>
+          <div v-else-if="platform === 'linux'" class="tx">
+            <p>
+              A downloaded <code>.AppImage</code> is not executable until you make
+              it so:
+            </p>
+            <div class="cmd">
+              <code class="cmdc">{{ appImageCommand }}</code>
+              <button
+                type="button"
+                class="copy"
+                :aria-label="copied === appImageCommand ? 'Copied' : 'Copy command'"
+                @click="copy(appImageCommand)"
+              >
+                <UIcon :name="copied === appImageCommand ? 'i-lucide-check' : 'i-lucide-copy'" class="size-4" />
+              </button>
+            </div>
+            <p><code>.deb</code> and <code>.rpm</code> install as usual.</p>
+          </div>
+
+          <p class="upd">The desktop app updates itself when a new release comes out.</p>
+        </section>
       </div>
-    </section>
+    </div>
   </div>
 </template>
+
+<style scoped>
+/* The title keeps one line beside the icon on a wide screen */
+.head {
+  display: flex;
+  max-width: none;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+.icon {
+  width: 5rem;
+  height: 5rem;
+  flex: none;
+  border-radius: 22.5%;
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.18));
+}
+
+@media (max-width: 560px) {
+  .head {
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .icon {
+    width: 4rem;
+    height: 4rem;
+  }
+}
+
+.ver {
+  margin-top: 0.75rem;
+}
+
+.col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  max-width: 46rem;
+}
+
+.web {
+  display: grid;
+  gap: 1rem;
+}
+
+.wt {
+  margin: 0;
+  color: var(--lf-ink-2);
+  line-height: 1.55;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* As the app's segmented control: a gray track, the chosen one white */
+.seg {
+  display: grid;
+  max-width: 26rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+  border-radius: 12px;
+  background: var(--lf-bg);
+  padding: 0.25rem;
+}
+
+.sb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  padding: 0.5rem 0.5rem;
+  color: var(--lf-ink-2);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.sb:hover {
+  color: var(--lf-ink);
+}
+
+.sb[aria-selected="true"] {
+  background: var(--lf-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+  color: var(--lf-ink);
+  font-weight: 600;
+}
+
+.sbi {
+  width: 1rem;
+  height: 1rem;
+}
+
+.main {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.big {
+  min-height: 3.375rem;
+  padding: 0 1.75rem;
+  font-size: 1.0625rem;
+}
+
+/* A phone: the buttons take the card's width, and long names wrap */
+@media (max-width: 560px) {
+  .main {
+    justify-items: stretch;
+  }
+
+  .main .lf-btn {
+    min-height: 3rem;
+    padding-block: 0.6rem;
+    white-space: normal;
+    text-align: center;
+  }
+}
+
+.file {
+  margin: 0;
+  color: var(--lf-ink-3);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.more {
+  margin: 1.75rem 0 0;
+  border-top: 1px solid var(--lf-line);
+  padding-top: 1.25rem;
+  color: var(--lf-ink-2);
+  font-size: 0.9375rem;
+}
+
+.h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.tx {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+  color: var(--lf-ink-2);
+  line-height: 1.55;
+}
+
+.tx p {
+  margin: 0;
+}
+
+.tx strong {
+  color: var(--lf-ink);
+}
+
+.tx code,
+.cmdc {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+
+.cmd {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 10px;
+  background: var(--lf-bg);
+  padding: 0.4rem 0.4rem 0.4rem 1rem;
+}
+
+.cmdc {
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  color: var(--lf-ink);
+  white-space: nowrap;
+}
+
+.copy {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--lf-ink-2);
+  cursor: pointer;
+}
+
+.copy:hover {
+  background: var(--lf-surface);
+  color: var(--lf-ink);
+}
+
+.upd {
+  margin: 1.25rem 0 0;
+  border-top: 1px solid var(--lf-line);
+  padding-top: 1.25rem;
+  color: var(--lf-ink-2);
+  font-size: 0.9375rem;
+}
+</style>

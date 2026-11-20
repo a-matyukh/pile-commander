@@ -185,9 +185,10 @@
   text-decoration: none;
 }
 
-/* Wide: the menu takes a column on the left, the content moves right */
+/* Wide: the menu takes a column on the left, the content moves right
+   (the landing only; the footer's pages have no menu) */
 @media (min-width: 1100px) {
-  .lf {
+  .lf.lf-blocks {
     --lf-nav: 13rem;
     --lf-nav-gap: 2.5rem;
   }
@@ -266,4 +267,56 @@
 :where(.lf) .head > .lf-marker {
   align-self: start;
   margin-top: calc((clamp(1.75rem, 2.6vw, 2.25rem) * 1.15 - 1.5rem) / 2);
+}
+
+/* ── The footer's pages (pricing, download, the legal ones) ──
+   The landing's header and footer, no menu of the blocks: a title and a
+   lede on the page's gray, then white cards like the landing's */
+:where(.lf) .lf-page {
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0 var(--lf-section);
+}
+
+:where(.lf) .lf-page-head {
+  max-width: 46rem;
+  margin-bottom: clamp(2rem, 4vw, 3rem);
+}
+
+:where(.lf) .lf-eyebrow {
+  margin: 0 0 0.75rem;
+  color: var(--lf-accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+:where(.lf) .lf-page-title {
+  margin: 0;
+  font-size: clamp(2.25rem, 4.4vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+:where(.lf) .lf-page-head .lf-lede {
+  margin-top: 1rem;
+}
+
+:where(.lf) .lf-card {
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 12px;
+  background: var(--lf-surface);
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+:where(.lf) .lf-link {
+  color: var(--lf-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+:where(.lf) .lf-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }

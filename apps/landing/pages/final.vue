@@ -14,7 +14,7 @@
        7 Your files stay yours: on disk after uninstall; the cloud is encrypted
        8 Open source: the repository -->
 <script setup lang="ts">
-definePageMeta({ layout: "final" });
+definePageMeta({ layout: "final", blocks: true });
 
 useHead({ titleTemplate: null });
 useSeoMeta({
