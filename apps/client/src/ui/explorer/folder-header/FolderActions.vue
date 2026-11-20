@@ -41,7 +41,7 @@ const spatial = computed(() => is_spatial_folder(props.workspace, props.folder.f
 	<AddMenu v-if="workspace.can_write" :workspace="workspace" :folder="folder" :align="align" />
 	<template v-if="spatial && workspace.can_write">
 		<LayersMenu :workspace="workspace" :folder="folder" :align="align" />
-		<!-- The user's own folders keep grid and background in "⋯" -->
+		<!-- The demo's "⋯" holds only grid and background; the user's own folders have them in FolderMenu's "⋯" -->
 		<BackgroundMenu v-if="!own" :workspace="workspace" :folder_id="folder.folder_id" :align="align" />
 	</template>
 	<template v-if="own">
