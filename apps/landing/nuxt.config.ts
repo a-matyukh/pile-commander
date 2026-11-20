@@ -38,7 +38,7 @@ export default defineNuxtConfig({
       desktopAppUrl:
         "https://github.com/a-matyukh/pile-commander/releases/latest",
       // Overridden by NUXT_PUBLIC_ABUSE_EMAIL
-      abuseEmail: "abuse@pile-commander.app",
+      abuseEmail: "support@kmcn-lab.com",
       // Who operates the service, for /terms and /privacy: the company
       // (composables/useSiteLegal.ts holds the same defaults).
       // Overridden by NUXT_PUBLIC_OPERATOR_NAME
