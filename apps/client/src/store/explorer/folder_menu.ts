@@ -11,6 +11,8 @@ export type FolderMenuItems = {
 	rename: boolean
 	/** "Ungroup folder": wherever the folder can be renamed */
 	ungroup: boolean
+	/** "Add to bookmarks": the user's own places; the demo is not one of them */
+	bookmark: boolean
 	bookmarked: boolean
 	show_in_finder: boolean
 	move_to_trash: boolean
@@ -48,7 +50,8 @@ export function folder_menu_node(ref: FolderRef): WorkspaceTreeNode {
  * copied or duplicated. Its owner may move it to the trash; that is the
  * workspace row, not a delete of the root entry.
  * "Ungroup folder" goes with a folder that can be renamed in place.
- * "Show in Finder" is the desktop's local drive only
+ * "Show in Finder" is the desktop's local drive only, bookmarks are for
+ * the user's own places (not the demo, which has the rest of the menu)
  */
 export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): FolderMenuItems {
 	const is_root = normalize_workspace_id(ref.folder_id) === root_folder_id(ref)
@@ -59,6 +62,7 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 	return {
 		rename: editable || owns_cloud_root,
 		ungroup: editable,
+		bookmark: ref.drive_id !== 'demo',
 		bookmarked: is_bookmarked(ref),
 		show_in_finder: context.desktop && ref.drive_id === 'local',
 		move_to_trash: editable || owns_cloud_root,

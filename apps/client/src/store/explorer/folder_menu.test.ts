@@ -40,10 +40,18 @@ const local = (folder_id: string): FolderRef => ({ drive_id: 'local', root_id: H
 const writable = (item: ExplorerTreeRoot | null, desktop = true) => ({ item, can_write: true, desktop })
 
 describe('folder header menu: items', () => {
+	test('a demo folder has the menu but no bookmarks: the demo is not one of the user\'s places', () => {
+		const demo_folder: FolderRef = { drive_id: 'demo', root_id: '/demo', folder_id: '/demo/Use cases/Kanban' }
+		const items = folder_menu_items(demo_folder, writable(home, false))
+		expect(items.bookmark).toBe(false)
+		expect([items.rename, items.copy, items.move_to_trash]).toEqual([true, true, true])
+	})
+
 	test('a folder in ~ on the desktop has every item', () => {
 		expect(folder_menu_items(local(`${HOME}/Documents/A`), { ...writable(home), can_paste: true })).toEqual({
 			rename: true,
 			ungroup: true,
+			bookmark: true,
 			bookmarked: false,
 			show_in_finder: true,
 			move_to_trash: true,
@@ -72,6 +80,7 @@ describe('folder header menu: items', () => {
 		expect(folder_menu_items(local(HOME), writable(home))).toEqual({
 			rename: false,
 			ungroup: false,
+			bookmark: true,
 			bookmarked: false,
 			show_in_finder: true,
 			move_to_trash: false,
@@ -88,6 +97,7 @@ describe('folder header menu: items', () => {
 		expect(folder_menu_items(cloud_top, { ...writable(cloud_root), owner: true })).toEqual({
 			rename: true,
 			ungroup: false,
+			bookmark: true,
 			bookmarked: false,
 			show_in_finder: false,
 			move_to_trash: true,

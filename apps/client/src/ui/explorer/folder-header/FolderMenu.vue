@@ -66,6 +66,12 @@ const items = computed(() => folder_menu_items(props.folder, {
 	owner: props.folder.drive_id === 'cloud' && cloud.role_of(props.folder.root_id) === 'owner',
 }))
 const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
+/** Which groups are there, so a line only ever sits between two of them */
+const groups = computed(() => ({
+	top: items.value.bookmark || items.value.show_in_finder,
+	look: items.value.rename && !!item.value,
+	clipboard: items.value.cut || items.value.copy || (items.value.paste && !!clipboard.clip) || items.value.duplicate,
+}))
 
 /** Members or a public link: the confirm says what trashing this workspace drops */
 const cloud_root_audience = computed(() => {
@@ -139,22 +145,23 @@ function reveal() {
 			<MenuSeparator />
 		</template>
 		<MenuItem
+			v-if="items.bookmark"
 			:icon="items.bookmarked ? 'tabler:bookmark-off' : 'tabler:bookmark-plus'"
 			:label="items.bookmarked ? t('menu.bookmark_remove') : t('menu.bookmark_add')"
 			@select="toggle_bookmark(folder)"
 		/>
 		<MenuItem v-if="items.show_in_finder" icon="tabler:external-link" :label="t('menu.show_in_finder')" @select="reveal" />
 		<!-- Its icon and its cover, kept apart as in Finder and Milanote -->
-		<template v-if="items.rename && item">
-			<MenuSeparator />
-			<FolderLookItems :item="item" :folder="folder" />
+		<template v-if="groups.look">
+			<MenuSeparator v-if="groups.top" />
+			<FolderLookItems v-if="item" :item="item" :folder="folder" />
 		</template>
 		<template v-if="spatial_workspace">
-			<MenuSeparator />
+			<MenuSeparator v-if="groups.top || groups.look" />
 			<BackgroundItems :workspace="spatial_workspace" :folder_id="folder.folder_id" />
 		</template>
-		<template v-if="items.cut || items.copy || items.paste || items.duplicate">
-			<MenuSeparator />
+		<template v-if="groups.clipboard">
+			<MenuSeparator v-if="groups.top || groups.look || spatial_workspace" />
 			<MenuItem v-if="items.cut" icon="tabler:cut" :label="t('menu.cut')" @select="cut" />
 			<MenuItem v-if="items.copy" icon="tabler:copy" :label="t('menu.copy')" @select="copy" />
 			<MenuItem
@@ -166,7 +173,7 @@ function reveal() {
 			<MenuItem v-if="items.duplicate" icon="tabler:copy-plus" :label="t('menu.duplicate')" @select="duplicate" />
 		</template>
 		<template v-if="items.rename || items.move_to_trash">
-			<MenuSeparator />
+			<MenuSeparator v-if="groups.top || groups.look || spatial_workspace || groups.clipboard" />
 			<MenuItem v-if="items.rename" icon="tabler:pencil" :label="t('menu.rename')" :shortcut="rename_shortcut" @select="rename_open = true" />
 			<MenuItem
 				v-if="items.ungroup"
