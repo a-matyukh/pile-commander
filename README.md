@@ -34,7 +34,7 @@ in a browser, on a tablet or a phone.
 ![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_RLS-3ecf8e?logo=supabase&logoColor=white)
 
 
-<img src="docs/screenshot.jpg" alt="Pile Commander with the demo's Moodboard open as a board: photos at their own size and place, notes, an arrow and a palette, with the folder tree on the left">
+<img src="docs/screenshot.jpg" alt="Pile Commander: the Harbor moodboard folder as a canvas, with photos, a video, audio, a 3D sailboat, a note circled with the pen, shapes, a folder preview and a connection; the home folder on the left and the folder's layers on the right">
 
 
 ## The idea
