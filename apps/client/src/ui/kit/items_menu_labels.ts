@@ -76,6 +76,7 @@ const VIEWS: Record<string, FolderView> = {
 	Grid: 'grid',
 	Board: 'board',
 	Canvas: 'canvas',
+	'3D': '3d',
 	Stack: 'stack',
 	Masonry: 'masonry',
 	Dashboard: 'dashboard',
