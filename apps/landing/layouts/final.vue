@@ -4,8 +4,9 @@
      OS bar, the app's icon and its window.
      The pages in the footer (pricing, download, the legal ones) use it too:
      a page with `blocks: true` in its meta (the landing itself) gets the
-     menu of the blocks and the tagline as its h1; the others keep their own
-     title as the h1 and the full width. -->
+     OS bar, the menu of the blocks and the tagline as its h1; the others
+     get the icon and the name, their own title as the h1 and the full
+     width. -->
 <script setup lang="ts">
 import "~/assets/css/final.css";
 
@@ -15,7 +16,7 @@ const blocks = computed(() => route.meta.blocks === true);
 
 <template>
   <div class="lf relative flex min-h-dvh flex-col" :class="{ 'lf-blocks': blocks }">
-    <FinalOsBar />
+    <FinalOsBar v-if="blocks" />
     <FinalHeader :main="blocks" />
     <FinalNav v-if="blocks" />
     <main class="flex-1">

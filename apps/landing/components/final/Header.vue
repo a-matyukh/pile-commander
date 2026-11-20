@@ -18,12 +18,14 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   <header class="bar">
     <div class="lf-wrap bar-in">
       <!-- The logo is the app's icon on the desktop; the tagline names it -->
-      <NuxtLink to="/final" class="brand" aria-label="Pile Commander">
+      <NuxtLink to="/final" class="brand" :class="{ named: !props.main }" aria-label="Pile Commander">
         <img src="/app-icon.png" alt="" width="64" height="64" class="brand-icon">
+        <!-- The footer's pages: the name alone beside the icon -->
+        <span v-if="!props.main" class="bname" aria-hidden="true">Pile Commander</span>
       </NuxtLink>
 
-      <!-- The name and what it is, in one rhythm -->
-      <component :is="props.main ? 'h1' : 'p'" class="lf-h1 tag"><span class="pc">Pile Commander.</span> File manager. <span class="em">Creative space.</span></component>
+      <!-- The landing: the name and what it is, in one rhythm -->
+      <h1 v-if="props.main" class="lf-h1 tag"><span class="pc">Pile Commander.</span> File manager. <span class="em">Creative space.</span></h1>
 
       <nav class="nav" aria-label="Primary">
         <NuxtLink to="/pricing" class="nav-link">Pricing</NuxtLink>
@@ -64,6 +66,30 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   justify-self: start;
   display: block;
   border-radius: 22.5%;
+}
+
+/* The footer's pages: the icon and the name, a link home */
+.brand.named {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  border-radius: 0;
+  color: var(--lf-accent);
+  text-decoration: none;
+}
+
+.bname {
+  font-size: clamp(1.25rem, 2vw, 1.625rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+
+/* A phone: the buttons need the row, the icon names the app */
+@media (max-width: 520px) {
+  .bname {
+    display: none;
+  }
 }
 
 /* Rounded like an app icon on the desktop */
