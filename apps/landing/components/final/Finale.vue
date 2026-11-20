@@ -90,8 +90,9 @@ onMounted(() => {
 .panel {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: clamp(1.5rem, 3vw, 2.25rem);
+  text-align: center;
   border: 1px solid var(--lf-line);
   border-radius: 24px;
   background: var(--lf-surface);
@@ -143,6 +144,7 @@ onMounted(() => {
 .actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.75rem;
 }
 </style>
