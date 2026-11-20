@@ -18,6 +18,7 @@ import MenuLabel from '@/ui/kit/MenuLabel.vue'
 import MenuSeparator from '@/ui/kit/MenuSeparator.vue'
 import { use_pointer_reorder } from '@/ui/kit/use_pointer_reorder'
 import { bookmark_added_title, bookmark_current_folder } from './bookmark_current'
+import { bookmark_glyph } from './bookmark_glyph'
 
 const toast = useToast()
 const open = ref(false)
@@ -45,7 +46,7 @@ function add_current() {
 	<DropMenu v-model:open="open" :width="250" align="start">
 		<template #trigger>
 			<IconButton class="bmb" :active="open" :aria-label="current ? bookmark_name(current) : t('bookmarks.title')" :data-tip="t('bookmarks.title')">
-				<Icon v-if="current" icon="tabler:folder" />
+				<Icon v-if="current" :icon="bookmark_glyph(current).icon" :style="{ color: bookmark_glyph(current).color }" />
 				<Icon v-else icon="tabler:bookmarks" />
 				<span class="nm">{{ current ? bookmark_name(current) : t('bookmarks.title') }}</span>
 				<Icon icon="tabler:selector" class="sl" />
@@ -63,7 +64,7 @@ function add_current() {
 			>
 				<template #leading>
 					<Icon icon="tabler:grip-vertical" class="gp" />
-					<Icon icon="tabler:folder" />
+					<Icon :icon="bookmark_glyph(bookmark).icon" :style="{ color: bookmark_glyph(bookmark).color }" />
 				</template>
 				{{ bookmark_name(bookmark) }}
 				<button

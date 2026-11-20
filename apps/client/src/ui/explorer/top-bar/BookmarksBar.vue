@@ -15,6 +15,7 @@ import IconButton from '@/ui/kit/IconButton.vue'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import { use_pointer_reorder } from '@/ui/kit/use_pointer_reorder'
 import { bookmark_added_title, bookmark_current_folder } from './bookmark_current'
+import { bookmark_glyph } from './bookmark_glyph'
 
 const toast = useToast()
 const bar = ref<HTMLElement | null>(null)
@@ -51,7 +52,7 @@ function add_current() {
 					:data-tip="t('bookmarks.drag_hint')"
 					@click="explorer_navigation.open_bookmark(bookmark)"
 				>
-					<Icon icon="tabler:folder" />
+					<Icon :icon="bookmark_glyph(bookmark).icon" :style="{ color: bookmark_glyph(bookmark).color }" />
 					{{ bookmark_name(bookmark) }}
 				</div>
 			</template>
