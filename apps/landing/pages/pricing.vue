@@ -156,6 +156,7 @@ const notes = [
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
   max-width: 64rem;
+  margin-inline: auto;
 }
 
 @media (max-width: 760px) {
@@ -309,7 +310,7 @@ const notes = [
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.5rem;
   max-width: 64rem;
-  margin: clamp(2.5rem, 5vw, 3.5rem) 0 0;
+  margin: clamp(2.5rem, 5vw, 3.5rem) auto 0;
   padding: 0;
   list-style: none;
 }

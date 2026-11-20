@@ -34,6 +34,7 @@ defineProps<{
 
 .prose {
   max-width: 46rem;
+  margin-inline: auto;
   padding: clamp(1.5rem, 4vw, 3rem);
   color: var(--lf-ink-2);
   font-size: 1.0625rem;

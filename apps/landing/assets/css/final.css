@@ -278,7 +278,8 @@
 
 :where(.lf) .lf-page-head {
   max-width: 46rem;
-  margin-bottom: clamp(2rem, 4vw, 3rem);
+  margin: 0 auto clamp(2rem, 4vw, 3rem);
+  text-align: center;
 }
 
 :where(.lf) .lf-eyebrow {
@@ -300,7 +301,7 @@
 }
 
 :where(.lf) .lf-page-head .lf-lede {
-  margin-top: 1rem;
+  margin: 1rem auto 0;
 }
 
 :where(.lf) .lf-card {

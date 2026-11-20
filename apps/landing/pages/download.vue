@@ -77,14 +77,42 @@ async function copy(text: string) {
     }, 1500);
   } catch {}
 }
+
+const platformName = computed(() => platforms.find((p) => p.id === platform.value)?.label ?? "");
+
+/* The icon's shapes over the button: they come together and part while the
+   page is open, hold together while the pointer is on the download, and
+   play once on a platform switch. Reduced motion: still, the icon itself */
+const reduced = ref(false);
+const cycle = ref(false);
+const hold = ref(false);
+const together = computed(() => reduced.value || hold.value || cycle.value);
+
+let timer: number | undefined;
+function restart() {
+  if (reduced.value) return;
+  window.clearInterval(timer);
+  cycle.value = true;
+  timer = window.setInterval(() => { cycle.value = !cycle.value; }, 3200);
+}
+
+watch(platform, () => {
+  if (reduced.value) return;
+  cycle.value = false;
+  window.setTimeout(restart, 900);
+});
+
+onMounted(() => {
+  reduced.value = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.setTimeout(restart, 600);
+});
+
+onBeforeUnmount(() => window.clearInterval(timer));
 </script>
 
 <template>
   <div class="lf-page">
     <div class="lf-wrap">
-      <!-- No intro: the page is the download itself; the title stays for
-           screen readers and search -->
-      <h1 class="sr-only">Download Pile Commander</h1>
 
       <div class="col">
         <div v-if="!isDesktop" class="lf-card web">
@@ -99,6 +127,13 @@ async function copy(text: string) {
         </div>
 
         <article class="lf-card get">
+          <!-- The app icon's shapes, coming together over the button -->
+          <div class="art" :class="{ together }">
+            <FinalShapes :together="together" />
+          </div>
+
+          <h1 class="gt">Pile Commander <span class="for">for {{ platformName }}</span></h1>
+
           <!-- The app's segmented control: the system to download for -->
           <div class="seg" role="tablist" aria-label="Operating system">
             <button
@@ -117,7 +152,14 @@ async function copy(text: string) {
 
           <div class="main">
             <template v-if="choice.primary">
-              <a :href="choice.primary.asset.url" class="lf-btn lf-btn-primary big">
+              <a
+                :href="choice.primary.asset.url"
+                class="lf-btn lf-btn-primary big"
+                @mouseenter="hold = true"
+                @mouseleave="hold = false"
+                @focus="hold = true"
+                @blur="hold = false"
+              >
                 <UIcon name="i-lucide-download" class="size-[1.15em]" />
                 Download for {{ choice.primary.label }}
               </a>
@@ -146,6 +188,13 @@ async function copy(text: string) {
               <p class="file">Pick the file for your system there.</p>
             </template>
           </div>
+
+          <ul class="perks">
+            <li><UIcon name="i-lucide-badge-check" class="pk" />Free</li>
+            <li><UIcon name="i-lucide-user-x" class="pk" />No account</li>
+            <li><UIcon name="i-lucide-folder-open" class="pk" />Your real folders</li>
+            <li><UIcon name="i-lucide-refresh-cw" class="pk" />Updates itself</li>
+          </ul>
 
           <p v-if="choice.primary && releasePageUrl" class="more">
             Need another file?
@@ -195,11 +244,14 @@ async function copy(text: string) {
   grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
   max-width: 46rem;
+  margin-inline: auto;
 }
 
 .web {
   display: grid;
+  justify-items: center;
   gap: 1rem;
+  text-align: center;
 }
 
 .wt {
@@ -211,12 +263,69 @@ async function copy(text: string) {
 .row {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.6rem;
+}
+
+/* The card: everything on its middle line, the shapes on top */
+.get {
+  display: grid;
+  justify-items: center;
+  padding-top: clamp(2rem, 5vw, 3rem);
+  text-align: center;
+}
+
+.art {
+  width: min(22rem, 100%);
+  margin-bottom: 0.5rem;
+}
+
+.gt {
+  margin: 0 0 1.5rem;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.for {
+  color: var(--lf-accent);
+}
+
+/* What comes with it, as small chips */
+.perks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.perks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--lf-line);
+  border-radius: 99em;
+  background: var(--lf-bg);
+  padding: 0.3rem 0.8rem;
+  color: var(--lf-ink-2);
+  font-size: 0.875rem;
+}
+
+.pk {
+  width: 1rem;
+  height: 1rem;
+  color: var(--lf-accent);
 }
 
 /* As the app's segmented control: a gray track, the chosen one white */
 .seg {
   display: grid;
+  width: 100%;
   max-width: 26rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.25rem;
@@ -258,7 +367,7 @@ async function copy(text: string) {
 
 .main {
   display: grid;
-  justify-items: start;
+  justify-items: center;
   gap: 0.75rem;
   margin-top: 1.75rem;
 }
@@ -272,6 +381,7 @@ async function copy(text: string) {
 /* A phone: the buttons take the card's width, and long names wrap */
 @media (max-width: 560px) {
   .main {
+    justify-self: stretch;
     justify-items: stretch;
   }
 
@@ -291,6 +401,7 @@ async function copy(text: string) {
 }
 
 .more {
+  justify-self: stretch;
   margin: 1.75rem 0 0;
   border-top: 1px solid var(--lf-line);
   padding-top: 1.25rem;
