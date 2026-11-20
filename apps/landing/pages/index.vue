@@ -12,7 +12,9 @@
        5 Share: a .pile file, a shared cloud folder, a public link, the Hub
        6 Any screen, even only in the browser
        7 Your files stay yours: on disk after uninstall; the cloud is encrypted
-       8 Source available: the repository -->
+       8 Source available: the repository
+     Then, outside the numbered blocks, the demo to play with (Demo.vue)
+     and the closing panel (Finale.vue). -->
 <script setup lang="ts">
 definePageMeta({ layout: "final", blocks: true });
 
@@ -40,6 +42,7 @@ useSeoMeta({
     <FinalDevices />
     <FinalYours />
     <FinalCode />
+    <FinalDemo />
     <FinalFinale />
   </div>
 </template>
