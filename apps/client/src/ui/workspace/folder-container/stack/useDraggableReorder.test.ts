@@ -87,4 +87,47 @@ describe('useDraggableReorder', () => {
 
 		expect(children.value.map(c => c.id)).toEqual(['/ws/a', '/ws/b'])
 	})
+
+	test('the stack a card left lets go: no reorder, and it reads the store again', async () => {
+		const folder = reactive<{ children: FolderContainerWidgetChild[] }>({
+			children: [fileChild('/ws/a'), fileChild('/ws/b')],
+		})
+		const container = computed(() => folder as FolderContainerWidget)
+		const { children, is_dragging, on_start, on_end } = useDraggableReorder(
+			computed(() => '/ws'),
+			container,
+			{ name: 'test' },
+		)
+
+		on_start()
+		// Sortable took the card out of this list's array
+		children.value.splice(0, 1)
+		const from = {} as HTMLElement
+		const to = {} as HTMLElement
+		await on_end({ from, to })
+
+		expect(is_dragging.value).toBe(false)
+		// The store did not change, so the next sync brings the card back
+		folder.children = [fileChild('/ws/a'), fileChild('/ws/b', { is_preview: true })]
+		await nextTick()
+		expect(children.value.map(c => c.id)).toEqual(['/ws/a', '/ws/b'])
+	})
+
+	test('a card that came in without a workspace to move it goes back to the store\'s list', async () => {
+		const folder = reactive<{ children: FolderContainerWidgetChild[] }>({
+			children: [fileChild('/ws/a')],
+		})
+		const container = computed(() => folder as FolderContainerWidget)
+		const { children, on_change } = useDraggableReorder(
+			computed(() => '/ws'),
+			container,
+			{ name: 'test' },
+		)
+
+		const stranger = fileChild('/other/x')
+		children.value.push(stranger)
+		await on_change({ added: { element: stranger, newIndex: 1 } })
+
+		expect(children.value.map(c => c.id)).toEqual(['/ws/a'])
+	})
 })

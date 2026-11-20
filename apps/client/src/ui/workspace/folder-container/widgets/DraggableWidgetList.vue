@@ -22,9 +22,17 @@ withDefaults(defineProps<{
 	direction: 'vertical',
 })
 
+/** What Sortable reports at the end: the list it left and the list it landed in */
+export type DragEndEvent = { from: HTMLElement; to: HTMLElement }
+/** vuedraggable's change event: an item came in from another list */
+export type DragChangeEvent = {
+	added?: { element: FolderContainerWidgetChild; newIndex: number }
+}
+
 const emit = defineEmits<{
 	start: []
-	end: []
+	end: [event: DragEndEvent]
+	change: [event: DragChangeEvent]
 }>()
 </script>
 
@@ -51,7 +59,8 @@ const emit = defineEmits<{
 		tag="div"
 		:class="listClass"
 		@start="emit('start')"
-		@end="emit('end')"
+		@end="(event: DragEndEvent) => emit('end', event)"
+		@change="(event: DragChangeEvent) => emit('change', event)"
 	>
 		<template #item="{ element, index }">
 			<div
