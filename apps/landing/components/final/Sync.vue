@@ -62,16 +62,77 @@ onMounted(() => {
   window.addEventListener("resize", measure);
   onBeforeUnmount(() => window.removeEventListener("resize", measure));
 
-  let visible = false;
-  const io = new IntersectionObserver(([e]) => { visible = !!e?.isIntersecting; }, { threshold: 0.35 });
+  const io = new IntersectionObserver(([e]) => { visible.value = !!e?.isIntersecting; }, { threshold: 0.35 });
   if (root.value) io.observe(root.value);
-  const timer = window.setInterval(() => {
-    if (visible && playing.value) next();
-  }, 4000);
+  reduced.value = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // A step stays 4 s; "Both ways" stays until its story has played
+  let tour: number | undefined;
+  const schedule = () => {
+    window.clearTimeout(tour);
+    tour = window.setTimeout(() => {
+      if (visible.value && playing.value) next();
+      schedule();
+    }, step.value === "both" ? 6800 : 4000);
+  };
+  schedule();
+  watch(step, schedule);
   onBeforeUnmount(() => {
     io.disconnect();
-    window.clearInterval(timer);
+    window.clearTimeout(tour);
+    stopStory();
   });
+});
+
+/* ── "Both ways": the story, as the app syncs (LOCAL_SYNC.md) ──
+   A picture added on the computer: the Sync button turns, it goes up, and
+   it shows in the cloud. Then it is moved in the cloud, and the move comes
+   back down. Without motion, and before it starts, the settled frame */
+const visible = ref(false);
+const reduced = ref(false);
+const story = reactive({
+  leftTea: true,
+  rightTea: true,
+  leftMoved: true,
+  rightMoved: true,
+  busy: false,
+  packet: "idle" as "idle" | "up" | "down",
+  flash: "" as "" | "left" | "right",
+});
+let storyTimers: number[] = [];
+
+function stopStory() {
+  storyTimers.forEach(t => window.clearTimeout(t));
+  storyTimers = [];
+}
+
+function settle() {
+  stopStory();
+  Object.assign(story, { leftTea: true, rightTea: true, leftMoved: true, rightMoved: true, busy: false, packet: "idle", flash: "" });
+}
+
+function playStory() {
+  stopStory();
+  Object.assign(story, { leftTea: false, rightTea: false, leftMoved: false, rightMoved: false, busy: false, packet: "idle", flash: "" });
+  const at = (ms: number, fn: () => void) => storyTimers.push(window.setTimeout(fn, ms));
+  at(400, () => Object.assign(story, { leftTea: true, busy: true, flash: "left" }));
+  at(1100, () => Object.assign(story, { packet: "up", flash: "" }));
+  at(2000, () => Object.assign(story, { packet: "idle", rightTea: true, busy: false, flash: "right" }));
+  at(3200, () => Object.assign(story, { rightMoved: true, flash: "" }));
+  at(3900, () => Object.assign(story, { busy: true, packet: "down" }));
+  at(4800, () => Object.assign(story, { packet: "idle", leftMoved: true, busy: false, flash: "left" }));
+  at(5600, () => Object.assign(story, { flash: "" }));
+}
+
+watch([step, visible], ([s, v]) => {
+  if (s !== "both") return stopStory();
+  if (reduced.value || !v) return settle();
+  playStory();
+});
+
+const sideClass = (side: "left" | "right") => ({
+  "tea-off": side === "left" ? !story.leftTea : !story.rightTea,
+  "tea-moved": side === "left" ? story.leftMoved : story.rightMoved,
+  "tea-flash": story.flash === side,
 });
 
 /* The Cloud page's folders, as tiles with their covers */
@@ -122,20 +183,29 @@ const cloudFolders = [
           <p class="where"><span class="hm">~</span> On this computer</p>
           <FinalAppWindow
             class="shot half"
+            :class="sideClass('left')"
             :crumbs="localCrumbs"
             title="Harbor moodboard"
             :bookmarks="homeBookmarks('board')"
             :tree="homeTree('board')"
+            :sync-busy="story.busy"
           >
             <FinalFolderViews view="board" />
             <span class="newmark">New</span>
           </FinalAppWindow>
         </div>
-        <span class="swap" aria-hidden="true"><UIcon name="i-tabler-arrows-exchange" class="swi" /></span>
+        <!-- The change on its way: an arrow toward the side it goes to -->
+        <span class="swap" :class="{ go: story.packet !== 'idle' }" aria-hidden="true">
+          <UIcon
+            :name="story.packet === 'up' ? 'i-tabler-arrow-right' : story.packet === 'down' ? 'i-tabler-arrow-left' : 'i-tabler-arrows-exchange'"
+            class="swi"
+          />
+        </span>
         <div class="side">
           <p class="where"><UIcon name="i-tabler-cloud" class="wi" /> In the cloud</p>
           <FinalAppWindow
             class="shot half"
+            :class="sideClass('right')"
             :crumbs="cloudCrumbs"
             title="Harbor moodboard"
             :tree="cloudTree(true)"
@@ -422,6 +492,55 @@ const cloudFolders = [
 .swi {
   width: 1.25rem;
   height: 1.25rem;
+}
+
+/* A change on its way: the circle fills, the arrow points where it goes */
+.swap {
+  transition: background-color 0.25s ease, color 0.25s ease, scale 0.25s ease;
+}
+
+.swap.go {
+  border-color: var(--lf-accent);
+  background: var(--lf-accent);
+  color: #fff;
+  scale: 1.12;
+}
+
+/* One copy above the other: the arrows point down and up */
+@media (max-width: 760px) {
+  .swap .swi {
+    rotate: 90deg;
+  }
+}
+
+/* The picture that is added and then moved: Board's lemon tea card */
+.half :deep(.c-tea) {
+  transition: opacity 0.45s ease, transform 0.8s cubic-bezier(0.45, 0, 0.25, 1), box-shadow 0.3s ease;
+}
+
+.tea-off :deep(.c-tea) {
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+.tea-moved :deep(.c-tea) {
+  transform: translateX(70%);
+}
+
+.tea-flash :deep(.c-tea) {
+  box-shadow: 0 0 0 3px rgb(36 83 255 / 0.5);
+}
+
+.newmark {
+  transition: opacity 0.45s ease, left 0.8s cubic-bezier(0.45, 0, 0.25, 1);
+}
+
+.tea-off .newmark {
+  opacity: 0;
+}
+
+.tea-moved .newmark {
+  left: calc(59% + 15.4%);
 }
 
 /* The picture just added, the same in both copies */
