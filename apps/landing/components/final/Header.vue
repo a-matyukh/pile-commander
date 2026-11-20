@@ -18,7 +18,7 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   <header class="bar">
     <div class="lf-wrap bar-in">
       <!-- The logo is the app's icon on the desktop; the tagline names it -->
-      <NuxtLink to="/final" class="brand" :class="{ named: !props.main }" aria-label="Pile Commander">
+      <NuxtLink to="/" class="brand" :class="{ named: !props.main }" aria-label="Pile Commander">
         <img src="/app-icon.png" alt="" width="64" height="64" class="brand-icon">
         <!-- The footer's pages: the name alone beside the icon -->
         <span v-if="!props.main" class="bname" aria-hidden="true">Pile Commander</span>

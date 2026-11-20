@@ -57,6 +57,8 @@ export default defineNuxtConfig({
   routeRules: {
     "/vision": { redirect: "/" },
     "/feedback": { redirect: "/" },
+    // The landing was built at /final before it became the home page
+    "/final": { redirect: "/" },
   },
   app: {
     head: {

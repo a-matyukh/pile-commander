@@ -1,4 +1,4 @@
-/* The final landing (/final). Every rule sits under .lf, so the rest of the
+/* The final landing (the home page, /). Every rule sits under .lf, so the rest of the
    site is untouched. :where(.lf) adds no weight: a component's own scoped
    rule for the same element wins.
 
