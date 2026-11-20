@@ -9,7 +9,6 @@ interface ImportMetaEnv {
 	/** Landing host, for the Terms / Privacy links on the sign-up form */
 	readonly VITE_LANDING_URL?: string
 	/** Abuse / DMCA mailbox for Hub reports and appeals */
-	readonly VITE_ABUSE_EMAIL?: string
 }
 
 declare module '*.vue' {
