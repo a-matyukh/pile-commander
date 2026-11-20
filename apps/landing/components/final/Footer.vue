@@ -1,6 +1,10 @@
-<!-- The same links as the site's footer (components/SiteFooter.vue). -->
+<!-- The same links as the site's footer (components/SiteFooter.vue), and the
+     company behind the app: the same name /terms and /privacy give
+     (useSiteLegal, from the env), with the year. -->
 <script setup lang="ts">
 const { clientUrl } = useAppLinks();
+const { operatorName } = useSiteLegal();
+const year = new Date().getFullYear();
 
 const links = [
   { label: "Pricing", to: "/pricing" },
@@ -14,7 +18,10 @@ const links = [
 <template>
   <footer class="foot">
     <div class="lf-wrap foot-in">
-      <p class="name">Pile Commander</p>
+      <div class="who">
+        <p class="name">Pile Commander</p>
+        <p class="copy">© {{ year }} {{ operatorName }}</p>
+      </div>
       <nav class="links" aria-label="Footer">
         <NuxtLink v-for="link in links" :key="link.to" :to="link.to" class="link">
           {{ link.label }}
@@ -39,9 +46,21 @@ const links = [
   padding-block: 2rem;
 }
 
+.who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .name {
   margin: 0;
   font-weight: 600;
+}
+
+.copy {
+  margin: 0;
+  color: var(--lf-ink-3);
+  font-size: 0.8125rem;
 }
 
 .links {
