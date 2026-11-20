@@ -15,7 +15,7 @@ const crumbs: Crumb[] = [{ glyph: "home" }, { name: "Pictures" }];
 
 const steps: { id: ShareStep; label: string; icon: string; caption: string }[] = [
   { id: "export", label: "Export…", icon: "i-tabler-file-export", caption: "Pack a folder into one .pile file and pass it to anyone: a zip of the folder with its layout, so the arrangement survives email, USB sticks and disks that drop it, and opens in Pile Commander anywhere." },
-  { id: "people", label: "Share with…", icon: "i-tabler-users", caption: "Invite people to the folder's cloud copy as editors or viewers." },
+  { id: "people", label: "Share with…", icon: "i-tabler-users", caption: "Invite people to the folder's cloud copy as editors or viewers, and work in it together in real time." },
   { id: "link", label: "Make a public folder", icon: "i-tabler-link", caption: "Anyone with the link sees the live folder. You and editors keep changing it." },
   { id: "publish", label: "Publish on the Hub", icon: "i-tabler-world", caption: "List the folder in the Hub, the public gallery, as a card with a cover, tags and a description." },
   { id: "hub", label: "The Hub", icon: "i-tabler-world", caption: "See what others publish, open any folder, and copy the ones you like into your own account." },
