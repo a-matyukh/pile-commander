@@ -9,7 +9,7 @@ useSeoMeta({
     "Local use is free forever. Cloud Free is 100 MB, files up to 25 MB, invites, unlisted links, and up to 3 publications on the Hub. Paid plans will sit next to Free later.",
   ogTitle: "Pricing — Pile Commander",
   ogDescription:
-    "Work on your computer for free. Cloud Free is a lasting plan — paid tiers open after beta.",
+    "Work on your computer for free. Cloud Free is a lasting plan — paid plans will come later.",
   ogImage: "/app-icon.png",
   twitterCard: "summary",
 });
@@ -38,12 +38,12 @@ const notes = [
   {
     icon: "i-lucide-shield-check",
     title: "Nothing gets locked",
-    body: "Paid plans will open after this beta and sit next to Free. We will not silently lock or delete what you uploaded.",
+    body: "When paid plans come, they sit next to Free. We will not silently lock or delete what you uploaded.",
   },
   {
     icon: "i-lucide-infinity",
     title: "Free stays",
-    body: "Free is a lasting plan, not a beta trial. 100 MB across cloud folders and trash; one original up to 25 MB.",
+    body: "Free is a lasting plan, not a trial. 100 MB across cloud folders and trash; one original up to 25 MB.",
   },
 ];
 </script>
@@ -52,12 +52,12 @@ const notes = [
   <div class="lf-page">
     <div class="lf-wrap">
       <header class="lf-page-head">
-        <p class="badge"><span class="bdot" />Local and Cloud Free stay free after beta</p>
+        <p class="badge"><span class="bdot" />Local and Cloud Free stay free</p>
         <h1 class="lf-page-title">Free on your computer. Cloud when you need it.</h1>
         <p class="lf-lede">
           Work on your computer without an account, or sign in for a free
-          cloud plan. Paid plans will sit next to them after beta — we are
-          not quoting their prices yet.
+          cloud plan. Paid plans will sit next to them later — we are not
+          quoting their prices yet.
         </p>
       </header>
 
@@ -104,11 +104,11 @@ const notes = [
             <div>
               <div class="paid-h">
                 <h2 class="ph2">Paid plans</h2>
-                <span class="chip">After beta</span>
+                <span class="chip">Coming later</span>
               </div>
               <p class="pp">
-                We will announce them after beta. Leave your email and we will
-                write when they are ready — nothing else.
+                They are not here yet. Leave your email and we will write when
+                they are ready — nothing else.
               </p>
             </div>
           </div>

@@ -14,7 +14,6 @@ useSeoMeta({
   <LegalArticle
     title="Terms of use"
     updated="20 November 2026"
-    note="The cloud service is in beta. These terms will be revised before general availability."
   >
     <p>
       Pile Commander is a file manager and a creative space. The app on your computer works
@@ -87,10 +86,10 @@ useSeoMeta({
       owner’s allowance, and requests are rate-limited.
     </p>
     <p>
-      We may change these numbers as the beta teaches us what they should be. We
-      will not silently lock or delete what you have already uploaded. Paid
-      plans open after the beta and sit next to Free; there is nothing to pay
-      today, and no card is stored.
+      We may change these numbers as we learn what they should be. We will not
+      silently lock or delete what you have already uploaded. Paid plans, when
+      they come, sit next to Free; there is nothing to pay today, and no card
+      is stored.
     </p>
 
     <h2>Reports, hiding, and takedown</h2>
@@ -115,12 +114,12 @@ useSeoMeta({
       in the app.
     </p>
 
-    <h2>Beta, availability, and changes</h2>
+    <h2>Availability and changes</h2>
     <p>
-      The cloud service is in beta. It carries no uptime promise and it is not a
-      backup service — keep your own copy of anything you cannot lose. The app
-      on your computer works offline for exactly that reason. Features and
-      limits will change while the beta runs.
+      The cloud service carries no uptime promise and it is not a backup
+      service — keep your own copy of anything you cannot lose. The app on your
+      computer works offline for exactly that reason. Features and limits may
+      change as the service grows.
     </p>
     <p>
       We may change these terms. The date at the top moves, and for anything
