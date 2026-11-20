@@ -3,8 +3,9 @@
      they can play with it freely. The folders come from piles/ (the demo
      pack, `bun run demo:pack`): Use cases (19 folders) and Features. Each
      use case opens straight in its folder (/demo/<folders>, publicRoute.ts in
-     apps/client). The pictures are shots of the web demo, the same ones as
-     /old's TryDemos.vue and /alt's Make.vue. -->
+     apps/client). The pictures in public/landing-final/ are shots of the web
+     demo: the use cases are /alt's (public/landing-alt/) without the folder
+     header, Features is the current app (headless Chrome, 1200 × 760 at 2×). -->
 <script setup lang="ts">
 const { demoUrl } = useAppLinks();
 const external = { target: "_blank", rel: "noopener noreferrer" };
@@ -20,10 +21,10 @@ const cases = [
 ];
 
 const shots = [
-  { name: "Moodboard", image: "/landing-alt/moodboard.jpg" },
-  { name: "Trip planner", image: "/landing-alt/trip-planner.jpg" },
-  { name: "Roadmap", image: "/landing-alt/roadmap.jpg" },
-  { name: "Study", image: "/landing-alt/study.jpg" },
+  { name: "Moodboard", image: "/landing-final/moodboard.jpg" },
+  { name: "Trip planner", image: "/landing-final/trip-planner.jpg" },
+  { name: "Roadmap", image: "/landing-final/roadmap.jpg" },
+  { name: "Study", image: "/landing-final/study.jpg" },
 ];
 </script>
 
@@ -71,7 +72,7 @@ const shots = [
         <!-- Features: one folder per view, file type and tool -->
         <article class="card feats">
           <a :href="folderUrl('Features')" v-bind="external" class="shot wide">
-            <img src="/features-screenshot.png" alt="The Features folder in the demo" loading="lazy">
+            <img src="/landing-final/features.jpg" alt="The Features folder in the demo" loading="lazy">
           </a>
           <div class="body">
             <h3 class="ct">Features</h3>

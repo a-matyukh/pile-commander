@@ -10,11 +10,13 @@ export const finalIdeas = [
 ] as const;
 
 /** Every block for the pinned menu: 1–6, then 7 and 8, which have no place
- *  in the window and so no marker on it */
+ *  in the window and so no marker on it, then the demo (Demo.vue), which
+ *  is not a numbered block: its marker is a Play icon */
 export const finalBlocks = [
   ...finalIdeas,
   { n: 7, id: "yours", title: "Your files stay yours", hint: "On your disk and in the cloud" },
   { n: 8, id: "code", title: "Source available", hint: "The code, open to read" },
+  { n: 9, id: "demo", title: "Play with the demo", hint: "19 use cases in your browser", icon: "i-tabler-player-play-filled" },
 ] as const;
 
 export type FinalIdea = (typeof finalIdeas)[number];
