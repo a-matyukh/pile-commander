@@ -8,6 +8,8 @@
      header, Features is its Media files preview folder in the current app (headless Chrome, 1200 × 760 at 2×). -->
 <script setup lang="ts">
 const { demoUrl } = useAppLinks();
+/** A phone runs no desktop app: the .pile line is for computers */
+const { os } = useDownloadCta();
 const external = { target: "_blank", rel: "noopener noreferrer" };
 
 const folderUrl = (...names: string[]) => `${demoUrl}/${names.map(encodeURIComponent).join("/")}`;
@@ -86,7 +88,7 @@ const shots = [
       </div>
 
       <!-- For the desktop app: the same folders as files to keep -->
-      <p class="keep">
+      <p v-if="os !== 'mobile'" class="keep">
         <UIcon name="i-tabler-file-zip" class="ki" />
         <span>
           Want to keep one? Download it as a <code>.pile</code> and open it in the desktop app:

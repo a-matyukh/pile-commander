@@ -104,7 +104,7 @@ const layers: { name: string; icon?: string; color?: string; thumb?: string; ste
       <header class="head">
         <span class="lf-marker" aria-hidden="true">2</span>
         <div class="trow">
-          <h2 id="files-title" class="title">Files come alive</h2>
+          <h2 id="files-title" class="title">Files and folders come alive</h2>
           <button type="button" class="play" :aria-pressed="playing" @click="toggle">
             <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
             {{ playing ? "Pause" : "Play" }}

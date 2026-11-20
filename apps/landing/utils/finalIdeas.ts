@@ -2,7 +2,7 @@
  *  under the intro's window. The numbers match the markers on the window. */
 export const finalIdeas = [
   { n: 1, id: "views", title: "Nine views", hint: "One folder, nine ways to see it" },
-  { n: 2, id: "files", title: "Files come alive", hint: "Notes, previews, covers, the pen" },
+  { n: 2, id: "files", title: "Files and folders come alive", hint: "Notes, previews, covers, the pen" },
   { n: 3, id: "ai", title: "AI", hint: "Summarize, rename, sort, ideas" },
   { n: 4, id: "sync", title: "Sync & cloud", hint: "Sync any folder, or keep it only in the cloud" },
   { n: 5, id: "share", title: "Share", hint: "A file, a person, a link, the Hub" },
