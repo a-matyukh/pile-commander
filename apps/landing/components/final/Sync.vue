@@ -90,7 +90,7 @@ const cloudFolders = [
       <header class="head">
         <span class="lf-marker" aria-hidden="true">4</span>
         <div class="trow">
-          <h2 id="sync-title" class="title">Sync</h2>
+          <h2 id="sync-title" class="title">Sync &amp; cloud</h2>
           <button type="button" class="play" :aria-pressed="playing" @click="toggle">
             <UIcon :name="playing ? 'i-tabler-player-pause' : 'i-tabler-player-play'" class="pi" />
             {{ playing ? "Pause" : "Play" }}
