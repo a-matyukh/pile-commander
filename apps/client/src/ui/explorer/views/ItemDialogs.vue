@@ -11,7 +11,7 @@ defineProps<{ items: Items }>()
 </script>
 
 <template>
-	<RenameFolderDialog v-model:open="items.rename_open" :name="items.renaming?.name ?? ''" @confirm="items.rename" />
+	<RenameFolderDialog v-model:open="items.rename_open" :name="items.renaming?.name ?? ''" :is_file="items.renaming?.type === 'file'" @confirm="items.rename" />
 	<Modal
 		v-model:open="items.trash_open"
 		:title="t(items.trash_text.title, { name: items.trashing?.name ?? '' })"

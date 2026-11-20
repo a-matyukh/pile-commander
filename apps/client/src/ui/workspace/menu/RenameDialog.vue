@@ -55,11 +55,17 @@ function reset_suggestion() {
 	suggest_error.value = null
 }
 
-async function focus_input(select: boolean) {
+/** A file's name without its extension, like Finder; anything else whole */
+function name_selection(name: string): boolean | [number, number] {
+	const dot = entry_type === 'file' ? name.lastIndexOf('.') : -1
+	return dot > 0 ? [0, dot] : true
+}
+
+async function focus_input(select: boolean | [number, number]) {
 	await nextTick()
 	name_input.value?.focus(select)
 	// The dialog's field is portaled in on open, one tick after the flag
-	if (select && document.activeElement?.tagName !== 'INPUT') {
+	if (select !== false && document.activeElement?.tagName !== 'INPUT') {
 		await nextTick()
 		name_input.value?.focus(select)
 	}
@@ -72,7 +78,7 @@ async function open(name = initial_name, id = '', confirm = 'board_menu.rename')
 	target_id.value = id
 	confirm_key.value = confirm
 	is_open.value = true
-	await focus_input(true)
+	await focus_input(name_selection(name))
 }
 
 async function suggest() {
@@ -145,17 +151,7 @@ defineExpose({ open })
 <template>
 	<Modal v-model:open="is_open" :title="t('rename_dialog.title')">
 		<form class="form" @submit.prevent="commit">
-			<div class="row">
-				<TextField ref="name_input" v-model="draft_name" autocomplete="off" class="field" />
-				<template v-if="can_suggest">
-					<Button v-if="suggesting" icon="tabler:player-stop" @click="stop_suggesting">
-						{{ t('rename_dialog.stop') }}
-					</Button>
-					<Button v-else icon="tabler:sparkles" @click="suggest">
-						{{ t('rename_dialog.suggest') }}
-					</Button>
-				</template>
-			</div>
+			<TextField ref="name_input" v-model="draft_name" autocomplete="off" />
 
 			<div v-if="suggesting" class="status">
 				<Icon icon="tabler:loader-2" class="spin" />
@@ -168,6 +164,14 @@ defineExpose({ open })
 			</div>
 			<p v-else-if="suggest_error" class="err">{{ suggest_error }}</p>
 		</form>
+		<template v-if="can_suggest" #aside>
+			<Button v-if="suggesting" icon="tabler:player-stop" @click="stop_suggesting">
+				{{ t('rename_dialog.stop') }}
+			</Button>
+			<Button v-else icon="tabler:sparkles" @click="suggest">
+				{{ t('rename_dialog.suggest') }}
+			</Button>
+		</template>
 		<template #footer>
 			<Button @click="cancel">{{ t('dialog.cancel') }}</Button>
 			<Button variant="primary" @click="commit">{{ t(confirm_key) }}</Button>
@@ -180,15 +184,6 @@ defineExpose({ open })
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-}
-.row {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-.field {
-	flex: 1;
-	min-width: 0;
 }
 .status {
 	display: flex;

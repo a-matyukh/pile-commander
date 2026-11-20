@@ -17,11 +17,13 @@ defineProps<{
 const model = defineModel<string>({ required: true })
 const input_el = ref<HTMLInputElement | null>(null)
 
-function focus(select = false) {
+/** `select`: true for the whole text, or its `[start, end]` part */
+function focus(select: boolean | [number, number] = false) {
 	const input = input_el.value
 	if (!input) return
 	input.focus()
-	if (select) input.select()
+	if (Array.isArray(select)) input.setSelectionRange(select[0], select[1])
+	else if (select) input.select()
 }
 
 defineExpose({ focus })
