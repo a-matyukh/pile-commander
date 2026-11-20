@@ -12,6 +12,7 @@ const folders = [
   { name: "apps/client", text: "The app: the web app and, with Tauri, the desktop one" },
   { name: "apps/backend", text: "The server: accounts, uploads, thumbnails" },
   { name: "apps/landing", text: "This page" },
+  { name: "apps/mcp", text: "Lets an AI agent work with your folders through the app" },
   { name: "packages/file-manager", text: "Folders and files, the database schema and its rules" },
   { name: "packages/tauri-plugin-xattrs", text: "Reads and writes the files' own attributes" },
 ];
