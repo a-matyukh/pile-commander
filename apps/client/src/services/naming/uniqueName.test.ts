@@ -21,10 +21,13 @@ describe('uniqueName', () => {
 		expect(resolve_text_block_filename(['Text 1.md', 'Text 3.md'])).toBe('Text 2.md')
 		expect(resolve_text_block_filename(['Note 1.md', 'Note 2.md'])).toBe('Text 1.md')
 		expect(resolve_note_filename(['Text 1.md'])).toBe('Note 1.md')
+		expect(resolve_note_filename(['Заметка 1.md'], 'Заметка')).toBe('Заметка 2.md')
+		expect(resolve_text_block_filename(['Заметка 1.md'], 'Текст')).toBe('Текст 1.md')
 	})
 
 	test('resolve_unique_filename keeps the Text prefix when a Text N.md collides', () => {
 		expect(resolve_unique_filename('Text 1.md', ['Text 1.md'])).toBe('Text 2.md')
+		expect(resolve_unique_filename('Заметка 1.md', ['Заметка 1.md'])).toBe('Заметка 2.md')
 		expect(resolve_unique_filename('Text 1.md', ['Text 1.md', 'Note 2.md'])).toBe('Text 2.md')
 		expect(resolve_unique_filename('Text 1.md', ['text 1.md'], { ignore_case: true })).toBe('Text 2.md')
 	})

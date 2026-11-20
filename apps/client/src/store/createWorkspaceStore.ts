@@ -2373,6 +2373,7 @@ export async function createWorkspaceStore(
 
 				const filename = resolve_note_filename(
 					(folder_data.children ?? []).map(c => c.name),
+					t('add.note'),
 				)
 
 				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {
@@ -2408,6 +2409,7 @@ export async function createWorkspaceStore(
 
 				const filename = resolve_text_block_filename(
 					(folder_data.children ?? []).map(c => c.name),
+					t('add.text'),
 				)
 
 				return own_action(this, options?.tx, { folder_id }, () => t('undo.create_one', { name: filename }), async (tx) => {

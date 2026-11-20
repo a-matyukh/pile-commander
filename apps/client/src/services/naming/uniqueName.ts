@@ -1,4 +1,5 @@
-const NOTE_FILENAME_PATTERN = /^(Note|Text) \d+\.md$/
+/** Names the app gives new notes and text blocks, in both interface languages. */
+const NOTE_FILENAME_PATTERN = /^(Note|Text|Заметка|Текст) \d+\.md$/
 
 export function resolve_numbered_filename(
 	prefix: string,
@@ -15,13 +16,14 @@ export function resolve_numbered_filename(
 	}
 }
 
-export function resolve_note_filename(existing_names: Iterable<string>): string {
-	return resolve_numbered_filename('Note', '.md', existing_names)
+/** "Note N.md" or "Заметка N.md". `prefix` is the current interface language. */
+export function resolve_note_filename(existing_names: Iterable<string>, prefix = 'Note'): string {
+	return resolve_numbered_filename(prefix, '.md', existing_names)
 }
 
-/** A text block is a note file under another prefix. */
-export function resolve_text_block_filename(existing_names: Iterable<string>): string {
-	return resolve_numbered_filename('Text', '.md', existing_names)
+/** A text block is a note file under another prefix: "Text N.md" or "Текст N.md". */
+export function resolve_text_block_filename(existing_names: Iterable<string>, prefix = 'Text'): string {
+	return resolve_numbered_filename(prefix, '.md', existing_names)
 }
 
 export function resolve_shape_filename(existing_names: Iterable<string>): string {
