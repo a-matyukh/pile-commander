@@ -40,12 +40,12 @@ describe('a folder view as stored', () => {
 })
 
 describe("a 3D folder's floor as stored", () => {
-	test('the endless floor is "infinite"; none or anything else is the table', () => {
-		expect(floor_3d_from_stored('infinite')).toBe('infinite')
-		expect(floor_3d_from_stored(parse_xattr_value('infinite'))).toBe('infinite')
+	test('the table only where it was chosen; none or anything else is the endless floor', () => {
 		expect(floor_3d_from_stored('table')).toBe('table')
-		expect(floor_3d_from_stored(undefined)).toBe('table')
-		expect(floor_3d_from_stored('endless')).toBe('table')
-		expect(floor_3d_from_stored(1)).toBe('table')
+		expect(floor_3d_from_stored(parse_xattr_value('table'))).toBe('table')
+		expect(floor_3d_from_stored('infinite')).toBe('infinite')
+		expect(floor_3d_from_stored(undefined)).toBe('infinite')
+		expect(floor_3d_from_stored('endless')).toBe('infinite')
+		expect(floor_3d_from_stored(1)).toBe('infinite')
 	})
 })
