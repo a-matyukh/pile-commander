@@ -6,7 +6,7 @@ const { clientUrl, desktopAppLink } = useAppLinks();
 useSeoMeta({
   title: "Pricing",
   description:
-    "Local use is free forever. Cloud Free is 100 MB, files up to 25 MB, invites, unlisted links, and Hub for up to 3 workspaces. Paid plans will sit next to Free later.",
+    "Local use is free forever. Cloud Free is 100 MB, files up to 25 MB, invites, unlisted links, and up to 3 publications on the Hub. Paid plans will sit next to Free later.",
   ogTitle: "Pricing — Pile Commander",
   ogDescription:
     "Work on your computer for free. Cloud Free is a lasting plan — paid tiers open after beta.",
@@ -21,19 +21,19 @@ const localFeatures = [
 ];
 
 const cloudFeatures = [
-  "100 MB in the cloud (workspaces and trash)",
+  "100 MB in the cloud (folders and trash)",
   "Files up to 25 MB",
-  "Your own cloud workspaces",
-  "Invite people and join other workspaces",
+  "Your own cloud folders",
+  "Share folders with people, and open the ones shared with you",
   "Unlisted public live link",
-  "Hub — up to 3 workspaces",
+  "Hub — up to 3 publications",
 ];
 
 const notes = [
   {
     icon: "i-lucide-user-check",
     title: "The owner pays",
-    body: "The person who owns the workspace pays. Invited people do not need their own plan.",
+    body: "The person who owns the folder pays. People it is shared with do not need their own plan.",
   },
   {
     icon: "i-lucide-shield-check",
@@ -43,7 +43,7 @@ const notes = [
   {
     icon: "i-lucide-infinity",
     title: "Free stays",
-    body: "Free is a lasting plan, not a beta trial. 100 MB across workspaces and trash; one original up to 25 MB.",
+    body: "Free is a lasting plan, not a beta trial. 100 MB across cloud folders and trash; one original up to 25 MB.",
   },
 ];
 </script>
