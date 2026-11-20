@@ -5,6 +5,13 @@ import { history } from '@/store/history'
 import { create_cloud_trash } from './cloud_trash'
 import { explorer_tree } from './tree'
 
+// Showing the cloud reads each root's view from Supabase. Answered here, so
+// a test id like 'ws-back' never reaches a real project
+vi.mock('@pile-commander/file-manager', async original => ({
+	...await original<typeof import('@pile-commander/file-manager')>(),
+	workspace_root_info: vi.fn(async () => ({})),
+}))
+
 function entry(path: string, deleted_at: string): TrashEntry {
 	return { id: path, path, name: path.slice(1), kind: 'folder', size_bytes: null, deleted_at, subtree_bytes: 0, subtree_files: 0 }
 }
