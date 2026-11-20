@@ -5,7 +5,7 @@
      use case opens straight in its folder (/demo/<folders>, publicRoute.ts in
      apps/client). The pictures in public/landing-final/ are shots of the web
      demo: the use cases are /alt's (public/landing-alt/) without the folder
-     header, Features is the current app (headless Chrome, 1200 × 760 at 2×). -->
+     header, Features is its Media files preview folder in the current app (headless Chrome, 1200 × 760 at 2×). -->
 <script setup lang="ts">
 const { demoUrl } = useAppLinks();
 const external = { target: "_blank", rel: "noopener noreferrer" };
@@ -72,7 +72,7 @@ const shots = [
         <!-- Features: one folder per view, file type and tool -->
         <article class="card feats">
           <a :href="folderUrl('Features')" v-bind="external" class="shot wide">
-            <img src="/landing-final/features.jpg" alt="The Features folder in the demo" loading="lazy">
+            <img src="/landing-final/features.jpg" alt="Media files preview in the demo: a picture, a 3D duck and a gem, audio and video" loading="lazy">
           </a>
           <div class="body">
             <h3 class="ct">Features</h3>

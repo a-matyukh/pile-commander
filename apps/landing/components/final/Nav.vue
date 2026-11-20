@@ -71,7 +71,7 @@ onMounted(() => {
           @focus="active = idea.n"
           @blur="active = null"
         >
-          <span class="lf-marker" :class="{ play: 'icon' in idea }" aria-hidden="true">
+          <span class="lf-marker" aria-hidden="true">
             <UIcon v-if="'icon' in idea" :name="idea.icon" class="mi" />
             <template v-else>{{ idea.n }}</template>
           </span>
@@ -159,13 +159,7 @@ onMounted(() => {
   line-height: 1.4;
 }
 
-/* The demo is not a numbered block: an outlined marker with Play */
-.lf-marker.play {
-  border: 1.5px solid var(--lf-accent);
-  background: var(--lf-surface);
-  color: var(--lf-accent);
-}
-
+/* The demo is not a numbered block: Play on its marker instead */
 .mi {
   width: 0.75rem;
   height: 0.75rem;
