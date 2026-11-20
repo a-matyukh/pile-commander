@@ -59,17 +59,6 @@ const choice = computed<{ primary: Download | null; others: Download[] }>(() => 
 
 const releasePageUrl = computed(() => desktopReleaseUrl || release.value?.releaseUrl || "");
 
-const publishedOn = computed(() => {
-  const at = release.value?.publishedAt;
-  if (!at) return "";
-  return new Date(at).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-});
-
 function megabytes(bytes: number) {
   return `${(bytes / 1_000_000).toFixed(0)} MB`;
 }
@@ -93,19 +82,9 @@ async function copy(text: string) {
 <template>
   <div class="lf-page">
     <div class="lf-wrap">
-      <header class="lf-page-head head">
-        <img src="/app-icon.png" alt="" width="80" height="80" class="icon">
-        <div>
-          <h1 class="lf-page-title">Download Pile Commander</h1>
-          <p class="lf-lede">
-            The desktop app works directly on the folders on your disk. It is
-            free, needs no account, and updates itself.
-          </p>
-          <p v-if="release" class="lf-small ver">
-            Version {{ release.version }}<template v-if="publishedOn"> · {{ publishedOn }}</template>
-          </p>
-        </div>
-      </header>
+      <!-- No intro: the page is the download itself; the title stays for
+           screen readers and search -->
+      <h1 class="sr-only">Download Pile Commander</h1>
 
       <div class="col">
         <div v-if="!isDesktop" class="lf-card web">
@@ -211,38 +190,6 @@ async function copy(text: string) {
 </template>
 
 <style scoped>
-/* The title keeps one line beside the icon on a wide screen */
-.head {
-  display: flex;
-  max-width: none;
-  align-items: flex-start;
-  gap: 1.5rem;
-}
-
-.icon {
-  width: 5rem;
-  height: 5rem;
-  flex: none;
-  border-radius: 22.5%;
-  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.18));
-}
-
-@media (max-width: 560px) {
-  .head {
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .icon {
-    width: 4rem;
-    height: 4rem;
-  }
-}
-
-.ver {
-  margin-top: 0.75rem;
-}
-
 .col {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
