@@ -132,8 +132,10 @@ onMounted(() => {
   transition: background-color 0.15s ease;
 }
 
+/* Hovered, and the block on screen */
 .it:hover,
-.it.on {
+.it.on,
+.it[aria-current="true"] {
   background: rgb(36 83 255 / 0.08);
 }
 
