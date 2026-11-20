@@ -25,7 +25,7 @@ in a browser, on a tablet or a phone.
 (extended attributes), not into an app database.
 
 [Website and live demo](https://www.pile-commander.com) ·
-[Download for desktop](https://github.com/a-matyukh/pile-commander/releases/latest)
+[Download for desktop](https://www.pile-commander.com/download)
 
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883?logo=vuedotjs&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white)
@@ -162,7 +162,8 @@ its own storage (IndexedDB) and need no account. You can also install the web
 app from the browser as a PWA.
 
 **Download the desktop app.** It works directly on the folders on your disk.
-Builds for every platform are on the
+The [download page](https://www.pile-commander.com/download) picks the file
+for your system. Every build is also on the
 [latest release](https://github.com/a-matyukh/pile-commander/releases/latest):
 
 
