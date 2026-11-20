@@ -6,10 +6,23 @@
 
 **File manager. Creative space.**
 
-Open a folder as a list, a gallery, a board, a canvas, a 3D space, a stack, a tiled wall, a dashboard or slides.
-Everything the app knows about a file or folder (its view, position, size, order,
-background) is written into that file's own extended attributes, not into an app
-database.
+A file manager for your folders on disk and in the cloud, where files and
+folders are not boring:
+
+- **Nine views** of any folder: list, gallery, board, canvas, 3D, stack,
+masonry, dashboard and slides.
+- **Files come alive**: notes, pictures, video, audio and 3D models as live
+previews, folder covers, shapes, arrows and ink.
+- **AI** with a model you pick: summarize, rename, sort, generate ideas. Or
+let your AI agent work with your folders over MCP.
+- **Sync and cloud**: a cloud copy of any folder, or folders that live only
+in the cloud, live on every screen.
+- **Share** a folder as a `.pile` file, with people, at a public link, or on
+the Hub.
+- **Any screen**: the desktop app on macOS, Windows and Linux, or the web app
+in a browser, on a tablet or a phone.
+- **Your files stay yours**: the layout is written on the files themselves
+(extended attributes), not into an app database.
 
 [Website and live demo](https://www.pile-commander.com) ·
 [Download for desktop](https://github.com/a-matyukh/pile-commander/releases/latest)
