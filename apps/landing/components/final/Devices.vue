@@ -29,8 +29,8 @@ const cloudTree: TreeRow[] = [
 const steps: { id: ScreenStep; label: string; icon: string; caption: string }[] = [
   { id: "desktop", label: "Desktop app", icon: "i-tabler-device-desktop", caption: "macOS, Windows and Linux. Folders on your disk and sync live here." },
   { id: "browser", label: "In the browser", icon: "i-tabler-browser", caption: "Nothing to install. The browser cannot open your disk, so its folders live in its own storage (IndexedDB), and your cloud folders are one click away." },
-  { id: "tablet", label: "Tablet", icon: "i-tabler-device-ipad-horizontal", caption: "On a tablet the sidebar stays beside the folder, and everything works by touch." },
-  { id: "phone", label: "Phone", icon: "i-tabler-device-mobile", caption: "On a phone the sidebar slides in from the edge, menus fit the screen, and you pinch to zoom a canvas." },
+  { id: "tablet", label: "Tablet", icon: "i-tabler-device-ipad-horizontal", caption: "On a tablet the sidebar stays beside the folder, and everything works by touch. Add it to the home screen, and it opens like an app — no store needed." },
+  { id: "phone", label: "Phone", icon: "i-tabler-device-mobile", caption: "On a phone the sidebar slides in from the edge, menus fit the screen, and you pinch to zoom a canvas. It installs from the browser to the home screen, too." },
   { id: "together", label: "All at once", icon: "i-tabler-devices", caption: "A cloud folder is live: add a note on the phone, and it shows up on every other screen at once." },
 ];
 
