@@ -406,7 +406,7 @@ onMounted(() => {
 .phone {
   height: 100%;
   aspect-ratio: 9 / 19;
-  border-radius: 2.25rem;
+  border-radius: 1.4rem;
   padding: 0.6rem;
 }
 
@@ -420,7 +420,7 @@ onMounted(() => {
 }
 
 .phone .screen {
-  border-radius: 1.75rem;
+  border-radius: 0.9rem;
 }
 
 .screen .bare {

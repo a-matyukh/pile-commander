@@ -395,6 +395,8 @@ const active = useState<number | null>("lf-active", () => null);
   position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
+  /* The header never pushes the window wider than its screen */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -449,7 +451,9 @@ const active = useState<number | null>("lf-active", () => null);
   flex: none;
 }
 
+/* The folder's name gives way to the buttons on a narrow screen */
 .cur {
+  min-width: 0;
   overflow: hidden;
   color: var(--tp);
   font-weight: 500;
@@ -555,4 +559,20 @@ const active = useState<number | null>("lf-active", () => null);
   }
 }
 
+/* A phone's screen drawn on a phone: tighter buttons, so all of them stay
+   in the row and the path keeps a little room */
+@container (max-width: 320px) {
+  .fh {
+    padding: 0 0.6em;
+  }
+
+  .acts,
+  .pair {
+    gap: 0.05em;
+  }
+
+  .act {
+    width: 2em;
+  }
+}
 </style>
