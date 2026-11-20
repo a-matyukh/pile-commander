@@ -15,6 +15,10 @@ describe('resolveIsCanvasWidgetLayout', () => {
 		expect(resolveIsCanvasWidgetLayout('canvas', true, 'board')).toBe(false)
 	})
 
+	test('embedded 3D preview inside canvas shows its board: board widget layout', () => {
+		expect(resolveIsCanvasWidgetLayout('canvas', true, '3d')).toBe(false)
+	})
+
 	test('embedded canvas preview inside canvas uses canvas widget layout', () => {
 		expect(resolveIsCanvasWidgetLayout('canvas', true, 'canvas')).toBe(true)
 	})

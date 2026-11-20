@@ -3,7 +3,8 @@ import type { FolderView } from '@/domain/Widget'
 /**
  * True when widgets should use canvas (Vue Flow node) layout instead of board
  * absolute positioning. Embedded board folder previews inside a canvas folder
- * still render via Board.vue and must keep board layout for correct sizes.
+ * still render via Board.vue and must keep board layout for correct sizes;
+ * so do 3D folder previews, which show their board.
  */
 export function resolveIsCanvasWidgetLayout(
 	layoutMode: 'board' | 'canvas',
@@ -11,6 +12,6 @@ export function resolveIsCanvasWidgetLayout(
 	view: FolderView | undefined,
 ): boolean {
 	if (layoutMode !== 'canvas') return false
-	if (isEmbedded && view === 'board') return false
+	if (isEmbedded && (view === 'board' || view === '3d')) return false
 	return true
 }
