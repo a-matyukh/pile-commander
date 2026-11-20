@@ -34,13 +34,7 @@ in a browser, on a tablet or a phone.
 ![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_RLS-3ecf8e?logo=supabase&logoColor=white)
 
 
-
-
-https://github.com/user-attachments/assets/365745eb-7503-464c-b09d-1fd607cb8244
-
-
-
-
+<img src="docs/screenshot.jpg" alt="Pile Commander with the demo's Moodboard open as a board: photos at their own size and place, notes, an arrow and a palette, with the folder tree on the left">
 
 
 ## The idea
@@ -68,12 +62,6 @@ Postgres backend. The UI does not know which one it is talking to.
 If you delete Pile Commander, your folders, files and their names stay
 exactly as they were.
 
-https://github.com/user-attachments/assets/60fae415-5e05-4eff-b6fb-3656586da096
-
-
-
-
-
 
 ## What's in a folder
 
@@ -89,8 +77,6 @@ https://github.com/user-attachments/assets/60fae415-5e05-4eff-b6fb-3656586da096
 | **Cloud folders**      | Folders that live in the cloud. People you share them with edit in real time; a folder can get a public link, be published on the Hub, and be copied by others when its owner allows it. |
 | **AI**                 | Summarize a folder, suggest names, sort files into folders and generate ideas, with a model you pick (a cloud provider or a local one). The results are plain files, names and folders, and nothing changes without your OK. |
 | **Agents over MCP**    | With Agent access on (Settings → AI), an AI agent such as Claude Code or Cursor works with your folders through the running desktop app. |
-
-
 
 
 ## Architecture
@@ -120,8 +106,6 @@ flowchart TB
 ```
 
 
-
-
 | Package                                                        | What it does                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`apps/client`](apps/client)                                   | The app. One Vue 3 + Vite codebase that ships as a desktop app (Tauri, `src-tauri/`), a web app and an installable PWA. Tailwind 4 and Nuxt UI, plus interact.js and Vue Flow for spatial layout.                                                                                                                                                      |
@@ -130,8 +114,6 @@ flowchart TB
 | [`apps/backend`](apps/backend)                                 | A Bun HTTP server with a deliberately small surface: it issues short-lived presigned URLs, finalizes uploads, re-keys blobs for forks, generates image and video thumbnails, and runs GC and account deletion. Everything else is the client talking to Postgres under RLS.                                                                            |
 | [`apps/mcp`](apps/mcp)                                         | The connector for AI agents: it pipes an agent's MCP over stdio to the running desktop app's local socket, with the access token Agent access gives out. [Docs](apps/mcp/README.md). |
 | [`apps/landing`](apps/landing)                                 | The Nuxt marketing site, with the pricing and legal pages. |
-
-
 
 
 ### Notes on the design
