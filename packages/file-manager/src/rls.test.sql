@@ -695,10 +695,6 @@ begin
         execute 'set local role service_role';
     end;
 
-    insert into public.plan_launch_subscribers (email) values ('wait@example.invalid');
-    insert into __results values ('service: plan_launch_subscribers insert',
-        (select count(*) from public.plan_launch_subscribers where email = 'wait@example.invalid') = 1, null);
-
     -- the billing adapter: apply_billing_state writes the state read back
     -- from the MoR, with the event's row, in one transaction
     v_state := public.apply_billing_state(c_buyer, 'pro', 'active', 'month', now() + interval '30 days', false,
@@ -732,6 +728,29 @@ begin
            from public.billing_accounts where owner_id = c_buyer),
         v_state);
 
+    -- a downgrade the MoR scheduled for the period's end is kept beside the plan
+    v_state := public.apply_billing_state(c_buyer, 'max', 'active', 'month', now() + interval '20 days', false,
+        'sub_rls_1', now() - interval '4 minutes', 'polar:rls-evt-3', '{"type": "subscription.updated"}'::jsonb,
+        'pro', now() + interval '20 days');
+    insert into __results values ('service: a scheduled downgrade is kept beside the plan it follows',
+        v_state = 'applied'
+        and (select plan = 'max' and next_plan = 'pro' and next_plan_at is not null
+                and quota_bytes = 500::bigint * 1024 * 1024 * 1024
+           from public.billing_accounts where owner_id = c_buyer),
+        v_state);
+
+    begin
+        perform public.apply_billing_state(c_buyer, 'max', 'active', 'month', null, false,
+            'sub_rls_1', now() - interval '3 minutes', 'polar:rls-evt-next-gold', '{}'::jsonb, 'gold', now());
+        insert into __results values ('service: apply_billing_state refuses a scheduled plan plan_defaults does not know', false, 'accepted');
+    exception when others then
+        insert into __results values ('service: apply_billing_state refuses a scheduled plan plan_defaults does not know',
+            sqlerrm like '%unknown plan%'
+            and (select next_plan = 'pro' from public.billing_accounts where owner_id = c_buyer),
+            sqlerrm);
+        execute 'set local role service_role';
+    end;
+
     begin
         perform public.apply_billing_state(c_buyer, 'gold', 'active', 'month', null, false,
             'sub_rls_1', now(), 'polar:rls-evt-gold', '{}'::jsonb);
@@ -752,6 +771,7 @@ begin
                 and max_file_bytes = 25 * 1024 * 1024 and max_hub_listings = 3
                 and egress_bytes_month = 20::bigint * 1024 * 1024 * 1024
                 and billing_interval is null and period_end is null and not cancel_at_period_end
+                and next_plan is null and next_plan_at is null
            from public.billing_accounts where owner_id = c_buyer),
         v_state);
 
@@ -912,20 +932,6 @@ begin
         insert into __results values ('authenticated: apply_billing_state revoked', false, 'accepted');
     exception when insufficient_privilege then
         insert into __results values ('authenticated: apply_billing_state revoked', true, null);
-        execute 'set local role authenticated';
-    end;
-    begin
-        insert into public.plan_launch_subscribers (email) values ('auth-leak@example.invalid');
-        insert into __results values ('authenticated: cannot insert plan_launch_subscribers', false, 'accepted');
-    exception when others then
-        insert into __results values ('authenticated: cannot insert plan_launch_subscribers', true, sqlerrm);
-        execute 'set local role authenticated';
-    end;
-    begin
-        select count(*) into v_n from public.plan_launch_subscribers;
-        insert into __results values ('authenticated: cannot read plan_launch_subscribers', v_n = 0, format('count=%s', v_n));
-    exception when insufficient_privilege then
-        insert into __results values ('authenticated: cannot read plan_launch_subscribers', true, sqlerrm);
         execute 'set local role authenticated';
     end;
     begin
@@ -1234,20 +1240,6 @@ begin
         insert into __results values ('anon: apply_billing_state revoked', false, 'accepted');
     exception when insufficient_privilege then
         insert into __results values ('anon: apply_billing_state revoked', true, null);
-        execute 'set local role anon';
-    end;
-    begin
-        insert into public.plan_launch_subscribers (email) values ('anon-leak@example.invalid');
-        insert into __results values ('anon: cannot insert plan_launch_subscribers', false, 'accepted');
-    exception when others then
-        insert into __results values ('anon: cannot insert plan_launch_subscribers', true, sqlerrm);
-        execute 'set local role anon';
-    end;
-    begin
-        select count(*) into v_n from public.plan_launch_subscribers;
-        insert into __results values ('anon: cannot read plan_launch_subscribers', v_n = 0, format('count=%s', v_n));
-    exception when insufficient_privilege then
-        insert into __results values ('anon: cannot read plan_launch_subscribers', true, sqlerrm);
         execute 'set local role anon';
     end;
     begin

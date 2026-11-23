@@ -3499,8 +3499,15 @@ grant execute on function public.plan_catalog() to authenticated;
 -- already applied changes nothing ('stale'), so two deliveries racing each
 -- other cannot roll a plan back, and a repeated event id is recorded once.
 -- 'no_account' when the account is gone; the event row stays for the trail.
+-- p_next_plan / p_next_plan_at: a change the MoR has scheduled for the end of
+-- the period (a downgrade), shown on the account page; omitted, they clear.
 -- Over-limit data is never touched here: lower limits only stop growth
--- (assert_owner_can_add). Service role only
+-- (assert_owner_can_add). Service role only.
+-- The ten-argument form came first; a call naming only those ten still
+-- resolves here, the scheduled change then empty
+drop function if exists public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb);
+drop function if exists private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb);
+
 create or replace function private.apply_billing_state(
     p_owner uuid,
     p_plan text,
@@ -3511,7 +3518,9 @@ create or replace function private.apply_billing_state(
     p_subscription_id text,
     p_synced_at timestamptz,
     p_event_id text,
-    p_event jsonb
+    p_event jsonb,
+    p_next_plan text default null,
+    p_next_plan_at timestamptz default null
 )
 returns text
 language plpgsql
@@ -3524,6 +3533,10 @@ declare
 begin
     if p_synced_at is null then
         raise exception 'apply_billing_state: p_synced_at is required';
+    end if;
+    -- a scheduled plan must be one plan_defaults knows (it raises otherwise)
+    if p_next_plan is not null then
+        perform 1 from private.plan_defaults(p_next_plan);
     end if;
     if p_event_id is not null then
         insert into public.billing_events (event_id, payload)
@@ -3559,6 +3572,8 @@ begin
            billing_interval = p_interval,
            period_end = p_period_end,
            cancel_at_period_end = coalesce(p_cancel_at_period_end, false),
+           next_plan = case when p_next_plan_at is null then null else p_next_plan end,
+           next_plan_at = case when p_next_plan is null then null else p_next_plan_at end,
            external_subscription_id = p_subscription_id,
            grace_until = null,
            billing_synced_at = p_synced_at,
@@ -3578,7 +3593,9 @@ create or replace function public.apply_billing_state(
     p_subscription_id text,
     p_synced_at timestamptz,
     p_event_id text,
-    p_event jsonb
+    p_event jsonb,
+    p_next_plan text default null,
+    p_next_plan_at timestamptz default null
 )
 returns text
 language sql
@@ -3586,16 +3603,17 @@ security invoker
 set search_path = public, extensions
 as $$
     select private.apply_billing_state(p_owner, p_plan, p_status, p_interval, p_period_end,
-        p_cancel_at_period_end, p_subscription_id, p_synced_at, p_event_id, p_event);
+        p_cancel_at_period_end, p_subscription_id, p_synced_at, p_event_id, p_event,
+        p_next_plan, p_next_plan_at);
 $$;
 
-revoke execute on function public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+revoke execute on function public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb, text, timestamptz)
     from public, anon, authenticated;
-grant execute on function public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+grant execute on function public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb, text, timestamptz)
     to service_role;
-revoke execute on function private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+revoke execute on function private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb, text, timestamptz)
     from public, anon, authenticated;
-grant execute on function private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+grant execute on function private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb, text, timestamptz)
     to service_role;
 revoke execute on function public.assert_owner_quota(uuid, bigint, bigint) from public, anon;
 grant execute on function public.assert_owner_quota(uuid, bigint, bigint) to authenticated;

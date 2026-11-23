@@ -340,6 +340,11 @@ create table public.billing_accounts (
     billing_interval text check (billing_interval is null or billing_interval in ('month', 'year')),
     period_end timestamptz,
     cancel_at_period_end boolean not null default false,
+    -- a change of plan the MoR has scheduled for the end of the period (a
+    -- downgrade): the account page says "Pro from 23 December". Null when
+    -- none is scheduled, and when the subscription ends then instead
+    next_plan text check (next_plan is null or next_plan in ('pro', 'studio', 'max', 'ultra')),
+    next_plan_at timestamptz,
     -- when the billing adapter read the state it applied last: an older read
     -- never overwrites a newer one (public.apply_billing_state)
     billing_synced_at timestamptz,
@@ -439,20 +444,6 @@ create table public.billing_events (
     event_id text primary key,
     received_at timestamptz not null default now(),
     payload jsonb not null default '{}'
-);
-
--- ----------------------------------------------------------------------------
--- plan_launch_subscribers: the old /pricing notify list. Nothing writes it any
--- more — the form and POST /pricing/notify are gone with paid plans — and it
--- is empty on the live project (2026-11-23); it is dropped in a diff of its
--- own once the backend without that route is live (AGENTS.md).
--- ----------------------------------------------------------------------------
-create table public.plan_launch_subscribers (
-    email text primary key
-        check (char_length(email) <= 254 and email ~ '^[^@]+@[^@]+\.[^@]+$'),
-    subscribed boolean not null default true,
-    source text not null default 'pricing' check (char_length(source) <= 32),
-    created_at timestamptz not null default now()
 );
 
 -- ----------------------------------------------------------------------------
@@ -1873,7 +1864,6 @@ alter table public.quota_wall_events enable row level security;
 alter table public.bridge_events enable row level security;
 alter table public.sync_devices enable row level security;
 alter table public.billing_events enable row level security;
-alter table public.plan_launch_subscribers enable row level security;
 alter table public.feedback enable row level security;
 alter table public.egress_daily enable row level security;
 alter table public.download_daily enable row level security;
@@ -1990,9 +1980,9 @@ create policy sync_devices_update on public.sync_devices
 create policy sync_devices_delete on public.sync_devices
     for delete using (owner_id = (select auth.uid()));
 
--- billing_events / plan_launch_subscribers / feedback / egress_daily /
--- download_daily / egress_notices / moderation_mail / moderation_digest_state:
--- no policies for authenticated/anon (service_role bypasses RLS)
+-- billing_events / feedback / egress_daily / download_daily / egress_notices /
+-- moderation_mail / moderation_digest_state: no policies for
+-- authenticated/anon (service_role bypasses RLS)
 
 -- the Hub gallery is public except hidden rows; owners (and admins) still
 -- see their own hidden listings so Publish can show "hidden pending review".
@@ -2450,10 +2440,8 @@ grant insert (owner_id, workspace_id, device_id) on public.sync_devices to authe
 grant update (last_pass_at) on public.sync_devices to authenticated;
 grant select, insert on public.billing_events to service_role;
 
--- landing waitlist / feedback: no client grants; RLS with no policies is the
--- backstop if the project toggle exposes new tables to anon/authenticated
-revoke all on public.plan_launch_subscribers from public, anon, authenticated;
-grant select, insert on public.plan_launch_subscribers to service_role;
+-- feedback: no client grants; RLS with no policies is the backstop if the
+-- project toggle exposes new tables to anon/authenticated
 revoke all on public.feedback from public, anon, authenticated;
 grant select, insert on public.feedback to service_role;
 

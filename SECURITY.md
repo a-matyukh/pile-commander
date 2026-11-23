@@ -24,7 +24,7 @@ show only these intentional INFOs. Anything else is a regression.
 
 | lint | why it stays |
 | --- | --- |
-| `rls_enabled_no_policy` (`billing_events`, `blob_deletions`, `plan_launch_subscribers`, `feedback`, `egress_daily`, `download_daily`, `egress_notices`, `entry_derivatives`, `moderation_mail`, `moderation_digest_state`) | service-role-only tables: RLS on, no client policies. Do not add anon/authenticated policies to "fix" the lint. |
+| `rls_enabled_no_policy` (`billing_events`, `blob_deletions`, `feedback`, `egress_daily`, `download_daily`, `egress_notices`, `entry_derivatives`, `moderation_mail`, `moderation_digest_state`) | service-role-only tables: RLS on, no client policies. Do not add anon/authenticated policies to "fix" the lint. |
 
 ---
 
