@@ -868,6 +868,10 @@ export const ru = {
 		placeholder: 'Необязательно — фото, видео, заметки…',
 		send: 'Отправить',
 	},
+	text_field: {
+		show_password: 'Показать пароль',
+		hide_password: 'Скрыть пароль',
+	},
 	delete_account: {
 		link: 'Удалить облачный аккаунт',
 		title: 'Удаление облачного аккаунта',

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
+import { t } from '@/i18n'
 
-defineProps<{
+const props = defineProps<{
 	icon?: string
 	type?: string
 	placeholder?: string
@@ -16,6 +17,11 @@ defineProps<{
 
 const model = defineModel<string>({ required: true })
 const input_el = ref<HTMLInputElement | null>(null)
+
+/** A password field has an eye that shows what was typed, and hides it again */
+const revealed = ref(false)
+const is_password = computed(() => props.type === 'password')
+const input_type = computed(() => (is_password.value && revealed.value ? 'text' : props.type ?? 'text'))
 
 /** `select`: true for the whole text, or its `[start, end]` part */
 function focus(select: boolean | [number, number] = false) {
@@ -35,7 +41,7 @@ defineExpose({ focus })
 		<input
 			ref="input_el"
 			v-model="model"
-			:type="type ?? 'text'"
+			:type="input_type"
 			:placeholder="placeholder"
 			:autocomplete="autocomplete"
 			:autofocus="autofocus"
@@ -43,6 +49,20 @@ defineExpose({ focus })
 			:spellcheck="spellcheck"
 			:autocapitalize="autocapitalize"
 		/>
+		<!-- mousedown kept: the caret stays in the field while the eye is pressed -->
+		<button
+			v-if="is_password"
+			type="button"
+			class="eye"
+			:disabled="disabled"
+			:aria-pressed="revealed"
+			:aria-label="revealed ? t('text_field.hide_password') : t('text_field.show_password')"
+			:title="revealed ? t('text_field.hide_password') : t('text_field.show_password')"
+			@mousedown.prevent
+			@click="revealed = !revealed"
+		>
+			<Icon :icon="revealed ? 'tabler:eye-off' : 'tabler:eye'" />
+		</button>
 	</label>
 </template>
 
@@ -89,7 +109,39 @@ input {
 input::placeholder {
 	color: var(--text-muted);
 }
+.eye {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	margin-right: -6px;
+	padding: 0;
+	border: none;
+	border-radius: 5px;
+	background: none;
+	color: var(--text-muted);
+	font-size: 16px;
+	cursor: pointer;
+}
+.eye:focus-visible {
+	outline: 2px solid var(--fill-accent);
+	outline-offset: 1px;
+}
+.eye:disabled {
+	cursor: default;
+}
+@media (hover: hover) {
+	.eye:hover:not(:disabled) {
+		color: var(--text-secondary);
+		background: var(--surface-1);
+	}
+}
 .explorer.lg .tf {
 	height: 42px;
+}
+.explorer.lg .eye {
+	font-size: 19px;
 }
 </style>

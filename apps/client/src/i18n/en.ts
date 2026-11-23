@@ -870,6 +870,10 @@ export const en: typeof ru = {
 		placeholder: 'Optional — photos, video, notes…',
 		send: 'Send',
 	},
+	text_field: {
+		show_password: 'Show password',
+		hide_password: 'Hide password',
+	},
 	delete_account: {
 		link: 'Delete cloud account',
 		title: 'Delete cloud account',
