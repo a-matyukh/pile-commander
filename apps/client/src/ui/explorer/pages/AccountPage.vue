@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import { t } from '@/i18n'
+import { locale, t } from '@/i18n'
+import { PAYMENTS_OPEN, is_paid_plan, plan_name } from '@/services/billing'
 import { CLOUD_UNAVAILABLE, cloud_status_message } from '@/services/cloud/client'
+import billing, { check_plan, manage_subscription, open_plans } from '@/store/billing'
 import cloud from '@/store/cloud'
 import { format_bytes } from '@/utils/format_bytes'
 import Button from '@/ui/kit/Button.vue'
@@ -29,7 +31,28 @@ const usage = computed(() => {
 	const used = cloud.owner_usage?.used_bytes
 	if (!billing || used === undefined) return null
 	const pct = billing.quota_bytes > 0 ? Math.min(100, Math.round(used / billing.quota_bytes * 100)) : 0
-	return { pct, used: format_bytes(used), total: format_bytes(billing.quota_bytes), plan: billing.plan }
+	return { pct, used: format_bytes(used), total: format_bytes(billing.quota_bytes), plan: plan_name(billing.plan) }
+})
+
+/**
+ * The plan and what happens next: renews or ends on a date, a failed
+ * payment, the buttons to choose or manage. Hidden until paid plans open
+ */
+const plan = computed(() => {
+	const account = cloud.billing
+	if (!PAYMENTS_OPEN || !account) return null
+	const paid = is_paid_plan(account.plan)
+	const date = account.period_end
+		? new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+			.format(new Date(account.period_end))
+		: null
+	return {
+		name: plan_name(account.plan),
+		interval: paid && account.billing_interval ? t(`billing.interval_${account.billing_interval}`) : null,
+		paid,
+		when: paid && date ? t(account.cancel_at_period_end ? 'billing.ends' : 'billing.renews', { date }) : null,
+		past_due: account.plan_status === 'past_due',
+	}
 })
 
 const notice = computed(() => cloud_status_message(cloud.last_error))
@@ -61,6 +84,30 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					<div class="bar"><div :style="{ width: usage.pct + '%' }" /></div>
 				</template>
 				<div v-else class="muted">{{ t('account.usage_loading') }}</div>
+			</div>
+			<div v-if="plan" class="card pad sub">
+				<div class="sub-row">
+					<div class="min">
+						<div class="sub-name">{{ plan.name }}<span v-if="plan.interval" class="sub-int"> · {{ plan.interval }}</span></div>
+						<div v-if="plan.when" class="sub-when">{{ plan.when }}</div>
+					</div>
+					<div class="sub-actions">
+						<Button v-if="!plan.paid" variant="primary" @click="open_plans">{{ t('billing.choose') }}</Button>
+						<template v-else>
+							<Button @click="open_plans">{{ t('billing.change') }}</Button>
+							<Button :loading="billing.busy === 'portal'" @click="manage_subscription">{{ t('billing.manage') }}</Button>
+						</template>
+					</div>
+				</div>
+				<p v-if="plan.past_due" class="sub-line bad">
+					{{ t('billing.past_due') }}
+					<Button variant="link" @click="manage_subscription">{{ t('billing.update_card') }}</Button>
+				</p>
+				<p v-if="billing.waiting" class="sub-line muted">
+					{{ t('billing.waiting') }}
+					<Button variant="link" @click="check_plan()">{{ t('billing.check_now') }}</Button>
+				</p>
+				<p v-if="billing.error && !billing.chooser_open" class="sub-line bad">{{ billing.error }}</p>
 			</div>
 			<div class="card list">
 				<div class="row" @click="profile_dialog?.open()">
@@ -232,6 +279,30 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 	height: 100%;
 	border-radius: 3px;
 	background: var(--text-secondary);
+}
+.sub-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 12px;
+}
+.sub-name {
+	font-size: 15px;
+	font-weight: 500;
+}
+.sub-int,
+.sub-when {
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--text-secondary);
+}
+.sub-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.sub-line {
+	margin: 10px 0 0;
 }
 .muted {
 	font-size: 12px;

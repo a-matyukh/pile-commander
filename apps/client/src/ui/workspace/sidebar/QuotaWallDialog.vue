@@ -9,7 +9,9 @@ import { t } from '@/i18n'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
 import Textarea from '@/ui/kit/Textarea.vue'
+import { PAID_PLANS, PAYMENTS_OPEN } from '@/services/billing'
 import { require_supabase } from '@/services/cloud/client'
+import { open_plans } from '@/store/billing'
 import cloud from '@/store/cloud'
 import quota_wall, { close_quota_wall } from '@/store/quotaWall'
 
@@ -92,6 +94,29 @@ async function submit_answer() {
 		close_quota_wall()
 	}
 }
+
+/**
+ * Another plan helps when it lifts this limit: anything on Free, more room
+ * below the largest plan. Every paid plan has the same file size, so a paid
+ * plan's file-size wall has nothing to offer
+ */
+const plans_help = computed(() => {
+	if (!PAYMENTS_OPEN) return false
+	const plan = cloud.billing?.plan ?? 'free'
+	if (plan === 'free') return true
+	return quota_wall.payload?.kind === 'quota' && plan !== PAID_PLANS[PAID_PLANS.length - 1]
+})
+
+/** Keeps what was typed, then shows the plans */
+async function see_plans() {
+	const id = event_id.value
+	const text = answer.value.trim()
+	if (id && text) {
+		await update_quota_wall_event(require_supabase(), id, text).catch((error: unknown) => console.error(error))
+	}
+	close_quota_wall()
+	void open_plans()
+}
 </script>
 
 <template>
@@ -102,7 +127,11 @@ async function submit_answer() {
 		</div>
 		<template #footer>
 			<Button @click="close_quota_wall">{{ t('dialog.close') }}</Button>
-			<Button variant="primary" :loading="is_saving" :disabled="!answer.trim()" @click="submit_answer">{{ t('quota_wall.send') }}</Button>
+			<template v-if="plans_help">
+				<Button :loading="is_saving" :disabled="!answer.trim()" @click="submit_answer">{{ t('quota_wall.send') }}</Button>
+				<Button variant="primary" @click="see_plans">{{ t('quota_wall.see_plans') }}</Button>
+			</template>
+			<Button v-else variant="primary" :loading="is_saving" :disabled="!answer.trim()" @click="submit_answer">{{ t('quota_wall.send') }}</Button>
 		</template>
 	</Modal>
 </template>

@@ -97,6 +97,9 @@ beforeEach(() => {
 		max_hub_listings: null,
 		grace_until: null,
 		external_subscription_id: null,
+		billing_interval: null,
+		period_end: null,
+		cancel_at_period_end: false,
 	}
 	cloud.owner_usage = { used_bytes: 0, live_bytes: 0, trash_bytes: 0 }
 	cloud.fetch_plan = async () => {}

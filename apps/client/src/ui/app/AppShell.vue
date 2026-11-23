@@ -27,6 +27,7 @@ import { resolveExternalDropPosition } from '@/ui/workspace/folder-container/ext
 import ExplorerShell from '@/ui/explorer/ExplorerShell.vue'
 import PublicScreen from '@/ui/explorer/pages/PublicScreen.vue'
 import QuotaWallDialog from '@/ui/workspace/sidebar/QuotaWallDialog.vue'
+import PlanChooserDialog from '@/ui/explorer/pages/account/PlanChooserDialog.vue'
 import UpdateBanner from '@/ui/app/UpdateBanner.vue'
 import WhatsNewDialog from '@/ui/app/changelog/WhatsNewDialog.vue'
 import SyncKeptHiddenToast from '@/ui/workspace/sidebar/SyncKeptHiddenToast.vue'
@@ -247,6 +248,7 @@ onUnmounted(() => {
 		<ExplorerShell v-if="!explorer_public_open" />
 		<PublicScreen v-else />
 		<QuotaWallDialog />
+		<PlanChooserDialog />
 		<PasswordDialog />
 		<BulkRenameDialog />
 		<IdeasDialog />

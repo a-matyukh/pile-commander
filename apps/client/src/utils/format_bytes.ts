@@ -5,7 +5,8 @@ const UNITS = {
 	ru: ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'],
 } as const
 
-export function format_bytes(bytes: number): string {
+/** `trim`: no ".0" on whole amounts — a plan's room reads "50 GB", "1 TB" */
+export function format_bytes(bytes: number, options?: { trim?: boolean }): string {
 	const lang = locale.value
 	if (!Number.isFinite(bytes) || bytes < 0) return `0 ${UNITS[lang][0]}`
 	let value = bytes
@@ -17,7 +18,7 @@ export function format_bytes(bytes: number): string {
 	const rounded = unit_index === 0
 		? String(Math.round(value))
 		: new Intl.NumberFormat(lang === 'ru' ? 'ru-RU' : 'en-US', {
-			minimumFractionDigits: 1,
+			minimumFractionDigits: options?.trim ? 0 : 1,
 			maximumFractionDigits: 1,
 		}).format(value)
 	return `${rounded} ${UNITS[lang][unit_index]}`

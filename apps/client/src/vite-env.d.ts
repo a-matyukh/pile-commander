@@ -8,6 +8,8 @@ interface ImportMetaEnv {
 	readonly VITE_PUBLIC_BASE_URL?: string
 	/** Landing host, for the Terms / Privacy links on the sign-up form */
 	readonly VITE_LANDING_URL?: string
+	/** "true": paid plans show before launch day (a local build against the Polar sandbox) */
+	readonly VITE_PAYMENTS_OPEN?: string
 	/** Abuse / DMCA mailbox for Hub reports and appeals */
 }
 

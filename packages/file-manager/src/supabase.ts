@@ -2501,17 +2501,48 @@ export type BillingAccount = {
 	max_hub_listings: number | null
 	grace_until: string | null
 	external_subscription_id: string | null
+	/** "month" / "year" while a subscription runs; null on Free */
+	billing_interval: "month" | "year" | null
+	/** End of the paid period: the plan renews then, or ends then when cancel_at_period_end */
+	period_end: string | null
+	cancel_at_period_end: boolean
 }
 
 export async function get_billing_account(client: SupabaseClient): Promise<BillingAccount | null> {
 	const { data, error } = await client
 		.from("billing_accounts")
 		.select(
-			"owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, grace_until, external_subscription_id",
+			"owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, grace_until, external_subscription_id, billing_interval, period_end, cancel_at_period_end",
 		)
 		.maybeSingle()
 	if (error) throw new Error(`get_billing_account failed: ${error.message}`)
 	return (data as BillingAccount | null) ?? null
+}
+
+export type PlanCatalogRow = {
+	plan: string
+	quota_bytes: number
+	max_file_bytes: number
+	/** null: no limit */
+	max_hub_listings: number | null
+}
+
+/** Every plan's limits (private.plan_defaults), in the order the plan chooser shows them. */
+export async function get_plan_catalog(client: SupabaseClient): Promise<PlanCatalogRow[]> {
+	const { data, error } = await client.rpc("plan_catalog")
+	if (error) throw new Error(`plan_catalog failed: ${error.message}`)
+	const rows = (data ?? []) as {
+		plan: string
+		quota_bytes: number | string
+		max_file_bytes: number | string
+		max_hub_listings: number | string | null
+	}[]
+	return rows.map(row => ({
+		plan: row.plan,
+		quota_bytes: Number(row.quota_bytes),
+		max_file_bytes: Number(row.max_file_bytes),
+		max_hub_listings: row.max_hub_listings === null ? null : Number(row.max_hub_listings),
+	}))
 }
 
 export type QuotaWallEventInput = {

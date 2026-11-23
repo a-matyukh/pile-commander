@@ -14,8 +14,10 @@ import {
 	type FileManager,
 	type PlanLimits,
 } from '@pile-commander/file-manager'
+import { PAYMENTS_OPEN } from '@/services/billing'
 import { require_supabase } from '@/services/cloud/client'
 import { create_app_cloud_file_manager } from '@/services/cloud/cloudFileManager'
+import { open_plans } from '@/store/billing'
 import { require_browser_storage } from '@/services/workspace/browserStorage'
 import type { CopyTreeProgress } from '@/services/cloud/bridge/copyTree'
 import { preflight_tree, type BridgePreflight } from '@/services/cloud/bridge/preflight'
@@ -481,8 +483,16 @@ export function toggle_exclude(relative: string): void {
 	else bridge.exclude.push(relative)
 }
 
-/** Paid plans are not on sale in the beta: the click asks what the person collects. */
+/**
+ * Once paid plans are on sale the click shows them (and is still recorded);
+ * before that it asks what the person collects
+ */
 export function click_pro(): void {
+	if (PAYMENTS_OPEN) {
+		record('pro_clicked')
+		void open_plans()
+		return
+	}
 	if (bridge.pro_step === 'idle') bridge.pro_step = 'asking'
 }
 
