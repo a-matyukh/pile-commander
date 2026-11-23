@@ -41,11 +41,16 @@ show only these intentional INFOs. Anything else is a regression.
   TTL. `/finalize` copies staging to a **fresh key the client has never been
   able to write** and records only that copy, so replaying the PUT afterwards
   changes an object nothing references. Nothing is trusted about the source
-  except its bytes: the `stat` is a preflight, the copy itself runs through
-  `limited_stream` (`src/streams.ts`), the stored object is `stat`ed again,
-  and the entry is written only if that size matches what was copied. Every
-  attempt writes its own key, so concurrent or retried finalizes never
-  collide. `POST /presign/upload` is 30/min per account, `/finalize` 60/min.
+  except its bytes: the `stat` is a preflight (size and ETag), and the copy
+  runs inside the storage — S3 CopyObject, signed in `src/s3_copy.ts`, no
+  bytes through the backend — only while staging still has that ETag
+  (`x-amz-copy-source-if-match`; B2 honours it, checked live), so a PUT
+  replayed in between fails the copy with 409. The copy's metadata is the
+  server's (`REPLACE`), never the uploader's headers. The stored object is
+  `stat`ed again, and the entry is written only if that size is within the
+  limit and equals the measured one — the guard that holds even on a store
+  that ignored the condition. Every attempt writes its own key, so
+  concurrent or retried finalizes never collide. `POST /presign/upload` is 30/min per account, `/finalize` 60/min.
   `size_bytes` in the presign body remains a client claim used for the quota
   preflight only.
   Residual, accepted: the copy's Content-Type is `entries.mime`, a client
@@ -463,13 +468,14 @@ limit, not an unbounded table. `xattrs` stays 64 KB.
 ### Presigned PUT
 
 See the invariants above: the size of an upload cannot be signed, so a PUT URL
-is issued for a staging key only and `/finalize` copies a bounded stream to a
-key the client cannot write. What is left is that the copy runs through the
-backend — B2 has no server-side `CopyObject` exposed by Bun's S3 client yet, so
-a 1 GB file crosses Render twice and `/finalize` carries a 120 s request
-timeout (`index.ts`) and a process-wide limit of two concurrent copies
-(`with_copy_slot`, 16 queued, then 429). Both are the levers if large uploads
-start timing out; a server-side copy removes the problem entirely.
+is issued for a staging key only and `/finalize` copies it, inside the
+storage, to a key the client cannot write. No file crosses Render any more,
+so a 1 GB upload costs the backend one CopyObject request — which B2 takes
+about a minute to answer for that size (~50 ms per MB, measured). `/finalize`
+has a 240 s request timeout (`index.ts`, under Bun's 255 s ceiling; the
+copy's own is 230 s) and a process-wide limit of eight concurrent copies
+(`with_copy_slot`, 32 queued, then 429), which now only bounds the requests
+to the storage.
 
 ---
 
@@ -597,8 +603,6 @@ deferred). Done work is in the invariants above.
 
 - B2 bucket lifecycle must be "keep only the last version" — otherwise S3
   `DeleteObject` only hides versions and storage keeps costing.
-- Server-side copy (`b2_copy_file` / S3 CopyObject) for fork re-keying once
-  Bun's S3 client exposes it; today the gateway streams the object.
 - Dashboard (manual): leaked-password protection on (Have I Been Pwned; Pro)
   and minimum password length 8. No required character classes. If Have I
   Been Pwned is unreachable, Auth allows the password. Confirm email +
@@ -616,8 +620,11 @@ deferred). Done work is in the invariants above.
 - Handler tests with a mock S3 (size cap, rate limit) and `uploads.test.ts`
   for the finalize contract: a retry returns the first receipt, a replayed
   PUT changes staging only, concurrent attempts write distinct keys, an
-  uncertain commit is recovered instead of deleted, and a source that grows
-  after the `stat` is still cut off at the limit. RLS/RPC coverage is
+  uncertain commit is recovered instead of deleted, staging replaced after
+  its `stat` is not copied, and a store ignoring the ETag condition is still
+  held to the final object's size. `s3_copy.test.ts` signs AWS's published
+  SigV4 examples and covers the copy's responses (412, 404, an error inside
+  a 200). RLS/RPC coverage is
   `rls.test.sql`; backend unit tests cover the rate limiter, step-up, the Send
   Email hook (signature + Plunk payload, no network), `POST /workspace/invite`
   (owner JWT, pending vs member, Plunk, RPC mapping), the Polar adapter

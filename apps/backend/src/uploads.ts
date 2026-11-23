@@ -1,7 +1,7 @@
-import type { S3Client } from "bun";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { ApiError, internal_error } from "./auth";
-import { limited_stream, StreamLimitError } from "./streams";
+import type { Storage } from "./s3";
+import { CopySourceChanged, CopySourceMissing } from "./s3_copy";
 import { server_timing, type ServerTiming } from "./timing";
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -14,14 +14,18 @@ export function parse_staging_key(key: string, kind: UploadKind) {
 	return { workspace_id: match[2]!, id: match[3]!, ext: match[4] ?? "" };
 }
 
-// Bound multipart buffers (2 uploads × one 5 MiB part) and queued requests.
+// The copy runs inside the storage (CopyObject), so no bytes pass through
+// here; the slots only bound how many copies this process asks for at once
+// (a gigabyte takes the storage a few seconds) and how many requests wait.
+const COPY_SLOTS = 8;
+const COPY_QUEUE = 32;
 let active = 0;
 const waiting: (() => void)[] = [];
 /** `task` learns whether it waited for its slot: another request may have finished the same upload meanwhile */
 async function with_copy_slot<T>(task: (waited: boolean) => Promise<T>): Promise<T> {
 	let waited = false;
-	if (active >= 2) {
-		if (waiting.length >= 16) throw new ApiError(429, "upload processing busy", {}, { "Retry-After": "2" });
+	if (active >= COPY_SLOTS) {
+		if (waiting.length >= COPY_QUEUE) throw new ApiError(429, "upload processing busy", {}, { "Retry-After": "2" });
 		await new Promise<void>((resolve) => waiting.push(resolve));
 		waited = true;
 	} else active += 1;
@@ -38,7 +42,7 @@ type MapError = (error: PostgrestError, context: string) => Error;
 
 /** Every attempt writes a NEW key. No retry can overwrite a finalized blob. */
 export async function finalize_upload(
-	s3: S3Client,
+	s3: Storage,
 	db: SupabaseClient,
 	key: string,
 	user: string,
@@ -70,30 +74,35 @@ export async function finalize_upload(
 		if (state.result) return state.result;
 		const max_bytes = kind === "hub_preview" ? Math.min(hub_cap, Number(state.max_bytes)) : Number(state.max_bytes);
 		const final_key = `${kind === "hub_preview" ? "hub/" : ""}${parsed.workspace_id}/${crypto.randomUUID()}${parsed.ext}`;
-		let source_size: number;
-		try { source_size = (await timing.step("stat", () => s3.stat(key))).size; }
+		let source: { size: number; etag: string };
+		try { source = await timing.step("stat", () => s3.stat(key)); }
 		catch { throw new ApiError(409, "upload not found in storage — PUT the object first"); }
-		const too_large = () => new ApiError(413, `file_too_large: exceeds ${max_bytes} bytes`, {
-			kind: "file_size", max_file_bytes: max_bytes, file_bytes: source_size,
+		const too_large = (file_bytes: number) => new ApiError(413, `file_too_large: exceeds ${max_bytes} bytes`, {
+			kind: "file_size", max_file_bytes: max_bytes, file_bytes,
 			...(typeof request.mime === "string" ? { file_mime: request.mime } : {}),
 		});
-		if (source_size > max_bytes) throw too_large();
-		const limited = limited_stream(s3.file(key).stream(), max_bytes);
+		const changed = () => new ApiError(409, "upload changed while it was being saved — finalize again");
+		if (source.size > max_bytes) throw too_large(source.size);
 		try {
-			await timing.step("copy", () => s3.write(final_key, new Response(limited.stream), {
-				type: typeof request.mime === "string" ? request.mime : `image/${parsed.ext === ".png" ? "png" : parsed.ext === ".webp" ? "webp" : "jpeg"}`,
-				partSize: 5 * 1024 * 1024, queueSize: 1,
+			// Inside the storage, only while staging still has the ETag just
+			// measured (a replayed PUT in between fails it), and with metadata
+			// this server sets: the uploader's own headers do not carry over
+			await timing.step("copy", () => s3.copy(key, final_key, {
+				if_match: source.etag,
+				content_type: typeof request.mime === "string" ? request.mime : `image/${parsed.ext === ".png" ? "png" : parsed.ext === ".webp" ? "webp" : "jpeg"}`,
 			}));
 		} catch (error) {
-			await limited.cancel(error).catch(() => {});
-			if (limited.failure() instanceof StreamLimitError) throw too_large();
+			if (error instanceof CopySourceChanged) throw changed();
+			if (error instanceof CopySourceMissing) throw new ApiError(409, "upload not found in storage — PUT the object first");
 			throw error;
 		}
-		// The staging object can change between HEAD and GET. Only this private
-		// final object's actual bytes are authoritative, never the initial HEAD.
+		// Only this private final object's actual size is authoritative, never
+		// the staging stat: it is checked against the limit again, and must be
+		// the size the copy was made on (a store ignoring the ETag condition
+		// would otherwise let a replayed PUT through)
 		const { size } = await timing.step("stat_final", () => s3.stat(final_key));
-		if (size > max_bytes) throw too_large();
-		if (size !== limited.bytes()) throw internal_error("upload copy", "stored size differs from copied bytes");
+		if (size > max_bytes) throw too_large(size);
+		if (size !== source.size) throw changed();
 		const { data, error } = await timing.step("complete", async () =>
 			await db.rpc("complete_upload", { ...args, p_final_key: final_key, p_size: size }));
 		// NEVER delete here: the transaction may have committed despite a lost

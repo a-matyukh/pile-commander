@@ -1,6 +1,6 @@
-import type { S3Client } from "bun";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Env } from "./env";
+import type { Storage } from "./s3";
 import {
 	ApiError,
 	bearer_token,
@@ -13,11 +13,11 @@ import { read_json } from "./blobs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Blobs re-keyed per request. Bun's S3 client has no server-side copy, so each
-// one streams the whole object through this instance; a fork of a large board
-// would otherwise hold one request open for the entire transfer. The GC sweep
-// (list_foreign_blob_entries in gc.ts) is the guarantee for the remainder, and
-// the endpoint is idempotent — the client may simply call it again
+// Blobs re-keyed per request. Each is a copy inside the storage (CopyObject),
+// one at a time, so a fork of a large board still holds the request for one
+// round trip per file. The GC sweep (list_foreign_blob_entries in gc.ts) is
+// the guarantee for the remainder, and the endpoint is idempotent — the
+// client may simply call it again
 const COPY_BATCH = 200;
 
 export type ForeignBlobRow = { id: string; workspace_id: string; storage_key: string };
@@ -38,7 +38,7 @@ export type CopyResult = {
 // preview sweep (list_pending_derivatives) picks it up if the fork is public,
 // and the old key's row is pruned once nothing references it
 export async function copy_foreign_blobs(
-	s3: S3Client,
+	s3: Storage,
 	db: SupabaseClient,
 	rows: ForeignBlobRow[],
 	log_prefix: string,
@@ -49,9 +49,9 @@ export async function copy_foreign_blobs(
 		const ext = /(\.[a-z0-9]{1,16})$/i.exec(file.storage_key)?.[1].toLowerCase() ?? "";
 		const new_key = `${file.workspace_id.toLowerCase()}/${crypto.randomUUID()}${ext}`;
 		try {
-			// Bun's S3Client has no server-side CopyObject; write() streams the
-			// source object through the gateway. Revisit once Bun exposes copy
-			await s3.write(new_key, s3.file(file.storage_key));
+			// Inside the storage; the source is a finalized object, so its own
+			// metadata (the type finalize set) carries over unchanged
+			await s3.copy(file.storage_key, new_key);
 			// the storage_key guard keeps a concurrent run from re-pointing a
 			// row that was already moved to its own blob; a blob copied but
 			// never recorded is reclaimed by the reconcile job
@@ -78,7 +78,7 @@ export async function copy_foreign_blobs(
 // copies are not re-keyed at all — see list_subtree_files in rpc.sql
 export async function handle_copy_clones(
 	env: Env,
-	s3: S3Client,
+	s3: Storage,
 	db: SupabaseClient | null,
 	req: Request,
 ): Promise<Response> {

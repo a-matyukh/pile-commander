@@ -1,51 +1,62 @@
 import { describe, expect, test } from "bun:test";
-import type { S3Client } from "bun";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { finalize_upload, parse_staging_key, type UploadKind } from "./uploads";
 import { rpc_error_to_api } from "./blobs";
+import type { Storage } from "./s3";
+import { CopySourceChanged, CopySourceMissing, type CopyOptions } from "./s3_copy";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const ID = "22222222-2222-4222-8222-222222222222";
 const USER = "33333333-3333-4333-8333-333333333333";
 const request = { id: ID, parent_id: WS, name: "test.png", mime: "image/png", client_id: null };
 
-function fixture(kind: UploadKind = "blob", options: { head_size?: number; lost_response?: boolean; refuse?: boolean } = {}) {
+function etag_of(bytes: Uint8Array): string {
+	return `"${Bun.hash(bytes).toString(16)}"`;
+}
+
+type FixtureOptions = {
+	/** what the staging stat reports, whatever is stored */
+	head_size?: number;
+	lost_response?: boolean;
+	refuse?: boolean;
+	/** a replayed PUT lands right after the staging stat */
+	replay_after_stat?: Uint8Array;
+	/** a store that ignores x-amz-copy-source-if-match */
+	ignore_if_match?: boolean;
+};
+
+function fixture(kind: UploadKind = "blob", options: FixtureOptions = {}) {
 	const key = `uploads/${kind}/${WS}/${ID}.png`;
 	const objects = new Map<string, Uint8Array>([[key, new Uint8Array([1, 2, 3, 4])]]);
+	const types = new Map<string, string>();
+	/** keys the copies created */
 	const writes: string[] = [];
 	const deletions: string[] = [];
 	let result: Record<string, unknown> | null = null;
 	let bound: string | null = null;
 	let completed = 0;
-	let cancelled = false;
+	let replayed = false;
 	const s3 = {
 		async stat(k: string) {
 			const bytes = objects.get(k);
 			if (!bytes) throw new Error("not found");
-			return { size: k === key ? options.head_size ?? bytes.length : bytes.length };
+			const stat = { size: k === key ? options.head_size ?? bytes.length : bytes.length, etag: etag_of(bytes) };
+			if (k === key && options.replay_after_stat && !replayed) {
+				replayed = true;
+				objects.set(key, options.replay_after_stat);
+			}
+			return stat;
 		},
-		file(k: string) {
-			return { stream() {
-				const source = objects.get(k)!;
-				let offset = 0;
-				return new ReadableStream<Uint8Array>({
-					pull(controller) {
-						if (offset === source.length) { controller.close(); return; }
-						controller.enqueue(source.slice(offset, offset + 2));
-						offset = Math.min(offset + 2, source.length);
-					},
-					cancel() { cancelled = true; },
-				}, { highWaterMark: 0 });
-			} };
-		},
-		async write(k: string, body: Response) {
-			writes.push(k);
-			const bytes = await body.bytes();
-			objects.set(k, bytes);
-			return bytes.length;
+		async copy(source: string, dest: string, copy: CopyOptions = {}) {
+			const bytes = objects.get(source);
+			if (!bytes) throw new CopySourceMissing(source);
+			if (copy.if_match && !options.ignore_if_match && copy.if_match !== etag_of(bytes)) throw new CopySourceChanged(source);
+			writes.push(dest);
+			objects.set(dest, bytes.slice());
+			if (copy.content_type) types.set(dest, copy.content_type);
 		},
 		async delete(k: string) { deletions.push(k); objects.delete(k); },
-	} as unknown as S3Client;
+	} as unknown as Storage;
 	const db = { async rpc(name: string, args: Record<string, unknown>) {
 		const fingerprint = JSON.stringify(args.p_request);
 		if (args.p_user !== USER || args.p_key !== key) return { data: null, error: { code: "P0001", message: "upload: ticket not found" } };
@@ -65,7 +76,7 @@ function fixture(kind: UploadKind = "blob", options: { head_size?: number; lost_
 	} } as unknown as SupabaseClient;
 	const finalize = (body: Record<string, unknown> = kind === "blob" ? request : {}, user = USER) =>
 		finalize_upload(s3, db, key, user, kind, body, rpc_error_to_api);
-	return { key, objects, writes, deletions, finalize, completed: () => completed, cancelled: () => cancelled };
+	return { key, objects, types, writes, deletions, finalize, completed: () => completed };
 }
 
 describe("immutable upload finalization", () => {
@@ -121,12 +132,46 @@ describe("immutable upload finalization", () => {
 		expect(() => parse_staging_key(f.key, "hub_preview")).toThrow();
 	});
 
-	test("limits actual bytes even if staging grows after HEAD, and cancels the read", async () => {
-		const f = fixture("blob", { head_size: 4 });
-		f.objects.set(f.key, new Uint8Array(100));
+	test("an upload over the limit is refused before any copy", async () => {
+		const f = fixture("blob", { head_size: 100 });
 		await expect(f.finalize()).rejects.toMatchObject({ status: 413 });
+		expect(f.writes).toEqual([]);
 		expect(f.completed()).toBe(0);
-		expect(f.cancelled()).toBe(true);
+	});
+
+	test("staging replaced after its stat is not copied: the ETag condition refuses it", async () => {
+		const f = fixture("blob", { replay_after_stat: new Uint8Array(100) });
+		await expect(f.finalize()).rejects.toMatchObject({ status: 409 });
+		expect(f.writes).toEqual([]);
+		expect(f.completed()).toBe(0);
 		expect(f.objects.size).toBe(1);
+	});
+
+	test("a store ignoring the condition is still held to the final object's size", async () => {
+		// grown past the limit: refused on the final stat, the copy left to GC
+		const grown = fixture("blob", { replay_after_stat: new Uint8Array(100), ignore_if_match: true });
+		await expect(grown.finalize()).rejects.toMatchObject({ status: 413 });
+		expect(grown.completed()).toBe(0);
+		expect(grown.deletions).toEqual([]);
+		// within the limit but not what was measured: refused, the client finalizes again
+		const swapped = fixture("blob", { replay_after_stat: new Uint8Array(8), ignore_if_match: true });
+		await expect(swapped.finalize()).rejects.toMatchObject({ status: 409 });
+		expect(swapped.completed()).toBe(0);
+	});
+
+	test("the copy is made inside the storage with the type this server sets", async () => {
+		const blob = fixture("blob");
+		await blob.finalize();
+		expect(blob.types.get(blob.writes[0]!)).toBe("image/png");
+		const cover = fixture("hub_preview");
+		await cover.finalize();
+		expect(cover.writes[0]).toStartWith(`hub/${WS}/`);
+		expect(cover.types.get(cover.writes[0]!)).toBe("image/png");
+	});
+
+	test("staging that was never PUT is a 409, not a server error", async () => {
+		const f = fixture();
+		f.objects.delete(f.key);
+		await expect(f.finalize()).rejects.toMatchObject({ status: 409 });
 	});
 });

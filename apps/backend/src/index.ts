@@ -78,9 +78,11 @@ const server = Bun.serve({
 		}
 
 		const route = `${req.method} ${url.pathname}`;
-		// Finalize now streams a bounded copy inside B2; a large upload can
-		// legitimately outlast Bun's default idle timeout while preparing it.
-		if (route === "POST /finalize" || route === "POST /hub-preview/finalize") srv.timeout(req, 120);
+		// Finalize waits for a copy inside the storage: about 50 ms per MB on B2
+		// (measured 2026-11-23), so close to a minute for a 1 GB file, far past
+		// Bun's default idle timeout. 240 s stays under Bun's 255 s ceiling and
+		// above the copy's own 230 s, so the client gets an answer, not a drop
+		if (route === "POST /finalize" || route === "POST /hub-preview/finalize") srv.timeout(req, 240);
 		const socket_address = srv.requestIP(req)?.address ?? null;
 		// resolved once: the fences below and the egress visitor share must
 		// agree on who the client is (see client_ip / TRUSTED_PROXY_HOPS)

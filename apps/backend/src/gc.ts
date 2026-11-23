@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Env } from "./env";
 import { copy_foreign_blobs, type ForeignBlobRow } from "./copy";
 import { DERIV_KEY_RE } from "./derivatives";
+import type { Storage } from "./s3";
 import { STAGING_KEY_RE } from "./uploads";
 
 type DeletionRow = { id: number; storage_key: string; attempts: number };
@@ -125,7 +126,7 @@ export async function drain(env: Env, s3: S3Client, db: SupabaseClient): Promise
 // Until a row is re-keyed the fork shares the source's object, and the drain
 // above keeps such an object alive (it is still referenced), so the source
 // owner cannot really free it. One batch per tick; the rest waits for the next
-async function rekey_foreign_blobs(s3: S3Client, db: SupabaseClient): Promise<void> {
+async function rekey_foreign_blobs(s3: Storage, db: SupabaseClient): Promise<void> {
 	const { data, error } = await db.rpc("list_foreign_blob_entries", { p_limit: REKEY_BATCH });
 	if (error) {
 		console.error("[rekey] failed to list foreign-prefixed rows:", error.message);
@@ -137,7 +138,7 @@ async function rekey_foreign_blobs(s3: S3Client, db: SupabaseClient): Promise<vo
 	console.log(`[rekey] re-keyed ${copied} forked blob(s)${failed.length ? `, ${failed.length} failed` : ""}`);
 }
 
-async function tick(env: Env, s3: S3Client, db: SupabaseClient): Promise<void> {
+async function tick(env: Env, s3: Storage, db: SupabaseClient): Promise<void> {
 	// re-key first: a row that gets its own object stops pinning the source's
 	// key, which the drain below may then release
 	try {
@@ -178,7 +179,7 @@ export function background_jobs(): BackgroundJobs {
 	};
 }
 
-export function start_gc_worker(env: Env, s3: S3Client, db: SupabaseClient): { stop(): Promise<void> } {
+export function start_gc_worker(env: Env, s3: Storage, db: SupabaseClient): { stop(): Promise<void> } {
 	const jobs = background_jobs();
 	// Bun.cron never overlaps runs: the next fire is scheduled only after the
 	// handler settles. Errors are handled inside tick — an escaping rejection

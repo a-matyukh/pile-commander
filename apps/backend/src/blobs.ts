@@ -3,6 +3,7 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import type { DerivMode, Env } from "./env";
 import type { EgressInput, EgressMeter } from "./egress";
 import { visitor_key } from "./ratelimit";
+import type { Storage } from "./s3";
 import { finalize_upload, parse_staging_key } from "./uploads";
 import { server_timing } from "./timing";
 import {
@@ -455,7 +456,7 @@ export async function handle_upload_presign(
 // entry and idempotency receipt atomically. Failed/uncertain attempts go to GC.
 export async function handle_finalize(
 	env: Env,
-	s3: S3Client,
+	s3: Storage,
 	db: SupabaseClient | null,
 	req: Request,
 ): Promise<Response> {
@@ -513,7 +514,7 @@ export async function handle_hub_preview_upload(
 // Owner only. The returned key is an immutable server-made copy, not staging.
 export async function handle_hub_preview_finalize(
 	env: Env,
-	s3: S3Client,
+	s3: Storage,
 	db: SupabaseClient | null,
 	req: Request,
 ): Promise<Response> {
