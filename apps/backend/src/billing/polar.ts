@@ -12,6 +12,8 @@ export type PolarSubscription = {
 	cancel_at_period_end: boolean;
 	created_at: string;
 	modified_at: string | null;
+	/** a change Polar applies later, e.g. a downgrade at the period's end */
+	pending_update?: { product_id?: string | null; applies_at?: string | null } | null;
 };
 
 export type PolarPrice = {

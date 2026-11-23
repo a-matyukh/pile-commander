@@ -143,6 +143,23 @@ describe("effective_state", () => {
 		expect(effective_state([sub({ status: "past_due" })], PRODUCTS)).toMatchObject({ plan: "pro", status: "past_due" });
 	});
 
+	test("a downgrade Polar scheduled for the period's end keeps the plan and names the next one", () => {
+		// as the sandbox showed it: Max now, pending_update → Pro at the end of the period
+		const scheduled = { product_id: "prod_pro_m", applies_at: "2026-12-23T16:50:14Z" };
+		const state = effective_state([sub({ product_id: "prod_max_m", pending_update: scheduled })], PRODUCTS);
+		expect(state).toMatchObject({ plan: "max", next_plan: "pro", next_plan_at: "2026-12-23T16:50:14Z" });
+		// a subscription that ends then instead: Polar keeps pending_update, nothing is scheduled for us
+		const ending = effective_state([sub({ product_id: "prod_max_m", cancel_at_period_end: true, pending_update: scheduled })], PRODUCTS);
+		expect(ending).toMatchObject({ plan: "max", next_plan: null, next_plan_at: null });
+		// unmapped, same plan (an interval change), or no date: nothing to show
+		const unmapped = effective_state([sub({ product_id: "prod_max_m", pending_update: { product_id: "prod_other", applies_at: "2026-12-23T00:00:00Z" } })], PRODUCTS);
+		const same_plan = effective_state([sub({ product_id: "prod_pro_m", pending_update: { product_id: "prod_pro_y", applies_at: "2026-12-23T00:00:00Z" } })], PRODUCTS);
+		const no_date = effective_state([sub({ product_id: "prod_max_m", pending_update: { product_id: "prod_pro_m", applies_at: null } })], PRODUCTS);
+		for (const s of [unmapped, same_plan, no_date]) expect(s).toMatchObject({ next_plan: null, next_plan_at: null });
+		// Free has nothing scheduled
+		expect(effective_state([], PRODUCTS)).toMatchObject({ next_plan: null, next_plan_at: null });
+	});
+
 	test("a revoked subscription is Free and canceled, with the last subscription kept for the trail", () => {
 		const state = effective_state([sub({ id: "sub_old", status: "canceled" })], PRODUCTS);
 		expect(state).toMatchObject({ plan: "free", status: "canceled", interval: null, subscription_id: "sub_old" });
@@ -240,6 +257,20 @@ describe("handle_polar_webhook", () => {
 		expect(res.status).toBe(200);
 		expect(((await res.json()) as { duplicate?: boolean }).duplicate).toBe(true);
 		expect(store.applied).toHaveLength(0);
+	});
+
+	test("a secret in Polar's older form, as `polar webhook listen` prints it, is the HMAC key itself", async () => {
+		const cli_secret = "6t3c8ce2247c493a3ade20uea4484d64";
+		const env = env_with({ webhook_secret: cli_secret });
+		const product_event = JSON.stringify({ type: "product.updated", data: {} });
+		const res = await handle_polar_webhook(env, signed(product_event, "msg_cli", undefined, Buffer.from(cli_secret, "utf8")), {
+			store: memory_store(),
+		});
+		expect(res.status).toBe(202);
+		const forged = await api_error(
+			handle_polar_webhook(env, signed(product_event, "msg_cli", undefined, Buffer.from("another-key")), { store: memory_store() }),
+		);
+		expect(forged.status).toBe(401);
 	});
 
 	test("an event type we do not handle is 202 and changes nothing", async () => {

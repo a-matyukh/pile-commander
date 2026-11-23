@@ -18,6 +18,14 @@ export type BillingState = {
 	period_end: string | null;
 	cancel_at_period_end: boolean;
 	subscription_id: string | null;
+	/**
+	 * A plan Polar has scheduled for later (a downgrade waits for the end of
+	 * the period: `pending_update`). Null when nothing is scheduled, when it
+	 * keeps the same plan, and when the subscription ends then instead —
+	 * Polar keeps the pending change after a cancellation too
+	 */
+	next_plan: PaidPlan | null;
+	next_plan_at: string | null;
 	/** product ids of paid subscriptions this server does not map: logged, never applied */
 	unmapped: string[];
 };
@@ -67,16 +75,26 @@ export function effective_state(
 			period_end: null,
 			cancel_at_period_end: false,
 			subscription_id: last?.id ?? null,
+			next_plan: null,
+			next_plan_at: null,
 			unmapped,
 		};
 	}
+	const cancel_at_period_end = Boolean(best.sub.cancel_at_period_end);
+	const pending = best.sub.pending_update ?? null;
+	const scheduled = pending?.product_id ? products.get(pending.product_id) : undefined;
+	const next = !cancel_at_period_end && scheduled && scheduled.plan !== best.plan && pending?.applies_at
+		? { plan: scheduled.plan, at: pending.applies_at }
+		: null;
 	return {
 		plan: best.plan,
 		status: best.sub.status === "past_due" ? "past_due" : "active",
 		interval: best.interval,
 		period_end: best.sub.current_period_end ?? null,
-		cancel_at_period_end: Boolean(best.sub.cancel_at_period_end),
+		cancel_at_period_end,
 		subscription_id: best.sub.id,
+		next_plan: next?.plan ?? null,
+		next_plan_at: next?.at ?? null,
 		unmapped,
 	};
 }

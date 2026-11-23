@@ -71,6 +71,8 @@ export function supabase_billing_store(env: Env): BillingStore {
 				p_synced_at: synced_at,
 				p_event_id: event_id,
 				p_event: event,
+				p_next_plan: state.next_plan,
+				p_next_plan_at: state.next_plan_at,
 			});
 			if (error) throw internal_error("billing state apply", error);
 			return String(data);
@@ -98,15 +100,31 @@ export async function handle_polar_webhook(env: Env, req: Request, deps: Webhook
 
 	const raw = await req.text();
 	const webhook_id = req.headers.get("webhook-id") ?? "";
-	verify_standard_webhook(
-		raw,
-		{
-			id: webhook_id,
-			timestamp: req.headers.get("webhook-timestamp") ?? "",
-			signature: req.headers.get("webhook-signature") ?? "",
-		},
-		hook_secret_bytes(env.polar.webhook_secret, "billing webhook"),
-	);
+	const signed = {
+		id: webhook_id,
+		timestamp: req.headers.get("webhook-timestamp") ?? "",
+		signature: req.headers.get("webhook-signature") ?? "",
+	};
+	// Polar has two kinds of secret and its SDKs accept either key: Standard
+	// Webhooks (whsec_ + base64, endpoints made since 8 September 2026) and
+	// the older "Polar HMAC", whose key is the secret string itself — the form
+	// `polar webhook listen` prints for local testing
+	const keys: Buffer[] = [];
+	try {
+		keys.push(hook_secret_bytes(env.polar.webhook_secret, "billing webhook"));
+	} catch {
+		// not base64: only the string form can be the key
+	}
+	keys.push(Buffer.from(env.polar.webhook_secret.trim(), "utf8"));
+	const verified = keys.some((key) => {
+		try {
+			verify_standard_webhook(raw, signed, key);
+			return true;
+		} catch {
+			return false;
+		}
+	});
+	if (!verified) throw new ApiError(401, "invalid webhook signature");
 
 	let event: { type?: unknown; data?: unknown };
 	try {
