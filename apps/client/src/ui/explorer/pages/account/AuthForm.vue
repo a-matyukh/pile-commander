@@ -8,9 +8,10 @@ import TextField from '@/ui/kit/TextField.vue'
 
 /**
  * Sign in and sign up: the prototype's form, the current app's logic
- * (workspaces-list/AuthForm.vue). Registration is closed for now, as there
+ * (workspaces-list/AuthForm.vue). Registration is open; true closes it again,
+ * as there
  */
-const SIGN_UP_CLOSED = true
+const SIGN_UP_CLOSED = false
 
 const mode = ref<'sign_in' | 'sign_up'>('sign_in')
 const email = ref('')

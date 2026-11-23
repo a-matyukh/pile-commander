@@ -828,7 +828,7 @@ export const en: typeof ru = {
 		reset_sent: 'A password reset link was sent to {email}',
 		confirm_sent: 'We sent an email to {email}. Confirm it, then sign in',
 		terms: 'By creating an account you agree to the Terms and the Privacy Policy',
-		sign_up_closed: 'Registration is closed for technical work until around the end of November. It will open again after that.',
+		sign_up_closed: 'Registration is closed for now. Signing in still works.',
 	},
 	profile: {
 		title: 'Profile',
