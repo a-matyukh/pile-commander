@@ -125,8 +125,8 @@ const notes = [
   },
   {
     icon: "i-lucide-shield-check",
-    title: "Nothing gets deleted",
-    body: "Over the limit after a downgrade, your files stay. You just can't add new ones until you're under it.",
+    title: "Nothing is deleted right away",
+    body: "Over the limit after a downgrade, your files stay for 90 days, and we email you before anything is removed.",
   },
 ];
 
@@ -141,7 +141,7 @@ const faq = [
   },
   {
     q: "What if I use more than my plan allows?",
-    a: "Nothing is deleted. You can open, download, move and delete your files; you can't add new ones until you're back under the limit or move to a bigger plan.",
+    a: "Nothing is deleted right away. You can open, download, move and delete your files; you can't add new ones until you're back under the limit or move to a bigger plan. If you're still over the limit 90 days after a downgrade, we may delete the folders changed longest ago until the account fits, and we email you 30 days and 7 days before.",
   },
   {
     q: "Can I change plans later?",
@@ -149,7 +149,7 @@ const faq = [
   },
   {
     q: "What if a payment fails?",
-    a: "Your plan stays while the payment is retried, for up to three weeks. You can update your card in the billing portal at any time. If it still doesn't go through, the account moves to Free, and nothing is deleted.",
+    a: "Your plan stays while the payment is retried, for up to three weeks. You can update your card in the billing portal at any time. If it still doesn't go through, the account moves to Free, and nothing is deleted right away.",
   },
   {
     q: "Can I get a refund?",

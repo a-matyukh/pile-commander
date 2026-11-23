@@ -6,14 +6,14 @@ const { operatorName, operatorLocation, abuseEmail } = useSiteLegal()
 useSeoMeta({
   title: "Privacy",
   description:
-    "What Pile Commander stores, where it is stored, who else processes it, what other people can see, and how long it is kept.",
+    "What Pile Commander stores, where it is stored, who else processes it (payments included), what other people can see, and how long it is kept.",
 })
 </script>
 
 <template>
   <LegalArticle
     title="Privacy"
-    updated="20 November 2026"
+    updated="23 November 2026"
     note="Written against what the code actually does. It changes when the product does."
   >
     <p>
@@ -71,9 +71,12 @@ useSeoMeta({
         link is counted per IPv4 address or IPv6 /64.
       </li>
       <li>
-        <strong>The waitlist</strong> — if you leave an address on the
-        <NuxtLink to="/pricing">Pricing</NuxtLink> page, we keep it to write to
-        you once, when paid plans open.
+        <strong>Billing</strong> — if you buy a paid plan: the plan, monthly or
+        yearly, its status (active, payment failed, canceled), the end of the
+        current period, and the identifier of your subscription at Polar. We
+        also log the billing events Polar sends us: their type and time, the
+        subscription, its status, and the product. Card details go to Polar and
+        Stripe; we never see them.
       </li>
       <li>
         <strong>Feedback</strong> — if you send a note from the app, we keep the email,
@@ -100,6 +103,14 @@ useSeoMeta({
       <li>Render — the API server.</li>
       <li>Vercel — hosting for the app and this site.</li>
       <li>Plunk — sign-in, invite, and moderation email.</li>
+      <li>
+        Polar — the merchant of record for paid plans: checkout, payments, sales
+        tax and VAT, receipts, and the billing portal. When you start a
+        checkout, we pass it your account’s email address and an internal
+        account ID; what you enter at checkout goes to Polar directly. Polar
+        processes cards through Stripe, and its own privacy policy covers that
+        data.
+      </li>
       <li>
         Have I Been Pwned — when a password is set or used to sign in, the
         sign-in system sends the first five characters of its SHA-1 hash there
@@ -142,6 +153,12 @@ useSeoMeta({
       </li>
       <li>Pending invites: 14 days, then the row goes.</li>
       <li>
+        Over a plan’s limit: if an account is still over its limit 90 days after
+        moving to a smaller plan or to Free, its cloud folders may be deleted,
+        starting with those changed longest ago, until it fits. We write 30 days
+        and 7 days before.
+      </li>
+      <li>
         Deleting a cloud folder deletes what is inside it. Deleting your account
         (in the app, after a fresh sign-in) removes the account and everything
         attached to it, including usage records and metering counters.
@@ -151,18 +168,14 @@ useSeoMeta({
         linger a little longer.
       </li>
       <li>
-        The waitlist address: until paid plans open, or until you ask us to drop
-        it.
-      </li>
-      <li>
         Feedback notes and their screenshots: until we have acted on them, or
         until you ask us to drop them.
       </li>
       <li>
-        If paid plans arrive, payments will run through a merchant of record and
-        billing records will be kept as long as the law requires them. There is
-        no paid plan today, and we store no card details; this page will be
-        updated before that changes.
+        Billing: your plan and subscription details live as long as the account.
+        The billing event log holds no card or contact details and stays after
+        the account is deleted, for accounting and refunds. Polar keeps its
+        payment records as long as tax and accounting law requires.
       </li>
     </ul>
 

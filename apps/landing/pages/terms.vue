@@ -6,21 +6,21 @@ const { operatorName, operatorLocation, governingLaw, abuseEmail } = useSiteLega
 useSeoMeta({
   title: "Terms of use",
   description:
-    "Terms of use for the Pile Commander cloud service: accounts, your content, limits, the Hub, and takedown.",
+    "Terms of use for the Pile Commander cloud service: accounts, your content, limits, paid plans, refunds, the Hub, and takedown.",
 })
 </script>
 
 <template>
   <LegalArticle
     title="Terms of use"
-    updated="20 November 2026"
+    updated="23 November 2026"
   >
     <p>
       Pile Commander is a file manager and a creative space. The app on your computer works
       without an account, and these terms do not govern what you do there. What
       follows covers the cloud service: folders you keep in the cloud,
-      invites, public links, and optional listing on the Hub. It is not a
-      general-purpose file host.
+      invites, public links, optional listing on the Hub, and the paid plans
+      for more room. It is not a general-purpose file host.
     </p>
 
     <h2>Who we are</h2>
@@ -81,15 +81,69 @@ useSeoMeta({
     <h2>Limits and fair use</h2>
     <p>
       Free gives one account 100 MB across its cloud folders and trash;
-      a single file up to 25 MB; and 3 publications on the Hub. Serving a public
+      a single file up to 25 MB; and 3 publications on the Hub. Paid plans give
+      more room, larger files, and the Hub without a limit; their numbers are on
+      the <NuxtLink to="/pricing">Pricing</NuxtLink> page. Serving a public
       folder to people it is not shared with is metered per month against the
       owner’s allowance, and requests are rate-limited.
     </p>
     <p>
       We may change these numbers as we learn what they should be. We will not
-      silently lock or delete what you have already uploaded. Paid plans, when
-      they come, sit next to Free; there is nothing to pay today, and no card
-      is stored.
+      silently lock or delete what you have already uploaded.
+    </p>
+
+    <h2>Paid plans and billing</h2>
+    <p>
+      Paid plans are subscriptions to more room in the cloud, paid monthly or
+      yearly in advance. They differ in how much room they give, not in what the
+      app can do. The plans and their prices are on the
+      <NuxtLink to="/pricing">Pricing</NuxtLink> page.
+    </p>
+    <p>
+      Payments are handled by Polar (Polar Software, Inc.), our merchant of
+      record. Polar sells the subscription to you, charges your payment method,
+      adds or includes the sales tax or VAT of your country, and sends the
+      receipts; its terms of sale apply to the purchase. To tie a payment to your
+      account, we pass Polar your account’s email address and an internal
+      account ID.
+    </p>
+    <p>
+      A subscription renews automatically at the end of each period until it is
+      canceled. Moving to a bigger plan takes effect at once, and you pay the
+      difference for the rest of the current period; moving to a smaller one
+      takes effect when the next period starts.
+    </p>
+    <p>
+      If a renewal payment fails, your plan stays while Polar retries it, for up
+      to about three weeks, and you can update the payment method in the billing
+      portal. If the payment still does not go through, the subscription ends
+      and the account moves to Free.
+    </p>
+    <p>
+      If the price of your plan changes, we write to you at least 30 days before
+      the new price applies to your subscription, and you can cancel before then.
+    </p>
+
+    <h2>Cancellation and refunds</h2>
+    <p>
+      You can cancel at any time in the billing portal, which the app links to.
+      The plan stays until the end of the period you paid for; then the account
+      moves to Free.
+    </p>
+    <p>
+      If a paid plan is not for you, write to us within 14 days of your first
+      payment and we refund it in full. Later payments and renewals are not
+      refunded, except where the law requires it. Deleting your account cancels
+      its subscription at once; the unused part of the period is not refunded,
+      apart from the 14-day refund of a first payment.
+    </p>
+    <p>
+      When an account moves to a smaller plan or to Free and holds more than the
+      new limit, nothing is deleted right away. You can open, download, move,
+      and delete your files; you cannot add new ones until you are under the
+      limit. If the account is still over its limit 90 days after the change, we
+      may delete its cloud folders, starting with those changed longest ago,
+      until it fits. We write to you 30 days and 7 days before.
     </p>
 
     <h2>Reports, hiding, and takedown</h2>
@@ -131,9 +185,9 @@ useSeoMeta({
     <p>
       The service is provided as is, without warranties of any kind. To the
       extent the law allows, we are not liable for lost data, lost profits, or
-      indirect damages, and our total liability for a service you pay nothing
-      for is limited to what you have paid for it. Nothing here removes consumer
-      rights that cannot be waived where you live.
+      indirect damages, and our total liability is limited to what you paid us
+      for the service in the 12 months before the claim. Nothing here removes
+      consumer rights that cannot be waived where you live.
     </p>
 
     <h2>Governing law and contact</h2>
