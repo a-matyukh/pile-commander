@@ -237,7 +237,7 @@ useSeoMeta({
           </fieldset>
           <p v-if="!PAYMENTS_OPEN" class="soon">
             <UIcon name="i-lucide-clock" class="soon-i" />
-            Paid plans open in the next few days. Start on Free — everything you upload stays when you upgrade.
+            Paid plans open soon. Start on Free — everything you upload stays when you upgrade.
           </p>
         </div>
 
