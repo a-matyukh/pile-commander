@@ -8,9 +8,9 @@ import {
 	fetch_plan_prices,
 	go_to_polar,
 	is_paid_plan,
+	parse_saved_before,
 	plan_changed,
 	plan_fingerprint,
-	plan_name,
 	request_checkout,
 	request_portal,
 	without_billing_param,
@@ -18,6 +18,7 @@ import {
 	type BillingReturn,
 	type PaidPlan,
 	type PlanPrice,
+	type SavedBefore,
 } from '@/services/billing'
 import { require_supabase } from '@/services/cloud/client'
 import cloud from '@/store/cloud'
@@ -41,6 +42,13 @@ export type BillingState = {
 	busy: PaidPlan | 'portal' | null
 	/** handed off to Polar in the system browser: waiting for the plan to change */
 	waiting: boolean
+	/** a paid plan just started: the account page celebrates it until closed */
+	celebrate: string | null
+	/**
+	 * Any other change of the subscription, said in the plan's card — kept
+	 * apart from cloud.notice, which the sign-in form shows too
+	 */
+	notice: string | null
 }
 
 const billing: BillingState = reactive({
@@ -52,7 +60,13 @@ const billing: BillingState = reactive({
 	error: null,
 	busy: null,
 	waiting: false,
+	celebrate: null,
+	notice: null,
 })
+
+export function close_celebration(): void {
+	billing.celebrate = null
+}
 
 export default billing
 
@@ -143,13 +157,18 @@ let timer: ReturnType<typeof setTimeout> | null = null
 
 /** How long the account page waits for a payment made in the system browser */
 const PATIENCE_MS = 30 * 60 * 1000
-/** One round of reads when the window comes back: the webhook lands seconds after Polar is done */
-const BURST_TRIES = 10
-const BURST_EVERY_MS = 3_000
+/**
+ * One round of reads when the window comes back: the webhook lands a second
+ * or two after Polar is done (measured 1.2–1.9 s to apply), so reads every
+ * 1.5 s for half a minute show the change soon after it lands
+ */
+const BURST_TRIES = 20
+const BURST_EVERY_MS = 1_500
 
-function wait_for_change(state: Pending): void {
+/** `show`: the account page says it waits — only while the payment happens elsewhere (the desktop's browser) */
+function wait_for_change(state: Pending, show = true): void {
 	pending = state
-	billing.waiting = true
+	billing.waiting = show
 }
 
 function stop_waiting(): void {
@@ -170,8 +189,13 @@ export async function check_plan(tries = BURST_TRIES): Promise<void> {
 	const account = cloud.billing
 	if (plan_changed(state, account)) {
 		stop_waiting()
-		const now_paid = account && is_paid_plan(account.plan) && account.plan !== state.before_plan
-		cloud.notice = now_paid ? t('billing.now_on', { plan: plan_name(account.plan) }) : t('billing.updated')
+		if (account && is_paid_plan(account.plan) && account.plan !== state.before_plan) {
+			// a new paid plan: the account page shows a card for it, not a line
+			billing.celebrate = account.plan
+			billing.notice = null
+		} else {
+			billing.notice = t('billing.updated')
+		}
 		return
 	}
 	if (Date.now() > state.until) {
@@ -192,8 +216,38 @@ async function hand_off(url: string, expect_paid: boolean): Promise<void> {
 		})
 		billing.chooser_open = false
 		void explorer_navigation.open_page('account')
+	} else {
+		remember_before()
 	}
 	await go_to_polar(url)
+}
+
+/* The web app pays in its own tab: what the plan was is kept for the tab's
+   session, so the return can tell what changed (services/billing.ts) */
+const SAVED_BEFORE_KEY = 'pile_commander_billing_before'
+
+function remember_before(): void {
+	try {
+		const saved: SavedBefore = {
+			fingerprint: plan_fingerprint(cloud.billing),
+			plan: cloud.billing?.plan ?? null,
+			user: cloud.user?.id ?? null,
+			at: Date.now(),
+		}
+		sessionStorage.setItem(SAVED_BEFORE_KEY, JSON.stringify(saved))
+	} catch {
+		// no storage: the return compares with its first read instead
+	}
+}
+
+function take_before(user_id: string): SavedBefore | null {
+	try {
+		const raw = sessionStorage.getItem(SAVED_BEFORE_KEY)
+		sessionStorage.removeItem(SAVED_BEFORE_KEY)
+		return parse_saved_before(raw, user_id, Date.now())
+	} catch {
+		return null
+	}
 }
 
 if (is_desktop && typeof window !== 'undefined') {
@@ -204,6 +258,20 @@ if (is_desktop && typeof window !== 'undefined') {
 	window.addEventListener('focus', on_back)
 	document.addEventListener('visibilitychange', on_back)
 }
+
+// Another account, or none (signed out, deleted): nothing of the last one's
+// subscription carries over — no wait, no card, no line, no open chooser
+watch(
+	() => cloud.user?.id ?? null,
+	(user_id, before) => {
+		if (user_id === before) return
+		stop_waiting()
+		billing.celebrate = null
+		billing.notice = null
+		billing.error = null
+		billing.chooser_open = false
+	},
+)
 
 /* ---- the web app comes back from Polar with ?billing=… ---- */
 
@@ -225,19 +293,22 @@ if (returned) {
 			const how = returned
 			returned = null
 			queueMicrotask(() => stop())
+			const saved = take_before(user_id)
 			if (how === 'back') {
 				void open_plans()
 				return
 			}
 			void explorer_navigation.open_page('account')
-			// paid: wait for a paid plan. Portal: whatever changes in the next moments
+			// Compared with the plan before leaving when it was kept; otherwise a
+			// payment waits for a paid plan and the portal for any change. Quiet:
+			// the person is back already, nothing is left to finish elsewhere
 			void cloud.fetch_plan().then(() => {
 				wait_for_change({
-					before: how === 'paid' ? null : plan_fingerprint(cloud.billing),
-					before_plan: how === 'paid' ? 'free' : cloud.billing?.plan ?? null,
+					before: saved ? saved.fingerprint : how === 'paid' ? null : plan_fingerprint(cloud.billing),
+					before_plan: saved ? saved.plan : how === 'paid' ? 'free' : cloud.billing?.plan ?? null,
 					expect_paid: how === 'paid',
 					until: Date.now() + BURST_TRIES * BURST_EVERY_MS,
-				})
+				}, false)
 				void check_plan()
 			})
 		},

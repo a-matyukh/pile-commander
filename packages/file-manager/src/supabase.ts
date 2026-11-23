@@ -2506,13 +2506,16 @@ export type BillingAccount = {
 	/** End of the paid period: the plan renews then, or ends then when cancel_at_period_end */
 	period_end: string | null
 	cancel_at_period_end: boolean
+	/** A plan scheduled for later (a downgrade at the period's end) and when it starts; null otherwise */
+	next_plan: string | null
+	next_plan_at: string | null
 }
 
 export async function get_billing_account(client: SupabaseClient): Promise<BillingAccount | null> {
 	const { data, error } = await client
 		.from("billing_accounts")
 		.select(
-			"owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, grace_until, external_subscription_id, billing_interval, period_end, cancel_at_period_end",
+			"owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, grace_until, external_subscription_id, billing_interval, period_end, cancel_at_period_end, next_plan, next_plan_at",
 		)
 		.maybeSingle()
 	if (error) throw new Error(`get_billing_account failed: ${error.message}`)

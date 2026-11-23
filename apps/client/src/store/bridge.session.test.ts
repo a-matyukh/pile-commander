@@ -100,6 +100,8 @@ beforeEach(() => {
 		billing_interval: null,
 		period_end: null,
 		cancel_at_period_end: false,
+		next_plan: null,
+		next_plan_at: null,
 	}
 	cloud.owner_usage = { used_bytes: 0, live_bytes: 0, trash_bytes: 0 }
 	cloud.fetch_plan = async () => {}

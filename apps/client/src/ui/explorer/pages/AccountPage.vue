@@ -11,6 +11,7 @@ import Button from '@/ui/kit/Button.vue'
 import ProfileDialog from '@/ui/workspace/sidebar/ProfileDialog.vue'
 import AuthForm from './account/AuthForm.vue'
 import DeleteAccountDialog from './account/DeleteAccountDialog.vue'
+import PlanCelebration from './account/PlanCelebration.vue'
 
 /**
  * The account page, as in the prototype, on the current app's account:
@@ -31,7 +32,7 @@ const usage = computed(() => {
 	const used = cloud.owner_usage?.used_bytes
 	if (!billing || used === undefined) return null
 	const pct = billing.quota_bytes > 0 ? Math.min(100, Math.round(used / billing.quota_bytes * 100)) : 0
-	return { pct, used: format_bytes(used), total: format_bytes(billing.quota_bytes), plan: plan_name(billing.plan) }
+	return { pct, used: format_bytes(used), total: format_bytes(billing.quota_bytes, { trim: true }), plan: plan_name(billing.plan) }
 })
 
 /**
@@ -42,15 +43,19 @@ const plan = computed(() => {
 	const account = cloud.billing
 	if (!PAYMENTS_OPEN || !account) return null
 	const paid = is_paid_plan(account.plan)
-	const date = account.period_end
+	const day = (iso: string | null) => iso
 		? new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })
-			.format(new Date(account.period_end))
+			.format(new Date(iso))
 		: null
+	const date = day(account.period_end)
+	// a downgrade waits for the end of the period: say what comes then, unless the plan just ends
+	const next_date = !account.cancel_at_period_end && account.next_plan ? day(account.next_plan_at) : null
 	return {
 		name: plan_name(account.plan),
 		interval: paid && account.billing_interval ? t(`billing.interval_${account.billing_interval}`) : null,
 		paid,
-		when: paid && date ? t(account.cancel_at_period_end ? 'billing.ends' : 'billing.renews', { date }) : null,
+		when: paid && date && !next_date ? t(account.cancel_at_period_end ? 'billing.ends' : 'billing.renews', { date }) : null,
+		next: paid && next_date && account.next_plan ? t('billing.next_plan', { date: next_date, plan: plan_name(account.next_plan) }) : null,
 		past_due: account.plan_status === 'past_due',
 	}
 })
@@ -71,6 +76,7 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					<div class="plan">{{ display_name ? email : '' }}{{ display_name && usage ? ' · ' : '' }}{{ usage?.plan ?? '' }}</div>
 				</div>
 			</div>
+			<PlanCelebration v-if="billing.celebrate" :plan="billing.celebrate" />
 			<p v-if="offline" class="muted">{{ notice }}</p>
 			<p v-else-if="cloud.last_error && !delete_open" class="muted bad">{{ cloud.last_error }}</p>
 			<p v-if="cloud.notice" class="muted ok">{{ cloud.notice }}</p>
@@ -90,6 +96,7 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					<div class="min">
 						<div class="sub-name">{{ plan.name }}<span v-if="plan.interval" class="sub-int"> · {{ plan.interval }}</span></div>
 						<div v-if="plan.when" class="sub-when">{{ plan.when }}</div>
+						<div v-if="plan.next" class="sub-when">{{ plan.next }}</div>
 					</div>
 					<div class="sub-actions">
 						<Button v-if="!plan.paid" variant="primary" @click="open_plans">{{ t('billing.choose') }}</Button>
@@ -107,6 +114,7 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					{{ t('billing.waiting') }}
 					<Button variant="link" @click="check_plan()">{{ t('billing.check_now') }}</Button>
 				</p>
+				<p v-if="billing.notice" class="sub-line ok">{{ billing.notice }}</p>
 				<p v-if="billing.error && !billing.chooser_open" class="sub-line bad">{{ billing.error }}</p>
 			</div>
 			<div class="card list">

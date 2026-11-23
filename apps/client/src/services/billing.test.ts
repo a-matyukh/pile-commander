@@ -4,7 +4,9 @@ import {
 	billing_return_of,
 	format_money,
 	parse_prices,
+	parse_saved_before,
 	per_month,
+	SAVED_BEFORE_MAX_AGE_MS,
 	plan_changed,
 	plan_fingerprint,
 	plan_name,
@@ -25,6 +27,8 @@ function account(partial: Partial<BillingAccount> = {}): BillingAccount {
 		billing_interval: null,
 		period_end: null,
 		cancel_at_period_end: false,
+		next_plan: null,
+		next_plan_at: null,
 		...partial,
 	}
 }
@@ -74,6 +78,28 @@ describe('coming back from Polar', () => {
 		expect(billing_return_of('')).toBeNull()
 		expect(without_billing_param('https://pile-commander.app/?billing=paid')).toBe('/')
 		expect(without_billing_param('https://pile-commander.app/hub?a=1&billing=back#top')).toBe('/hub?a=1#top')
+	})
+
+	test('the plan kept before leaving counts only for this account and only for a while', () => {
+		const now = Date.UTC(2026, 10, 23, 17, 0)
+		const saved = { fingerprint: '["pro"]', plan: 'pro', user: 'user-1', at: now - 60_000 }
+		expect(parse_saved_before(JSON.stringify(saved), 'user-1', now)).toEqual(saved)
+		expect(parse_saved_before(JSON.stringify(saved), 'user-2', now)).toBeNull()
+		expect(parse_saved_before(JSON.stringify({ ...saved, at: now - SAVED_BEFORE_MAX_AGE_MS - 1 }), 'user-1', now)).toBeNull()
+		expect(parse_saved_before(JSON.stringify({ ...saved, at: now + 60_000 }), 'user-1', now)).toBeNull()
+		expect(parse_saved_before(JSON.stringify({ ...saved, plan: 7 }), 'user-1', now)).toBeNull()
+		expect(parse_saved_before('{not json', 'user-1', now)).toBeNull()
+		expect(parse_saved_before(null, 'user-1', now)).toBeNull()
+		// a free account has a fingerprint too; nothing read yet is null
+		expect(parse_saved_before(JSON.stringify({ ...saved, fingerprint: null, plan: null }), 'user-1', now)?.plan).toBeNull()
+	})
+
+	test('a plan changed in the portal before the page came back is still a change', () => {
+		const pro = account({ plan: 'pro', billing_interval: 'month', period_end: '2026-12-23T16:50:00Z' })
+		const max = { ...pro, plan: 'max' }
+		// compared with what was kept before leaving, not with the first read after the reload
+		expect(plan_changed({ before: plan_fingerprint(pro), expect_paid: false }, max)).toBe(true)
+		expect(plan_changed({ before: plan_fingerprint(max), expect_paid: false }, max)).toBe(false)
 	})
 
 	test('after a checkout only a paid plan counts; after the portal any change', () => {

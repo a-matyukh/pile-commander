@@ -90,6 +90,33 @@ export function plan_changed(
 	return plan_fingerprint(account) !== expected.before
 }
 
+/**
+ * What the plan was when the web app left for Polar in its own tab: the page
+ * reloads on the way back, and without it a change that landed before the
+ * reload (the webhook is quick) would look like no change at all
+ */
+export type SavedBefore = { fingerprint: string | null; plan: string | null; user: string | null; at: number }
+
+/** Saved state older than this is not about the hand-off being returned from */
+export const SAVED_BEFORE_MAX_AGE_MS = 2 * 60 * 60 * 1000
+
+/** The saved state when it is well-formed, this account's, and recent; null otherwise */
+export function parse_saved_before(raw: string | null, user_id: string, now: number): SavedBefore | null {
+	if (!raw) return null
+	let value: unknown
+	try {
+		value = JSON.parse(raw)
+	} catch {
+		return null
+	}
+	const saved = value as Partial<SavedBefore> | null
+	if (!saved || typeof saved !== 'object') return null
+	const text_or_null = (v: unknown) => v === null || typeof v === 'string'
+	if (!text_or_null(saved.fingerprint) || !text_or_null(saved.plan) || typeof saved.at !== 'number') return null
+	if (saved.user !== user_id || now - saved.at > SAVED_BEFORE_MAX_AGE_MS || saved.at > now) return null
+	return { fingerprint: saved.fingerprint ?? null, plan: saved.plan ?? null, user: saved.user, at: saved.at }
+}
+
 /** How Polar sent the web app back: paid, came from the portal, or left the checkout */
 export type BillingReturn = 'paid' | 'portal' | 'back'
 
