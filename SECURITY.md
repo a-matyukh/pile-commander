@@ -319,6 +319,20 @@ show only these intentional INFOs. Anything else is a regression.
   renderer checks `isSupported` and otherwise takes the regex fallback, which
   applies the same rules. `markdown.dom.test.ts` runs the shipping path under
   jsdom.
+- **Nothing edits sanitized markup as a string.** SVG shapes
+  (`prepare_svg_for_preview`, `services/board/shapes.ts`) run DOMPurify last,
+  on an instance of their own: the url and style rules sit in its attribute
+  hook, and the widget fit (`width`, `height`, `preserveAspectRatio` on the
+  root `svg`) is set on DOMPurify's own tree, which is then serialized once. A
+  regex pass over DOMPurify's output was an XSS (fixed 2026-11-23): the
+  event-handler pattern matched inside an attribute value, ate its closing
+  quote and shifted the attribute boundaries, so the browser read an `onload`
+  DOMPurify had never seen. `shapes.dom.test.ts` keeps that input. Without a
+  DOM (node tests) the regex fallback runs alone; a window DOMPurify cannot
+  use gets no shape markup. A shape's own `<style>` is kept: imported SVGs
+  color themselves with it and `apply_shape_color` edits it. It can still
+  restyle the app, which isolating the shape (not removing the block) has to
+  fix.
 - **User text never lands unescaped in a mail subject.** Bodies go through
   `escape_html`; subjects go through `subject_text` (`src/mail.ts`), which
   strips control characters, collapses whitespace and clamps to 120 chars.

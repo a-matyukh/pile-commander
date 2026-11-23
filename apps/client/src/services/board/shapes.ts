@@ -1,4 +1,4 @@
-import DOMPurify from 'dompurify'
+import DOMPurify, { type Config } from 'dompurify'
 import type { ShapeTemplate } from '@/domain/shapes'
 import type { Position, Size } from '@/domain/Widget'
 import { SHAPE_LINE_DEFAULT_SIZE } from './layout'
@@ -559,40 +559,94 @@ function regex_sanitize_svg(raw: string): string {
 	)
 }
 
-// DOMPurify needs a DOM; in the node test environment it exports a factory
-// without `sanitize` (same situation as widgets/markdown.ts)
-const can_purify = typeof DOMPurify.sanitize === 'function'
+const SVG_PURIFY_CONFIG: Config = {
+	USE_PROFILES: { svg: true, svgFilters: true },
+	FORBID_TAGS: ['foreignObject', 'script', 'iframe', 'embed', 'object', 'animate', 'set'],
+}
+
+const URL_ATTRS: ReadonlySet<string> = new Set(['href', 'xlink:href', 'src', 'action'])
+
+/** The regex fallback's url and style rules, applied to an attribute's parsed value. */
+function is_dangerous_svg_attr(name: string, value: string): boolean {
+	if (URL_ATTRS.has(name)) return DANGEROUS_URL.test(value)
+	if (name !== 'style') return false
+	return /url\s*\(\s*['"]?\s*(javascript:|data:)/i.test(value) || /expression\s*\(/i.test(value)
+}
+
+/**
+ * A DOMPurify of its own: its hook must not reach the note sanitizer
+ * (widgets/markdown.ts keeps its own instance and hook). Null without a DOM,
+ * or with one DOMPurify cannot use: such a DOMPurify still has `sanitize`
+ * and returns its input untouched.
+ */
+function create_svg_purify() {
+	if (typeof window === 'undefined') return null
+	const purify = DOMPurify(window)
+	if (!purify.isSupported) return null
+	purify.addHook('uponSanitizeAttribute', (_node, data) => {
+		if (is_dangerous_svg_attr(data.attrName.toLowerCase(), data.attrValue)) data.keepAttr = false
+	})
+	return purify
+}
+
+const svg_purify = create_svg_purify()
 
 /**
  * SVG sanitizer for preview HTML rendered with v-html. Shape files come from
- * shared and public boards, i.e. from other users: in the browser this is
+ * shared and public boards, i.e. from other users. In the browser this is
  * DOMPurify's SVG profile (no scripts, no foreignObject, no SMIL animate/set,
- * safe URLs only); the regex pass runs on top so both paths agree on the
- * style/url rules the recolor code relies on.
+ * safe URLs only) with the url and style rules in its attribute hook, and
+ * DOMPurify is the last step: nothing edits its output as a string. A regex
+ * pass over sanitized markup was an XSS: the event-handler pattern matched
+ * inside an attribute value, ate its closing quote and shifted the attribute
+ * boundaries, so the browser read an `onload` DOMPurify had never seen.
+ *
+ * Without a DOM (node tests) the regex fallback runs instead. A window whose
+ * DOM DOMPurify cannot use gets no markup at all: a regex is no sanitizer for
+ * other people's files.
  */
 export function sanitize_svg(raw: string): string {
-	const purified = can_purify
-		? DOMPurify.sanitize(raw, {
-			USE_PROFILES: { svg: true, svgFilters: true },
-			FORBID_TAGS: ['foreignObject', 'script', 'iframe', 'embed', 'object', 'animate', 'set'],
-		})
-		: raw
-	return regex_sanitize_svg(purified)
+	if (svg_purify) return svg_purify.sanitize(raw, SVG_PURIFY_CONFIG)
+	return typeof window === 'undefined' ? regex_sanitize_svg(raw) : ''
+}
+
+/**
+ * The root svg fills the widget. New line/arrow SVGs are authored at widget
+ * pixel size: they keep uniform scaling so arrowheads stay undistorted.
+ * Legacy mid-line templates still stretch.
+ */
+function fit_svg_to_widget(svg: Element, is_pc_line: boolean): void {
+	svg.removeAttribute('preserveAspectRatio')
+	svg.removeAttribute('width')
+	svg.removeAttribute('height')
+	svg.setAttribute('width', '100%')
+	svg.setAttribute('height', '100%')
+	svg.setAttribute('preserveAspectRatio', is_pc_line ? 'xMidYMid meet' : 'none')
 }
 
 export function prepare_svg_for_preview(raw: string): string {
-	const sanitized = sanitize_svg(raw)
-	const isPcLine = /data-pc-line\s*=\s*["']?1["']?/i.test(sanitized)
+	if (!svg_purify) {
+		return typeof window === 'undefined' ? fit_svg_markup(regex_sanitize_svg(raw)) : ''
+	}
+	// The fit goes onto DOMPurify's own tree, serialized once afterwards: the
+	// same thing DOMPurify's string output is
+	const fragment = svg_purify.sanitize(raw, { ...SVG_PURIFY_CONFIG, RETURN_DOM_FRAGMENT: true })
+	const svg = fragment.querySelector('svg')
+	if (svg) fit_svg_to_widget(svg, fragment.querySelector('[data-pc-line="1"]') !== null)
+	const host = (fragment.ownerDocument ?? document).createElement('div')
+	host.append(fragment)
+	return host.innerHTML
+}
 
+/** The same fit on markup, for the DOM-less regex fallback only (node tests). */
+function fit_svg_markup(sanitized: string): string {
+	const is_pc_line = /data-pc-line\s*=\s*["']?1["']?/i.test(sanitized)
 	return sanitized.replace(/<svg([^>]*)>/i, (_match, attrs: string) => {
 		const cleaned = attrs
 			.replace(/\spreserveAspectRatio="[^"]*"/gi, '')
 			.replace(/\swidth="[^"]*"/gi, '')
 			.replace(/\sheight="[^"]*"/gi, '')
-
-		// New line/arrow SVGs are authored at widget pixel size — keep uniform scaling
-		// so arrowheads stay undistorted. Legacy mid-line templates still stretch.
-		const aspect = isPcLine ? 'xMidYMid meet' : 'none'
+		const aspect = is_pc_line ? 'xMidYMid meet' : 'none'
 		return `<svg${cleaned} width="100%" height="100%" preserveAspectRatio="${aspect}">`
 	})
 }
