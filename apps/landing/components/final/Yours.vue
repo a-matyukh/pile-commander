@@ -72,7 +72,9 @@ const kinds: Record<string, string> = { folder: "Folder", image: "JPEG image", t
           </button>
           <p class="hint"><UIcon name="i-tabler-pointer" class="pi" />Pick one to see it</p>
         </div>
-        <p class="lede">On your disk, files stay ordinary files, with the app or without it. In the cloud, they stay private.</p>
+        <!-- The space between the sentences stays on this line: Vue drops a
+             line break between two tags, and the sentences would join -->
+        <p class="lede"><span class="sentence">On your disk, files stay ordinary files, with the app or without it.</span> <span class="sentence">In the cloud, they stay private.</span></p>
 
         <div class="steps" role="group" aria-label="Where your files live">
           <button
@@ -203,8 +205,11 @@ const kinds: Record<string, string> = { folder: "Folder", image: "JPEG image", t
   line-height: 1.5;
 }
 
+/* One row on a computer where the column holds it. While the menu on the
+   left leaves less room, a row per sentence instead of a row past the
+   column, which scrolled the page sideways */
 @media (min-width: 1100px) {
-  .lede {
+  .sentence {
     white-space: nowrap;
   }
 }

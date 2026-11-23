@@ -214,9 +214,11 @@ const layers: { name: string; icon?: string; color?: string; thumb?: string; ste
   line-height: 1.5;
 }
 
+/* One row on a computer while it fits; a longer sentence splits into two
+   even rows rather than running past the column and scrolling the page */
 @media (min-width: 1100px) {
   .lede {
-    white-space: nowrap;
+    text-wrap: balance;
   }
 }
 

@@ -158,7 +158,9 @@ const cloudFolders = [
           </button>
           <p class="hint"><UIcon name="i-tabler-pointer" class="pi" />Pick one to see it</p>
         </div>
-        <p class="lede">Any folder on your computer can have a copy in the cloud, kept in sync both ways. Desktop app, with a free account.</p>
+        <!-- The space between the sentences stays on this line: Vue drops a
+             line break between two tags, and the sentences would join -->
+        <p class="lede"><span class="sentence">Any folder on your computer can have a copy in the cloud, kept in sync both ways.</span> <span class="sentence">Desktop app, with a free account.</span></p>
 
         <div class="steps" role="group" aria-label="Sync and cloud folders">
           <button
@@ -308,8 +310,11 @@ const cloudFolders = [
   line-height: 1.5;
 }
 
+/* One row on a computer where the column holds it. While the menu on the
+   left leaves less room, a row per sentence instead of a row past the
+   column, which scrolled the page sideways */
 @media (min-width: 1100px) {
-  .lede {
+  .sentence {
     white-space: nowrap;
   }
 }

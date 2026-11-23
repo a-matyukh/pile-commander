@@ -61,7 +61,9 @@ onMounted(() => {
           </button>
           <p class="hint"><UIcon name="i-tabler-pointer" class="pi" />Pick a view in the menu to try it</p>
         </div>
-        <p class="lede">One folder, nine ways to see it. Each folder keeps its own view, and switching never moves a file.</p>
+        <!-- The space between the sentences stays on this line: Vue drops a
+             line break between two tags, and the sentences would join -->
+        <p class="lede"><span class="sentence">One folder, nine ways to see it.</span> <span class="sentence">Each folder keeps its own view, and switching never moves a file.</span></p>
         <!-- The view on screen, right under the lede where the eye already is -->
         <p class="caption" aria-live="polite">
           <!-- The view as the menu shows it: its icon and its name, on a chip -->
@@ -133,9 +135,11 @@ onMounted(() => {
   line-height: 1.5;
 }
 
-/* One row on a computer */
+/* One row on a computer where the column holds it. While the menu on the
+   left leaves less room, a row per sentence instead of a row past the
+   column, which scrolled the page sideways */
 @media (min-width: 1100px) {
-  .lede {
+  .sentence {
     white-space: nowrap;
   }
 }
