@@ -101,13 +101,15 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.18));
 }
 
-/* Buttons: their middle on the icon's */
+/* Buttons: their middle on the icon's. A window too narrow for them all
+   wraps them under each other rather than sliding them under the icon */
 .nav {
   grid-area: nav;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.5rem 0.625rem;
   margin-top: 0.625rem;
 }
 
@@ -127,8 +129,9 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   color: var(--lf-accent);
 }
 
-/* Wide: one row, the tagline right beside the icon */
-@media (min-width: 1100px) {
+/* Wide: one row, the tagline right beside the icon. Narrower than this the
+   tagline and Pricing do not both fit on one row, and Pricing stays */
+@media (min-width: 1240px) {
   .bar-in {
     height: calc(var(--lf-header-h) - var(--lf-os-h));
     box-sizing: border-box;
@@ -175,10 +178,15 @@ const external = { target: "_blank", rel: "noopener noreferrer" };
   }
 }
 
-/* Pricing is in the footer too: it gives way first */
-@media (max-width: 1240px) {
-  .nav-link {
+/* The narrowest phones: the icon, Pricing and the one action on a row; the
+   repository waits for a wider screen */
+@media (max-width: 369px) {
+  .repo {
     display: none;
+  }
+
+  .nav-link {
+    margin-right: 0;
   }
 }
 

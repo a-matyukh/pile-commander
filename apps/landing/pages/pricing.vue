@@ -699,10 +699,10 @@ useSeoMeta({
 }
 
 /* The room of a plan: the amount with the cloud on a blue chip, the words
-   after it with some air */
+   right after it */
 .room {
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.4rem;
 }
 
 .room-chip {
@@ -710,10 +710,9 @@ useSeoMeta({
   flex: none;
   align-items: center;
   gap: 0.35rem;
-  border: 1px solid rgb(36 83 255 / 0.18);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--paid-bg);
-  padding: 0.2rem 0.6rem 0.2rem 0.5rem;
+  padding: 0.25rem 0.7rem 0.25rem 0.55rem;
   color: var(--paid-ink);
   font-size: 1.0625rem;
   font-weight: 700;
