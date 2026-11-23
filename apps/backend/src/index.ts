@@ -11,10 +11,10 @@ import {
 } from "./blobs";
 import { handle_copy_clones } from "./copy";
 import { handle_delete_account } from "./account";
-import { handle_billing_webhook } from "./webhook";
+import { handle_checkout, handle_plans, handle_portal } from "./billing/routes";
+import { handle_polar_webhook } from "./billing/webhook";
 import { handle_send_email } from "./mail";
 import { handle_workspace_invite } from "./invites";
-import { handle_pricing_notify } from "./waitlist";
 import { handle_feedback } from "./feedback";
 import { feedback_cors_headers, feedback_origin_allowed } from "./feedback_origins";
 import { start_gc_worker } from "./gc";
@@ -120,13 +120,17 @@ const server = Bun.serve({
 				case "POST /account/delete":
 					return respond(await handle_delete_account(env, req));
 				case "POST /billing/webhook":
-					return respond(await handle_billing_webhook(env, req));
+					return respond(await handle_polar_webhook(env, req));
+				case "POST /billing/checkout":
+					return respond(await handle_checkout(env, req, ip));
+				case "POST /billing/portal":
+					return respond(await handle_portal(env, req));
+				case "GET /billing/plans":
+					return respond(await handle_plans(env));
 				case "POST /auth/send-email":
 					return respond(await handle_send_email(env, req));
 				case "POST /workspace/invite":
 					return respond(await handle_workspace_invite(env, req));
-				case "POST /pricing/notify":
-					return respond(await handle_pricing_notify(env, req));
 				case "POST /feedback":
 					return respond(await handle_feedback(env, req));
 				default:

@@ -1,4 +1,45 @@
 import { parse_feedback_origins } from "./feedback_origins";
+
+export type PaidPlan = "pro" | "studio" | "max" | "ultra";
+export type BillingInterval = "month" | "year";
+export const PAID_PLANS: readonly PaidPlan[] = ["pro", "studio", "max", "ultra"];
+
+/**
+ * Polar, the merchant of record (billing/). Prices and product ids live in
+ * Polar; which product is which of our plans lives here, one env var per
+ * plan and interval (POLAR_PRODUCT_PRO_MONTH …); the limits of a plan live in
+ * private.plan_defaults
+ */
+export type PolarEnv = {
+	/** organization access token; unset → the billing routes answer 503 */
+	access_token: string | null;
+	/** the webhook endpoint's Standard Webhooks secret (`whsec_…`) */
+	webhook_secret: string | null;
+	/** `sandbox` → sandbox-api.polar.sh, anything else → api.polar.sh */
+	server: "sandbox" | "production";
+	/** pinned `Polar-Version` header: requests, responses and webhooks */
+	api_version: string;
+	/** product id → our plan and billing interval */
+	products: Map<string, { plan: PaidPlan; interval: BillingInterval }>;
+};
+
+export function polar_env(source: Record<string, string | undefined> = process.env): PolarEnv {
+	const products = new Map<string, { plan: PaidPlan; interval: BillingInterval }>();
+	for (const plan of PAID_PLANS) {
+		for (const interval of ["month", "year"] as const) {
+			const id = source[`POLAR_PRODUCT_${plan.toUpperCase()}_${interval.toUpperCase()}`]?.trim();
+			if (id) products.set(id, { plan, interval });
+		}
+	}
+	return {
+		access_token: source.POLAR_ACCESS_TOKEN?.trim() || null,
+		webhook_secret: source.POLAR_WEBHOOK_SECRET?.trim() || null,
+		server: source.POLAR_SERVER?.trim() === "sandbox" ? "sandbox" : "production",
+		api_version: source.POLAR_API_VERSION?.trim() || "2027-01",
+		products,
+	};
+}
+
 /**
  * Which egress refusals are live (see egress.ts). `off` only counts and
  * alerts; `file_size` also refuses originals above max_public_file_bytes to
@@ -111,8 +152,8 @@ export type Env = {
 	 * its upload URL is still usable (see reconcile in gc.ts)
 	 */
 	reconcile_grace_hours: number;
-	/** HMAC secret for POST /billing/webhook; unset disables the endpoint */
-	billing_webhook_secret: string | null;
+	/** the Polar adapter (billing/): checkout, portal, webhook, prices */
+	polar: PolarEnv;
 	/** Standard Webhooks secret for POST /auth/send-email (`v1,whsec_…`); unset → 503 */
 	send_email_hook_secret: string | null;
 	/** Plunk secret API key (`sk_…`); unset → 503 on /auth/send-email */
@@ -235,7 +276,7 @@ export function load_env(): Env {
 		gc_min_age_hours: non_negative_number_or("GC_MIN_AGE_HOURS", 24),
 		reconcile_cron: process.env.RECONCILE_CRON?.trim() || "17 * * * *",
 		reconcile_grace_hours: positive_int_or("RECONCILE_GRACE_HOURS", 24),
-		billing_webhook_secret: process.env.BILLING_WEBHOOK_SECRET?.trim() || null,
+		polar: polar_env(),
 		send_email_hook_secret: process.env.SEND_EMAIL_HOOK_SECRET?.trim() || null,
 		plunk_secret_key: process.env.PLUNK_SECRET_KEY?.trim() || null,
 		plunk_from_email: process.env.PLUNK_FROM_EMAIL?.trim() || null,

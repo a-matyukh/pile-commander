@@ -9,7 +9,7 @@ import {
 	workspace_open_url,
 	type FetchLike,
 } from "./mail";
-import { normalize_waitlist_email } from "./waitlist";
+import { normalize_email } from "./emails";
 
 export type AddMemberKind = "member" | "pending";
 
@@ -99,7 +99,7 @@ export async function handle_workspace_invite(
 	const workspace_id = typeof body.workspace_id === "string" ? body.workspace_id.trim() : "";
 	if (!UUID_RE.test(workspace_id)) throw new ApiError(400, "invalid workspace");
 
-	const email = normalize_waitlist_email(body.email);
+	const email = normalize_email(body.email);
 	if (!email) throw new ApiError(400, "invalid email");
 
 	const role = body.role === "viewer" ? "viewer" : body.role === "editor" ? "editor" : null;

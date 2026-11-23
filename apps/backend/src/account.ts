@@ -1,5 +1,6 @@
 import type { Env } from "./env";
 import { ApiError, bearer_token, internal_error, require_user, service_client, user_client } from "./auth";
+import { PolarApi } from "./billing/polar";
 
 // Supabase access tokens carry `amr`: one entry per authentication method used
 // by the session, with the unix time it happened. A refreshed token keeps the
@@ -42,8 +43,15 @@ export function assert_recent_authentication(
 // rest (schema.sql): auth.users → workspaces → entries, and the
 // entries_queue_blob_deletion trigger enqueues every blob for the GC worker
 // to remove from B2 (after GC_MIN_AGE_HOURS). Irreversible by definition, so
-// the token alone is not enough: the client re-enters the password first
-export async function handle_delete_account(env: Env, req: Request): Promise<Response> {
+// the token alone is not enough: the client re-enters the password first.
+// A paid subscription is canceled first (Polar deletes the customer, which
+// ends its subscriptions at once); if Polar cannot be reached the account
+// stays, so nobody keeps paying for an account that is gone
+export async function handle_delete_account(
+	env: Env,
+	req: Request,
+	polar: Pick<PolarApi, "delete_customer"> | null = env.polar.access_token ? new PolarApi(env.polar) : null,
+): Promise<Response> {
 	if (!env.supabase_service_role_key) {
 		throw new ApiError(503, "account deletion is not configured on this server");
 	}
@@ -52,6 +60,8 @@ export async function handle_delete_account(env: Env, req: Request): Promise<Res
 	const user = await require_user(client, token);
 	// require_user validated the token; the claims below belong to that same string
 	assert_recent_authentication(token!, env.account_delete_max_auth_age_seconds);
+
+	if (polar) await polar.delete_customer(user.id);
 
 	const admin = service_client(env);
 	const { error } = await admin.auth.admin.deleteUser(user.id);

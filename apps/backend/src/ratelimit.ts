@@ -167,8 +167,11 @@ export const ROUTE_POLICIES: Record<string, RoutePolicy> = {
 	"POST /account/delete": { ip: { limit: 10, window_ms: HOUR }, user: { limit: 3, window_ms: HOUR } },
 	"POST /workspace/invite": { ip: { limit: 30, window_ms: HOUR }, user: { limit: 10, window_ms: HOUR } },
 	"POST /billing/webhook": { ip: { limit: 120, window_ms: MINUTE } },
+	// each one is a Polar call: generous for a person choosing a plan, tight for a script
+	"POST /billing/checkout": { ip: { limit: 30, window_ms: HOUR }, user: { limit: 10, window_ms: HOUR } },
+	"POST /billing/portal": { ip: { limit: 60, window_ms: HOUR }, user: { limit: 20, window_ms: HOUR } },
+	"GET /billing/plans": { ip: { limit: 120, window_ms: MINUTE } },
 	"POST /auth/send-email": { ip: { limit: 120, window_ms: MINUTE } },
-	"POST /pricing/notify": { ip: { limit: 5, window_ms: HOUR } },
 	"POST /feedback": { ip: { limit: 5, window_ms: HOUR } },
 };
 

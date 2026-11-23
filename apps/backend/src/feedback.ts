@@ -1,6 +1,6 @@
 import { ApiError, internal_error, service_client } from "./auth";
 import type { Env } from "./env";
-import { honeypot_filled, normalize_waitlist_email } from "./waitlist";
+import { honeypot_filled, normalize_email } from "./emails";
 
 export const FEEDBACK_CATEGORIES = ["bug", "idea", "other"] as const;
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
@@ -151,7 +151,7 @@ export async function handle_feedback(
 		return Response.json({ ok: true });
 	}
 
-	const email = normalize_waitlist_email(body.email);
+	const email = normalize_email(body.email);
 	if (!email) throw new ApiError(400, "invalid email");
 
 	const category = normalize_feedback_category(body.category);

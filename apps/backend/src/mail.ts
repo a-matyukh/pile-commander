@@ -24,13 +24,14 @@ type HookUser = {
 };
 
 // Supabase stores the hook secret as `v1,whsec_<base64>`; the library and
-// the dashboard also accept the bare `whsec_…` form
-export function hook_secret_bytes(raw: string): Buffer {
+// the dashboard also accept the bare `whsec_…` form, which is also what
+// Polar hands out for a webhook endpoint
+export function hook_secret_bytes(raw: string, what = "send-email hook"): Buffer {
 	let value = raw.trim();
 	if (value.startsWith("v1,")) value = value.slice(3);
 	if (value.startsWith("whsec_")) value = value.slice(6);
 	const key = Buffer.from(value, "base64");
-	if (key.length === 0) throw new ApiError(503, "send-email hook is not configured");
+	if (key.length === 0) throw new ApiError(503, `${what} is not configured`);
 	return key;
 }
 

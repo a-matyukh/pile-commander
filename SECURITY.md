@@ -156,6 +156,20 @@ show only these intentional INFOs. Anything else is a regression.
   workspaces queued behind one row even when the text shrank. The growing path
   is unchanged: the lock is still held across `owner_usage` until the caller's
   insert commits, so concurrent uploads cannot overshoot.
+- **Plans change only through the billing adapter.** Clients read their own
+  `billing_accounts` row and never write it. A plan and all of its limits are
+  written by `apply_billing_state` (service role only), from
+  `private.plan_defaults` in the same transaction as the event's row in
+  `billing_events` (`polar:` + the `webhook-id` header). The webhook
+  (`src/billing/webhook.ts`) checks the Standard Webhooks signature, then reads
+  the customer's subscriptions back from Polar and applies what it reads —
+  never the event body — and a read older than the applied one is ignored, so
+  repeated or reordered deliveries cannot roll a plan back. Checkout is
+  created only by the backend, for the verified caller, with
+  `external_customer_id` = the user id from the JWT and a product from the
+  server's own mapping; the browser names neither. Account deletion deletes
+  the Polar customer first (which ends its subscriptions) and stops if Polar
+  cannot be reached. Lower limits never delete data: they only stop growth.
 - **Metered and capped.** `billing_accounts`: `quota_bytes`, `max_file_bytes`,
   `max_hub_listings`, and the row fences `max_entries` / `max_strokes` /
   `max_connections` (trash included; null = unlimited; free seeds
@@ -279,10 +293,9 @@ show only these intentional INFOs. Anything else is a regression.
   (`is_ip_like`), falls back to the socket, never to client text. The bucket
   keyed by the JWT subject is advisory by design (`unverified_subject` decodes
   without verifying): a forged `sub` only lands in a different bucket while
-  the IP one still applies. The public forms (`POST /pricing/notify` on the
-  landing, `POST /feedback` in the app) are 5 / hour / IP; they write `plan_launch_subscribers` and
-  `feedback` under the service role (honeypot `website` returns `{ ok: true }`;
-  duplicate waitlist emails also look like a successful subscribe). Feedback
+  the IP one still applies. The public form (`POST /feedback` in the app) is
+  5 / hour / IP; it writes `feedback` under the service role (honeypot
+  `website` returns `{ ok: true }`). Feedback
   screenshots never enter this process: the JSON body only claims mime/size
   (at most five images, 5 MB each), then the browser PUTs to a two-hour
   signed upload URL on the private Storage bucket `feedback`. Drop a note with
@@ -607,8 +620,10 @@ deferred). Done work is in the invariants above.
   after the `stat` is still cut off at the limit. RLS/RPC coverage is
   `rls.test.sql`; backend unit tests cover the rate limiter, step-up, the Send
   Email hook (signature + Plunk payload, no network), `POST /workspace/invite`
-  (owner JWT, pending vs member, Plunk, RPC mapping), `POST /pricing/notify`
-  (validation, honeypot, duplicate), `POST /feedback` (validation, honeypot,
+  (owner JWT, pending vs member, Plunk, RPC mapping), the Polar adapter
+  (`src/billing`: signature, repeated and reordered deliveries, the state read
+  back from Polar, checkout bound to the verified account, portal, prices),
+  `POST /feedback` (validation, honeypot,
   message length, attachment claims, signed upload tickets, delete helper), the egress meter (modes, budget, visitor
   share, flush, alerts, `visitor_key`) and its downloads ledger
   (`download_ledger`, `create_download_meter`), the preview worker (plan,
@@ -650,7 +665,7 @@ deferred). Done work is in the invariants above.
       `X-Forwarded-For` (see the tests in `src/ratelimit.test.ts`).
 - [ ] Backend env: `SUPABASE_SERVICE_ROLE_KEY` set (without it `/finalize`,
   `/hub-preview/finalize`, `/blobs/copy-clones`, `/account/delete`,
-  `/pricing/notify`, `/feedback` and the GC answer 503 / stay disabled, and public
+  `/feedback`, `/billing/*` and the GC answer 503 / stay disabled, and public
   downloads go unmetered); `PRESIGN_GET_TTL_SECONDS` **and**
   `PRESIGN_PUT_TTL_SECONDS` set explicitly, not the legacy
   `PRESIGN_TTL_SECONDS` alone (it silently applies the upload lifetime to

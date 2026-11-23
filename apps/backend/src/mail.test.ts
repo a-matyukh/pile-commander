@@ -67,7 +67,7 @@ function mail_env(overrides: Partial<Env> = {}): Env {
 		gc_min_age_hours: 24,
 		reconcile_cron: "0 4 * * *",
 		reconcile_grace_hours: 24,
-		billing_webhook_secret: null,
+		polar: { access_token: null, webhook_secret: null, server: "sandbox", api_version: "2027-01", products: new Map() },
 		send_email_hook_secret: HOOK_SECRET,
 		plunk_secret_key: "sk_test",
 		plunk_from_email: "noreply@example.com",
