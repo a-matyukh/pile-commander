@@ -247,19 +247,21 @@ create table public.profiles (
     updated_at timestamptz not null default now()
 );
 
--- Plan numbers live here so signup, backfill, and later paid rows do not
--- drift across backend/UI constants. Free is the only seed for beta.
--- max_entries / max_strokes / max_connections are abuse
--- fences, not the byte quota: folders, ink and edges cost nothing against
--- quota_bytes, so without them fork/copy loops and canvas jsonb could grow
--- the tables without limit (null = unlimited). Both free and pro seed
--- numbers — paid is larger, not unbounded in Postgres.
+-- Plan numbers live here so signup, backfill, the billing adapter
+-- (public.apply_billing_state) and the bridge preflight do not drift across
+-- backend/UI constants (pile-commander-product «Монетизация/План запуска
+-- тарифов.md»). Prices live in the MoR, never here. Every paid plan has the
+-- same features — files up to 1 GB, the Hub without a limit — and they differ
+-- in room. max_entries / max_strokes / max_connections are abuse fences, not
+-- the byte quota: folders, ink and edges cost nothing against quota_bytes, so
+-- without them fork/copy loops and canvas jsonb could grow the tables without
+-- limit (null = unlimited); paid is larger, not unbounded in Postgres.
 -- egress_bytes_month / max_public_file_bytes are the public-link fair use:
--- bytes presigned for non-members of the owner's boards per UTC month, and
--- the largest original a non-member gets signed (apps/backend/src/egress.ts)
--- download_bytes_month is the other side of it: originals this account may
--- take from other people's public boards per UTC month with Download as
--- .pile. A placeholder like the egress numbers until the grid sets it
+-- bytes presigned for non-members of the owner's boards per UTC month (twice
+-- the room on paid plans), and the largest original a non-member gets signed
+-- (apps/backend/src/egress.ts). download_bytes_month is the other side of it:
+-- originals this account may take from other people's public boards per UTC
+-- month with Download as .pile
 drop function if exists private.plan_defaults(text);
 create or replace function private.plan_defaults(p_plan text)
 returns table (
@@ -277,46 +279,34 @@ language plpgsql
 stable
 set search_path = public, extensions
 as $$
+declare
+    mb constant bigint := 1024 * 1024;
+    gb constant bigint := 1024 * 1024 * 1024;
 begin
-    if p_plan = 'free' then
-        return query select
-            (100 * 1024 * 1024)::bigint,
-            (25 * 1024 * 1024)::bigint,
-            3,
-            20000,
-            20000,
-            20000,
-            (20::bigint * 1024 * 1024 * 1024),
-            (10 * 1024 * 1024)::bigint,
-            (20::bigint * 1024 * 1024 * 1024);
-        return;
+    return query
+    select v.quota_bytes, v.max_file_bytes, v.max_hub_listings, v.max_entries,
+           v.max_strokes, v.max_connections, v.egress_bytes_month,
+           v.max_public_file_bytes, v.download_bytes_month
+      from (values
+          ('free',   100 * mb,  25 * mb, 3,         20000,  20000,  20000,   20 * gb,  10 * mb,  20 * gb),
+          ('pro',     50 * gb,   1 * gb, null::int, 200000, 100000, 100000, 100 * gb, 100 * mb, 100 * gb),
+          ('studio', 200 * gb,   1 * gb, null::int, 200000, 100000, 100000, 400 * gb, 100 * mb, 100 * gb),
+          ('max',    500 * gb,   1 * gb, null::int, 200000, 100000, 100000, 1024 * gb, 100 * mb, 100 * gb),
+          ('ultra', 1024 * gb,   1 * gb, null::int, 200000, 100000, 100000, 2048 * gb, 100 * mb, 100 * gb)
+      ) as v(plan, quota_bytes, max_file_bytes, max_hub_listings, max_entries, max_strokes,
+             max_connections, egress_bytes_month, max_public_file_bytes, download_bytes_month)
+     where v.plan = p_plan;
+    if not found then
+        raise exception 'plan_defaults: unknown plan %', p_plan;
     end if;
-    -- Pro per the grid (pricing/stage 2/Тарифная сетка.md): 50 GB, originals
-    -- up to 1 GB — every paid tier keeps 1 GB until guests are served
-    -- previews only. No account is on it until the MoR adapter switches
-    -- plans; the bridge preflight shows these numbers next to Free. Paid
-    -- public-link fair use is not decided: Free's numbers until the grid sets it
-    if p_plan = 'pro' then
-        return query select
-            (50::bigint * 1024 * 1024 * 1024),
-            (1024 * 1024 * 1024)::bigint,
-            null::int,
-            200000,
-            100000,
-            100000,
-            (20::bigint * 1024 * 1024 * 1024),
-            (10 * 1024 * 1024)::bigint,
-            (20::bigint * 1024 * 1024 * 1024);
-        return;
-    end if;
-    raise exception 'plan_defaults: unknown plan %', p_plan;
 end
 $$;
 
 -- ----------------------------------------------------------------------------
 -- billing_accounts: one row per account. Source of truth for plan limits
 -- (not JWT, not env). Clients may SELECT their own row; writes go through
--- security-definer (signup) or service_role (webhook later).
+-- security-definer functions: signup (handle_new_user) and the billing
+-- adapter (apply_billing_state, service_role only).
 -- ----------------------------------------------------------------------------
 create table public.billing_accounts (
     owner_id uuid primary key references auth.users (id) on delete cascade,
@@ -345,6 +335,14 @@ create table public.billing_accounts (
     download_bytes_month bigint check (download_bytes_month is null or download_bytes_month > 0),
     grace_until timestamptz,
     external_subscription_id text,
+    -- the paid plan's billing period as the MoR reports it, for the account
+    -- page ("renews on …" / "ends on …"); null on Free
+    billing_interval text check (billing_interval is null or billing_interval in ('month', 'year')),
+    period_end timestamptz,
+    cancel_at_period_end boolean not null default false,
+    -- when the billing adapter read the state it applied last: an older read
+    -- never overwrites a newer one (public.apply_billing_state)
+    billing_synced_at timestamptz,
     updated_at timestamptz not null default now()
 );
 
@@ -430,8 +428,12 @@ create table public.sync_devices (
 create index sync_devices_workspace_idx on public.sync_devices (workspace_id);
 
 -- ----------------------------------------------------------------------------
--- billing_events: MoR webhook idempotency (event id from the provider).
--- No client access; the backend writes under service_role.
+-- billing_events: MoR webhook idempotency. event_id is the delivery id with
+-- the vendor's prefix (`polar:` + the webhook-id header), so two vendors can
+-- never collide; payload keeps only the event type, subscription, status and
+-- product — no email, address or card. No client access; written by
+-- apply_billing_state. Rows stay after the account is deleted (no FK): they
+-- are the trail for refunds and accounting.
 -- ----------------------------------------------------------------------------
 create table public.billing_events (
     event_id text primary key,
@@ -440,10 +442,10 @@ create table public.billing_events (
 );
 
 -- ----------------------------------------------------------------------------
--- plan_launch_subscribers: landing /pricing notify list. Service-role writes
--- only (POST /pricing/notify). Export for Plunk:
---   select email, subscribed, source from public.plan_launch_subscribers
---   order by created_at;
+-- plan_launch_subscribers: the old /pricing notify list. Nothing writes it any
+-- more — the form and POST /pricing/notify are gone with paid plans — and it
+-- is empty on the live project (2026-11-23); it is dropped in a diff of its
+-- own once the backend without that route is live (AGENTS.md).
 -- ----------------------------------------------------------------------------
 create table public.plan_launch_subscribers (
     email text primary key

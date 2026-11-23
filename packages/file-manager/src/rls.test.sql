@@ -32,6 +32,8 @@ declare
     c_expired constant uuid := '66666666-6666-4666-8666-666666666666';
     c_admin   constant uuid := '77777777-7777-4777-8777-777777777777';
     c_young   constant uuid := '88888888-8888-4888-8888-888888888888';
+    c_buyer   constant uuid := '12121212-1212-4212-8212-121212121212';
+    v_state   text;
     v_ws      uuid;
     v_root    uuid;
     v_folder  uuid;
@@ -80,7 +82,8 @@ begin
                    (c_viewer, 'rls-viewer@example.invalid', now() - interval '8 days'),
                    (c_other,  'rls-other@example.invalid', now() - interval '8 days'),
                    (c_admin,  'rls-admin@example.invalid', now() - interval '8 days'),
-                   (c_young,  'rls-young@example.invalid', now())) as u(id, email, created);
+                   (c_young,  'rls-young@example.invalid', now()),
+                   (c_buyer,  'rls-buyer@example.invalid', now() - interval '8 days')) as u(id, email, created);
     update public.profiles set username = 'rls-owner' where id = c_owner;
     insert into private.admins (user_id) values (c_admin);
 
@@ -101,6 +104,16 @@ begin
                 and max_entries = 20000 and max_strokes = 20000
                 and max_connections = 20000
            from public.billing_accounts where owner_id = c_owner), null);
+    insert into __results values ('fixtures: plan_defaults knows every paid plan, 1 GB files on each',
+        (select quota_bytes = 50::bigint * 1024 * 1024 * 1024 and max_file_bytes = 1024 * 1024 * 1024
+                and max_hub_listings is null and egress_bytes_month = 100::bigint * 1024 * 1024 * 1024
+           from private.plan_defaults('pro'))
+        and (select quota_bytes = 200::bigint * 1024 * 1024 * 1024 and max_file_bytes = 1024 * 1024 * 1024
+           from private.plan_defaults('studio'))
+        and (select quota_bytes = 500::bigint * 1024 * 1024 * 1024 from private.plan_defaults('max'))
+        and (select quota_bytes = 1024::bigint * 1024 * 1024 * 1024
+                and egress_bytes_month = 2048::bigint * 1024 * 1024 * 1024
+           from private.plan_defaults('ultra')), null);
 
     -- ------------------------------------------------------------------
     -- owner
@@ -300,6 +313,16 @@ begin
     insert into __results values ('plan_limits: pro storage numbers',
         (select quota_bytes = 50::bigint * 1024 * 1024 * 1024 and max_file_bytes = 1024 * 1024 * 1024
            from public.plan_limits('pro')), null);
+    insert into __results values ('plan_catalog: every plan in order, with the numbers of plan_defaults',
+        array(select c.plan from public.plan_catalog() c) = array['free', 'pro', 'studio', 'max', 'ultra']
+        and (select bool_and(c.quota_bytes = d.quota_bytes and c.max_file_bytes = d.max_file_bytes
+                             and c.max_hub_listings is not distinct from d.max_hub_listings)
+               from public.plan_catalog() c cross join lateral private.plan_defaults(c.plan) d)
+        and (select max_hub_listings = 3 from public.plan_catalog() where plan = 'free')
+        and (select max_hub_listings is null and quota_bytes = 1024::bigint * 1024 * 1024 * 1024
+               from public.plan_catalog() where plan = 'ultra'),
+        (select string_agg(plan || '=' || quota_bytes || '/' || max_file_bytes || '/' || coalesce(max_hub_listings::text, '∞'), ' ')
+           from public.plan_catalog()));
     insert into __results values ('plan_defaults: pro row fences are finite',
         (select max_entries = 200000 and max_strokes = 100000
                 and max_connections = 100000
@@ -676,6 +699,69 @@ begin
     insert into __results values ('service: plan_launch_subscribers insert',
         (select count(*) from public.plan_launch_subscribers where email = 'wait@example.invalid') = 1, null);
 
+    -- the billing adapter: apply_billing_state writes the state read back
+    -- from the MoR, with the event's row, in one transaction
+    v_state := public.apply_billing_state(c_buyer, 'pro', 'active', 'month', now() + interval '30 days', false,
+        'sub_rls_1', now() - interval '10 minutes', 'polar:rls-evt-1', '{"type": "subscription.active"}'::jsonb);
+    insert into __results values ('service: apply_billing_state moves an account to Pro with all its limits',
+        v_state = 'applied'
+        and (select plan = 'pro' and plan_status = 'active' and billing_interval = 'month'
+                and quota_bytes = 50::bigint * 1024 * 1024 * 1024 and max_file_bytes = 1024 * 1024 * 1024
+                and max_hub_listings is null and egress_bytes_month = 100::bigint * 1024 * 1024 * 1024
+                and external_subscription_id = 'sub_rls_1' and not cancel_at_period_end
+                and period_end is not null and billing_synced_at is not null
+           from public.billing_accounts where owner_id = c_buyer)
+        and (select count(*) from public.billing_events where event_id = 'polar:rls-evt-1') = 1,
+        v_state);
+
+    v_state := public.apply_billing_state(c_buyer, 'free', 'canceled', null, null, false,
+        'sub_rls_1', now() - interval '20 minutes', 'polar:rls-evt-0', '{"type": "subscription.revoked"}'::jsonb);
+    insert into __results values ('service: an older billing read does not roll the plan back',
+        v_state = 'stale'
+        and (select plan = 'pro' from public.billing_accounts where owner_id = c_buyer)
+        and (select count(*) from public.billing_events where event_id = 'polar:rls-evt-0') = 1,
+        v_state);
+
+    v_state := public.apply_billing_state(c_buyer, 'max', 'past_due', 'year', now() + interval '300 days', true,
+        'sub_rls_1', now() - interval '5 minutes', 'polar:rls-evt-1', '{"type": "subscription.updated"}'::jsonb);
+    insert into __results values ('service: a repeated event id is recorded once, the newer state applies',
+        v_state = 'applied'
+        and (select count(*) from public.billing_events where event_id = 'polar:rls-evt-1') = 1
+        and (select plan = 'max' and plan_status = 'past_due' and billing_interval = 'year'
+                and cancel_at_period_end and quota_bytes = 500::bigint * 1024 * 1024 * 1024
+           from public.billing_accounts where owner_id = c_buyer),
+        v_state);
+
+    begin
+        perform public.apply_billing_state(c_buyer, 'gold', 'active', 'month', null, false,
+            'sub_rls_1', now(), 'polar:rls-evt-gold', '{}'::jsonb);
+        insert into __results values ('service: apply_billing_state refuses a plan plan_defaults does not know', false, 'accepted');
+    exception when others then
+        insert into __results values ('service: apply_billing_state refuses a plan plan_defaults does not know',
+            sqlerrm like '%unknown plan%'
+            and not exists (select 1 from public.billing_events where event_id = 'polar:rls-evt-gold'),
+            sqlerrm);
+        execute 'set local role service_role';
+    end;
+
+    v_state := public.apply_billing_state(c_buyer, 'free', 'canceled', null, null, false,
+        'sub_rls_1', now(), 'polar:rls-evt-2', '{"type": "subscription.revoked"}'::jsonb);
+    insert into __results values ('service: a revoked subscription puts the account back on Free limits',
+        v_state = 'applied'
+        and (select plan = 'free' and plan_status = 'canceled' and quota_bytes = 100 * 1024 * 1024
+                and max_file_bytes = 25 * 1024 * 1024 and max_hub_listings = 3
+                and egress_bytes_month = 20::bigint * 1024 * 1024 * 1024
+                and billing_interval is null and period_end is null and not cancel_at_period_end
+           from public.billing_accounts where owner_id = c_buyer),
+        v_state);
+
+    v_state := public.apply_billing_state('12121212-1212-4212-8212-12121212ffff', 'pro', 'active', 'month', null, false,
+        'sub_rls_gone', now(), 'polar:rls-evt-gone', '{}'::jsonb);
+    insert into __results values ('service: apply_billing_state answers no_account for a deleted account and keeps the event',
+        v_state = 'no_account'
+        and (select count(*) from public.billing_events where event_id = 'polar:rls-evt-gone') = 1,
+        v_state);
+
     insert into public.feedback (email, category, message, attachments)
     values (
         'fb@example.invalid',
@@ -818,6 +904,14 @@ begin
         insert into __results values ('authenticated: record_hub_preview_upload revoked', false, 'accepted');
     exception when insufficient_privilege then
         insert into __results values ('authenticated: record_hub_preview_upload revoked', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
+        perform public.apply_billing_state(c_owner, 'ultra', 'active', 'year', null, false,
+            'sub_self', now(), 'polar:self-upgrade', '{}'::jsonb);
+        insert into __results values ('authenticated: apply_billing_state revoked', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('authenticated: apply_billing_state revoked', true, null);
         execute 'set local role authenticated';
     end;
     begin
@@ -1054,6 +1148,13 @@ begin
         execute 'set local role anon';
     end;
     begin
+        select count(*) into v_n from public.plan_catalog();
+        insert into __results values ('anon: plan_catalog revoked', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('anon: plan_catalog revoked', true, null);
+        execute 'set local role anon';
+    end;
+    begin
         select count(*) into v_n from public.workspace_invites;
         insert into __results values ('anon: cannot select invites', v_n = 0, format('count=%s', v_n));
     exception when insufficient_privilege then
@@ -1125,6 +1226,14 @@ begin
         insert into __results values ('anon: cannot write strokes', false, 'accepted');
     exception when others then
         insert into __results values ('anon: cannot write strokes', sqlstate = '42501', sqlerrm);
+        execute 'set local role anon';
+    end;
+    begin
+        perform public.apply_billing_state(c_owner, 'ultra', 'active', 'year', null, false,
+            'sub_anon', now(), 'polar:anon-upgrade', '{}'::jsonb);
+        insert into __results values ('anon: apply_billing_state revoked', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('anon: apply_billing_state revoked', true, null);
         execute 'set local role anon';
     end;
     begin
@@ -1977,6 +2086,7 @@ begin
             ('public.add_workspace_member(uuid, text, text)', false, true),
             ('private.plan_defaults(text)', false, true),
             ('public.plan_limits(text)', false, true),
+            ('public.plan_catalog()', false, true),
             ('private.claim_workspace_invites()', false, true),
             ('public.claim_workspace_invites()', false, true),
             ('public.merge_entry_xattrs(uuid, jsonb, text)', false, true),

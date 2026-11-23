@@ -3469,6 +3469,134 @@ $$;
 
 revoke execute on function public.plan_limits(text) from public, anon;
 grant execute on function public.plan_limits(text) to authenticated;
+
+-- plan_catalog: every plan's limits in the order the app shows them, for the
+-- plan chooser — room, file size and Hub listings (null = no limit) come from
+-- plan_defaults, prices from the MoR (GET /billing/plans); the app keeps
+-- neither list of numbers. Signed-in only, like plan_limits
+create or replace function public.plan_catalog()
+returns table (plan text, quota_bytes bigint, max_file_bytes bigint, max_hub_listings integer)
+language sql
+security invoker
+stable
+set search_path = public, extensions
+as $$
+    select p.plan, d.quota_bytes, d.max_file_bytes, d.max_hub_listings
+      from unnest(array['free', 'pro', 'studio', 'max', 'ultra']) with ordinality as p(plan, n)
+     cross join lateral private.plan_defaults(p.plan) d
+     order by p.n;
+$$;
+
+revoke execute on function public.plan_catalog() from public, anon;
+grant execute on function public.plan_catalog() to authenticated;
+
+-- apply_billing_state: the billing adapter (apps/backend/src/billing) writes
+-- the state it has just read back from the MoR — never the event's own
+-- payload — in one transaction with the event's row: plan, status, interval,
+-- the end of the period, the subscription id, and every limit of the plan
+-- from plan_defaults (an unknown plan raises, so nothing is half-written).
+-- p_synced_at is when the adapter read that state: a read older than the one
+-- already applied changes nothing ('stale'), so two deliveries racing each
+-- other cannot roll a plan back, and a repeated event id is recorded once.
+-- 'no_account' when the account is gone; the event row stays for the trail.
+-- Over-limit data is never touched here: lower limits only stop growth
+-- (assert_owner_can_add). Service role only
+create or replace function private.apply_billing_state(
+    p_owner uuid,
+    p_plan text,
+    p_status text,
+    p_interval text,
+    p_period_end timestamptz,
+    p_cancel_at_period_end boolean,
+    p_subscription_id text,
+    p_synced_at timestamptz,
+    p_event_id text,
+    p_event jsonb
+)
+returns text
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_synced timestamptz;
+    d record;
+begin
+    if p_synced_at is null then
+        raise exception 'apply_billing_state: p_synced_at is required';
+    end if;
+    if p_event_id is not null then
+        insert into public.billing_events (event_id, payload)
+        values (p_event_id, coalesce(p_event, '{}'::jsonb))
+        on conflict (event_id) do nothing;
+    end if;
+
+    select b.billing_synced_at into v_synced
+      from public.billing_accounts b
+     where b.owner_id = p_owner
+     for update;
+    if not found then
+        return 'no_account';
+    end if;
+    if v_synced is not null and p_synced_at <= v_synced then
+        return 'stale';
+    end if;
+
+    select * into d from private.plan_defaults(p_plan);
+
+    update public.billing_accounts
+       set plan = p_plan,
+           plan_status = p_status,
+           quota_bytes = d.quota_bytes,
+           max_file_bytes = d.max_file_bytes,
+           max_hub_listings = d.max_hub_listings,
+           max_entries = d.max_entries,
+           max_strokes = d.max_strokes,
+           max_connections = d.max_connections,
+           egress_bytes_month = d.egress_bytes_month,
+           max_public_file_bytes = d.max_public_file_bytes,
+           download_bytes_month = d.download_bytes_month,
+           billing_interval = p_interval,
+           period_end = p_period_end,
+           cancel_at_period_end = coalesce(p_cancel_at_period_end, false),
+           external_subscription_id = p_subscription_id,
+           grace_until = null,
+           billing_synced_at = p_synced_at,
+           updated_at = now()
+     where owner_id = p_owner;
+    return 'applied';
+end
+$$;
+
+create or replace function public.apply_billing_state(
+    p_owner uuid,
+    p_plan text,
+    p_status text,
+    p_interval text,
+    p_period_end timestamptz,
+    p_cancel_at_period_end boolean,
+    p_subscription_id text,
+    p_synced_at timestamptz,
+    p_event_id text,
+    p_event jsonb
+)
+returns text
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.apply_billing_state(p_owner, p_plan, p_status, p_interval, p_period_end,
+        p_cancel_at_period_end, p_subscription_id, p_synced_at, p_event_id, p_event);
+$$;
+
+revoke execute on function public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+    from public, anon, authenticated;
+grant execute on function public.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+    to service_role;
+revoke execute on function private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+    from public, anon, authenticated;
+grant execute on function private.apply_billing_state(uuid, text, text, text, timestamptz, boolean, text, timestamptz, text, jsonb)
+    to service_role;
 revoke execute on function public.assert_owner_quota(uuid, bigint, bigint) from public, anon;
 grant execute on function public.assert_owner_quota(uuid, bigint, bigint) to authenticated;
 
