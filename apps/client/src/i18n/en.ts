@@ -910,8 +910,8 @@ export const en: typeof ru = {
 		celebrate_body: '{room} in the cloud and files up to {file}, ready to use.',
 		celebrate_close: 'Close',
 		updated: 'Your subscription is updated.',
-		interval_month: 'monthly',
-		interval_year: 'yearly',
+		interval_month: 'Monthly',
+		interval_year: 'Yearly',
 		paying_note: 'You already pay: plans change in the billing portal.',
 		fine_print: 'Cancel anytime: the plan runs to the end of the period you paid for. Changed your mind? Ask within 14 days of your first payment and we\'ll refund it in full.',
 		tagline: {

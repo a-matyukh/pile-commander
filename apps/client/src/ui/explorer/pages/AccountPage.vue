@@ -73,26 +73,16 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 				<div class="avatar">{{ initials }}</div>
 				<div class="min">
 					<div class="name">{{ display_name || email }}</div>
-					<div class="plan">{{ display_name ? email : '' }}{{ display_name && usage ? ' · ' : '' }}{{ usage?.plan ?? '' }}</div>
+					<div v-if="display_name" class="mail">{{ email }}</div>
 				</div>
 			</div>
 			<PlanCelebration v-if="billing.celebrate" :plan="billing.celebrate" />
 			<p v-if="offline" class="muted">{{ notice }}</p>
 			<p v-else-if="cloud.last_error && !delete_open" class="muted bad">{{ cloud.last_error }}</p>
 			<p v-if="cloud.notice" class="muted ok">{{ cloud.notice }}</p>
-			<div v-if="usage || cloud.plan_loading" class="card pad">
-				<template v-if="usage">
-					<div class="head">
-						<span class="pct">{{ usage.pct }}%</span>
-						<span class="gb">{{ t('account.used', { used: usage.used, total: usage.total }) }}</span>
-						<span class="pill">{{ usage.plan }}</span>
-					</div>
-					<div class="bar"><div :style="{ width: usage.pct + '%' }" /></div>
-				</template>
-				<div v-else class="muted">{{ t('account.usage_loading') }}</div>
-			</div>
-			<div v-if="plan" class="card pad sub">
-				<div class="sub-row">
+			<!-- The plan and its room in one card, the plan's name once -->
+			<div v-if="usage || plan || cloud.plan_loading" class="card pad">
+				<div v-if="plan" class="sub-row">
 					<div class="min">
 						<div class="sub-name">{{ plan.name }}<span v-if="plan.interval" class="sub-int"> · {{ plan.interval }}</span></div>
 						<div v-if="plan.when" class="sub-when">{{ plan.when }}</div>
@@ -104,7 +94,19 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 						<Button v-else :loading="billing.busy === 'portal'" @click="manage_subscription">{{ t('billing.manage') }}</Button>
 					</div>
 				</div>
-				<p v-if="plan.past_due" class="sub-line bad">
+				<div :class="{ room: plan }">
+					<template v-if="usage">
+						<div class="head">
+							<span class="pct">{{ usage.pct }}%</span>
+							<span class="gb">{{ t('account.used', { used: usage.used, total: usage.total }) }}</span>
+							<!-- before paid plans open, the pill is where the plan is named -->
+							<span v-if="!plan" class="pill">{{ usage.plan }}</span>
+						</div>
+						<div class="bar"><div :style="{ width: usage.pct + '%' }" /></div>
+					</template>
+					<div v-else class="muted">{{ t('account.usage_loading') }}</div>
+				</div>
+				<p v-if="plan?.past_due" class="sub-line bad">
 					{{ t('billing.past_due') }}
 					<Button variant="link" @click="manage_subscription">{{ t('billing.update_card') }}</Button>
 				</p>
@@ -186,12 +188,18 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.plan {
+.mail {
 	font-size: 12px;
 	color: var(--text-secondary);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+/* The room under the plan, set apart by a hairline */
+.room {
+	margin-top: 14px;
+	padding-top: 14px;
+	border-top: 0.5px solid var(--border);
 }
 .list {
 	padding: 4px;
