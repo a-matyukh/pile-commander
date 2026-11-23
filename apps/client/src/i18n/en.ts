@@ -878,7 +878,6 @@ export const en: typeof ru = {
 	billing: {
 		title: 'Plans',
 		choose: 'Choose a plan',
-		change: 'Change plan',
 		manage: 'Manage subscription',
 		yearly: 'Yearly',
 		monthly: 'Monthly',

@@ -876,7 +876,6 @@ export const ru = {
 	billing: {
 		title: 'Тарифы',
 		choose: 'Выбрать тариф',
-		change: 'Сменить тариф',
 		manage: 'Управление подпиской',
 		yearly: 'За год',
 		monthly: 'Помесячно',

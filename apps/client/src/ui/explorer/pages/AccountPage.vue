@@ -100,10 +100,8 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 					</div>
 					<div class="sub-actions">
 						<Button v-if="!plan.paid" variant="primary" @click="open_plans">{{ t('billing.choose') }}</Button>
-						<template v-else>
-							<Button @click="open_plans">{{ t('billing.change') }}</Button>
-							<Button :loading="billing.busy === 'portal'" @click="manage_subscription">{{ t('billing.manage') }}</Button>
-						</template>
+						<!-- someone who pays changes plan where Polar changes it: the portal, one button -->
+						<Button v-else :loading="billing.busy === 'portal'" @click="manage_subscription">{{ t('billing.manage') }}</Button>
 					</div>
 				</div>
 				<p v-if="plan.past_due" class="sub-line bad">
