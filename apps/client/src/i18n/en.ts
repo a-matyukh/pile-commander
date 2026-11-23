@@ -913,6 +913,7 @@ export const en: typeof ru = {
 		interval_month: 'Monthly',
 		interval_year: 'Yearly',
 		paying_note: 'You already pay: plans change in the billing portal.',
+		continue_after_sign_in: 'Sign in or create an account, and checkout for {plan} opens next.',
 		fine_print: 'Cancel anytime: the plan runs to the end of the period you paid for. Changed your mind? Ask within 14 days of your first payment and we\'ll refund it in full.',
 		tagline: {
 			free: 'To try the cloud',

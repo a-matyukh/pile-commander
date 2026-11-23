@@ -9,14 +9,18 @@ import {
 	go_to_polar,
 	is_paid_plan,
 	parse_saved_before,
+	parse_saved_intent,
 	plan_changed,
 	plan_fingerprint,
+	plan_intent_of,
 	request_checkout,
 	request_portal,
 	without_billing_param,
+	without_plan_params,
 	type BillingInterval,
 	type BillingReturn,
 	type PaidPlan,
+	type PlanIntent,
 	type PlanPrice,
 	type SavedBefore,
 } from '@/services/billing'
@@ -49,6 +53,8 @@ export type BillingState = {
 	 * apart from cloud.notice, which the sign-in form shows too
 	 */
 	notice: string | null
+	/** picked on the landing's pricing page: its checkout opens once the visitor is signed in */
+	pending_plan: PaidPlan | null
 }
 
 const billing: BillingState = reactive({
@@ -62,6 +68,7 @@ const billing: BillingState = reactive({
 	waiting: false,
 	celebrate: null,
 	notice: null,
+	pending_plan: null,
 })
 
 export function close_celebration(): void {
@@ -315,3 +322,98 @@ if (returned) {
 		{ immediate: true },
 	)
 }
+
+/* ---- a plan picked on the landing's pricing page: ?plan=…&interval=… ----
+   Kept in localStorage rather than the tab's session: a new account is
+   confirmed from an email, and its link opens the app in another tab */
+
+const INTENT_KEY = 'pile_commander_plan_intent'
+
+/** false when there is no storage: the pick then lasts as long as this page */
+function save_intent(intent: PlanIntent): boolean {
+	try {
+		localStorage.setItem(INTENT_KEY, JSON.stringify({ ...intent, at: Date.now() }))
+		return true
+	} catch {
+		return false
+	}
+}
+
+function read_intent(remove: boolean): PlanIntent | null {
+	try {
+		const raw = localStorage.getItem(INTENT_KEY)
+		if (remove) localStorage.removeItem(INTENT_KEY)
+		return parse_saved_intent(raw, Date.now())
+	} catch {
+		return null
+	}
+}
+
+function intent_from_address(): PlanIntent | null {
+	if (typeof window === 'undefined') return null
+	const value = plan_intent_of(window.location.search)
+	// out of the address at once, as ?billing=…: a reload must not open a second checkout
+	if (value) window.history.replaceState(window.history.state, '', without_plan_params(window.location.href))
+	return PAYMENTS_OPEN ? value : null
+}
+
+const picked = intent_from_address()
+let unsaved: PlanIntent | null = picked && !save_intent(picked) ? picked : null
+
+/** The pick, once: the first tab that acts on it takes it out of storage */
+function take_intent(): PlanIntent | null {
+	if (unsaved) {
+		const pick = unsaved
+		unsaved = null
+		return pick
+	}
+	return read_intent(true)
+}
+
+/**
+ * Signed out, the account page asks to sign in and says what follows.
+ * Signed in, Polar's checkout opens (the portal for someone who already
+ * pays) once the account's plan is read, so the way back can tell what
+ * changed, and only in the tab on screen: after the email's link, that is
+ * the new tab, not the one left behind
+ */
+function follow_intent(): void {
+	billing.pending_plan = (unsaved ?? read_intent(false))?.plan ?? null
+	if (!billing.pending_plan) return
+	let asked_to_sign_in = false
+	let done = false
+	let stop_watch: (() => void) | null = null
+	const act = () => {
+		if (done || explorer_navigation.location === null) return
+		const user_id = cloud.user?.id ?? null
+		if (!user_id) {
+			// only for a pick made just now: an older one waits for a sign-in without taking over the app
+			if (picked && !asked_to_sign_in) {
+				asked_to_sign_in = true
+				void explorer_navigation.open_page('account')
+			}
+			return
+		}
+		if (cloud.billing?.owner_id !== user_id || document.visibilityState !== 'visible') return
+		done = true
+		billing.pending_plan = null
+		queueMicrotask(() => {
+			stop_watch?.()
+			document.removeEventListener('visibilitychange', act)
+		})
+		const pick = take_intent()
+		// another tab took it first
+		if (!pick) return
+		billing.interval = pick.interval
+		void explorer_navigation.open_page('account')
+		void choose_plan(pick.plan)
+	}
+	stop_watch = watch(
+		() => [cloud.user?.id ?? null, explorer_navigation.location !== null, cloud.billing?.owner_id ?? null] as const,
+		act,
+		{ immediate: true },
+	)
+	document.addEventListener('visibilitychange', act)
+}
+
+if (PAYMENTS_OPEN && typeof window !== 'undefined') follow_intent()

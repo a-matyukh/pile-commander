@@ -104,8 +104,14 @@ function billed(plan: { year: number }) {
   return interval.value === "year" ? `billed yearly, $${plan.year}` : "billed monthly";
 }
 
-/** Sign-up for now; once PAYMENTS_OPEN, the app link that starts the checkout */
-const paidHref = clientUrl;
+/**
+ * The web app with the plan and interval picked here: it opens Polar's
+ * checkout, after sign-in when needed. Until paid plans open in the app, it
+ * drops the two parameters and opens as before
+ */
+function paidHref(planId: string): string {
+  return `${clientUrl}/?plan=${encodeURIComponent(planId)}&interval=${interval.value}`;
+}
 
 const notes = [
   {
@@ -268,7 +274,7 @@ useSeoMeta({
               <span class="unit">/ month</span>
             </p>
             <p class="lf-small per">{{ billed(plan) }}</p>
-            <a :href="paidHref" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary cta">Get {{ plan.name }}</a>
+            <a :href="paidHref(plan.id)" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary cta">Get {{ plan.name }}</a>
             <ul class="feats">
               <li class="room">
                 <span class="room-chip"><UIcon name="i-tabler-cloud" class="room-i" />{{ plan.storage }}</span>
@@ -308,7 +314,7 @@ useSeoMeta({
               <span>{{ ultra.inherits }}</span>
             </li>
           </ul>
-          <a :href="paidHref" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary cta">Get {{ ultra.name }}</a>
+          <a :href="paidHref(ultra.id)" target="_blank" rel="noopener noreferrer" class="lf-btn lf-btn-primary cta">Get {{ ultra.name }}</a>
         </article>
       </section>
 

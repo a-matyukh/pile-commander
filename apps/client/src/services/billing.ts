@@ -135,6 +135,49 @@ export function without_billing_param(href: string): string {
 	return `${url.pathname}${url.search}${url.hash}`
 }
 
+/** The plan a visitor picked on the landing's pricing page: `?plan=pro&interval=year` */
+export type PlanIntent = { plan: PaidPlan; interval: BillingInterval }
+
+/** `?plan=…&interval=…` of an address; monthly when the interval is missing or odd; null without a paid plan */
+export function plan_intent_of(search: string): PlanIntent | null {
+	const params = new URLSearchParams(search)
+	const plan = params.get('plan')
+	if (!is_paid_plan(plan)) return null
+	return { plan, interval: params.get('interval') === 'year' ? 'year' : 'month' }
+}
+
+/** The address without `?plan=…&interval=…`, everything else as it was */
+export function without_plan_params(href: string): string {
+	const url = new URL(href)
+	url.searchParams.delete('plan')
+	url.searchParams.delete('interval')
+	return `${url.pathname}${url.search}${url.hash}`
+}
+
+/**
+ * A pick waits while the visitor signs in, or creates an account and
+ * confirms it from the email, whose link opens the app in a new tab. Past
+ * this it is no longer the purchase they were on their way to
+ */
+export const PLAN_INTENT_MAX_AGE_MS = 2 * 60 * 60 * 1000
+
+/** The kept pick when it is well-formed and recent; null otherwise */
+export function parse_saved_intent(raw: string | null, now: number): PlanIntent | null {
+	if (!raw) return null
+	let value: unknown
+	try {
+		value = JSON.parse(raw)
+	} catch {
+		return null
+	}
+	if (!value || typeof value !== 'object') return null
+	const { plan, interval, at } = value as { plan?: unknown; interval?: unknown; at?: unknown }
+	if (typeof plan !== 'string' || !is_paid_plan(plan)) return null
+	if (interval !== 'month' && interval !== 'year') return null
+	if (typeof at !== 'number' || now - at > PLAN_INTENT_MAX_AGE_MS || at > now) return null
+	return { plan, interval }
+}
+
 /** Prices of every plan and interval on sale. Public: no sign-in needed */
 export async function fetch_plan_prices(fetcher: typeof fetch = fetch): Promise<PlanPrice[]> {
 	const response = await fetcher(`${backend_url}/billing/plans`)

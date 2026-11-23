@@ -13,6 +13,9 @@ import TextField from '@/ui/kit/TextField.vue'
  */
 const SIGN_UP_CLOSED = false
 
+/** What follows the sign-in, said under the title (a plan picked on the landing) */
+defineProps<{ next?: string | null }>()
+
 const mode = ref<'sign_in' | 'sign_up'>('sign_in')
 const email = ref('')
 const password = ref('')
@@ -77,6 +80,7 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)?.tr
 		<div class="head">
 			<div class="ttl">{{ mode === 'sign_in' ? t('auth.sign_in_title') : t('auth.sign_up_title') }}</div>
 			<div class="sub">{{ t('auth.why') }}</div>
+			<div v-if="next" class="sub next">{{ next }}</div>
 		</div>
 		<TextField v-model="email" type="email" icon="tabler:mail" :placeholder="t('auth.email')" autocomplete="email" autofocus />
 		<TextField
@@ -131,6 +135,10 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)?.tr
 	line-height: 1.5;
 	color: var(--text-secondary);
 	margin-top: 4px;
+}
+.sub.next {
+	color: var(--text-accent);
+	font-weight: 500;
 }
 .msg {
 	margin: 0;

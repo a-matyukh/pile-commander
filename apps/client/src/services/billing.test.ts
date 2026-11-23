@@ -5,13 +5,17 @@ import {
 	format_money,
 	parse_prices,
 	parse_saved_before,
+	parse_saved_intent,
 	per_month,
+	PLAN_INTENT_MAX_AGE_MS,
 	SAVED_BEFORE_MAX_AGE_MS,
 	plan_changed,
 	plan_fingerprint,
+	plan_intent_of,
 	plan_name,
 	price_of,
 	without_billing_param,
+	without_plan_params,
 } from './billing'
 
 function account(partial: Partial<BillingAccount> = {}): BillingAccount {
@@ -115,5 +119,39 @@ describe('coming back from Polar', () => {
 		expect(plan_changed({ before: plan_fingerprint(pro), expect_paid: false }, pro)).toBe(false)
 		expect(plan_changed({ before: plan_fingerprint(pro), expect_paid: false }, cancelled)).toBe(true)
 		expect(plan_changed({ before: plan_fingerprint(pro), expect_paid: false }, null)).toBe(false)
+	})
+})
+
+describe('a plan picked on the pricing page', () => {
+	test('reads a paid plan and its interval from the address, monthly by default', () => {
+		expect(plan_intent_of('?plan=pro&interval=year')).toEqual({ plan: 'pro', interval: 'year' })
+		expect(plan_intent_of('?interval=month&plan=ultra')).toEqual({ plan: 'ultra', interval: 'month' })
+		expect(plan_intent_of('?plan=max')).toEqual({ plan: 'max', interval: 'month' })
+		expect(plan_intent_of('?plan=studio&interval=weekly')).toEqual({ plan: 'studio', interval: 'month' })
+		// Free is not bought, and anything else is not ours
+		expect(plan_intent_of('?plan=free&interval=year')).toBeNull()
+		expect(plan_intent_of('?plan=enterprise')).toBeNull()
+		expect(plan_intent_of('?interval=year')).toBeNull()
+		expect(plan_intent_of('')).toBeNull()
+	})
+
+	test('leaves the address without the two parameters and keeps the rest', () => {
+		expect(without_plan_params('https://www.pile-commander.app/?plan=pro&interval=year')).toBe('/')
+		expect(without_plan_params('https://www.pile-commander.app/hub?a=1&plan=max&interval=month#top')).toBe('/hub?a=1#top')
+		expect(without_plan_params('https://www.pile-commander.app/?billing=paid')).toBe('/?billing=paid')
+	})
+
+	test('a kept pick counts only while it is well-formed and recent', () => {
+		const now = Date.UTC(2026, 10, 24, 12, 0)
+		const kept = { plan: 'pro', interval: 'year', at: now - 60_000 }
+		expect(parse_saved_intent(JSON.stringify(kept), now)).toEqual({ plan: 'pro', interval: 'year' })
+		expect(parse_saved_intent(JSON.stringify({ ...kept, at: now - PLAN_INTENT_MAX_AGE_MS - 1 }), now)).toBeNull()
+		expect(parse_saved_intent(JSON.stringify({ ...kept, at: now + 60_000 }), now)).toBeNull()
+		expect(parse_saved_intent(JSON.stringify({ ...kept, plan: 'free' }), now)).toBeNull()
+		expect(parse_saved_intent(JSON.stringify({ ...kept, interval: 'week' }), now)).toBeNull()
+		expect(parse_saved_intent(JSON.stringify({ plan: 'pro', interval: 'year' }), now)).toBeNull()
+		expect(parse_saved_intent('{not json', now)).toBeNull()
+		expect(parse_saved_intent('null', now)).toBeNull()
+		expect(parse_saved_intent(null, now)).toBeNull()
 	})
 })

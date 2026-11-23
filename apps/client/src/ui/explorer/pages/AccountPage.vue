@@ -60,6 +60,11 @@ const plan = computed(() => {
 	}
 })
 
+/** A plan picked on the landing: its checkout opens after the sign-in */
+const pending_line = computed(() =>
+	billing.pending_plan ? t('billing.continue_after_sign_in', { plan: plan_name(billing.pending_plan) }) : null,
+)
+
 const notice = computed(() => cloud_status_message(cloud.last_error))
 const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 </script>
@@ -67,7 +72,7 @@ const offline = computed(() => notice.value === CLOUD_UNAVAILABLE)
 <template>
 	<div class="page">
 		<p v-if="!cloud.is_configured" class="muted">{{ t('account.not_configured') }}</p>
-		<AuthForm v-else-if="!cloud.user" />
+		<AuthForm v-else-if="!cloud.user" :next="pending_line" />
 		<div v-else class="acc">
 			<div class="card who">
 				<div class="avatar">{{ initials }}</div>
