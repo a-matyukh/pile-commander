@@ -108,7 +108,9 @@ const ideas = [
           </button>
           <p class="hint"><UIcon name="i-tabler-pointer" class="pi" />Pick one to see it</p>
         </div>
-        <p class="lede">Four actions in every folder, on your own model or your agent. You see the result first, and nothing changes until you confirm.</p>
+        <!-- The space between the sentences stays on this line: Vue drops a
+             line break between two tags, and the sentences would join -->
+        <p class="lede"><span class="sentence">Four actions in every folder, on your own model or your agent.</span> <span class="sentence">You see the result first, and nothing changes until you confirm.</span></p>
 
         <div class="steps" role="group" aria-label="What AI does in a folder">
           <button
@@ -241,8 +243,11 @@ const ideas = [
   line-height: 1.5;
 }
 
+/* One row on a computer where the column holds it. While the menu on the
+   left leaves less room (up to about 1310px), a row per sentence instead of
+   a row past the column, which scrolled the page sideways */
 @media (min-width: 1100px) {
-  .lede {
+  .sentence {
     white-space: nowrap;
   }
 }
