@@ -45,7 +45,13 @@ export function is_crawler(ua: string): boolean {
 	return CRAWLER_UA.test(ua)
 }
 
-const DEMO_CSP_BASE = "object-src 'none'; base-uri 'self'"
+/**
+ * The enforced policy without `frame-ancestors`. A response from this file
+ * replaces the header vercel.json sets for the same path, so the script
+ * rule is repeated here: keep it equal to vercel.json (csp.test.ts checks).
+ */
+const DEMO_CSP_BASE =
+	"script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'"
 
 /** http(s) origin from a landing URL, or null when it cannot be framed to. */
 export function http_origin(url: string): string | null {

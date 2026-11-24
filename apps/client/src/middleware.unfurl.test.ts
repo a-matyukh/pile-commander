@@ -26,27 +26,27 @@ describe('unfurl middleware', () => {
 
 describe('demo_frame_ancestors', () => {
 	it('keeps frame-ancestors self when the landing URL is missing or invalid', () => {
-		expect(demo_frame_ancestors('')).toBe("object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
-		expect(demo_frame_ancestors('  ')).toBe("object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
-		expect(demo_frame_ancestors('not-a-url')).toBe("object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+		expect(demo_frame_ancestors('')).toBe("script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+		expect(demo_frame_ancestors('  ')).toBe("script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
+		expect(demo_frame_ancestors('not-a-url')).toBe("script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
 		expect(demo_frame_ancestors('javascript:alert(1)')).toBe(
-			"object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+			"script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
 		)
 	})
 
 	it('adds the landing origin when VITE_LANDING_URL is a real http(s) URL', () => {
 		expect(demo_frame_ancestors('https://www.example.com/terms')).toBe(
-			"object-src 'none'; base-uri 'self'; frame-ancestors 'self' https://www.example.com",
+			"script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self' https://www.example.com",
 		)
 		expect(demo_frame_ancestors('http://localhost:3000')).toBe(
-			"object-src 'none'; base-uri 'self'; frame-ancestors 'self' http://localhost:3000",
+			"script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self' http://localhost:3000",
 		)
 	})
 
 	it('rejects URLs with credentials', () => {
 		expect(http_origin('https://user:pass@example.com')).toBeNull()
 		expect(demo_frame_ancestors('https://user:pass@example.com')).toBe(
-			"object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+			"script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
 		)
 	})
 })

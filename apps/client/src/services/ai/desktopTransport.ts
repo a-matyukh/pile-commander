@@ -27,6 +27,14 @@ async function call<T>(command: string, args: Record<string, unknown>): Promise<
 	}
 }
 
+/**
+ * The language of the system dialog Rust shows before the first request to
+ * an address it does not know (`ensure_address` in src-tauri/src/ai.rs)
+ */
+function dialog_lang(): string {
+	return typeof document === 'undefined' ? 'en' : document.documentElement.lang
+}
+
 function abort_error(): DOMException {
 	return new DOMException('The request was stopped', 'AbortError')
 }
@@ -72,7 +80,7 @@ function chat(base_url: string, request: ChatRequest, options: StreamOptions = {
 			}
 		}
 
-		invoke<number>('ai_chat_stream', { baseUrl: base_url, body: request, onEvent: channel })
+		invoke<number>('ai_chat_stream', { baseUrl: base_url, body: request, onEvent: channel, lang: dialog_lang() })
 			.then((id) => {
 				stream_id = id
 				// stopped before Rust handed out the id
@@ -87,7 +95,7 @@ function chat(base_url: string, request: ChatRequest, options: StreamOptions = {
 }
 
 export const desktop_transport: AiTransport = {
-	list_models: base_url => call<string[]>('ai_list_models', { baseUrl: base_url }),
+	list_models: base_url => call<string[]>('ai_list_models', { baseUrl: base_url, lang: dialog_lang() }),
 	chat,
 	has_key: base_url => call<boolean>('ai_key_status', { baseUrl: base_url }),
 	set_key: (base_url, key) => call<void>('ai_key_set', { baseUrl: base_url, key }),

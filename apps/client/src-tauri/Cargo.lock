@@ -3097,6 +3097,7 @@ version = "2.8.2"
 dependencies = [
  "bytes",
  "futures-util",
+ "glob",
  "keyring",
  "log",
  "objc2",

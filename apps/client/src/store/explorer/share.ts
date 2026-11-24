@@ -7,6 +7,7 @@ import type { SyncedOn } from '@/services/cloud/syncedOn'
 import { create_window_manager } from '@/services/window/WindowManager'
 import { normalize_workspace_id, path_separator } from '@/services/workspace/paths'
 import { export_workspace_to_pile } from '@/services/workspace/pack'
+import { error_message } from '@/store/helpers/reportError'
 import { pile_archive_name, run_pile_export } from './exportPile'
 import store from '@/store'
 import { open_bridge, type BridgeDoor } from '@/store/bridge'
@@ -198,7 +199,7 @@ export function synced_tip(ref: FolderRef): string {
 }
 
 function report(error: unknown) {
-	store.last_error = error instanceof Error ? error.message : String(error)
+	store.last_error = error_message(error)
 }
 
 export async function start_sync(ref: FolderRef, name: string): Promise<void> {

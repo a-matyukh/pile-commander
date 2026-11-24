@@ -16,6 +16,16 @@ export function is_permission_denied_error(error: unknown): boolean {
 }
 
 /**
+ * A write the desktop app refuses by its own rule: plugin-fs says "forbidden
+ * path" for a place outside the write scope (capabilities/home-writes-*.json),
+ * the app's commands say "protected folder" (src-tauri/src/paths.rs)
+ */
+export function is_protected_path_error(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return /forbidden path|protected folder/i.test(message)
+}
+
+/**
  * A request the browser cut off, not a refusal: iOS aborts fetches of a page
  * sent to the background ("AbortError: Fetch is aborted"), and a dropped
  * connection fails the same way ("Failed to fetch", "Load failed")

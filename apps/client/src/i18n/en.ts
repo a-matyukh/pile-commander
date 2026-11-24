@@ -1249,6 +1249,7 @@ export const en: typeof ru = {
 	errors: {
 		move_kept_both: 'The folder “{name}” changed while it was being moved. Nothing was lost: a copy is in the new place, and the original stayed where it was.',
 		folder_access_denied: 'No access to the folder “{name}”. Allow Pile Commander access in System Settings → Privacy & Security → Full Disk Access',
+		protected_folder: 'Pile Commander only reads this folder. It doesn’t change system and hidden folders of your home folder.',
 	},
 	board_chrome: {
 		select: 'Select',

@@ -1,18 +1,13 @@
 import { describe, expect, test, vi } from 'vitest'
 import { createFakeFileManager, type FakeFileManager, type FileManager } from '@pile-commander/file-manager'
-import { build_cloud_workspace_pile, import_workspace_from_pile, list_pile_tree, pile_root_name, pile_zip_entries } from './pack'
+import { invoke } from '@tauri-apps/api/core'
+import { build_cloud_workspace_pile, export_cloud_workspace_to_pile, import_workspace_from_pile, list_pile_tree, pile_root_name, pile_zip_entries } from './pack'
 
 const imported = vi.hoisted(() => ({ fm: null as FileManager | null }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => '/import/Board') }))
 vi.mock('@tauri-apps/api/path', () => ({
 	join: async (...parts: string[]) => parts.join('/'),
 	basename: async (path: string) => path.split('/').pop() ?? path,
-	appCacheDir: async () => '/cache',
-}))
-vi.mock('@tauri-apps/plugin-fs', () => ({
-	mkdir: vi.fn(async () => {}),
-	remove: vi.fn(async () => {}),
-	writeFile: vi.fn(async () => {}),
 }))
 vi.mock('@pile-commander/file-manager', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@pile-commander/file-manager')>()
@@ -171,5 +166,67 @@ describe('importing a .pile keeps the root cover', () => {
 		expect(ws.has('/import/Board/.pile/cover-abcdef01.webp')).toBe(true)
 		expect(ws.has('/import/Board/.pile/attrs.json')).toBe(false)
 		expect(ws.get_xattr('/import/Board', 'cover')).toBe(ROOT_COVER)
+	})
+})
+
+describe('export_cloud_workspace_to_pile', () => {
+	type Call = { command: string; args: unknown; headers?: Record<string, string> }
+
+	/** Records what Rust is asked to write; `fail` makes one command throw. */
+	function record_archive(fail?: string): Call[] {
+		const calls: Call[] = []
+		vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown, options?: unknown) => {
+			calls.push({ command, args, headers: (options as { headers?: Record<string, string> } | undefined)?.headers })
+			if (command === fail) throw new Error('disk full')
+			return command === 'pile_zip_begin' ? 7 : undefined
+		})
+		return calls
+	}
+
+	const entry_path = (call: Call) => JSON.parse(decodeURIComponent(call.headers!['x-pile-zip-path']!)) as string[]
+
+	test('writes the folders, then every file, then the layout, into one archive', async () => {
+		const ws = await make_workspace()
+		const calls = record_archive()
+		const progress: number[] = []
+		const packing = vi.fn()
+
+		await export_cloud_workspace_to_pile(ws.fm, 'Trip / 2026', '/Users/ann/Downloads/Trip.pile', p => progress.push(p.file_index), packing)
+
+		expect(calls[0]).toMatchObject({
+			command: 'pile_zip_begin',
+			args: { zipPath: '/Users/ann/Downloads/Trip.pile', rootName: 'Trip _ 2026' },
+		})
+		const folders = calls.filter(call => call.command === 'pile_zip_folder').map(call => (call.args as { segments: string[] }).segments.join('/'))
+		expect(folders).toEqual(expect.arrayContaining(['Доска', 'Доска/refs', 'empty']))
+		expect(folders.indexOf('Доска')).toBeLessThan(folders.indexOf('Доска/refs'))
+
+		const files = calls.filter(call => call.command === 'pile_zip_file')
+		expect(files.map(call => entry_path(call).join('/')).sort()).toEqual(['Доска/note.md', 'Доска/refs/photo.png'])
+		for (const file of files) {
+			expect(file.headers!['x-pile-zip-id']).toBe('7')
+			// a header holds ASCII only
+			expect(file.headers!['x-pile-zip-path']).toMatch(/^[\x20-\x7e]+$/)
+			expect(file.args).toBeInstanceOf(Uint8Array)
+		}
+		expect((files.find(call => entry_path(call).at(-1) === 'photo.png')!.args as Uint8Array).byteLength).toBe(2048)
+
+		const last = calls.at(-1)!
+		expect(last.command).toBe('pile_zip_finish')
+		const manifest = JSON.parse((last.args as { id: number; attrsJson: string }).attrsJson)
+		expect(JSON.stringify(manifest)).toContain('position')
+		expect(calls.some(call => call.command === 'pile_zip_abort')).toBe(false)
+		expect(progress).toEqual([1, 2])
+		expect(packing).toHaveBeenCalledTimes(1)
+	})
+
+	test('a failure drops the unfinished archive and is reported', async () => {
+		const ws = await make_workspace()
+		const calls = record_archive('pile_zip_file')
+
+		await expect(export_cloud_workspace_to_pile(ws.fm, 'Trip', '/Users/ann/Downloads/Trip.pile')).rejects.toThrow('disk full')
+
+		expect(calls.at(-1)).toMatchObject({ command: 'pile_zip_abort', args: { id: 7 } })
+		expect(calls.some(call => call.command === 'pile_zip_finish')).toBe(false)
 	})
 })

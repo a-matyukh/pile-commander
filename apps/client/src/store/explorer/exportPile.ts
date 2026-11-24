@@ -1,4 +1,5 @@
 import { shallowRef, reactive } from 'vue'
+import { error_message } from '@/store/helpers/reportError'
 import { t } from '@/i18n'
 
 /**
@@ -167,7 +168,7 @@ export async function run_pile_export(
 		}
 		finish_pile_export(result.file_name, result.path)
 	} catch (error) {
-		fail_pile_export(error instanceof Error ? error.message : String(error))
+		fail_pile_export(error_message(error))
 	}
 }
 

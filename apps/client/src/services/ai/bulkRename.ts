@@ -79,6 +79,7 @@ export function is_batch_stopping_error(error: unknown): boolean {
 		|| error.kind === 'invalid_url'
 		|| error.kind === 'keyring'
 		|| error.kind === 'keyring_denied'
+		|| error.kind === 'address_denied'
 	)
 }
 
