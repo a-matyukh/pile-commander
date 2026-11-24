@@ -140,8 +140,13 @@ fn refused(error: io::Error) -> String {
     error.to_string()
 }
 
+/// Inside the home folder, or a place the person gave the app. The home
+/// folder is checked here by path: the capability files grant it to
+/// plugin-fs per command, and `fs_scope()` holds only what was added while
+/// the app runs (a dialog, a drop, a folder opened with the app).
 fn in_scope<R: Runtime>(app: &AppHandle<R>, path: &str, resolved: PathBuf) -> Result<PathBuf, String> {
-    if app.fs_scope().is_allowed(&resolved) {
+    let in_home = resolved_dir(app.path().home_dir()).is_some_and(|home| resolved.starts_with(home));
+    if in_home || app.fs_scope().is_allowed(&resolved) {
         Ok(resolved)
     } else {
         Err(format!(
