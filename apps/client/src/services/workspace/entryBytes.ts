@@ -1,6 +1,7 @@
 import type { FileManager } from '@pile-commander/file-manager'
 import { mime_from_name } from '@pile-commander/file-manager'
 import { get_media_kind, get_mime_type } from '@/services/board/media'
+import { storage_fetch } from '@/services/cloud/storageFetch'
 
 /**
  * The mime an upload has to carry. It decides text-column vs blob storage in
@@ -33,7 +34,7 @@ export async function read_entry_blob(
 		throw new Error(`${name}: only a preview is available, the original is for workspace members`)
 	}
 	try {
-		const response = await fetch(media.url)
+		const response = await storage_fetch(media.url)
 		if (!response.ok) throw new Error(`fetch failed: ${response.status}`)
 		return await response.blob()
 	} finally {

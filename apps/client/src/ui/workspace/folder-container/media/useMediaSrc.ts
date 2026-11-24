@@ -5,6 +5,7 @@ import {
 	type MediaVariant,
 } from '@pile-commander/file-manager'
 import { get_media_kind } from '@/services/board/media'
+import { storage_fetch } from '@/services/cloud/storageFetch'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { media_cache_key, type MediaSrcCache } from './mediaSrcCache'
 import {
@@ -48,7 +49,7 @@ type Fetched = { bytes: Uint8Array; started_in: number }
 async function fetch_preview(url: string): Promise<Fetched | null> {
 	const started_in = tile_preview_epoch()
 	try {
-		const response = await fetch(url)
+		const response = await storage_fetch(url)
 		if (!response.ok) return null
 		return { bytes: new Uint8Array(await response.arrayBuffer()), started_in }
 	} catch {
@@ -65,7 +66,7 @@ async function fetch_small_original(url: string): Promise<Fetched | null> {
 	const started_in = tile_preview_epoch()
 	const controller = new AbortController()
 	try {
-		const response = await fetch(url, { signal: controller.signal })
+		const response = await storage_fetch(url, { signal: controller.signal, max_bytes: KEEP_ORIGINAL_MAX_BYTES })
 		const type = (response.headers.get('Content-Type') ?? '').split(';')[0]!.trim().toLowerCase()
 		const length = Number(response.headers.get('Content-Length') ?? NaN)
 		if (!response.ok || !KEEPABLE_ORIGINAL_TYPES.has(type) || !(length > 0 && length <= KEEP_ORIGINAL_MAX_BYTES)) {

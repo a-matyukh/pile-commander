@@ -1,4 +1,5 @@
 import type { MediaSrc } from '@pile-commander/file-manager'
+import { storage_fetch } from '@/services/cloud/storageFetch'
 
 /** Longest side of an image sent to a model; plenty to name or describe it. */
 export const AI_IMAGE_MAX_SIDE = 512
@@ -70,7 +71,7 @@ export async function image_to_data_url(
 ): Promise<string | null> {
 	const media = await workspace.get_media_src(id, name)
 	try {
-		const response = await fetch(media.url)
+		const response = await storage_fetch(media.url)
 		if (!response.ok) return null
 		const image = await load_image(await response.blob())
 		return await blob_to_data_url(await encode_jpeg(image))

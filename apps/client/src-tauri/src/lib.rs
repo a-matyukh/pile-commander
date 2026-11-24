@@ -460,6 +460,7 @@ pub fn run() {
             presigned_put::put_presigned_chunk,
             presigned_put::put_presigned_finish,
             presigned_put::put_presigned_abort,
+            presigned_put::get_presigned,
             ai::ai_key_set,
             ai::ai_key_delete,
             ai::ai_key_status,

@@ -43,6 +43,11 @@ export type CloudFileManagerOptions = {
 	backend_url: string
 	/** PUTs the staged bytes; the default is the webview's XHR (with progress) */
 	put_blob?: PutBlob
+	/**
+	 * GETs a presigned URL's bytes; the default is the webview's fetch. The
+	 * desktop shell supplies one for the same reason as `put_blob`
+	 */
+	get_blob?: (url: string) => Promise<Response>
 }
 
 export type EntryRow = {
@@ -1296,7 +1301,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 			try {
 				const ready = media
 				// headers, then the body: a slow first byte and a slow transfer look different
-				const response = await trace.step("fetch", () => fetch(ready.url))
+				const response = await trace.step("fetch", () => (options.get_blob ? options.get_blob(ready.url) : fetch(ready.url)))
 				if (!response.ok) return null
 				bytes = new Uint8Array(await trace.step("body", () => response.arrayBuffer()))
 				return bytes

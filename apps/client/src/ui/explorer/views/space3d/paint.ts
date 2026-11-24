@@ -2,6 +2,7 @@ import { getIcon } from '@iconify/vue'
 import { CanvasTexture, SRGBColorSpace, type MeshBasicMaterial } from 'three'
 import { limiter } from './limiter'
 import { gif_fullest_frame } from './gif'
+import { storage_fetch } from '@/services/cloud/storageFetch'
 
 /**
  * Card faces are drawn on canvases, in board pixels times a scale. Colors
@@ -205,7 +206,7 @@ async function decode_image(url: string): Promise<HTMLImageElement | null> {
 /** A GIF's fullest frame on a canvas; null when its bytes cannot be read, and the browser's first frame is used */
 async function gif_frame(url: string): Promise<HTMLCanvasElement | null> {
 	try {
-		const response = await fetch(url)
+		const response = await storage_fetch(url)
 		if (!response.ok) return null
 		const frame = gif_fullest_frame(new Uint8Array(await response.arrayBuffer()))
 		if (!frame) return null

@@ -6,6 +6,7 @@ import {
 	type UploadProgressCallback,
 } from '@pile-commander/file-manager'
 import { is_desktop } from '@/isDesktop'
+import { storage_fetch } from './storageFetch'
 import { backend_url, require_supabase } from './client'
 
 /**
@@ -97,5 +98,6 @@ export function create_app_cloud_file_manager(workspace_id: string): CloudFileMa
 		workspace_id,
 		backend_url,
 		put_blob: app_put_blob,
+		get_blob: storage_fetch,
 	})
 }

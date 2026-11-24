@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { build_cloud_workspace_pile, export_cloud_workspace_to_pile, import_workspace_from_pile, list_pile_tree, pile_root_name, pile_zip_entries } from './pack'
 
 const imported = vi.hoisted(() => ({ fm: null as FileManager | null }))
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => '/import/Board') }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => '/import/Board'), isTauri: () => false }))
 vi.mock('@tauri-apps/api/path', () => ({
 	join: async (...parts: string[]) => parts.join('/'),
 	basename: async (path: string) => path.split('/').pop() ?? path,

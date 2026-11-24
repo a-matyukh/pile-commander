@@ -315,6 +315,110 @@ pub fn put_presigned_abort(uploads: State<'_, Uploads>, id: u32) {
     }
 }
 
+/// The most one `get_presigned` call returns. A larger file is read in
+/// several calls, so neither side holds more than a slice of it at once.
+const GET_SLICE_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+/// What a ranged answer says the whole object weighs: the number after the
+/// slash in `Content-Range: bytes 0-99/1234`.
+fn total_of_content_range(value: &str) -> Option<u64> {
+    value.rsplit_once('/')?.1.trim().parse().ok()
+}
+
+/// `get_presigned`'s answer: a 4-byte big-endian length, that many bytes of
+/// JSON (`status`, `content_type`, `total`), then the slice itself.
+fn framed(status: u16, content_type: &str, total: Option<u64>, body: &[u8]) -> Vec<u8> {
+    let head = serde_json::json!({
+        "status": status,
+        "content_type": content_type,
+        "total": total,
+    })
+    .to_string();
+    let mut out = Vec::with_capacity(4 + head.len() + body.len());
+    out.extend_from_slice(&(head.len() as u32).to_be_bytes());
+    out.extend_from_slice(head.as_bytes());
+    out.extend_from_slice(body);
+    out
+}
+
+async fn get_slice(
+    client: reqwest::Client,
+    url: reqwest::Url,
+    start: u64,
+    length: u64,
+) -> Result<Vec<u8>, String> {
+    let length = length.clamp(1, GET_SLICE_MAX_BYTES);
+    let end = start.saturating_add(length - 1);
+    let stalled = || "blob download stalled".to_string();
+    let mut response = tokio::time::timeout(
+        STALL_TIMEOUT,
+        client
+            .get(url)
+            .header(reqwest::header::RANGE, format!("bytes={start}-{end}"))
+            .send(),
+    )
+    .await
+    .map_err(|_| stalled())?
+    .map_err(send_error)?;
+    let status = response.status();
+    let header = |name: reqwest::header::HeaderName| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let content_type = header(reqwest::header::CONTENT_TYPE).unwrap_or_default();
+    // an empty object answers 416 with `bytes */0`
+    let total = header(reqwest::header::CONTENT_RANGE)
+        .as_deref()
+        .and_then(total_of_content_range)
+        .or_else(|| {
+            (status == reqwest::StatusCode::OK)
+                .then(|| response.content_length())
+                .flatten()
+        });
+    if !status.is_success() {
+        return Ok(framed(status.as_u16(), &content_type, total, &[]));
+    }
+    let mut body = Vec::new();
+    loop {
+        let chunk = tokio::time::timeout(STALL_TIMEOUT, response.chunk())
+            .await
+            .map_err(|_| stalled())?
+            .map_err(send_error)?;
+        let Some(chunk) = chunk else { break };
+        body.extend_from_slice(&chunk);
+        // storage that ignored the range would send the whole object
+        if body.len() as u64 > length {
+            return Err("blob download did not keep to the asked range".into());
+        }
+    }
+    Ok(framed(status.as_u16(), &content_type, total, &body))
+}
+
+/// Reads `length` bytes of a presigned storage URL from `start`.
+///
+/// The webview cannot read them itself for the reason it cannot upload (see
+/// `put_presigned_start`): storage answers `tauri://localhost` without an
+/// allowed origin, so `fetch` gets the bytes and the webview withholds them.
+/// A picture still shows, since `<img>` needs no such permission, but saving
+/// a cloud file to a folder, sync, export and the device's preview cache all
+/// read through `fetch`.
+#[tauri::command]
+pub async fn get_presigned(
+    uploads: State<'_, Uploads>,
+    url: String,
+    start: u64,
+    length: u64,
+) -> Result<tauri::ipc::Response, String> {
+    let client = uploads.client()?;
+    let url = storage_url(&url)?;
+    get_slice(client, url, start, length)
+        .await
+        .map(tauri::ipc::Response::new)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,5 +585,91 @@ mod tests {
 
         assert!(error.starts_with(CONNECT_FAILED), "{error}");
         assert!(!error.contains("secret"), "{error}");
+    }
+
+    /// Answers one GET with `answer` and returns the request's head.
+    fn answer_one(listener: TcpListener, answer: Vec<u8>) -> std::thread::JoinHandle<String> {
+        std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut received = Vec::new();
+            let mut buffer = [0u8; 4096];
+            while !received.windows(4).any(|w| w == b"\r\n\r\n") {
+                let read = socket.read(&mut buffer).unwrap();
+                received.extend_from_slice(&buffer[..read]);
+            }
+            socket.write_all(&answer).unwrap();
+            String::from_utf8_lossy(&received).to_lowercase()
+        })
+    }
+
+    /// The parts of a `get_presigned` answer: its JSON head and the bytes.
+    fn unframed(answer: &[u8]) -> (serde_json::Value, Vec<u8>) {
+        let head = u32::from_be_bytes(answer[..4].try_into().unwrap()) as usize;
+        (
+            serde_json::from_slice(&answer[4..4 + head]).unwrap(),
+            answer[4 + head..].to_vec(),
+        )
+    }
+
+    fn get(url: &str, start: u64, length: u64) -> Result<Vec<u8>, String> {
+        async_runtime::block_on(get_slice(
+            build_client().unwrap(),
+            reqwest::Url::parse(url).unwrap(),
+            start,
+            length,
+        ))
+    }
+
+    #[test]
+    fn a_slice_comes_with_its_type_and_the_size_of_the_whole() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/get", listener.local_addr().unwrap());
+        let server = answer_one(
+            listener,
+            b"HTTP/1.1 206 Partial Content\r\ncontent-type: image/webp\r\ncontent-range: bytes 4-8/1234\r\ncontent-length: 5\r\n\r\nslice"
+                .to_vec(),
+        );
+
+        let (head, body) = unframed(&get(&url, 4, 5).unwrap());
+
+        assert!(server.join().unwrap().contains("range: bytes=4-8"));
+        assert_eq!(head["status"], 206);
+        assert_eq!(head["content_type"], "image/webp");
+        assert_eq!(head["total"], 1234);
+        assert_eq!(body, b"slice");
+    }
+
+    #[test]
+    fn a_refusal_comes_back_as_its_status_without_bytes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/get", listener.local_addr().unwrap());
+        answer_one(
+            listener,
+            b"HTTP/1.1 403 Forbidden\r\ncontent-length: 6\r\n\r\ndenied".to_vec(),
+        );
+
+        let (head, body) = unframed(&get(&url, 0, 10).unwrap());
+
+        assert_eq!(head["status"], 403);
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn storage_that_ignores_the_range_is_not_read_whole() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/get", listener.local_addr().unwrap());
+        answer_one(
+            listener,
+            b"HTTP/1.1 200 OK\r\ncontent-length: 11\r\n\r\nall of this".to_vec(),
+        );
+
+        assert!(get(&url, 0, 4).is_err());
+    }
+
+    #[test]
+    fn the_whole_size_is_read_from_the_range_header() {
+        assert_eq!(total_of_content_range("bytes 0-99/1234"), Some(1234));
+        assert_eq!(total_of_content_range("bytes */0"), Some(0));
+        assert_eq!(total_of_content_range("bytes 0-99/*"), None);
     }
 }
