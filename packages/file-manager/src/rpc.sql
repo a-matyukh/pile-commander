@@ -2569,14 +2569,42 @@ begin
 end;
 $$;
 
+-- register_upload hands out a staging key. A ticket is a right to put bytes
+-- into storage that no quota counts until /finalize: the object sits under
+-- uploads/ until the reconcile (or the bucket's lifecycle rule) removes it.
+-- So the tickets of one uploader are bounded here, by the plan of the
+-- workspace's owner:
+--   * open tickets (no result, not expired) together hold at most the plan's
+--     room, quota_bytes. The largest file is a quarter of it or less on every
+--     plan, so a retry after a failed upload always fits;
+--   * a day's tickets hold at most three times the room, or 5 GiB if that is
+--     more: nobody fills their space three times over in a day, and a file
+--     saved again and again by sync stays far below it;
+--   * a day has at most max_entries tickets: no more uploads than the
+--     account may hold files.
+-- p_size is the size the client declared; the backend signs it into the PUT
+-- (PRESIGN_PUT_SIGN_LENGTH), so the ticket cannot bring more. A Hub cover
+-- counts as its 2 MiB cap. A backend from before p_size passes none: its
+-- tickets are counted but hold no bytes. upload_rate_exceeded is the
+-- backend's 429
+drop function if exists public.register_upload(uuid, uuid, text, text, int);
+drop function if exists private.register_upload(uuid, uuid, text, text, int);
 create or replace function private.register_upload(
-    p_workspace uuid, p_user uuid, p_kind text, p_ext text, p_ttl int
+    p_workspace uuid, p_user uuid, p_kind text, p_ext text, p_ttl int, p_size bigint default null
 )
 returns text
 language plpgsql security definer
 set search_path = public, extensions
 as $$
-declare v_key text;
+declare
+    gb constant bigint := 1024 * 1024 * 1024;
+    v_key text;
+    v_size bigint;
+    v_quota bigint;
+    v_max_entries int;
+    v_open bigint;
+    v_day_bytes bigint;
+    v_day_count bigint;
 begin
     perform private.assert_upload_access(p_workspace, p_user, p_kind);
     if p_ext is null or p_ext !~ '^(\.[a-z0-9]{1,16})?$'
@@ -2584,9 +2612,47 @@ begin
        or p_ttl is null or p_ttl < 1 or p_ttl > 604800 then
         raise exception 'upload: invalid extension or lifetime';
     end if;
+    if p_size is not null and p_size < 0 then
+        raise exception 'upload: invalid size';
+    end if;
+    v_size := case when p_kind = 'hub_preview' then 2097152 else p_size end;
+
+    -- one uploader's tickets are counted one at a time, or two requests
+    -- could both take the last of the room
+    perform pg_advisory_xact_lock(hashtextextended('upload:' || p_user::text, 0));
+
+    select b.quota_bytes, b.max_entries into v_quota, v_max_entries
+      from public.workspaces w
+      join public.billing_accounts b on b.owner_id = w.owner_id
+     where w.id = p_workspace;
+
+    select coalesce(sum(s.size_bytes) filter (
+               where s.result is null and s.expires_at > clock_timestamp()), 0),
+           coalesce(sum(s.size_bytes) filter (
+               where s.created_at > clock_timestamp() - interval '1 day'), 0),
+           count(*) filter (where s.created_at > clock_timestamp() - interval '1 day')
+      into v_open, v_day_bytes, v_day_count
+      from private.upload_sessions s
+     where s.uploaded_by = p_user
+       and (s.created_at > clock_timestamp() - interval '1 day'
+            or (s.result is null and s.expires_at > clock_timestamp()));
+
+    if v_max_entries is not null and v_day_count >= v_max_entries then
+        raise exception 'upload_rate_exceeded: too many uploads started today';
+    end if;
+    if v_size is not null and v_quota is not null then
+        if v_day_bytes + v_size > greatest(3 * v_quota, 5 * gb) then
+            raise exception 'upload_rate_exceeded: too many uploads started today';
+        end if;
+        if v_open + v_size > v_quota then
+            raise exception 'upload_rate_exceeded: too many unfinished uploads';
+        end if;
+    end if;
+
     v_key := 'uploads/' || p_kind || '/' || p_workspace::text || '/' || gen_random_uuid()::text || p_ext;
-    insert into private.upload_sessions(storage_key, workspace_id, uploaded_by, kind, expires_at)
-    values (v_key, p_workspace, p_user, p_kind, clock_timestamp() + make_interval(secs => p_ttl + 1800));
+    insert into private.upload_sessions(storage_key, workspace_id, uploaded_by, kind, expires_at, size_bytes)
+    values (v_key, p_workspace, p_user, p_kind,
+            clock_timestamp() + make_interval(secs => p_ttl + 1800), v_size);
     return v_key;
 end;
 $$;
@@ -2763,9 +2829,11 @@ begin
 end;
 $$;
 
-create or replace function public.register_upload(p_workspace uuid, p_user uuid, p_kind text, p_ext text, p_ttl int)
+create or replace function public.register_upload(
+    p_workspace uuid, p_user uuid, p_kind text, p_ext text, p_ttl int, p_size bigint default null
+)
 returns text language sql security invoker set search_path = public, extensions
-as $$ select private.register_upload(p_workspace, p_user, p_kind, p_ext, p_ttl); $$;
+as $$ select private.register_upload(p_workspace, p_user, p_kind, p_ext, p_ttl, p_size); $$;
 create or replace function public.prepare_upload(p_key text, p_user uuid, p_kind text, p_request jsonb)
 returns jsonb language sql security invoker set search_path = public, extensions
 as $$ select private.prepare_upload(p_key, p_user, p_kind, p_request); $$;
@@ -2774,14 +2842,14 @@ returns jsonb language sql security invoker set search_path = public, extensions
 as $$ select private.complete_upload(p_key, p_user, p_kind, p_request, p_final_key, p_size); $$;
 
 revoke execute on function private.assert_upload_access(uuid, uuid, text) from public, anon, authenticated;
-revoke execute on function private.register_upload(uuid, uuid, text, text, int) from public, anon, authenticated;
-revoke execute on function public.register_upload(uuid, uuid, text, text, int) from public, anon, authenticated;
+revoke execute on function private.register_upload(uuid, uuid, text, text, int, bigint) from public, anon, authenticated;
+revoke execute on function public.register_upload(uuid, uuid, text, text, int, bigint) from public, anon, authenticated;
 revoke execute on function private.prepare_upload(text, uuid, text, jsonb) from public, anon, authenticated;
 revoke execute on function public.prepare_upload(text, uuid, text, jsonb) from public, anon, authenticated;
 revoke execute on function private.complete_upload(text, uuid, text, jsonb, text, bigint) from public, anon, authenticated;
 revoke execute on function public.complete_upload(text, uuid, text, jsonb, text, bigint) from public, anon, authenticated;
-grant execute on function private.register_upload(uuid, uuid, text, text, int) to service_role;
-grant execute on function public.register_upload(uuid, uuid, text, text, int) to service_role;
+grant execute on function private.register_upload(uuid, uuid, text, text, int, bigint) to service_role;
+grant execute on function public.register_upload(uuid, uuid, text, text, int, bigint) to service_role;
 grant execute on function private.prepare_upload(text, uuid, text, jsonb) to service_role;
 grant execute on function public.prepare_upload(text, uuid, text, jsonb) to service_role;
 grant execute on function private.complete_upload(text, uuid, text, jsonb, text, bigint) to service_role;

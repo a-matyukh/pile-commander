@@ -60,6 +60,7 @@ function mail_env(overrides: Partial<Env> = {}): Env {
 		b2_application_key: "a",
 		presign_get_ttl_seconds: 900,
 		presign_put_ttl_seconds: 3600,
+		presign_put_sign_length: false,
 		account_delete_max_auth_age_seconds: 600,
 		trusted_proxy_hops: 1,
 		hub_preview_max_bytes: 2 * 1024 * 1024,

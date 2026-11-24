@@ -2221,6 +2221,90 @@ begin
         v_receipt->>'storage_key' = v_gc_a and public.prepare_upload(v_upload, c_owner, 'hub_preview', '{}'::jsonb)->'result' = v_receipt, null);
     execute 'reset role';
 
+    -- ------------------------------------------------------------------
+    -- Upload tickets are bounded per uploader: what is in flight, and what a
+    -- day may start. c_owner is on Free: 100 MB of room, 20000 entries.
+    -- Tickets made above carry no size (the five-argument call) or are done.
+    insert into __results values ('upload: a Hub cover ticket holds its 2 MiB cap',
+        (select size_bytes from private.upload_sessions where storage_key = v_upload) = 2097152, null);
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, -1);
+        insert into __results values ('upload: a negative size is refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a negative size is refused', sqlerrm like '%invalid size%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    v_gc_a := public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+    v_gc_b := public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+    v_upload := public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+        insert into __results values ('upload: open tickets hold at most the plan''s room', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: open tickets hold at most the plan''s room',
+            sqlerrm like '%upload_rate_exceeded: too many unfinished uploads%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    -- a ticket from a backend that sends no size is counted, not sized
+    insert into __results values ('upload: a ticket without a size still opens beside a full room',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600) like 'uploads/blob/%', null);
+    execute 'reset role';
+    insert into __results values ('upload: the declared size is kept on the ticket',
+        (select size_bytes from private.upload_sessions where storage_key = v_gc_a) = 30 * 1024 * 1024, null);
+    -- a finished upload and an expired ticket give their room back
+    update private.upload_sessions set result = '{}'::jsonb where storage_key = v_gc_a;
+    update private.upload_sessions set expires_at = clock_timestamp() - interval '1 minute' where storage_key = v_gc_b;
+    execute 'set local role service_role';
+    insert into __results values ('upload: finished and expired tickets free the room',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 60 * 1024 * 1024) like 'uploads/blob/%', null);
+    execute 'reset role';
+    -- a day's tickets: 5 GiB on Free (three times the room is less)
+    update private.upload_sessions set result = '{}'::jsonb where uploaded_by = c_owner and result is null;
+    insert into private.upload_sessions (storage_key, workspace_id, uploaded_by, kind, expires_at, result, size_bytes)
+    values ('uploads/blob/' || v_ws::text || '/day-filler.bin', v_ws, c_owner, 'blob',
+            clock_timestamp() + interval '1 hour', '{}'::jsonb,
+            5::bigint * 1024 * 1024 * 1024 - 10 * 1024 * 1024
+              - (select coalesce(sum(size_bytes), 0) from private.upload_sessions where uploaded_by = c_owner));
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 20 * 1024 * 1024);
+        insert into __results values ('upload: a day''s tickets hold at most the daily allowance', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a day''s tickets hold at most the daily allowance',
+            sqlerrm like '%upload_rate_exceeded: too many uploads started today%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    insert into __results values ('upload: a ticket inside the daily allowance still opens',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 5 * 1024 * 1024) like 'uploads/blob/%', null);
+    execute 'reset role';
+    -- yesterday's tickets no longer count
+    update private.upload_sessions set created_at = clock_timestamp() - interval '25 hours'
+     where storage_key = 'uploads/blob/' || v_ws::text || '/day-filler.bin';
+    execute 'set local role service_role';
+    insert into __results values ('upload: the allowance is a rolling day',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 20 * 1024 * 1024) like 'uploads/blob/%', null);
+    execute 'reset role';
+    -- no more uploads in a day than the account may hold files
+    update private.upload_sessions set result = '{}'::jsonb where uploaded_by = c_owner and result is null;
+    update public.billing_accounts
+       set max_entries = (select count(*) from private.upload_sessions
+                           where uploaded_by = c_owner and created_at > clock_timestamp() - interval '1 day')
+     where owner_id = c_owner;
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 1);
+        insert into __results values ('upload: a day has at most max_entries tickets', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a day has at most max_entries tickets',
+            sqlerrm like '%upload_rate_exceeded: too many uploads started today%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    execute 'reset role';
+    update public.billing_accounts b set max_entries = d.max_entries
+      from private.plan_defaults('free') d where b.owner_id = c_owner;
+    delete from private.upload_sessions where storage_key = 'uploads/blob/' || v_ws::text || '/day-filler.bin';
+
     -- A thousand copies of one object cannot hide another object's reference.
     v_gc_a := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
     v_gc_b := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
@@ -2373,8 +2457,8 @@ begin
             ('private.blob_references(text[])', false, false),
             ('public.blob_references(text[])', false, false),
             ('private.assert_upload_access(uuid, uuid, text)', false, false),
-            ('private.register_upload(uuid, uuid, text, text, int)', false, false),
-            ('public.register_upload(uuid, uuid, text, text, int)', false, false),
+            ('private.register_upload(uuid, uuid, text, text, int, bigint)', false, false),
+            ('public.register_upload(uuid, uuid, text, text, int, bigint)', false, false),
             ('private.prepare_upload(text, uuid, text, jsonb)', false, false),
             ('public.prepare_upload(text, uuid, text, jsonb)', false, false),
             ('private.complete_upload(text, uuid, text, jsonb, text, bigint)', false, false),

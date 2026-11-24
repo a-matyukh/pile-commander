@@ -33,8 +33,9 @@ show only these intentional INFOs. Anything else is a regression.
 - **A client never holds write access to a referenced object.** Bun's
   `s3.presign` signs neither `content-length` nor arbitrary headers (`type` /
   `contentDisposition` become `response-*` GET overrides), and B2 offers no
-  POST policy here — so a PUT URL can cap nothing, and it stays replayable
-  until it expires. It is therefore only ever issued for a **staging** key,
+  POST policy here — so its PUT URL can cap nothing, and it stays replayable
+  until it expires. (`PRESIGN_PUT_SIGN_LENGTH=on` signs the size ourselves;
+  see "Presigned PUT".) It is therefore only ever issued for a **staging** key,
   `uploads/<blob|hub_preview>/<workspace_id>/<uuid>[.ext]`, minted by the
   service-role-only `register_upload` together with a row in
   `private.upload_sessions` binding it to the uploader, the workspace and a
@@ -656,9 +657,29 @@ it; the guard triggers do).
 
 ### Presigned PUT
 
-See the invariants above: the size of an upload cannot be signed, so a PUT URL
-is issued for a staging key only and `/finalize` copies it, inside the
-storage, to a key the client cannot write. No file crosses Render any more,
+See the invariants above: a PUT URL is issued for a staging key only and
+`/finalize` copies it, inside the storage, to a key the client cannot write.
+
+What a ticket may put into staging is bounded in three places:
+
+- **The size is signed into the URL** when `PRESIGN_PUT_SIGN_LENGTH=on`
+  (`s3_presign.ts`: AWS Signature V4 with `content-length` as a signed
+  header). The storage refuses a body of any other size, so a ticket brings
+  exactly the bytes its quota check saw. Off by default: turn it on after
+  `bun --filter @pile-commander/backend check:signed-length` has passed
+  against the bucket. While it is off a ticket accepts any size and only
+  `/finalize` learns the real one.
+- **`register_upload` bounds one uploader's tickets** by the plan of the
+  workspace's owner: open tickets hold at most `quota_bytes` together, a
+  day's tickets at most three times that or 5 GiB, and a day has at most
+  `max_entries` tickets. Past them `/presign/upload` answers 429.
+- **Staging does not keep what was never finalized**: the reconcile removes
+  it after its grace, and the bucket's lifecycle rule for `uploads/` (hide
+  after a day, delete a day later) does so even if the worker is down.
+
+Before these, one account could request 43 200 tickets a day and put any
+number of bytes through each, which the B2 spending cap would have turned
+into "nobody can upload". No file crosses Render any more,
 so a 1 GB upload costs the backend one CopyObject request — which B2 takes
 about a minute to answer for that size (~50 ms per MB, measured). `/finalize`
 has a 240 s request timeout (`index.ts`, under Bun's 255 s ceiling; the

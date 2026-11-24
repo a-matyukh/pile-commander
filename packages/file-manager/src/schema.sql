@@ -2354,7 +2354,12 @@ create table private.upload_sessions (
     -- finalize attempts that reached the copy without a result: each one
     -- leaves an object in storage until the reconcile, so a ticket that keeps
     -- failing is spent (prepare_upload)
-    attempts int not null default 0
+    attempts int not null default 0,
+    -- what the ticket may bring into staging: the size the client declared,
+    -- which the backend signs into the PUT (2 MiB for a Hub cover). Null on a
+    -- ticket from a backend that sent none: it reserves nothing
+    -- (register_upload counts these bytes per uploader)
+    size_bytes bigint check (size_bytes is null or size_bytes >= 0)
 );
 create index upload_sessions_workspace_idx on private.upload_sessions(workspace_id);
 create index upload_sessions_user_idx on private.upload_sessions(uploaded_by);

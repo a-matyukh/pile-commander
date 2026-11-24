@@ -8,6 +8,8 @@ import {
 	presign_replace_charge,
 	upload_presign_body,
 	type DownloadTarget,
+	register_upload,
+	rpc_error_to_api,
 } from "./blobs";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -174,5 +176,63 @@ describe("download_presign_target", () => {
 		expect(() => ask(`workspace=${WS}&path=relative`)).toThrow(ApiError);
 		expect(() => ask(`workspace=nope&path=/x`)).toThrow(ApiError);
 		expect(() => ask(`workspace=${WS}&path=${encodeURIComponent("/x\u0000y")}`)).toThrow(ApiError);
+	});
+});
+
+describe("register_upload", () => {
+	type Call = { name: string; args: Record<string, unknown> };
+	const ARGS = { p_workspace: "ws", p_user: "user", p_kind: "blob", p_ext: ".png", p_ttl: 3600 };
+
+	function db_answering(answers: { data: string | null; error: { code: string; message: string } | null }[]) {
+		const calls: Call[] = [];
+		const db = {
+			rpc: async (name: string, args: Record<string, unknown>) => {
+				calls.push({ name, args });
+				return answers[calls.length - 1]!;
+			},
+		} as unknown as Parameters<typeof register_upload>[0];
+		return { db, calls };
+	}
+
+	test("the ticket carries the size the quota was checked for", async () => {
+		const { db, calls } = db_answering([{ data: "uploads/blob/ws/a.png", error: null }]);
+		const result = await register_upload(db, ARGS, 2048.9);
+		expect(result.data).toBe("uploads/blob/ws/a.png");
+		expect(calls).toEqual([{ name: "register_upload", args: { ...ARGS, p_size: 2048 } }]);
+	});
+
+	test("a database from before the size parameter still gets its ticket", async () => {
+		const { db, calls } = db_answering([
+			{ data: null, error: { code: "PGRST202", message: "Could not find the function" } },
+			{ data: "uploads/blob/ws/a.png", error: null },
+		]);
+		const result = await register_upload(db, ARGS, 2048);
+		expect(result.data).toBe("uploads/blob/ws/a.png");
+		expect(calls.map((call) => call.args)).toEqual([{ ...ARGS, p_size: 2048 }, ARGS]);
+	});
+
+	test("a refusal is not retried without the size", async () => {
+		const { db, calls } = db_answering([
+			{ data: null, error: { code: "P0001", message: "upload_rate_exceeded: too many unfinished uploads" } },
+		]);
+		const result = await register_upload(db, ARGS, 2048);
+		expect(result.error?.message).toContain("upload_rate_exceeded");
+		expect(calls).toHaveLength(1);
+	});
+});
+
+describe("rpc_error_to_api: the bounds on upload tickets", () => {
+	const error = (message: string) => ({ code: "P0001", message, details: "", hint: "", name: "PostgrestError" }) as never;
+
+	test("too many unfinished uploads is a 429 that says when to come back", () => {
+		const api = rpc_error_to_api(error("upload_rate_exceeded: too many unfinished uploads"), "register upload");
+		expect(api).toMatchObject({ status: 429, message: "Too many unfinished uploads. Try again in an hour." });
+		expect(api.headers["Retry-After"]).toBe("3600");
+	});
+
+	test("the daily allowance says tomorrow", () => {
+		const api = rpc_error_to_api(error("upload_rate_exceeded: too many uploads started today"), "register upload");
+		expect(api).toMatchObject({ status: 429, message: "Too many uploads started today. Try again tomorrow." });
+		expect(api.headers["Retry-After"]).toBe("86400");
 	});
 });
