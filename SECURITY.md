@@ -386,6 +386,17 @@ show only these intentional INFOs. Anything else is a regression.
 - **Account deletion needs a fresh sign-in.** The session's newest `amr`
   timestamp must be younger than `ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS`
   (10 min); the client re-enters the password in the confirm dialog.
+- **An account goes in one statement, and the largest one fits.** Deleting
+  the auth user cascades to its folders, entries, text, ink and edges, and
+  the blob queue triggers run inside. Auth's database role has no statement
+  timeout of its own, so the project default applies (2 min, read
+  2026-11-25); a statement that hits it rolls back and the account stays.
+  An account at the paid plans' ceilings (200k entries, 100k strokes, 100k
+  edges) takes 4.8 s on a laptop:
+  `packages/file-manager/scripts/bench-account-delete.sql` builds one,
+  deletes it and rolls back. Rerun it after a change to the entry triggers
+  or the plan ceilings; if it nears a minute, delete the folders one
+  statement at a time before the user.
 - **A token is trusted until it expires, except where that would matter
   most.** `require_user` checks signature and expiry (JWKS, `getClaims`),
   not the session: after "sign out everywhere" a token someone carried off
