@@ -6,7 +6,8 @@ import { image_to_data_url } from './imageInput'
 import { is_note_name } from './naming'
 import type { NameSources } from './suggestName'
 import { strip_think, untrusted_markdown } from './text'
-import type { AiContentPart, AiMessage } from './types'
+import { board_message, data_fence, DATA_RULE, type DataFence } from './boardData'
+import type { AiMessage } from './types'
 import type { HistoryTx } from '@/store/history/types'
 
 /** Images in one summary request, the first ones on the board. */
@@ -124,22 +125,13 @@ const SYSTEM_PROMPT = [
 	'You summarize a board in a visual file manager: its files, notes and images.',
 	'Write Markdown: a short title as "# …", then 3 to 7 bullet points on what the board is about and what stands out.',
 	'Write in the language of the content. No preamble, no closing remarks.',
+	DATA_RULE,
 ].join(' ')
 
-export function build_summary_messages(sources: SummarySources, board_name: string): AiMessage[] {
-	const text = [
-		`Board "${board_name}" holds:`,
-		sources.names.map(name => `- ${name}`).join('\n') || '(nothing)',
-		...sources.notes.map(note => `\n## Note "${note.name}"\n${note.text}`),
-	].join('\n')
-	const content: AiContentPart[] = [{ type: 'text', text }]
-	for (const image of sources.images) {
-		content.push({ type: 'text', text: `Image "${image.name}":` })
-		content.push({ type: 'image_url', image_url: { url: image.url } })
-	}
+export function build_summary_messages(sources: SummarySources, board_name: string, fence: DataFence = data_fence()): AiMessage[] {
 	return [
 		{ role: 'system', content: SYSTEM_PROMPT },
-		{ role: 'user', content: sources.images.length ? content : text },
+		{ role: 'user', content: board_message(`Board "${board_name}" holds:`, sources, fence) },
 	]
 }
 

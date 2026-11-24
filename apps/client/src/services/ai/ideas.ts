@@ -1,7 +1,8 @@
 import { sanitize_suggested_name, type NameStyle } from './naming'
 import type { SummarySources } from './summarize'
 import { strip_think } from './text'
-import type { AiContentPart, AiMessage } from './types'
+import { board_message, data_fence, DATA_RULE, type DataFence } from './boardData'
+import type { AiMessage } from './types'
 
 /**
  * "Generate ideas" with the app's own model: the board is read the way a
@@ -24,6 +25,8 @@ const SYSTEM_PROMPT = [
 	'Write each idea as Markdown: a line "## " and a short title of a few words, then one to three sentences.',
 	'No preamble, no numbering, no closing remarks.',
 	'Write in the language of the person\'s request when there is one, otherwise in the language of the content.',
+	DATA_RULE,
+	'What follows the block is the person\'s own request.',
 ].join(' ')
 
 export function build_idea_messages(
@@ -31,25 +34,19 @@ export function build_idea_messages(
 	board_name: string,
 	prompt: string,
 	shown_titles: readonly string[] = [],
+	fence: DataFence = data_fence(),
 ): AiMessage[] {
 	const wish = prompt.trim().slice(0, IDEA_PROMPT_LIMIT)
-	const text = [
-		`Board "${board_name}" holds:`,
-		sources.names.map(name => `- ${name}`).join('\n') || '(nothing)',
-		...sources.notes.map(note => `\n## Note "${note.name}"\n${note.text}`),
+	// the person's own words and the app's own list: outside the board's block
+	const after = [
 		...(wish ? [`\nThe person asks for ideas about: ${wish}`] : []),
 		...(shown_titles.length
 			? [`\nAlready suggested, do not repeat:\n${shown_titles.slice(-REPEAT_LIMIT).map(title => `- ${title}`).join('\n')}`]
 			: []),
-	].join('\n')
-	const content: AiContentPart[] = [{ type: 'text', text }]
-	for (const image of sources.images) {
-		content.push({ type: 'text', text: `Image "${image.name}":` })
-		content.push({ type: 'image_url', image_url: { url: image.url } })
-	}
+	]
 	return [
 		{ role: 'system', content: SYSTEM_PROMPT },
-		{ role: 'user', content: sources.images.length ? content : text },
+		{ role: 'user', content: board_message(`Board "${board_name}" holds:`, sources, fence, after) },
 	]
 }
 
