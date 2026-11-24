@@ -290,9 +290,35 @@ Planned in three phases:
 lost. Otherwise the folder comes back, or is recreated, and its entries are
 decided one by one.
 
+**One name per computer.** The cloud tells `Budget.xlsx` from `budget.xlsx`,
+and `й` typed as one character from `й` typed as two. The default macOS and
+Windows file systems do not: a download of one would be renamed over the
+other, and the next pass would read the first name as deleted here and send
+it to the cloud trash for everyone. Paths are therefore compared folded
+(`fold_relative`: NFC, lower case), every parent folder included:
+
+- a cloud row that this computer does not sync yet, and that differs from
+  an entry here or from a cloud row already taken only that way, stays in
+  the cloud (`same_name`), with everything under it;
+- of two such cloud rows the one already synced here keeps the name, then
+  the one whose exact path is on disk, then the first by path;
+- a download, a new cloud folder and a cloud move are not carried out onto
+  such a name; a new file or folder here is not uploaded beside a cloud row
+  that differs from it only that way and is staying;
+- a rename of only the letter case, here or in the cloud, is an ordinary
+  move: the entry is its own twin;
+- the rule is the same on a file system that could hold both, so a
+  workspace syncs the same way on every computer.
+
+Nothing is changed on either side. The sync menu names the paths ("the
+name differs from another one in the folder only in letter case") and the
+person renames one of the two.
+
 **Left out** (reported, never deleted):
 - names the cloud refuses (`is_cloud_name`), and cloud names this device
   cannot write (`is_local_name`);
+- a name that differs from another only in letter case or Unicode form
+  (`same_name`, above);
 - files over the plan's per-file limit;
 - `exclude`;
 - everything under such a folder;

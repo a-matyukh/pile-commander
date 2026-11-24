@@ -107,7 +107,12 @@ export type CloudEntry = {
 	xattrs: Record<string, string>
 }
 
-export type SkipReason = 'bad_name' | 'too_large' | 'excluded' | 'parent_skipped' | 'kind_clash' | 'occupied'
+/**
+ * `same_name`: another entry on this computer, or already coming to it,
+ * answers to this name — the paths differ only in letter case or Unicode
+ * form. Neither side is changed; the person renames one of the two.
+ */
+export type SkipReason = 'bad_name' | 'too_large' | 'excluded' | 'parent_skipped' | 'kind_clash' | 'occupied' | 'same_name'
 
 export type SyncAction =
 	// ---- here → cloud ----

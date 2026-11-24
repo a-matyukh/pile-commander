@@ -450,6 +450,7 @@ export const en: typeof ru = {
 		conflicts: 'Changed on both sides: {n}. The cloud version kept the name; yours is beside it as a conflicted copy: {names}',
 		kept_hidden: 'Stayed on this Mac because of hidden files (like .git), empty in the cloud: {names}',
 		skipped: 'Not synced: {n}. Names the cloud refuses, files over the plan limit, files left out.',
+		same_name: 'Not synced: {n}. The name differs from another one in the folder only in letter case, and this computer treats such names as one: {names}. Rename one of the two.',
 		errors: 'Failed, will retry: {n}',
 		trash_cloud: 'Move to the cloud trash: {n}',
 		trash_local: 'Move to the Trash on this Mac: {n}',

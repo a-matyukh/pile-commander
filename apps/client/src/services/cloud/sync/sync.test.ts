@@ -316,6 +316,153 @@ describe('reconcile, cloud → here', () => {
 	})
 })
 
+describe('one name per computer', () => {
+	// й as one character (NFC) and as и + a combining breve (NFD)
+	const NFC = '\u0439.md'
+	const NFD = '\u0438\u0306.md'
+
+	test('a cloud file that differs only in letter case does not land on the file here', () => {
+		// a colleague adds budget.xlsx next to Budget.xlsx on the web
+		const base = { 'Budget.xlsx': base_file('c1') }
+		const cloud = [ROOT, cloud_entry('/Budget.xlsx', 'c1'), cloud_entry('/budget.xlsx', 'c2')]
+		const plan = reconcile(base, [local_file('Budget.xlsx')], cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'skip', relative: 'budget.xlsx', reason: 'same_name' }])
+		expect(plan.deletes).toBe(0)
+	})
+
+	test('whichever of the two the listing puts first, the synced one keeps the name', () => {
+		const base = { 'budget.xlsx': base_file('c2') }
+		const cloud = [ROOT, cloud_entry('/Budget.xlsx', 'c1'), cloud_entry('/budget.xlsx', 'c2')]
+		const plan = reconcile(base, [local_file('budget.xlsx')], cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'skip', relative: 'Budget.xlsx', reason: 'same_name' }])
+	})
+
+	test('an edit of the synced file still goes both ways beside its twin', () => {
+		const base = { 'Budget.xlsx': base_file('c1') }
+		const cloud = [ROOT, cloud_entry('/Budget.xlsx', 'c1', { modified_at: 't2' }), cloud_entry('/budget.xlsx', 'c2')]
+		expect(reconcile(base, [local_file('Budget.xlsx')], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'budget.xlsx', reason: 'same_name' },
+			{ kind: 'download', relative: 'Budget.xlsx', cloud_id: 'c1' },
+		])
+		expect(reconcile(base, [local_file('Budget.xlsx', 11)], [ROOT, cloud_entry('/Budget.xlsx', 'c1'), cloud_entry('/budget.xlsx', 'c2')], OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'budget.xlsx', reason: 'same_name' },
+			{ kind: 'update', relative: 'Budget.xlsx', cloud_id: 'c1' },
+		])
+	})
+
+	test('two new cloud files with one name here: one comes down, the other stays in the cloud', () => {
+		const cloud = [ROOT, cloud_entry('/report.md', 'c2'), cloud_entry('/Report.md', 'c1')]
+		expect(reconcile({}, [], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'report.md', reason: 'same_name' },
+			{ kind: 'download', relative: 'Report.md', cloud_id: 'c1' },
+		])
+	})
+
+	test('the two Unicode forms of a name are one name', () => {
+		const base = { [NFC]: base_file('c1') }
+		const cloud = [ROOT, cloud_entry(`/${NFC}`, 'c1'), cloud_entry(`/${NFD}`, 'c2')]
+		expect(reconcile(base, [local_file(NFC)], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: NFD, reason: 'same_name' },
+		])
+	})
+
+	test('a new file here and a new cloud file that differ only in case: neither side is changed', () => {
+		const cloud = [ROOT, cloud_entry('/Report.md', 'c1')]
+		expect(reconcile({}, [local_file('report.md')], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'Report.md', reason: 'same_name' },
+			{ kind: 'skip', relative: 'report.md', reason: 'same_name' },
+		])
+	})
+
+	test('everything under a cloud folder that clashes stays in the cloud with it', () => {
+		const base = { Photos: base_folder('cf'), 'Photos/a.jpg': base_file('ca') }
+		const local = [local_folder('Photos'), local_file('Photos/a.jpg')]
+		const cloud = [
+			ROOT,
+			cloud_entry('/Photos', 'cf', { kind: 'folder' }),
+			cloud_entry('/Photos/a.jpg', 'ca'),
+			cloud_entry('/photos', 'cg', { kind: 'folder' }),
+			cloud_entry('/photos/b.jpg', 'cb'),
+		]
+		expect(reconcile(base, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'photos', reason: 'same_name' },
+		])
+	})
+
+	test('a new folder here beside a cloud folder of the same name in another case is left out whole', () => {
+		const local = [local_folder('Photos'), local_file('Photos/a.jpg')]
+		const cloud = [ROOT, cloud_entry('/photos', 'cg', { kind: 'folder' }), cloud_entry('/photos/b.jpg', 'cb')]
+		expect(reconcile({}, local, cloud, OPTIONS).actions).toEqual([
+			{ kind: 'skip', relative: 'photos', reason: 'same_name' },
+			{ kind: 'skip', relative: 'Photos', reason: 'same_name' },
+			{ kind: 'skip', relative: 'Photos/a.jpg', reason: 'parent_skipped' },
+		])
+	})
+
+	test('a file renamed here only in letter case is a rename in the cloud', () => {
+		const base = { 'report.md': base_file('c1', { size: 5, mtime_ms: 7 }) }
+		const plan = reconcile(base, [local_file('Report.md', 5, 7)], [ROOT, cloud_entry('/report.md', 'c1')], OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'move', from: 'report.md', relative: 'Report.md', cloud_id: 'c1' }])
+	})
+
+	test('renamed in case and edited here: the new name goes up and the old row goes to the cloud trash', () => {
+		const base = { 'report.md': base_file('c1') }
+		const plan = reconcile(base, [local_file('Report.md', 22, 9)], [ROOT, cloud_entry('/report.md', 'c1')], OPTIONS)
+		expect(plan.actions).toEqual([
+			{ kind: 'upload', relative: 'Report.md' },
+			{ kind: 'delete', relative: 'report.md', cloud_id: 'c1' },
+		])
+	})
+
+	test('renamed in case here while the cloud edited the old name: the cloud version does not overwrite the file here', () => {
+		const base = { 'report.md': base_file('c1') }
+		const cloud = [ROOT, cloud_entry('/report.md', 'c1', { modified_at: 't2' })]
+		const plan = reconcile(base, [local_file('Report.md', 22, 9)], cloud, OPTIONS)
+		expect(plan.actions).toEqual([
+			{ kind: 'skip', relative: 'report.md', reason: 'same_name' },
+			{ kind: 'skip', relative: 'Report.md', reason: 'same_name' },
+		])
+		expect(plan.deletes).toBe(0)
+	})
+
+	test('a file renamed in the cloud only in letter case is renamed here', () => {
+		const base = { 'report.md': base_file('c1') }
+		const plan = reconcile(base, [local_file('report.md')], [ROOT, cloud_entry('/Report.md', 'c1')], OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'local_move', from: 'report.md', relative: 'Report.md', cloud_id: 'c1' }])
+	})
+
+	test('a cloud move onto a name another file here answers to waits', () => {
+		const base = { 'draft.md': base_file('c1'), 'Final.md': base_file('c2') }
+		const local = [local_file('draft.md'), local_file('Final.md')]
+		// c1 was renamed to final.md in the cloud while Final.md still exists
+		const cloud = [ROOT, cloud_entry('/final.md', 'c1'), cloud_entry('/Final.md', 'c2')]
+		const plan = reconcile(base, local, cloud, OPTIONS)
+		expect(plan.actions).toEqual([{ kind: 'skip', relative: 'final.md', reason: 'same_name' }])
+	})
+
+	test('a file under a folder that clashes is not written into the folder here', () => {
+		// the cloud folder `docs` was synced; here it is now `Docs` with other
+		// content (not a recognizable move), and the cloud added a file to it
+		const base = { docs: base_folder('cf'), 'docs/a.md': base_file('ca') }
+		const local = [local_folder('Docs'), local_file('Docs/mine.md', 3, 5)]
+		const cloud = [ROOT, cloud_entry('/docs', 'cf', { kind: 'folder' }), cloud_entry('/docs/a.md', 'ca'), cloud_entry('/docs/theirs.md', 'ct')]
+		const plan = reconcile(base, local, cloud, OPTIONS)
+		const written = plan.actions.filter(action => action.kind === 'download' || action.kind === 'download_folder' || action.kind === 'upload' || action.kind === 'create_folder' || action.kind === 'delete')
+		expect(written).toEqual([])
+		expect(plan.actions).toContainEqual({ kind: 'skip', relative: 'docs', reason: 'same_name' })
+		expect(plan.actions).toContainEqual({ kind: 'skip', relative: 'Docs', reason: 'same_name' })
+	})
+
+	test('names that differ by more than case sync as before', () => {
+		const cloud = [ROOT, cloud_entry('/report.md', 'c1'), cloud_entry('/report 2.md', 'c2')]
+		expect(reconcile({}, [local_file('Report (draft).md')], cloud, OPTIONS).actions).toEqual([
+			{ kind: 'upload', relative: 'Report (draft).md' },
+			{ kind: 'download', relative: 'report 2.md', cloud_id: 'c2' },
+			{ kind: 'download', relative: 'report.md', cloud_id: 'c1' },
+		])
+	})
+})
+
 describe('scan_local', () => {
 	test('skips hidden names and marks the folders that hold them', async () => {
 		const { local, stat } = make_local()
