@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "2.8.3",
+      "date": "2026-11-24",
+      "title": { "ru": "Картинка из вставленной ссылки", "en": "Pasted picture links become pictures" },
+      "text": {
+        "ru": "Если вставить в заметку строку вида ![](адрес картинки), она сразу становится картинкой — откуда бы её ни скопировали, в том числе из другой заметки.",
+        "en": "Paste a line like ![](picture address) into a note and it turns into the picture right away, wherever you copied it from, another note included."
+      }
+    },
+    {
       "version": "2.8.2",
       "date": "2026-11-24",
       "title": { "ru": "Регистрация открыта", "en": "Sign-up is open" },
