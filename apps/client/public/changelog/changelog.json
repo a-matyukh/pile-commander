@@ -1,6 +1,39 @@
 {
   "entries": [
     {
+      "version": "2.8.2",
+      "date": "2026-11-24",
+      "title": { "ru": "Регистрация открыта", "en": "Sign-up is open" },
+      "text": {
+        "ru": "Аккаунт для облака снова можно создать — на странице аккаунта или по ссылке-приглашению.",
+        "en": "You can create a cloud account again, on the account page or from an invite link."
+      }
+    },
+    {
+      "version": "2.8.2",
+      "title": { "ru": "Пароль — после письма", "en": "The password comes after the email" },
+      "text": {
+        "ru": "При регистрации нужна только почта. Пароль вы придумываете, когда откроете ссылку из письма. А если закрыть окно, не сохранив его, приложение попросит пароль снова.",
+        "en": "Signing up takes only your email. You choose a password when you open the link from the email, and if you close the window before saving it, the app asks again."
+      }
+    },
+    {
+      "version": "2.8.2",
+      "title": { "ru": "Пароль можно посмотреть", "en": "See the password you typed" },
+      "text": {
+        "ru": "В полях пароля появился значок глаза: он показывает введённое и снова прячет.",
+        "en": "Password fields have an eye icon that shows what you typed and hides it again."
+      }
+    },
+    {
+      "version": "2.8.2",
+      "title": { "ru": "Иконка облака всегда открывает облако", "en": "The cloud icon always opens the cloud" },
+      "text": {
+        "ru": "Если облачных папок ещё нет, клик по иконке облака открывает его страницу, а не ничего.",
+        "en": "With no cloud folders yet, clicking the cloud icon now opens the cloud page instead of doing nothing."
+      }
+    },
+    {
       "version": "2.8.1",
       "date": "2026-11-20",
       "title": { "ru": "Новый лендинг", "en": "A new landing" },
