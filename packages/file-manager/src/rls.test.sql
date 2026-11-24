@@ -2412,21 +2412,11 @@ begin
               where storage_key in (v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin',
                                     v_ws2::text || '/34343434-3434-4434-8434-343434343434.bin')
                 and owner_id = c_owner and size_bytes in (11, 17)) = 2, null);
-    -- an account that is deleted has nobody to count its blobs for
-    insert into auth.users (id, email, email_confirmed_at) values
-        ('99999999-9999-4999-8999-999999999991', 'rls-leaver@example.invalid', now());
-    perform set_config('request.jwt.claims',
-        json_build_object('sub', '99999999-9999-4999-8999-999999999991', 'role', 'authenticated')::text, true);
-    v_ws2 := public.create_workspace('rls-leaver-board');
-    select e.id into v_root2 from public.entries e where e.workspace_id = v_ws2 and e.parent_id is null;
-    insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
-    values (v_ws2, v_root2, 'gone.bin', 'file', 'application/octet-stream',
-            v_ws2::text || '/35353535-3535-4535-8535-353535353535.bin', 19);
-    delete from auth.users where id = '99999999-9999-4999-8999-999999999991';
-    insert into __results values ('gc queue: a deleted account''s blobs are queued for nobody',
-        (select count(*) from public.blob_deletions
-          where storage_key = v_ws2::text || '/35353535-3535-4535-8535-353535353535.bin'
-            and owner_id is null and size_bytes = 19) = 1, null);
+    -- (A deleted account's blobs are queued for nobody: postgres.test.ts checks
+    -- it. Here the account's rows would be made in this same transaction, and
+    -- Postgres then re-checks their foreign keys while the cascades are still
+    -- half done, which a real deletion, of rows committed long before, never
+    -- sees.)
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
 
     -- c_owner is on Free: 100 MB of room, so the turnover that leaves the

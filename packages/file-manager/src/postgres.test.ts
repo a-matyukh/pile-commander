@@ -88,6 +88,37 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 		})
 	}
 
+	// Committed rows, then the deletion in a transaction of its own, as Auth
+	// does it: the workspace goes by cascade after the account row is gone
+	test("a deleted account's blobs are queued once each, for nobody", async () => {
+		const f = await fixture()
+		const key = `${f.workspace}/${crypto.randomUUID()}.bin`
+		await db`insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
+			values (${f.workspace}::uuid, ${f.folder}::uuid, 'gone.bin', 'file', 'application/octet-stream', ${key}, 19)`
+		await db`delete from auth.users where id = ${f.owner}::uuid`
+		const queued = await db`select owner_id, size_bytes::int as size_bytes from public.blob_deletions where storage_key = ${key}`
+		expect(queued).toEqual([{ owner_id: null, size_bytes: 19 }])
+		const [left] = await db`select count(*)::int as n from public.workspaces where id = ${f.workspace}::uuid`
+		expect(left.n).toBe(0)
+	})
+
+	// The same file purged while its account lives is counted for that account
+	test("a purged file is queued for its owner, and a workspace deleted whole queues each blob once", async () => {
+		const f = await fixture()
+		const [a, b] = [`${f.workspace}/${crypto.randomUUID()}.bin`, `${f.workspace}/${crypto.randomUUID()}.bin`]
+		await db`insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
+			values (${f.workspace}::uuid, ${f.folder}::uuid, 'a.bin', 'file', 'application/octet-stream', ${a}, 7),
+			       (${f.workspace}::uuid, ${f.folder}::uuid, 'b.bin', 'file', 'application/octet-stream', ${b}, 11)`
+		await db`delete from public.entries where storage_key = ${a}`
+		await db`delete from public.workspaces where id = ${f.workspace}::uuid`
+		const queued = await db`select storage_key, owner_id, size_bytes::int as size_bytes from public.blob_deletions
+			where storage_key in (${a}, ${b}) order by size_bytes`
+		expect(queued).toEqual([
+			{ storage_key: a, owner_id: f.owner, size_bytes: 7 },
+			{ storage_key: b, owner_id: f.owner, size_bytes: 11 },
+		])
+	})
+
 	async function is_waiting_for_lock(pid: number) {
 		for (let i = 0; i < 100; i++) {
 			const [row] = await db`select wait_event_type from pg_stat_activity where pid = ${pid}`
