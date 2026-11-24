@@ -37,13 +37,18 @@ pub fn export_workspace_zip(
     zip_path: String,
     attrs_json: String,
 ) -> Result<(), String> {
-    let root = paths::readable(&app, &root_path)?;
+    // The checks resolve links; the work uses the paths as they were given,
+    // so names and what goes back to the window stay as the person sees them
+    // (a resolved Windows path starts with \\?\)
+    paths::readable(&app, &root_path)?;
+    paths::writable(&app, &zip_path)?;
+    let root = PathBuf::from(&root_path);
     if !root.is_dir() {
         return Err(format!("workspace root is not a directory: {root_path}"));
     }
 
     let folder_name = file_name(&root)?;
-    let zip_file_path = paths::writable(&app, &zip_path)?;
+    let zip_file_path = PathBuf::from(&zip_path);
 
     let file = File::create(&zip_file_path).map_err(|e| e.to_string())?;
     let mut zip = ZipWriter::new(file);
@@ -145,12 +150,14 @@ pub fn import_workspace_zip(
     zip_path: String,
     dest_parent: String,
 ) -> Result<String, String> {
-    let archive_path = paths::readable(&app, &zip_path)?;
+    paths::readable(&app, &zip_path)?;
+    paths::writable(&app, &dest_parent)?;
+    let archive_path = PathBuf::from(&zip_path);
     if !archive_path.is_file() {
         return Err(format!("archive is not a file: {zip_path}"));
     }
 
-    let dest_parent_path = paths::writable(&app, &dest_parent)?;
+    let dest_parent_path = PathBuf::from(&dest_parent);
     if !dest_parent_path.is_dir() {
         return Err(format!(
             "destination parent is not a directory: {dest_parent}"
@@ -350,7 +357,8 @@ pub fn pile_zip_begin(
     if !is_entry_name(&root_name) {
         return Err("unsafe archive root name".to_string());
     }
-    let target = paths::writable(&app, &zip_path)?;
+    paths::writable(&app, &zip_path)?;
+    let target = PathBuf::from(&zip_path);
     let partial = partial_path(&target)?;
     let file = File::create(&partial).map_err(|e| e.to_string())?;
     Ok(zips.insert(PileZip {

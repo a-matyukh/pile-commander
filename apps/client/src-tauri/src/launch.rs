@@ -180,6 +180,7 @@ pub async fn open_path<R: Runtime>(
 ) -> Result<(), String> {
     let resolved = paths::readable(&app, &path)?;
     if runs_on_open(&resolved) {
+        // a link is asked about under the name of what it opens
         let name = resolved
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -201,8 +202,10 @@ pub async fn open_path<R: Runtime>(
             return Ok(());
         }
     }
+    // the path as it was given: the check above followed links to see what
+    // would really open, the system follows them again on its own
     app.opener()
-        .open_path(resolved.to_string_lossy(), None::<&str>)
+        .open_path(path, None::<&str>)
         .map_err(|error| error.to_string())
 }
 
