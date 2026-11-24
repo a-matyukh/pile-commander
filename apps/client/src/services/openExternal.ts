@@ -41,25 +41,45 @@ export function is_editing_link(link: Element, event: Pick<MouseEvent, 'metaKey'
 	return event.button === 0 && !event.metaKey && !event.ctrlKey
 }
 
+const XLINK = 'http://www.w3.org/1999/xlink'
+
 /**
- * Catches clicks on links anywhere in the app (notes, captions, any rendered
- * markdown) so a web link never replaces the app in this window. Returns the
- * function that stops listening.
+ * The link a click lands on, with its address as written. A link is an HTML
+ * `<a>`, an `<area>` of an image map, or an SVG `<a>`, whose address may sit
+ * in `xlink:href`. All three navigate the window when clicked.
+ */
+export function clicked_link(target: EventTarget | null): { element: Element; href: string } | null {
+	const element = target instanceof Element ? target.closest('a, area') : null
+	if (!element) return null
+	const href = element.getAttribute('href') ?? element.getAttributeNS(XLINK, 'href')
+	return href === null ? null : { element, href }
+}
+
+/**
+ * Catches clicks on links anywhere in the app (notes, captions, shapes, any
+ * rendered markdown) so a web link never replaces the app in this window.
+ * A `download` link is no exception: for another site's address the
+ * attribute is a hint the browser may ignore, and then the click navigates.
+ * Links the page keeps — inside the app, blob and data URLs, which is what
+ * the app's own downloads use — are told apart by `external_target`.
+ * Returns the function that stops listening.
+ *
+ * On the desktop Rust refuses any navigation of the window away from the
+ * app as well (`navigation_guard` in src-tauri/src/lib.rs), for the link
+ * this listener does not know about.
  */
 export function listen_external_links(on_error: (error: unknown) => void): () => void {
 	const on_click = (event: MouseEvent) => {
 		if (event.defaultPrevented) return
 		// Left click opens; middle click (auxclick) too. Right click keeps the context menu
 		if (event.button !== 0 && event.button !== 1) return
-		const target = event.target instanceof Element ? event.target : null
-		const link = target?.closest('a[href]')
-		if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download')) return
+		const link = clicked_link(event.target)
+		if (!link) return
 		// In a note being edited a click puts the caret in the link; Cmd/Ctrl+click opens it.
-		if (is_editing_link(link, event)) return
-		const href = link.getAttribute('href') ?? ''
-		if (!external_target(href, window.location.origin, is_desktop)) return
+		if (is_editing_link(link.element, event)) return
+		if (!external_target(link.href, window.location.origin, is_desktop)) return
 		event.preventDefault()
-		void open_external(link.href).catch(on_error)
+		void open_external(new URL(link.href, document.baseURI).href).catch(on_error)
 	}
 	document.addEventListener('click', on_click, true)
 	document.addEventListener('auxclick', on_click, true)

@@ -333,6 +333,78 @@ fn pin_scroll_views(view: &objc2_app_kit::NSView) {
     }
 }
 
+/// A page of the app itself: the bundled files (`tauri://localhost`, or
+/// `http(s)://tauri.localhost` on Windows) and, under `tauri dev`, the dev
+/// server. `about:` is the blank document a new frame starts from.
+fn is_app_url(url: &tauri::Url, dev_url: Option<&tauri::Url>) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => {
+            url.host_str() == Some("tauri.localhost")
+                || dev_url.is_some_and(|dev| dev.origin() == url.origin())
+        }
+        "about" => true,
+        _ => false,
+    }
+}
+
+/// The window never leaves the app. The page already sends link clicks to
+/// the system browser (services/openExternal.ts), but a link it does not
+/// know about — some element a sanitizer let through — would replace the
+/// app with another site in a window that has no address bar. Whatever
+/// tries to navigate, only the app's own pages load here.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|webview, url| {
+            let dev_url = if tauri::is_dev() {
+                webview.config().build.dev_url.clone()
+            } else {
+                None
+            };
+            let allowed = is_app_url(url, dev_url.as_ref());
+            if !allowed {
+                log::warn!("navigation refused: {}", url.scheme());
+            }
+            allowed
+        })
+        .build()
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::is_app_url;
+
+    fn url(text: &str) -> tauri::Url {
+        tauri::Url::parse(text).unwrap()
+    }
+
+    #[test]
+    fn the_window_stays_on_the_apps_own_pages() {
+        assert!(is_app_url(&url("tauri://localhost/"), None));
+        assert!(is_app_url(&url("tauri://localhost/demo/Features"), None));
+        assert!(is_app_url(&url("http://tauri.localhost/index.html"), None));
+        assert!(is_app_url(&url("https://tauri.localhost/"), None));
+        assert!(is_app_url(&url("about:blank"), None));
+
+        assert!(!is_app_url(&url("https://evil.example/login"), None));
+        assert!(!is_app_url(&url("http://localhost:5173/"), None));
+        assert!(!is_app_url(&url("tauri://evil.example/"), None));
+        assert!(!is_app_url(&url("https://tauri.localhost.evil.example/"), None));
+        assert!(!is_app_url(&url("file:///Users/ann/.ssh/id_rsa"), None));
+        assert!(!is_app_url(&url("blob:tauri://localhost/1b2c"), None));
+        assert!(!is_app_url(&url("data:text/html,<script>1</script>"), None));
+        assert!(!is_app_url(&url("javascript:alert(1)"), None));
+    }
+
+    #[test]
+    fn the_dev_server_is_a_page_of_the_app_only_under_tauri_dev() {
+        let dev = url("http://localhost:5173");
+        assert!(is_app_url(&url("http://localhost:5173/demo"), Some(&dev)));
+        assert!(!is_app_url(&url("http://localhost:8080/"), Some(&dev)));
+        assert!(!is_app_url(&url("https://evil.example/"), Some(&dev)));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -358,6 +430,7 @@ pub fn run() {
             .build(),
     );
     builder
+        .plugin(navigation_guard())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())

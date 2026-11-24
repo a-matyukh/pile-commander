@@ -583,8 +583,12 @@ function create_svg_purify() {
 	if (typeof window === 'undefined') return null
 	const purify = DOMPurify(window)
 	if (!purify.isSupported) return null
-	purify.addHook('uponSanitizeAttribute', (_node, data) => {
-		if (is_dangerous_svg_attr(data.attrName.toLowerCase(), data.attrValue)) data.keepAttr = false
+	purify.addHook('uponSanitizeAttribute', (node, data) => {
+		const name = data.attrName.toLowerCase()
+		// A shape is a picture. An <a> around it would make every click on the
+		// shape a link to another site: the element stays, its address goes
+		if (node.localName === 'a' && (name === 'href' || name === 'xlink:href')) data.keepAttr = false
+		else if (is_dangerous_svg_attr(name, data.attrValue)) data.keepAttr = false
 	})
 	return purify
 }

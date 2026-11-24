@@ -485,6 +485,16 @@ Tauri checks the origin.
   readable paths; an attribute name with `:`, a separator or
   `Zone.Identifier` is refused, because on Windows an attribute is the
   stream `path:name` and `:$DATA` is the file's content.
+- **The window never leaves the app.** `navigation_guard` (`lib.rs`) lets
+  the webview load only the app's own pages (`tauri://localhost`,
+  `tauri.localhost` on Windows, the dev server under `tauri dev`); any other
+  navigation is refused, whatever started it. Before that the page itself
+  sends link clicks to the system browser (`listen_external_links`): an HTML
+  `<a>`, an image-map `<area>` and an SVG `<a>` with `href` or `xlink:href`,
+  with or without `download`. A note has no `<map>`, `<area>` or `usemap`,
+  and an `<a>` inside `<svg>` loses its address there and in SVG shapes, so
+  nothing invisible covers a note or a shape with a link. The window has no
+  address bar: a page from another site inside it could pass for the app.
 - **A file that runs is opened only after a yes.** The window has no
   `opener:allow-open-path`. `open_path` (`launch.rs`) opens a file with its
   default app, and for a file the system would run, install or mount (by
