@@ -1940,6 +1940,14 @@ begin
         (select hidden_at is null from public.hub_publications where source_workspace_id = v_ws), null);
     execute 'reset role';
 
+    -- the editor already reported three other boards this week: a fourth
+    -- report is kept for the moderator and does not weigh on the card
+    insert into public.workspaces (id, owner_id, name)
+    select ('5eed0000-0000-4000-8000-00000000000' || g)::uuid, c_buyer, 'reported ' || g
+      from generate_series(1, 3) g;
+    insert into private.hub_reports (workspace_id, reporter_id, reason, created_at)
+    select ('5eed0000-0000-4000-8000-00000000000' || g)::uuid, c_editor, 'earlier', now() - interval '1 day'
+      from generate_series(1, 3) g;
     perform set_config('request.jwt.claims', json_build_object('sub', c_editor, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform public.report_hub_listing(v_ws, 'spam from editor');
@@ -1948,13 +1956,28 @@ begin
     execute 'set local role authenticated';
     perform public.report_hub_listing(v_ws, 'spam from viewer');
     execute 'reset role';
+    insert into __results values ('auto-hide: an account that reported three other boards this week does not count',
+        (select count(*) from private.hub_reports r where r.workspace_id = v_ws) = 4
+        and (select hidden_at is null from public.hub_publications where source_workspace_id = v_ws), null);
+
+    -- a board someone forked takes one more report
+    update public.hub_publications set fork_count = 1 where source_workspace_id = v_ws;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_buyer, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform public.report_hub_listing(v_ws, 'spam from buyer');
+    execute 'reset role';
+    insert into __results values ('auto-hide: three qualified reports do not hide a forked board',
+        (select hidden_at is null from public.hub_publications where source_workspace_id = v_ws), null);
+    update public.hub_publications set fork_count = 0 where source_workspace_id = v_ws;
+    perform private.maybe_auto_hide_hub_listing(v_ws);
 
     insert into __results values ('auto-hide: three qualified reports hide the listing',
         (select hidden_at is not null and hidden_reason = 'reports'
            from public.hub_publications where source_workspace_id = v_ws), null);
-    insert into __results values ('auto-hide: listing_hidden mail queued',
+    insert into __results values ('auto-hide: listing_hidden mail queued, the moderator not told yet',
         (select count(*) from public.moderation_mail m
-          where m.workspace_id = v_ws and m.kind = 'listing_hidden') = 1, null);
+          where m.workspace_id = v_ws and m.kind = 'listing_hidden'
+            and m.reason = 'reports' and m.moderator_notified_at is null) = 1, null);
 
     perform set_config('request.jwt.claims', '', true);
     execute 'set local role anon';

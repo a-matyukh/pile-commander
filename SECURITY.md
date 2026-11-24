@@ -274,8 +274,14 @@ show only these intentional INFOs. Anything else is a regression.
   and again in `record_hub_preview_upload`.
 - **Hub post-moderation.** `report_hub_listing` is authenticated-only (not
   the owner; 20 reports / day). `private.hub_reports` is not in the Data
-  API. Three reports from accounts older than 7 days auto-set
-  `hub_publications.hidden_at`; RLS hides those rows from visitors while the
+  API. Three counted reports auto-set `hub_publications.hidden_at` (one
+  more at 1, 3, 7, 15 and 31 forks). A report counts when its author's
+  account is older than 7 days and the author reported at most two other
+  boards in the 7 days before it, so three accounts hide three cards a
+  week, not twenty a day. The backend mails the moderator at once
+  (`moderation_mail.moderator_notified_at`), apart from the owner's mail,
+  so a wrong hide is undone in hours. Views are not counted yet; forks stand
+  in for a board's audience. RLS hides those rows from visitors while the
   owner still sees them, and `hub_preview_target` mirrors that — a hidden card
   stops serving its cover through `GET /hub-preview` to whoever saved the key,
   not only disappearing from the gallery. `/{username}/{slug}` stays up until an admin

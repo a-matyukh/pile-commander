@@ -1738,8 +1738,9 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- report_hub_listing: authenticated visitors, not the owner. One row per
--- (workspace, reporter). Accounts younger than 7 days still report; they
--- do not count toward auto-hide. 20 reports / reporter / day.
+-- (workspace, reporter). Every report is stored and reaches the moderator;
+-- which ones count toward auto-hide is maybe_auto_hide_hub_listing's rule
+-- (schema.sql). 20 reports / reporter / day.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.report_hub_listing(p_workspace uuid, p_reason text)

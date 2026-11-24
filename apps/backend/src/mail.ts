@@ -447,6 +447,37 @@ export function moderation_digest_email_copy(
 	};
 }
 
+/**
+ * To the moderator, the moment reports hide a card: the weekly digest is too
+ * late to undo a hide that three accounts arranged
+ */
+export function hub_hidden_moderator_email_copy(row: {
+	workspace_id: string;
+	name: string;
+	url: string | null;
+	report_count: number | null;
+	reasons: string[];
+}): { subject: string; body: string } {
+	const title = subject_text(row.name) || "A board";
+	const link = row.url ? `<p><a href="${escape_html(row.url)}">${escape_html(row.url)}</a></p>` : "";
+	const reasons = row.reasons.length
+		? `<ul>${row.reasons.map((reason) => `<li>${escape_html(reason)}</li>`).join("")}</ul>`
+		: "";
+	const count = row.report_count === null ? "" : `<p>Reports: ${row.report_count}.</p>`;
+	return {
+		subject: `Hidden from the Hub by reports: ${title}`,
+		body:
+			`<p>${escape_html(title)} was hidden from the Hub by reports. Its public link still works; ` +
+			`the owner has been told it waits for a moderator.</p>` +
+			link +
+			count +
+			reasons +
+			`<p>Board id: <code>${escape_html(row.workspace_id)}</code>. As an admin, ` +
+			`<code>moderate_hub_listing(id, 'unhide')</code> puts the card back and ` +
+			`<code>moderate_hub_listing(id, 'make_private', reason)</code> takes the board down.</p>`,
+	};
+}
+
 function str_field(value: unknown): string {
 	return typeof value === "string" ? value : "";
 }

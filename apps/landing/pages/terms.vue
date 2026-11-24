@@ -153,8 +153,10 @@ useSeoMeta({
       the <NuxtLink to="/support">Support</NuxtLink> page.
     </p>
     <p>
-      Three reports from accounts older than seven days hide a Hub card until a
-      moderator looks at it, and the owner is emailed. Hiding a card does not by
+      Reports from three accounts older than seven days hide a Hub card until a
+      moderator looks at it, and the owner is emailed. A folder that people
+      have forked takes more reports, and an account’s reports count toward
+      hiding three cards a week. Hiding a card does not by
       itself take down the public link: we make a folder private when its
       content is unlawful or a moderator decides it has to go. You can appeal by
       writing to that same address.

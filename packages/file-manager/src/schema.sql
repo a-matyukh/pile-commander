@@ -824,8 +824,8 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- Post-moderation. Admins are a uid list (insert via SQL). Reports attach to
--- the workspace so they survive delist; a re-list with ≥3 qualified reports
--- auto-hides again. Mail is a queue the backend drains (Plunk) — triggers
+-- the workspace so they survive delist; a re-list with enough qualified
+-- reports (maybe_auto_hide_hub_listing) auto-hides again. Mail is a queue the backend drains (Plunk) — triggers
 -- never send. Digest cursor is a singleton row.
 -- ----------------------------------------------------------------------------
 
@@ -858,7 +858,11 @@ create table public.moderation_mail (
     created_at timestamptz not null default now(),
     sent_at timestamptz,
     attempts integer not null default 0 check (attempts >= 0),
-    last_error text
+    last_error text,
+    -- listing_hidden by reports: when the backend told the moderator
+    -- (MODERATION_DIGEST_EMAIL). Apart from sent_at: the owner's mail and
+    -- the moderator's succeed or fail on their own
+    moderator_notified_at timestamptz
 );
 
 create index moderation_mail_pending_idx
@@ -1566,9 +1570,21 @@ as $$
     );
 $$;
 
--- Auto-hide a Hub card when ≥3 distinct reporters with accounts older than
--- 7 days filed a report after reports_counted_after. No-op when there is no
--- visible listing. Enqueues listing_hidden mail for the owner.
+-- Auto-hide a Hub card on reports filed after reports_counted_after. No-op
+-- when there is no visible listing. Enqueues listing_hidden mail for the
+-- owner; the backend also writes to the moderator at once
+-- (moderation_mail.moderator_notified_at), so a wrong hide is undone in
+-- hours, not at the weekly digest.
+--
+-- Three accounts must not be able to clear the gallery. A report counts when
+--   * its author's account is older than 7 days, and
+--   * the author reported at most two other boards in the 7 days before it:
+--     an account's reports weigh on three boards a week, however many it
+--     files (report_hub_listing takes 20 a day, and all of them still reach
+--     the moderator's digest).
+-- A board people fork is harder to hide: 3 reports for a board nobody
+-- forked, one more at 1, 3, 7, 15 and 31 forks (8 at most). Views would be
+-- the better measure of a board's audience; they are not counted yet.
 create or replace function private.maybe_auto_hide_hub_listing(p_workspace uuid)
 returns void
 language plpgsql
@@ -1578,13 +1594,15 @@ as $$
 declare
     v_cutoff timestamptz;
     v_count bigint;
+    v_forks bigint;
+    v_need int;
     v_owner uuid;
     v_username text;
     v_slug text;
     v_name text;
 begin
-    select h.reports_counted_after, h.owner_id, p.username, w.slug, w.name
-      into v_cutoff, v_owner, v_username, v_slug, v_name
+    select h.reports_counted_after, h.owner_id, h.fork_count, p.username, w.slug, w.name
+      into v_cutoff, v_owner, v_forks, v_username, v_slug, v_name
       from public.hub_publications h
       join public.workspaces w on w.id = h.source_workspace_id
       join public.profiles p on p.id = h.owner_id
@@ -1594,14 +1612,31 @@ begin
         return;
     end if;
 
+    v_need := 3 + case
+        when v_forks >= 31 then 5
+        when v_forks >= 15 then 4
+        when v_forks >= 7 then 3
+        when v_forks >= 3 then 2
+        when v_forks >= 1 then 1
+        else 0
+    end;
+
     select count(*) into v_count
       from private.hub_reports r
       join auth.users u on u.id = r.reporter_id
      where r.workspace_id = p_workspace
        and r.created_at > v_cutoff
-       and u.created_at <= now() - interval '7 days';
+       and u.created_at <= now() - interval '7 days'
+       and (
+           select count(*) from private.hub_reports o
+            where o.reporter_id = r.reporter_id
+              and o.workspace_id <> r.workspace_id
+              and o.created_at > r.created_at - interval '7 days'
+              -- "before it"; two reports of one instant are ordered by board
+              and (o.created_at, o.workspace_id) < (r.created_at, r.workspace_id)
+       ) < 3;
 
-    if v_count < 3 then
+    if v_count < v_need then
         return;
     end if;
 

@@ -34,9 +34,11 @@ useSeoMeta({
 
     <h2>What happens after a report</h2>
     <p>
-      Three reports from accounts older than seven days hide the Hub card and
+      Reports from three accounts older than seven days hide the Hub card and
       its cover image until a moderator looks at it; the owner is emailed when
-      that happens. The public link keeps working until a moderator makes the
+      that happens, and so is the moderator. A folder that people have forked
+      takes more reports, and an account’s reports count toward hiding three
+      cards a week. The public link keeps working until a moderator makes the
       folder private, which is what we do when content is unlawful. Owners
       can appeal at the same address.
     </p>
