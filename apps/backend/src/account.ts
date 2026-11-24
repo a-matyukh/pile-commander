@@ -1,6 +1,7 @@
 import type { Env } from "./env";
 import { ApiError, bearer_token, internal_error, require_live_user, service_client, user_client } from "./auth";
 import { PolarApi } from "./billing/polar";
+import { default_erase, erase_feedback_of } from "./feedback";
 
 // Supabase access tokens carry `amr`: one entry per authentication method used
 // by the session, with the unix time it happened. A refreshed token keeps the
@@ -47,6 +48,10 @@ export function assert_recent_authentication(
 // A paid subscription is canceled first (Polar deletes the customer, which
 // ends its subscriptions at once); if Polar cannot be reached the account
 // stays, so nobody keeps paying for an account that is gone
+// Feedback notes are not tied to an account (anyone may send one), so no
+// cascade reaches them: those sent from the account's address are erased
+// here, after the account. A failure is logged and left to the notes' own
+// retention (FEEDBACK_NOTE_DAYS)
 export async function handle_delete_account(
 	env: Env,
 	req: Request,
@@ -69,6 +74,15 @@ export async function handle_delete_account(
 	const admin = service_client(env);
 	const { error } = await admin.auth.admin.deleteUser(user.id);
 	if (error) throw internal_error("account deletion", error);
+
+	if (user.email) {
+		try {
+			const erased = await erase_feedback_of(user.email, default_erase(admin));
+			if (erased > 0) console.log(`[account] erased ${erased} feedback note(s) of a deleted account`);
+		} catch (err) {
+			console.error("[account] erasing feedback notes failed:", err instanceof Error ? err.message : err);
+		}
+	}
 
 	return Response.json({ ok: true });
 }

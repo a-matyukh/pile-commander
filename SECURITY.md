@@ -386,6 +386,16 @@ show only these intentional INFOs. Anything else is a regression.
 - **Account deletion needs a fresh sign-in.** The session's newest `amr`
   timestamp must be younger than `ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS`
   (10 min); the client re-enters the password in the confirm dialog.
+- **A feedback note is personal data no account owns.** Anyone may send
+  one, so no cascade reaches it. The backend's daily worker removes a
+  note's screenshots after `FEEDBACK_ATTACHMENT_DAYS` (90) and the note
+  after `FEEDBACK_NOTE_DAYS` (365); deleting an account erases the notes
+  sent from its address; `erase:feedback <email>` (apps/backend) answers a
+  request by mail. Screenshots go first, then the row. The service role
+  may insert, clear `attachments` and delete, never rewrite a note. The
+  privacy page names both periods. `billing_events` stays after the
+  account by design: its payload is the event type, subscription, status
+  and product, no contact details.
 - **An account goes in one statement, and the largest one fits.** Deleting
   the auth user cascades to its folders, entries, text, ink and edges, and
   the blob queue triggers run inside. Auth's database role has no statement

@@ -206,6 +206,8 @@ export type Env = {
 	feedback_daily_attachments_max: number;
 	/** how long a note's screenshots are kept in Storage */
 	feedback_attachment_days: number;
+	/** A feedback note (its email and text) is deleted after this many days */
+	feedback_note_days: number;
 	egress: EgressEnv;
 	ops: OpsEnv;
 	deriv: DerivEnv;
@@ -328,6 +330,7 @@ export function load_env(): Env {
 		feedback_daily_max: positive_int_or("FEEDBACK_DAILY_MAX", 300),
 		feedback_daily_attachments_max: positive_int_or("FEEDBACK_DAILY_ATTACHMENTS_MAX", 200),
 		feedback_attachment_days: positive_int_or("FEEDBACK_ATTACHMENT_DAYS", 90),
+		feedback_note_days: positive_int_or("FEEDBACK_NOTE_DAYS", 365),
 		ops: {
 			alert_email: process.env.OPS_ALERT_EMAIL?.trim() || process.env.MODERATION_DIGEST_EMAIL?.trim() || null,
 			errors_per_window: positive_int_or("OPS_ERRORS_PER_10_MIN", 5),

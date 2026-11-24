@@ -8,6 +8,9 @@ import {
 	delete_feedback,
 	handle_feedback,
 	prune_feedback_attachments,
+	prune_feedback_notes,
+	erase_feedback_of,
+	type EraseFeedback,
 	normalize_feedback_attachments,
 	normalize_feedback_category,
 	normalize_feedback_message,
@@ -60,6 +63,7 @@ function feedback_env(overrides: Partial<Env> = {}): Env {
 		feedback_daily_max: 300,
 		feedback_daily_attachments_max: 200,
 		feedback_attachment_days: 90,
+		feedback_note_days: 365,
 		egress: { mode: "off", alert_day_fraction: 0.25, visitor_fraction: 0.05, alert_email: null },
 		ops: { alert_email: null, errors_per_window: 5, database_alert_bytes: 6 * 1024 ** 3, storage_alert_bytes: 1024 ** 4, bounces_per_day: 5 },
 		deriv: {
@@ -452,6 +456,68 @@ describe("prune_feedback_attachments", () => {
 	test("a failed update is not counted as done", async () => {
 		const h = ops_over([{ id: "n1" }], { clear: "n1" });
 		expect(await prune_feedback_attachments(90, h.ops, NOW)).toBe(0);
+	});
+});
+
+describe("feedback notes are not kept forever", () => {
+	const NOW = Date.UTC(2026, 10, 25);
+	type Note = { id: string; email: string; attachments: { path: string; mime: "image/png"; size_bytes: number }[] };
+	const note = (id: string, email: string, shots = 0): Note => ({
+		id,
+		email,
+		attachments: Array.from({ length: shots }, (_, i) => ({ path: `${id}/${i}.png`, mime: "image/png" as const, size_bytes: 8 })),
+	});
+
+	function store(notes: Note[], fail: { remove?: string; row?: string } = {}) {
+		const removed: string[] = [];
+		const asked: string[] = [];
+		const ops: EraseFeedback = {
+			older_than: async (before) => {
+				asked.push(before);
+				return notes.slice();
+			},
+			sent_from: async (email, limit) => notes.filter((item) => item.email === email).slice(0, limit),
+			remove_objects: async (paths) => {
+				if (fail.remove && paths.some((path) => path.startsWith(fail.remove!))) return { error: { message: "storage down" } };
+				removed.push(...paths);
+				return { error: null };
+			},
+			remove_row: async (id) => {
+				if (id === fail.row) return { error: { message: "db down" } };
+				notes.splice(notes.findIndex((item) => item.id === id), 1);
+				return { error: null };
+			},
+		};
+		return { ops, notes, removed, asked };
+	}
+
+	test("a note past its time goes with its screenshots, the files first", async () => {
+		const h = store([note("n1", "a@example.com", 2), note("n2", "b@example.com")]);
+		expect(await prune_feedback_notes(365, h.ops, NOW)).toBe(2);
+		expect(h.removed).toEqual(["n1/0.png", "n1/1.png"]);
+		expect(h.notes).toEqual([]);
+		expect(h.asked[0]).toBe(new Date(NOW - 365 * 24 * 60 * 60 * 1000).toISOString());
+	});
+
+	test("a note whose screenshots could not be removed stays for the next run", async () => {
+		const h = store([note("n1", "a@example.com", 1), note("n2", "a@example.com", 1)], { remove: "n1" });
+		expect(await prune_feedback_notes(365, h.ops, NOW)).toBe(1);
+		expect(h.notes.map((item) => item.id)).toEqual(["n1"]);
+	});
+
+	test("erasing by address takes every note of that address, however it is typed, and no other", async () => {
+		const mine = Array.from({ length: 150 }, (_, i) => note(`m${i}`, "ann@example.com", i === 0 ? 1 : 0));
+		const h = store([...mine, note("other", "bob@example.com", 1)]);
+		expect(await erase_feedback_of("  Ann@Example.com ", h.ops)).toBe(150);
+		expect(h.notes.map((item) => item.id)).toEqual(["other"]);
+		expect(h.removed).toEqual(["m0/0.png"]);
+	});
+
+	test("erasing stops when nothing can be deleted, and takes no address that is not one", async () => {
+		const h = store([note("n1", "ann@example.com")], { row: "n1" });
+		expect(await erase_feedback_of("ann@example.com", h.ops)).toBe(0);
+		expect(await erase_feedback_of("not an address", h.ops)).toBe(0);
+		expect(h.notes).toHaveLength(1);
 	});
 });
 

@@ -1124,6 +1124,21 @@ begin
         insert into __results values ('service: feedback attachments cap', true, null);
         execute 'set local role service_role';
     end;
+    -- the backend forgets a note's screenshots after a while, then the note;
+    -- what someone wrote and from which address it never rewrites
+    update public.feedback set attachments = '[]'::jsonb where email = 'fb@example.invalid';
+    insert into __results values ('service: feedback screenshots can be cleared',
+        (select attachments = '[]'::jsonb from public.feedback where email = 'fb@example.invalid'), null);
+    begin
+        update public.feedback set email = 'other@example.invalid' where email = 'fb@example.invalid';
+        insert into __results values ('service: a feedback note cannot be rewritten', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('service: a feedback note cannot be rewritten', true, null);
+        execute 'set local role service_role';
+    end;
+    delete from public.feedback where email = 'fb@example.invalid';
+    insert into __results values ('service: a feedback note can be deleted',
+        (select count(*) from public.feedback where email = 'fb@example.invalid') = 0, null);
 
     -- egress: the blob row the readers below resolve, a finalized Hub
     -- preview to list later, and the meter's flush

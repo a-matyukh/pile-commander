@@ -540,6 +540,9 @@ create table public.billing_events (
 -- ----------------------------------------------------------------------------
 -- feedback: landing /feedback form. Service-role writes only (POST /feedback).
 -- Multiple rows per email are allowed. Message length matches the form cap.
+-- A note is personal data that no account owns: nothing cascades to it. The
+-- backend deletes it after FEEDBACK_NOTE_DAYS, and at once when the account
+-- with that address is deleted or its author asks (feedback.ts).
 -- Optional screenshots live in the private Storage bucket `feedback` at
 -- `{id}/{uuid}.ext`. Drop a note through the Storage API (remove those
 -- paths) THEN delete the row — a SQL delete of storage.objects orphans
@@ -2835,9 +2838,13 @@ grant update (last_pass_at) on public.sync_devices to authenticated;
 grant select, insert on public.billing_events to service_role;
 
 -- feedback: no client grants; RLS with no policies is the backstop if the
--- project toggle exposes new tables to anon/authenticated
+-- project toggle exposes new tables to anon/authenticated. The backend
+-- writes a note, later clears its screenshots (FEEDBACK_ATTACHMENT_DAYS)
+-- and deletes it (FEEDBACK_NOTE_DAYS, a deleted account, a request by
+-- mail). It never rewrites the address or the text: no grant for that
 revoke all on public.feedback from public, anon, authenticated;
-grant select, insert on public.feedback to service_role;
+grant select, insert, delete on public.feedback to service_role;
+grant update (attachments) on public.feedback to service_role;
 
 -- egress meter: no client grants (RLS with no policies is the backstop).
 -- egress_daily / download_daily are written only through egress_sync /
