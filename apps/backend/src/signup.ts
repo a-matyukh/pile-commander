@@ -10,8 +10,11 @@ export const CAPTCHA_METADATA_KEY = "captcha_token";
 type HookUser = { email?: unknown; user_metadata?: unknown; app_metadata?: unknown };
 
 function reject(message: string): Response {
-	// Auth hands `message` to the client that tried to sign up
-	return Response.json({ error: { http_code: 400, message } }, { status: 400 });
+	// Status 200 with an `error` object: Auth reads the body only on a 2xx and
+	// then answers the client with http_code and message. A 4xx itself is
+	// taken as a broken hook ("Invalid payload sent to hook", a 500 to the
+	// client, whatever the body says)
+	return Response.json({ error: { http_code: 400, message } }, { status: 200 });
 }
 
 /** Cloudflare's answer for one token; any failure to ask is a refusal */

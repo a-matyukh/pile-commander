@@ -49,7 +49,8 @@ describe("handle_before_user_created", () => {
 
 	test("no token, or one Cloudflare refuses, stops the sign-up with a message for the client", async () => {
 		const none = await handle_before_user_created(env(), hook({}), cloudflare(true).send);
-		expect(none.status).toBe(400);
+		// a 2xx, or Auth would not read the error and would answer a bare 500
+		expect(none.status).toBe(200);
 		expect(await none.json()).toEqual({ error: { http_code: 400, message: "captcha_required" } });
 		const bad = await handle_before_user_created(env(), hook({ captcha_token: "tok" }), cloudflare(false).send);
 		expect(await bad.json()).toEqual({ error: { http_code: 400, message: "captcha_failed" } });
