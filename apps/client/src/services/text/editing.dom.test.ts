@@ -34,6 +34,9 @@ function type(editor: Editor, text: string) {
 	}
 }
 
+/** Pastes plain text at the caret, as ⌘V does: the paste rules run on it. */
+const paste = (editor: Editor, text: string) => editor.view.pasteText(text, new Event('paste') as ClipboardEvent)
+
 const press = (editor: Editor, key: string) => editor.commands.keyboardShortcut(key)
 const markdown = (editor: Editor) => serialize_note(editor.getJSON())
 
@@ -161,5 +164,27 @@ describe('what the formatting popup runs writes the plan’s format', () => {
 		select_all(link)
 		link.chain().setLink({ href: 'https://example.com' }).run()
 		expect(markdown(link)).toBe('[site](https://example.com)')
+	})
+})
+
+describe('pasted markdown for a picture', () => {
+	test('becomes the picture', () => {
+		const editor = open('')
+		paste(editor, '![](https://example.com/cat.png)')
+		expect(editor.getHTML()).toContain('<img src="https://example.com/cat.png"')
+		expect(markdown(editor)).toBe('![](https://example.com/cat.png)')
+	})
+
+	test('keeps its place in a line, with its text and title', () => {
+		const editor = open('')
+		paste(editor, 'before ![a cat](https://example.com/cat.png "Tom") after')
+		expect(markdown(editor)).toBe('before ![a cat](https://example.com/cat.png "Tom") after')
+		expect(editor.getHTML()).toContain('alt="a cat"')
+	})
+
+	test('stays text when the address is not one a note may load', () => {
+		const editor = open('')
+		paste(editor, '![x](javascript:alert(1))')
+		expect(editor.getHTML()).not.toContain('<img')
 	})
 })

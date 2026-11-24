@@ -8,7 +8,7 @@
  * `javascript:` link do not survive. A block this schema does not know becomes
  * a raw block and is written back byte for byte.
  */
-import { Extension, Mark, Node } from '@tiptap/core'
+import { Extension, Mark, Node, nodePasteRule } from '@tiptap/core'
 import type { AnyExtension, JSONContent, MarkdownLexerConfiguration, MarkdownToken, MarkdownTokenizer } from '@tiptap/core'
 import { StarterKit } from '@tiptap/starter-kit'
 import { CodeBlock } from '@tiptap/extension-code-block'
@@ -326,7 +326,31 @@ function safe_image_src(src: string | null | undefined): string | null {
  * Images are inline, as in markdown: `text ![](a.png) text` keeps its place.
  * Tiptap's block image would drop one that shares a line with text.
  */
+/** `![alt](address "title")` inside pasted text; the address has no spaces, as in a link. */
+const PASTED_IMAGE = /!\[([^\]\n]*)\]\(\s*([^\s()<>]+)(?:\s+["']([^"'\n]*)["'])?\s*\)/g
+
 const NoteImage = Image.extend({
+	/**
+	 * Pasted markdown for a picture becomes the picture, as typing it does
+	 * (the input rule Tiptap ships). Without this the line stays as text with
+	 * a link in it, and saving escapes it: it never turns into a picture.
+	 */
+	addPasteRules() {
+		return [
+			nodePasteRule({
+				find: text =>
+					[...text.matchAll(PASTED_IMAGE)]
+						.filter(match => safe_image_src(match[2]) !== null)
+						.map(match => ({
+							index: match.index,
+							text: match[0],
+							data: { src: match[2], alt: match[1] || null, title: match[3] || null },
+						})),
+				type: this.type,
+				getAttributes: match => match.data ?? {},
+			}),
+		]
+	},
 	renderHTML({ HTMLAttributes }) {
 		return ['img', { ...HTMLAttributes, src: safe_image_src(HTMLAttributes.src as string | null) }]
 	},
