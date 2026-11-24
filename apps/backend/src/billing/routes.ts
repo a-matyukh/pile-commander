@@ -1,4 +1,4 @@
-import { ApiError, bearer_token, internal_error, require_user, service_client, user_client } from "../auth";
+import { ApiError, bearer_token, require_live_user, user_client } from "../auth";
 import { PAID_PLANS, type BillingInterval, type Env, type PaidPlan } from "../env";
 import { PolarApi, type PolarProduct } from "./polar";
 import { KEEPS_PLAN, product_for } from "./state";
@@ -20,12 +20,12 @@ function require_billing(env: Env): string {
 	return env.public_app_url;
 }
 
+// A checkout or the payment portal is opened only for a session that still
+// exists (`require_live_user`); the same answer carries the address
 async function verified_caller(env: Env, req: Request): Promise<{ id: string; email: string | null }> {
 	const token = bearer_token(req);
-	const user = await require_user(user_client(env, token), token);
-	const { data, error } = await service_client(env).auth.admin.getUserById(user.id);
-	if (error) throw internal_error("billing user lookup", error);
-	return { id: user.id, email: data.user?.email ?? null };
+	const user = await require_live_user(user_client(env, token), token);
+	return { id: user.id, email: user.email ?? null };
 }
 
 async function json_object(req: Request): Promise<Record<string, unknown>> {

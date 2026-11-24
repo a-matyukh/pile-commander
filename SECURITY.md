@@ -357,6 +357,16 @@ show only these intentional INFOs. Anything else is a regression.
 - **Account deletion needs a fresh sign-in.** The session's newest `amr`
   timestamp must be younger than `ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS`
   (10 min); the client re-enters the password in the confirm dialog.
+- **A token is trusted until it expires, except where that would matter
+  most.** `require_user` checks signature and expiry (JWKS, `getClaims`),
+  not the session: after "sign out everywhere" a token someone carried off
+  works on uploads and downloads for up to an hour, the same as it does on
+  the Data API. Routes that cannot be taken back or that leave a way in
+  behind them ask Auth for the session row first (`require_live_user`,
+  `GET /auth/v1/user`): `POST /account/delete`, `POST /billing/checkout`,
+  `POST /billing/portal`, `POST /workspace/invite`. A session that was
+  signed out or replaced gets 401; when Auth cannot be reached they answer
+  503 and do nothing.
 - **Rate limits** (`src/ratelimit.ts`): global per-IP fence plus per-route
   buckets keyed by IP and by the JWT subject; 429 + `Retry-After`. Single
   Render instance — the counters are in-process. Request bodies are capped at

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ApiError, bearer_token, internal_error, require_user, require_workspace_owner, user_client } from "./auth";
+import { ApiError, bearer_token, internal_error, require_live_user, require_workspace_owner, user_client } from "./auth";
 import type { Env } from "./env";
 import {
 	mail_locale,
@@ -72,7 +72,8 @@ function default_add_member(env: Env, req: Request, service: SupabaseClient | nu
 	return async (workspace_id, email, role) => {
 		const token = bearer_token(req);
 		const client = user_client(env, token);
-		const user = await require_user(client, token);
+		// an invite outlives the token that made it: the session must still exist
+		const user = await require_live_user(client, token);
 		await require_workspace_owner(client, user, workspace_id);
 		if (service) {
 			const { data, error } = await service.rpc("invite_workspace_member", {
