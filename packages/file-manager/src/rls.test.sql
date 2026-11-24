@@ -2466,6 +2466,30 @@ begin
         (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
     delete from public.blob_deletions where storage_key like 'probe/leaving-%';
 
+    -- the operations watch reads counts and sizes, as the service role only
+    insert into public.blob_deletions (storage_key, attempts, queued_at)
+    values ('probe/ops-dead', 25, now() - interval '5 days'),
+           ('probe/ops-waiting', 0, now() - interval '30 hours');
+    insert into private.mail_events (kind, email) values ('complaint', 'rls-hot@example.invalid');
+    execute 'set local role service_role';
+    v_receipt := public.ops_snapshot(25);
+    insert into __results values ('ops: the snapshot counts what the watch mails about',
+        (v_receipt->>'database_bytes')::bigint > 0
+        and (v_receipt->>'stored_bytes')::bigint >= 0
+        and (v_receipt->>'gc_dead')::int = 1
+        and (v_receipt->>'gc_queue')::int >= 2
+        and (v_receipt->>'gc_oldest_hours')::numeric between 29 and 31
+        and (v_receipt->>'mail_complaints_day')::int >= 1, v_receipt::text);
+    execute 'set local role authenticated';
+    begin
+        perform public.ops_snapshot(25);
+        insert into __results values ('ops: an account cannot read the snapshot', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('ops: an account cannot read the snapshot', true, null);
+    end;
+    execute 'reset role';
+    delete from public.blob_deletions where storage_key like 'probe/ops-%';
+
     -- A thousand copies of one object cannot hide another object's reference.
     v_gc_a := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
     v_gc_b := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
@@ -2619,6 +2643,8 @@ begin
             ('public.entries_tree_lock()', false, false),
             ('private.blob_references(text[])', false, false),
             ('public.blob_references(text[])', false, false),
+            ('private.ops_snapshot(int)', false, false),
+            ('public.ops_snapshot(int)', false, false),
             ('private.assert_upload_access(uuid, uuid, text)', false, false),
             ('private.register_upload(uuid, uuid, text, text, int, bigint)', false, false),
             ('public.register_upload(uuid, uuid, text, text, int, bigint)', false, false),

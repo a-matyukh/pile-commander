@@ -650,6 +650,34 @@ part of this stage.
 
 ---
 
+## Watching it run
+
+Nothing reads the Render log until something is already wrong, so the
+backend mails the operator itself (`apps/backend/src/ops.ts`), every ten
+minutes, one mail per cause in 24 hours, to `OPS_ALERT_EMAIL` (or
+`MODERATION_DIGEST_EMAIL`):
+
+- five or more requests answered 500, or unhandled rejections, in ten
+  minutes, with the first of them;
+- deletions the GC gave up on (dead letters), and a queue whose oldest row
+  has waited a day longer than `GC_MIN_AGE_HOURS`;
+- the database past `OPS_DATABASE_ALERT_BYTES` (6 GiB of Supabase Pro's 8)
+  and the stored files past `OPS_STORAGE_ALERT_BYTES`;
+- a complaint, or five bounces, in the last day (`private.mail_events`).
+
+The numbers come from `ops_snapshot` (service role only: counts and sizes).
+Egress has its own alerts (`EGRESS_ALERT_EMAIL`), Plunk complaints stop the
+account's invites (`mail_events.ts`).
+
+What the backend cannot report is that it is down. `GET /health` answers 200
+while the database answers and 503 when it does not, for a monitor outside:
+point one at `<backend>/health` and one at the web app. Still panels, not
+code: Render's bandwidth and deploy notifications, Supabase's own disk
+alerts, the B2 caps and their 75 % mail. Errors in the client are not
+collected anywhere yet.
+
+---
+
 ## Known and deliberately not closed
 
 ### Postgres jsonb is outside the byte quota

@@ -49,6 +49,17 @@ export function polar_env(source: Record<string, string | undefined> = process.e
  */
 export type EgressMode = "off" | "file_size" | "all";
 
+/** The operations watch (ops.ts): where its mail goes and when it writes */
+export type OpsEnv = {
+	/** OPS_ALERT_EMAIL, or MODERATION_DIGEST_EMAIL when unset; null → log only */
+	alert_email: string | null;
+	/** requests answered 500 (and unhandled rejections) in 10 minutes that are worth a mail */
+	errors_per_window: number;
+	database_alert_bytes: number;
+	storage_alert_bytes: number;
+	bounces_per_day: number;
+};
+
 export type EgressEnv = {
 	mode: EgressMode;
 	/** alert when an owner's bytes today reach this share of their monthly budget */
@@ -195,6 +206,7 @@ export type Env = {
 	/** how long a note's screenshots are kept in Storage */
 	feedback_attachment_days: number;
 	egress: EgressEnv;
+	ops: OpsEnv;
 	deriv: DerivEnv;
 };
 
@@ -315,6 +327,14 @@ export function load_env(): Env {
 		feedback_daily_max: positive_int_or("FEEDBACK_DAILY_MAX", 300),
 		feedback_daily_attachments_max: positive_int_or("FEEDBACK_DAILY_ATTACHMENTS_MAX", 200),
 		feedback_attachment_days: positive_int_or("FEEDBACK_ATTACHMENT_DAYS", 90),
+		ops: {
+			alert_email: process.env.OPS_ALERT_EMAIL?.trim() || process.env.MODERATION_DIGEST_EMAIL?.trim() || null,
+			errors_per_window: positive_int_or("OPS_ERRORS_PER_10_MIN", 5),
+			// Supabase Pro comes with 8 GB of disk: write at three quarters
+			database_alert_bytes: positive_int_or("OPS_DATABASE_ALERT_BYTES", 6 * 1024 ** 3),
+			storage_alert_bytes: positive_int_or("OPS_STORAGE_ALERT_BYTES", 1024 ** 4),
+			bounces_per_day: positive_int_or("OPS_BOUNCES_PER_DAY", 5),
+		},
 		egress: {
 			mode: egress_mode(),
 			alert_day_fraction: fraction_or("EGRESS_ALERT_DAY_FRACTION", 0.25),

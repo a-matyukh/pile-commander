@@ -18,6 +18,7 @@ import { handle_workspace_invite } from "./invites";
 import { handle_before_user_created } from "./signup";
 import { handle_plunk_events } from "./mail_events";
 import { handle_feedback, start_feedback_worker } from "./feedback";
+import { OpsErrorLog, create_health, database_probe, start_ops_worker } from "./ops";
 import { feedback_cors_headers, feedback_origin_allowed } from "./feedback_origins";
 import { start_gc_worker } from "./gc";
 import { start_derivative_worker } from "./derivatives";
@@ -36,8 +37,11 @@ const downloads = service ? create_download_meter(env, service) : null;
 
 // A rejected cron handler promise exits the process without a listener
 // (setTimeout semantics) — log and keep the server alive instead
+const ops_errors = new OpsErrorLog();
+const health = create_health(database_probe(service));
 process.on("unhandledRejection", (err) => {
 	console.error("unhandled rejection:", err);
+	ops_errors.note("unhandled rejection", err);
 });
 
 // Permissive CORS: no cookies are used, authorization is per-request Bearer
@@ -103,6 +107,8 @@ const server = Bun.serve({
 			switch (route) {
 				case "GET /":
 					return respond(Response.json({ ok: true, message: "pile-commander backend" }));
+				case "GET /health":
+					return respond(await health());
 				case "GET /presign":
 					return respond(
 						await handle_download_presign(env, s3, req, meter, downloads, ip),
@@ -154,6 +160,7 @@ const server = Bun.serve({
 				);
 			}
 			console.error("request failed:", err);
+			ops_errors.note(route, err);
 			return respond(Response.json({ error: "internal error" }, { status: 500 }));
 		}
 	},
@@ -177,6 +184,7 @@ if (!env.background_workers) {
 	start_egress_worker(meter, downloads);
 }
 if (env.background_workers && service) start_feedback_worker(env, service);
+if (env.background_workers && service) start_ops_worker(env, service, ops_errors);
 
 // Render stops the old instance with SIGTERM and SIGKILLs it after the
 // shutdown delay (30 s by default); without a handler Bun exits on the spot

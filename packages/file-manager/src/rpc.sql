@@ -4548,3 +4548,43 @@ revoke execute on function private.prune_entry_derivatives(int) from public, ano
 grant execute on function private.prune_entry_derivatives(int) to service_role;
 
 -- ----------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------
+-- ops_snapshot: what the backend's operations watch looks at every ten
+-- minutes (apps/backend/src/ops.ts) and mails the operator about. Counts
+-- and sizes only, service role only. stored_bytes is every file the entries
+-- point at: staging, previews and the deletion queue are not in it.
+-- gc_oldest_hours is the age of the oldest row the GC has not given up on.
+-- ----------------------------------------------------------------------------
+create or replace function private.ops_snapshot(p_gc_max_attempts int)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+    select jsonb_build_object(
+        'database_bytes', pg_database_size(current_database()),
+        'stored_bytes', (select coalesce(sum(e.size_bytes), 0)
+                           from public.entries e where e.storage_key is not null),
+        'gc_queue', (select count(*) from public.blob_deletions),
+        'gc_dead', (select count(*) from public.blob_deletions d
+                     where d.attempts >= p_gc_max_attempts),
+        'gc_oldest_hours', (select extract(epoch from now() - min(d.queued_at)) / 3600
+                              from public.blob_deletions d
+                             where d.attempts < p_gc_max_attempts),
+        'mail_complaints_day', (select count(*) from private.mail_events m
+                                 where m.kind = 'complaint' and m.created_at > now() - interval '1 day'),
+        'mail_bounces_day', (select count(*) from private.mail_events m
+                              where m.kind = 'bounce' and m.created_at > now() - interval '1 day')
+    );
+$$;
+
+create or replace function public.ops_snapshot(p_gc_max_attempts int)
+returns jsonb language sql stable security invoker set search_path = public, extensions
+as $$ select private.ops_snapshot(p_gc_max_attempts); $$;
+
+revoke execute on function private.ops_snapshot(int) from public, anon, authenticated;
+revoke execute on function public.ops_snapshot(int) from public, anon, authenticated;
+grant execute on function private.ops_snapshot(int) to service_role;
+grant execute on function public.ops_snapshot(int) to service_role;

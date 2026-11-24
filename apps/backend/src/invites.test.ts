@@ -75,6 +75,7 @@ function invite_env(overrides: Partial<Env> = {}): Env {
 		feedback_daily_attachments_max: 200,
 		feedback_attachment_days: 90,
 		egress: { mode: "off", alert_day_fraction: 0.25, visitor_fraction: 0.05, alert_email: null },
+		ops: { alert_email: null, errors_per_window: 5, database_alert_bytes: 6 * 1024 ** 3, storage_alert_bytes: 1024 ** 4, bounces_per_day: 5 },
 		deriv: DERIV_OFF,
 		...overrides,
 	};
