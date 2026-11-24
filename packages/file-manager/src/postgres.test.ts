@@ -364,6 +364,25 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 		}
 	}, 15_000)
 
+	test("an editor's sweep drops nothing: deleting for good is the owner's", async () => {
+		const f = await pile_fixture()
+		const editor = crypto.randomUUID()
+		await db`insert into auth.users(id, email) values (${editor}::uuid, ${`${editor}@example.invalid`})`
+		await db`insert into public.workspace_members(workspace_id, user_id, role) values (${f.workspace}::uuid, ${editor}::uuid, 'editor')`
+		const a = await db.reserve()
+		try {
+			await as_owner(a, editor)
+			const [{ dropped }] = await a`select public.sweep_pile_images(${f.workspace}::uuid, '/f', array['cover'], null) as dropped`
+			expect(dropped).toBe(0)
+			await a.unsafe("commit").simple()
+			const left = await db`select count(*)::int as n from public.entries where id = any(${`{${Object.values(f.ids).join(",")}}`}::uuid[]) and deleted_at is null`
+			expect(left[0].n).toBe(4)
+		} finally {
+			await a.unsafe("rollback").simple()
+			a.release()
+		}
+	}, 15_000)
+
 	test("a picture freshened while the sweep holds it comes back missing, not saved", async () => {
 		const f = await pile_fixture()
 		const a = await db.reserve()

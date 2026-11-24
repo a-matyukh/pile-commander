@@ -63,12 +63,13 @@ describe('cloud trash', () => {
 		expect(trash.state.items.map(item => item.name)).toEqual(['new'])
 	})
 
-	test('emptying clears every folder that had something in its trash', async () => {
+	test("emptying clears the user's own folders and leaves a shared folder's trash to its owner", async () => {
 		const { source, trash } = setup()
 		await trash.load()
+		expect(trash.state.items.map(item => trash.can_purge(item))).toEqual([false, true])
 		await trash.empty()
-		expect(source.purge_all.mock.calls.map(call => call[0]).sort()).toEqual(['w1', 'w2'])
-		expect(trash.state.items).toEqual([])
+		expect(source.purge_all.mock.calls.map(call => call[0])).toEqual(['w1'])
+		expect(trash.state.items.map(item => item.name)).toEqual(['new'])
 	})
 
 	test('a restored workspace leaves the list and shows up in the tree', async () => {

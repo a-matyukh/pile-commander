@@ -146,7 +146,12 @@ show only these intentional INFOs. Anything else is a regression.
   renamed — `postgres.test.ts` asserts both halves with two connections.
 - **No client hard delete.** `remove()` is `delete_entry` (soft); hard
   deletes happen only via `purge_entry`/`purge_trash`, pg_cron (30 days) and
-  FK cascades. The GC executes queued blob deletions only after
+  FK cascades. **Deleting for good is the owner's alone**: `purge_entry`,
+  `purge_trash`, the hard half of `delete_moved_entry` and
+  `sweep_pile_images` check `is_workspace_owner`. An editor's call is
+  refused (the purges), ends in the trash (a move) or does nothing (the
+  sweep), so whatever an editor removes the owner can restore for 30 days.
+  The trash page offers "delete forever" only in the user's own folders. The GC executes queued blob deletions only after
   `GC_MIN_AGE_HOURS` (default 24) — the recovery window for an accidental
   workspace/account delete. Preview rows (`entry_derivatives`) are retired
   by `prune_entry_derivatives` in the daily reconcile once no entry

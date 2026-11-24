@@ -1327,6 +1327,34 @@ begin
         jsonb_build_object('path', '/docs/note.md', 'xattrs', jsonb_build_object('by', 'editor'))), null);
     insert into __results values ('editor: merge_entry_xattrs',
         v_n = 0 and (select xattrs->>'by' = 'editor' from public.entries where id = v_file), null);
+    -- deleting for good is the owner's: an editor fills the trash, never empties it
+    begin
+        perform public.purge_entry(v_old);
+        insert into __results values ('editor: purge_entry refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('editor: purge_entry refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
+        perform public.purge_trash(v_ws);
+        insert into __results values ('editor: purge_trash refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('editor: purge_trash refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    insert into __results values ('editor: what was in the trash is still there',
+        (select deleted_at is not null from public.entries where id = v_old), null);
+    insert into public.entries (workspace_id, parent_id, name, kind)
+    values (v_ws, v_root, 'editor-moved', 'folder')
+    returning id into v_moved;
+    perform public.create_text_file(v_moved, 'inside.txt', 'text/plain', 'x', null, null);
+    select st.stamp into v_stamp from public.entry_subtree_stamp_at(v_ws, '/editor-moved') st;
+    v_moved_result := public.delete_moved_entry(v_moved, v_stamp, '/editor-moved', null);
+    insert into __results values ('editor: a moved folder goes to the trash, not away for good',
+        v_moved_result = 'trashed'
+        and (select count(*) from public.entries e
+              where e.deleted_at is not null and (e.id = v_moved or e.parent_id = v_moved)) = 2,
+        v_moved_result);
     execute 'reset role';
 
     -- ------------------------------------------------------------------
