@@ -16,10 +16,21 @@ const current_missing = ref(false)
 const done = ref(false)
 const is_submitting = ref(false)
 
-const is_recovery = computed(() => cloud.password_prompt === 'recovery')
+/** No current password asked: a recovery link, or the signup confirmation link */
+const is_recovery = computed(() => cloud.password_prompt === 'recovery' || cloud.password_prompt === 'confirm_signup')
+const is_confirm = computed(() => cloud.password_prompt === 'confirm_signup')
+const title = computed(() => is_confirm.value
+	? t('password.confirm_title')
+	: is_recovery.value ? t('password.recovery_title') : t('password.title'))
+const description = computed(() => is_confirm.value
+	? t('password.confirm_description')
+	: is_recovery.value ? t('password.recovery_description') : t('password.description'))
 const open = computed({
 	get: () => cloud.password_prompt != null,
 	set: (value: boolean) => {
+		// after the confirmation link the account has no password until one
+		// is set here: the dialog closes only by setting it (or on success)
+		if (!value && is_confirm.value && !done.value) return
 		if (!value && cloud.password_prompt) cloud.dismiss_password_prompt()
 	},
 })
@@ -77,8 +88,8 @@ async function submit() {
 <template>
 	<Modal
 		v-model:open="open"
-		:title="is_recovery ? t('password.recovery_title') : t('password.title')"
-		:description="is_recovery ? t('password.recovery_description') : t('password.description')"
+		:title="title"
+		:description="description"
 	>
 		<p v-if="done" class="pw-ok">{{ t('password.updated') }}</p>
 		<form v-else class="pw" @submit.prevent="submit">
@@ -118,7 +129,7 @@ async function submit() {
 		<template #footer>
 			<Button v-if="done" @click="cloud.dismiss_password_prompt()">{{ t('dialog.close') }}</Button>
 			<template v-else>
-				<Button @click="cloud.dismiss_password_prompt()">{{ is_recovery ? t('password.not_now') : t('dialog.cancel') }}</Button>
+				<Button v-if="!is_confirm" @click="cloud.dismiss_password_prompt()">{{ is_recovery ? t('password.not_now') : t('dialog.cancel') }}</Button>
 				<Button variant="primary" :loading="is_submitting" @click="submit">{{ t('password.submit') }}</Button>
 			</template>
 		</template>

@@ -23,6 +23,33 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
+-- assert_owner_workspaces: at most 1000 workspaces per account, trash
+-- included. The root entry already counts against max_entries; this bounds
+-- the workspace rows themselves (16 KB of xattrs each). Runs under the
+-- per-owner advisory lock assert_owner_entries takes right before it
+-- ----------------------------------------------------------------------------
+
+create or replace function private.assert_owner_workspaces(p_owner uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if p_owner is null then
+        return;
+    end if;
+    perform pg_advisory_xact_lock(hashtextextended(p_owner::text, 42));
+    if (select count(*) from public.workspaces w where w.owner_id = p_owner) >= 1000 then
+        raise exception 'workspaces_limit_exceeded: 1000 workspaces per account'
+            using errcode = 'P0001';
+    end if;
+end
+$$;
+
+revoke execute on function private.assert_owner_workspaces(uuid) from public, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
 -- create_workspace: workspace + root entry (path '/', parent_id null)
 -- The root is created in board view by default (xattrs.view).
 -- ----------------------------------------------------------------------------
@@ -44,6 +71,7 @@ begin
     end if;
 
     perform private.assert_owner_entries(auth.uid(), 1);
+    perform private.assert_owner_workspaces(auth.uid());
 
     insert into public.workspaces (owner_id, name)
     values (auth.uid(), p_name)
@@ -96,7 +124,7 @@ $$;
 -- come back instead of aborting the batch: 'missing' (gone, trashed, or not
 -- in this workspace — also when it went while this merge waited for its row:
 -- a picture freshened at the moment a cleanup drops it must not look saved)
--- and 'too_large' (the result would break the 64 KB xattrs CHECK; the row
+-- and 'too_large' (the result would break the 16 KB xattrs CHECK; the row
 -- stays untouched)
 -- ----------------------------------------------------------------------------
 
@@ -153,7 +181,7 @@ begin
         select e.id as entry_id,
                it.item_path,
                (e.xattrs || it.patch) - it.removed as result,
-               pg_column_size((e.xattrs || it.patch) - it.removed) <= 65536 as fits
+               pg_column_size((e.xattrs || it.patch) - it.removed) <= 16384 as fits
           from items it
           join public.entries e
             on e.workspace_id = p_workspace
@@ -1964,6 +1992,20 @@ begin
     if auth.uid() is null then
         raise exception 'fork_workspace: not authenticated';
     end if;
+    -- A fork is one call but a copy of every blob (copy-clones), and deleting
+    -- the fork frees the quota at once, so fork → copy → delete in a loop
+    -- costs storage without any quota. 20 an hour is far above a person.
+    -- Counted and recorded under one lock per account, or a burst of
+    -- parallel calls would all read the same count
+    perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text || ':fork', 44));
+    if (select count(*) from private.rate_events r
+         where r.actor = auth.uid() and r.action = 'fork'
+           and r.created_at > now() - interval '1 hour') >= 20 then
+        raise exception 'fork_workspace: too many forks, try again later'
+            using errcode = 'P0001';
+    end if;
+    insert into private.rate_events (actor, action, workspace_id)
+    values (auth.uid(), 'fork', p_workspace);
     if not private.can_read_workspace(p_workspace) then
         raise exception 'fork_workspace: workspace % is not public', p_workspace;
     end if;
@@ -1984,6 +2026,7 @@ begin
        and e.deleted_at is null;
     perform private.assert_owner_can_add(auth.uid(), v_delta, null);
     perform private.assert_owner_entries(auth.uid(), v_rows);
+    perform private.assert_owner_workspaces(auth.uid());
 
     insert into public.workspaces (owner_id, name, xattrs)
     values (auth.uid(), v_source.name, v_source.xattrs)
@@ -2091,7 +2134,7 @@ end
 $$;
 
 -- ----------------------------------------------------------------------------
--- list_foreign_blob_entries: every row (live or trashed) whose blob sits
+-- list_foreign_blob_entries: every live row of a live workspace whose blob sits
 -- under another workspace's prefix, oldest first. The backend GC tick
 -- drains this list (see apps/backend/src/gc.ts): the client's call to
 -- /blobs/copy-clones right after a fork is only an accelerator — if the tab
@@ -2107,10 +2150,16 @@ security definer
 stable
 set search_path = public, extensions
 as $$
+    -- Trashed rows wait: their copy would only sit in storage until the
+    -- purge. Until re-keyed they keep the source's object alive (GC checks
+    -- references), and a restore puts them back in this list
     select e.id, e.workspace_id, e.storage_key
       from public.entries e
+      join public.workspaces w on w.id = e.workspace_id
      where e.storage_key is not null
        and lower(left(e.storage_key, 36)) <> e.workspace_id::text
+       and e.deleted_at is null
+       and w.deleted_at is null
      order by e.created_at
      limit least(greatest(coalesce(p_limit, 100), 1), 1000);
 $$;
@@ -2552,6 +2601,9 @@ as $$
 declare
     v_upload private.upload_sessions%rowtype;
     v_max bigint;
+    v_quota bigint;
+    v_used bigint;
+    v_replaced bigint;
     v_workspace uuid;
 begin
     select workspace_id into v_workspace from private.upload_sessions
@@ -2572,6 +2624,10 @@ begin
     if v_upload.result is null and v_upload.expires_at <= clock_timestamp() then
         raise exception 'upload_expired: start a new upload';
     end if;
+    -- a ticket whose copies kept failing is spent (begin_upload_copy)
+    if v_upload.result is null and v_upload.attempts >= 5 then
+        raise exception 'upload_expired: too many attempts, start a new upload';
+    end if;
     -- A delayed retry must never resurrect an entry that was already purged.
     if p_kind = 'blob' and v_upload.result is not null and not exists (
         select 1 from public.entries e where e.id = (v_upload.result->'entry'->>'id')::uuid
@@ -2584,12 +2640,86 @@ begin
     if v_upload.request is null then
         update private.upload_sessions set request = p_request where storage_key = p_key;
     end if;
-    select case when p_kind = 'hub_preview' then 2097152 else b.max_file_bytes end into v_max
+    select case when p_kind = 'hub_preview' then 2097152 else b.max_file_bytes end,
+           case when p_kind = 'blob' then b.quota_bytes end,
+           case when p_kind = 'blob' then (select u.used_bytes from private.owner_usage(w.owner_id) u) end
+      into v_max, v_quota, v_used
     from public.workspaces w join public.billing_accounts b on b.owner_id = w.owner_id
     where w.id = v_upload.workspace_id;
-    return jsonb_build_object('workspace_id', v_upload.workspace_id, 'max_bytes', v_max, 'result', v_upload.result);
+    -- What create_blob_entry / replace_blob_entry would refuse anyway is
+    -- refused before the copy, so a doomed finalize leaves nothing in
+    -- storage. Not a list of checks that could miss one (a 65-char client_id,
+    -- a taken id, a bad name): the real call runs on a placeholder key and
+    -- size 0 inside a subtransaction that is always rolled back, and any
+    -- error it raises is this call's error. Only the quota needs the real
+    -- size, which only the backend's stat knows: used_bytes, quota_bytes and,
+    -- for a replace, the bytes of the file it replaces go back with max_bytes,
+    -- and create/replace_blob_entry still check the quota under the billing lock
+    if p_kind = 'blob' and v_upload.result is null then
+        begin
+            if p_request ? 'replace' then
+                perform private.replace_blob_entry(
+                    (p_request->>'replace')::uuid, v_upload.workspace_id,
+                    v_upload.workspace_id::text || '/' || gen_random_uuid()::text, 0,
+                    p_request->>'mime', p_user, p_request->>'client_id'
+                );
+            else
+                perform private.create_blob_entry(
+                    (p_request->>'id')::uuid, v_upload.workspace_id, (p_request->>'parent_id')::uuid,
+                    p_request->>'name', p_request->>'mime',
+                    v_upload.workspace_id::text || '/' || gen_random_uuid()::text, 0,
+                    p_user, p_request->>'client_id'
+                );
+            end if;
+            raise exception 'upload dry run' using errcode = 'PU000';
+        exception when sqlstate 'PU000' then
+            null;
+        end;
+        if p_request ? 'replace' then
+            select e.size_bytes into v_replaced from public.entries e
+             where e.id = (p_request->>'replace')::uuid;
+        end if;
+    end if;
+    return jsonb_build_object('workspace_id', v_upload.workspace_id, 'max_bytes', v_max,
+                              'used_bytes', v_used, 'quota_bytes', v_quota,
+                              'replaced_bytes', v_replaced, 'result', v_upload.result);
 end;
 $$;
+
+-- begin_upload_copy: the backend calls it right before CopyObject, after
+-- its stat and its size and quota checks. Every copy leaves an object in
+-- storage until the reconcile, and a failed complete_upload rolls back with
+-- the ticket unspent, so the copies are counted here, in a transaction of
+-- their own: past 5 without a result the ticket is spent. A finalize that
+-- stops before the copy (no PUT yet, too large) costs no attempt
+create or replace function private.begin_upload_copy(p_key text, p_user uuid, p_kind text)
+returns void
+language plpgsql security definer
+set search_path = public, extensions
+as $$
+declare
+    v_upload private.upload_sessions%rowtype;
+begin
+    select * into v_upload from private.upload_sessions
+     where storage_key = p_key and uploaded_by = p_user and kind = p_kind
+       for update;
+    if not found then raise exception 'upload: ticket not found'; end if;
+    if v_upload.result is not null then return; end if;
+    if v_upload.attempts >= 5 then
+        raise exception 'upload_expired: too many attempts, start a new upload';
+    end if;
+    update private.upload_sessions set attempts = attempts + 1 where storage_key = p_key;
+end;
+$$;
+
+create or replace function public.begin_upload_copy(p_key text, p_user uuid, p_kind text)
+returns void language sql security invoker set search_path = public, extensions
+as $$ select private.begin_upload_copy(p_key, p_user, p_kind); $$;
+
+revoke execute on function private.begin_upload_copy(text, uuid, text) from public, anon, authenticated;
+revoke execute on function public.begin_upload_copy(text, uuid, text) from public, anon, authenticated;
+grant execute on function private.begin_upload_copy(text, uuid, text) to service_role;
+grant execute on function public.begin_upload_copy(text, uuid, text) to service_role;
 
 create or replace function private.complete_upload(
     p_key text, p_user uuid, p_kind text, p_request jsonb, p_final_key text, p_size bigint
@@ -2658,21 +2788,54 @@ grant execute on function private.complete_upload(text, uuid, text, jsonb, text,
 grant execute on function public.complete_upload(text, uuid, text, jsonb, text, bigint) to service_role;
 
 -- ----------------------------------------------------------------------------
--- add_workspace_member: share a workspace by exact email. User discovery is
--- impossible through RLS (auth.users is not exposed), so the lookup happens
--- here under security definer. Owner only. This is the ONLY insert path
--- for workspace_members and workspace_invites (clients have no INSERT).
--- Registered email → member; otherwise a pending invite. Both answers carry
--- workspace_name and inviter: the backend mails either way, not this
--- function. Repeat (workspace, email) upserts role/token/expiry. Role changes/removals of members need no RPC:
--- members_update (column grant: role) / members_delete allow them to the
--- owner directly. Pending revoke is a direct DELETE on workspace_invites.
+-- add_workspace_member: share a workspace by exact email. Owner only, and
+-- the ONLY insert path for workspace_invites (clients have no INSERT).
+-- Service role only, through the public invite_workspace_member: the backend
+-- checks the owner's JWT, calls it with the owner's id and sends the mail
+-- right after, so every invite counted below is a mail that went out. Were
+-- it callable by the owner through PostgREST, invites without mails could
+-- spend somebody else's mailbox budget for the day. Every
+-- address gets the same answer — a pending invite with its token — whether
+-- an account exists for it or not: nobody is added to a board without
+-- accepting (accept_workspace_invite), and the answer tells the owner
+-- nothing about who has an account. The backend mails the invite; this
+-- function decides whether a mail may go out at all:
+--   * at most 30 a day per owner (10 while the account is under a week old);
+--   * the same mailbox on the same workspace at most 3 times a day;
+--   * one mailbox at most 5 times a day, from everyone together (a mailbox
+--     is the address without its +tag; private.mailbox_of);
+--   * at most 20 live pending invites per owner.
+-- Repeat (workspace, email) upserts role/token/expiry. Role changes and
+-- removals need no RPC: members_update (column grant: role) / members_delete
+-- allow them to the owner directly; pending revoke is a direct DELETE on
+-- workspace_invites.
 -- ----------------------------------------------------------------------------
+
+-- mailbox_of: the inbox an address delivers to, for the per-address mail
+-- budget. The +tag goes everywhere (most providers deliver it to the same
+-- inbox; over-counting only makes the budget stricter), dots in the local
+-- part at Gmail
+create or replace function private.mailbox_of(p_email text)
+returns text
+language sql
+immutable
+set search_path = public, extensions
+as $$
+    select case
+        when split_part(e, '@', 2) in ('gmail.com', 'googlemail.com') then
+            replace(split_part(split_part(e, '@', 1), '+', 1), '.', '') || '@gmail.com'
+        else split_part(split_part(e, '@', 1), '+', 1) || '@' || split_part(e, '@', 2)
+    end
+    from (select lower(btrim(p_email)) as e) a;
+$$;
+
+revoke execute on function private.mailbox_of(text) from public, anon, authenticated;
 
 drop function if exists public.add_workspace_member(uuid, text, text);
 drop function if exists private.add_workspace_member(uuid, text, text);
 
 create or replace function private.add_workspace_member(
+    p_inviter uuid,
     p_workspace uuid,
     p_email text,
     p_role text
@@ -2683,18 +2846,23 @@ security definer
 set search_path = public, extensions
 as $$
 declare
-    v_user_id uuid;
     v_email text;
+    v_mailbox text;
     v_token text;
     v_name text;
     v_inviter text;
     v_live boolean;
     v_pending int;
+    v_account_age interval;
+    v_daily int;
 begin
-    if auth.uid() is null then
+    if p_inviter is null then
         raise exception 'add_workspace_member: not authenticated';
     end if;
-    if not private.is_workspace_owner(p_workspace) then
+    if not exists (
+        select 1 from public.workspaces w
+         where w.id = p_workspace and w.owner_id = p_inviter and w.deleted_at is null
+    ) then
         raise exception 'add_workspace_member: only the owner can share';
     end if;
     if p_role not in ('editor', 'viewer') then
@@ -2707,38 +2875,51 @@ begin
         raise exception 'add_workspace_member: invalid email';
     end if;
 
-    select u.id into v_user_id
-      from auth.users u
-     where lower(u.email) = v_email;
-
-    -- Both answers carry the names for the backend's mail
-    select w.name into v_name from public.workspaces w where w.id = p_workspace;
-    select coalesce(nullif(p.display_name, ''), p.username, u.email::text)
-      into v_inviter
+    select coalesce(nullif(p.display_name, ''), p.username, u.email::text), now() - u.created_at
+      into v_inviter, v_account_age
       from auth.users u
       left join public.profiles p on p.id = u.id
-     where u.id = auth.uid();
+     where u.id = p_inviter;
 
-    if v_user_id is not null then
-        if v_user_id = auth.uid() then
-            raise exception 'add_workspace_member: the owner needs no membership';
-        end if;
-        if exists (
-            select 1 from public.workspace_members m
-             where m.workspace_id = p_workspace and m.user_id = v_user_id
-        ) then
-            raise exception 'add_workspace_member: already a member';
-        end if;
+    if v_email = lower((select u.email::text from auth.users u where u.id = p_inviter)) then
+        raise exception 'add_workspace_member: the owner needs no membership';
+    end if;
+    -- the owner sees the members' addresses in the share dialog anyway
+    if exists (
+        select 1 from public.workspace_members m
+          join auth.users u on u.id = m.user_id
+         where m.workspace_id = p_workspace and lower(u.email) = v_email
+    ) then
+        raise exception 'add_workspace_member: already a member';
+    end if;
 
-        insert into public.workspace_members (workspace_id, user_id, role)
-        values (p_workspace, v_user_id, p_role);
-        delete from public.workspace_invites
-         where workspace_id = p_workspace and email = v_email;
-        return json_build_object(
-            'kind', 'member',
-            'workspace_name', coalesce(v_name, ''),
-            'inviter', coalesce(v_inviter, '')
-        );
+    -- the mail budget: per owner, per (workspace, mailbox), per mailbox. A
+    -- mailbox is the address without its +tag (and, at Gmail, its dots), so
+    -- victim+1@ and victim+2@ count as one. Both locks are held to the
+    -- commit, so parallel calls cannot all read the same count
+    v_mailbox := private.mailbox_of(v_email);
+    perform pg_advisory_xact_lock(hashtextextended(p_inviter::text || ':invite', 44));
+    perform pg_advisory_xact_lock(hashtextextended('mailbox:' || v_mailbox, 44));
+    v_daily := case when v_account_age < interval '7 days' then 10 else 30 end;
+    if (select count(*) from private.rate_events r
+         where r.actor = p_inviter and r.action = 'invite'
+           and r.created_at > now() - interval '1 day') >= v_daily then
+        raise exception 'add_workspace_member: too many invites today'
+            using errcode = 'P0001';
+    end if;
+    -- three a day, not one: a resend after a mail that failed to go out
+    if (select count(*) from private.rate_events r
+         where r.action = 'invite' and r.subject = v_mailbox
+           and r.workspace_id = p_workspace
+           and r.created_at > now() - interval '1 day') >= 3 then
+        raise exception 'add_workspace_member: invite already sent today'
+            using errcode = 'P0001';
+    end if;
+    if (select count(*) from private.rate_events r
+         where r.action = 'invite' and r.subject = v_mailbox
+           and r.created_at > now() - interval '1 day') >= 5 then
+        raise exception 'add_workspace_member: too many invites to this address today'
+            using errcode = 'P0001';
     end if;
 
     select exists (
@@ -2750,18 +2931,20 @@ begin
     if not v_live then
         select count(*) into v_pending
           from public.workspace_invites i
-         where i.invited_by = auth.uid() and i.expires_at > now();
+         where i.invited_by = p_inviter and i.expires_at > now();
         if v_pending >= 20 then
             raise exception 'add_workspace_member: too many pending invites';
         end if;
     end if;
+
+    select w.name into v_name from public.workspaces w where w.id = p_workspace;
 
     v_token := encode(gen_random_bytes(32), 'hex');
     insert into public.workspace_invites (
         workspace_id, email, role, invited_by, token, expires_at
     )
     values (
-        p_workspace, v_email, p_role, auth.uid(), v_token,
+        p_workspace, v_email, p_role, p_inviter, v_token,
         now() + interval '14 days'
     )
     on conflict (workspace_id, email) do update
@@ -2770,12 +2953,160 @@ begin
             invited_by = excluded.invited_by,
             expires_at = excluded.expires_at;
 
+    insert into private.rate_events (actor, action, subject, workspace_id)
+    values (p_inviter, 'invite', v_mailbox, p_workspace);
+
     return json_build_object(
         'kind', 'pending',
         'token', v_token,
         'workspace_name', coalesce(v_name, ''),
         'inviter', coalesce(v_inviter, '')
     );
+end
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Invites addressed to the caller. Only a session whose address is
+-- CONFIRMED sees, accepts or declines them: until then the account may
+-- belong to someone who typed another person's address at signup.
+-- private.my_confirmed_email() is that address, or null
+-- ----------------------------------------------------------------------------
+
+create or replace function private.my_confirmed_email()
+returns text
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+    select lower(u.email::text)
+      from auth.users u
+     where u.id = auth.uid()
+       and u.email_confirmed_at is not null;
+$$;
+
+revoke execute on function private.my_confirmed_email() from public, anon, authenticated;
+
+create or replace function private.list_my_invites()
+returns table (
+    workspace_id uuid,
+    workspace_name text,
+    role text,
+    inviter text,
+    created_at timestamptz,
+    expires_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+    select i.workspace_id, w.name, i.role,
+           coalesce(nullif(pr.display_name, ''), pr.username, ''),
+           i.created_at, i.expires_at
+      from public.workspace_invites i
+      join public.workspaces w on w.id = i.workspace_id
+      left join public.profiles pr on pr.id = i.invited_by
+     where i.email = private.my_confirmed_email()
+       and i.expires_at > now()
+       and w.deleted_at is null
+       and w.owner_id <> auth.uid()
+     order by i.created_at desc;
+$$;
+
+-- accept_workspace_invite: the invite for this workspace and the caller's
+-- confirmed address becomes a membership. False when there is none (expired,
+-- revoked, declined, or another address); true when the caller is already a
+-- member, so a second click is harmless
+create or replace function private.accept_workspace_invite(p_workspace uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_email text;
+    v_role text;
+begin
+    if auth.uid() is null then
+        raise exception 'accept_workspace_invite: not authenticated';
+    end if;
+    v_email := private.my_confirmed_email();
+    if v_email is null then
+        raise exception 'accept_workspace_invite: confirm your email first';
+    end if;
+    select i.role into v_role
+      from public.workspace_invites i
+      join public.workspaces w on w.id = i.workspace_id
+     where i.workspace_id = p_workspace
+       and i.email = v_email
+       and i.expires_at > now()
+       and w.deleted_at is null
+       and w.owner_id <> auth.uid()
+       for update of i;
+    if v_role is null then
+        return exists (
+            select 1 from public.workspace_members m
+             where m.workspace_id = p_workspace and m.user_id = auth.uid()
+        );
+    end if;
+    insert into public.workspace_members (workspace_id, user_id, role)
+    values (p_workspace, auth.uid(), v_role)
+    on conflict (workspace_id, user_id) do nothing;
+    delete from public.workspace_invites
+     where workspace_id = p_workspace and email = v_email;
+    return true;
+end
+$$;
+
+-- decline_workspace_invite: drops the invite; the owner sees it gone
+create or replace function private.decline_workspace_invite(p_workspace uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_email text;
+    v_n int;
+begin
+    if auth.uid() is null then
+        raise exception 'decline_workspace_invite: not authenticated';
+    end if;
+    v_email := private.my_confirmed_email();
+    if v_email is null then
+        raise exception 'decline_workspace_invite: confirm your email first';
+    end if;
+    delete from public.workspace_invites
+     where workspace_id = p_workspace and email = v_email;
+    get diagnostics v_n = row_count;
+    return v_n > 0;
+end
+$$;
+
+-- leave_workspace: a member removes their own membership (and the sync
+-- stamps of their devices on that workspace). The owner cannot leave their
+-- own workspace; removing others stays owner-only (members_delete)
+create or replace function private.leave_workspace(p_workspace uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_n int;
+begin
+    if auth.uid() is null then
+        raise exception 'leave_workspace: not authenticated';
+    end if;
+    delete from public.workspace_members
+     where workspace_id = p_workspace and user_id = auth.uid();
+    get diagnostics v_n = row_count;
+    if v_n > 0 then
+        delete from public.sync_devices
+         where workspace_id = p_workspace and owner_id = auth.uid();
+    end if;
+    return v_n > 0;
 end
 $$;
 
@@ -3627,7 +3958,8 @@ as $$
     select private.fork_workspace(p_workspace);
 $$;
 
-create or replace function public.add_workspace_member(
+create or replace function public.invite_workspace_member(
+    p_inviter uuid,
     p_workspace uuid,
     p_email text,
     p_role text
@@ -3637,7 +3969,7 @@ language sql
 security invoker
 set search_path = public, extensions
 as $$
-    select private.add_workspace_member(p_workspace, p_email, p_role);
+    select private.add_workspace_member(p_inviter, p_workspace, p_email, p_role);
 $$;
 
 create or replace function public.preview_workspace_invite(p_token text)
@@ -3651,38 +3983,30 @@ as $$
 $$;
 
 grant execute on function public.preview_workspace_invite(text) to anon, authenticated;
--- revoke BEFORE granting: both functions are dropped and recreated above, which
--- resets EXECUTE to PUBLIC, and a grant to `authenticated` does not take the
--- inherited PUBLIC one away. Without this line anon kept the wrapper (found by
--- the grant assertions in rls.test.sql, 2026-09-16)
-revoke execute on function public.add_workspace_member(uuid, text, text) from public, anon;
-grant execute on function public.add_workspace_member(uuid, text, text) to authenticated;
--- the wrapper is security invoker, so authenticated must keep EXECUTE on the
--- private function; the inherited PUBLIC grant (and anon) does not. Both were
--- dropped and recreated above, which resets EXECUTE to PUBLIC
-revoke execute on function private.add_workspace_member(uuid, text, text) from public, anon;
-grant execute on function private.add_workspace_member(uuid, text, text) to authenticated;
+-- the backend only (service role): see add_workspace_member. Both were
+-- created above, which grants EXECUTE to PUBLIC; take it back first
+revoke execute on function public.invite_workspace_member(uuid, uuid, text, text) from public, anon, authenticated;
+grant execute on function public.invite_workspace_member(uuid, uuid, text, text) to service_role;
+revoke execute on function private.add_workspace_member(uuid, uuid, text, text) from public, anon, authenticated;
+grant execute on function private.add_workspace_member(uuid, uuid, text, text) to service_role;
 
--- Existing session (invite landed after signup, or the address was pending
--- because the user row was missing at share time). Same conversion as
--- handle_new_user, bound to auth.uid() so the (uuid, text) overload never
--- needs a client EXECUTE. Public wrapper is invoker, matching
--- add_workspace_member: a public SECURITY DEFINER would trip the
--- authenticated_security_definer_function_executable advisor.
+-- claim_workspace_invites: kept only for desktop builds released before
+-- invites needed an explicit "Accept" (they call it on the /invite page).
+-- It no longer turns anything into a membership: one link used to accept
+-- every invite to the address at once, unasked. Drop it in a later diff,
+-- once no supported build calls it
+drop function if exists private.claim_workspace_invites(uuid, text);
+
 create or replace function private.claim_workspace_invites()
 returns void
 language plpgsql
 security definer
 set search_path = public, extensions
 as $$
-declare
-    v_email text;
 begin
     if auth.uid() is null then
         raise exception 'claim_workspace_invites: not authenticated';
     end if;
-    select u.email::text into v_email from auth.users u where u.id = auth.uid();
-    perform private.claim_workspace_invites(auth.uid(), v_email);
 end
 $$;
 
@@ -3694,6 +4018,67 @@ set search_path = public, extensions
 as $$
     select private.claim_workspace_invites();
 $$;
+
+create or replace function public.list_my_invites()
+returns table (
+    workspace_id uuid,
+    workspace_name text,
+    role text,
+    inviter text,
+    created_at timestamptz,
+    expires_at timestamptz
+)
+language sql
+stable
+security invoker
+set search_path = public, extensions
+as $$
+    select * from private.list_my_invites();
+$$;
+
+create or replace function public.accept_workspace_invite(p_workspace uuid)
+returns boolean
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.accept_workspace_invite(p_workspace);
+$$;
+
+create or replace function public.decline_workspace_invite(p_workspace uuid)
+returns boolean
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.decline_workspace_invite(p_workspace);
+$$;
+
+create or replace function public.leave_workspace(p_workspace uuid)
+returns boolean
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+    select private.leave_workspace(p_workspace);
+$$;
+
+revoke execute on function public.list_my_invites() from public, anon;
+grant execute on function public.list_my_invites() to authenticated;
+revoke execute on function private.list_my_invites() from public, anon;
+grant execute on function private.list_my_invites() to authenticated;
+revoke execute on function public.accept_workspace_invite(uuid) from public, anon;
+grant execute on function public.accept_workspace_invite(uuid) to authenticated;
+revoke execute on function private.accept_workspace_invite(uuid) from public, anon;
+grant execute on function private.accept_workspace_invite(uuid) to authenticated;
+revoke execute on function public.decline_workspace_invite(uuid) from public, anon;
+grant execute on function public.decline_workspace_invite(uuid) to authenticated;
+revoke execute on function private.decline_workspace_invite(uuid) from public, anon;
+grant execute on function private.decline_workspace_invite(uuid) to authenticated;
+revoke execute on function public.leave_workspace(uuid) from public, anon;
+grant execute on function public.leave_workspace(uuid) to authenticated;
+revoke execute on function private.leave_workspace(uuid) from public, anon;
+grant execute on function private.leave_workspace(uuid) to authenticated;
 
 revoke all on function public.claim_workspace_invites() from public, anon;
 grant execute on function public.claim_workspace_invites() to authenticated;

@@ -335,7 +335,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 
 	// One server-side jsonb merge for many entries (rpc.sql merge_entry_xattrs).
 	// Refused paths come back instead of failing the batch: gone or trashed
-	// rows as `missing`, rows whose attributes would break the 64 KB cap as
+	// rows as `missing`, rows whose attributes would break the 16 KB cap as
 	// `too_large` (left untouched)
 	async function merge_xattrs(
 		// null removes the key (rpc.sql, the same statement as the sets)
@@ -1649,7 +1649,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 				if (refused) {
 					throw new Error(
 						refused.status === "too_large"
-							? `set_xattr failed: attributes of ${id} exceed the 64 KB limit`
+							? `set_xattr failed: attributes of ${id} exceed the 16 KB limit`
 							: `set_xattr failed: entry not found: ${id}`,
 					)
 				}
@@ -1994,10 +1994,50 @@ export async function preview_workspace_invite(
 	return (data as WorkspaceInvitePreview | null) ?? null
 }
 
-/** Turns live pending invites for the caller's email into memberships. */
-export async function claim_workspace_invites(client: SupabaseClient): Promise<void> {
-	const { error } = await client.rpc("claim_workspace_invites")
-	if (error) throw new Error(`claim_workspace_invites failed: ${error.message}`)
+/** Thrown by the share RPCs on a database that does not have them yet */
+export const RPC_UNAVAILABLE = "rpc_unavailable"
+
+/** An invitation addressed to the signed-in account's confirmed email */
+export type MyWorkspaceInvite = {
+	workspace_id: string
+	workspace_name: string
+	role: WorkspaceRole
+	inviter: string
+	created_at: string
+	expires_at: string
+}
+
+/** Live invitations to the caller's confirmed address (none until it is confirmed) */
+export async function list_my_invites(client: SupabaseClient): Promise<MyWorkspaceInvite[]> {
+	const { data, error } = await client.rpc("list_my_invites")
+	if (error) throw new Error(`list_my_invites failed: ${error.message}`)
+	return (data ?? []) as MyWorkspaceInvite[]
+}
+
+/** Joins the workspace the caller was invited to. False: no live invite for this address */
+export async function accept_workspace_invite(client: SupabaseClient, workspace_id: string): Promise<boolean> {
+	const { data, error } = await client.rpc("accept_workspace_invite", { p_workspace: workspace_id })
+	// a database without it yet: no fallback to the old claim call, which
+	// joined every invite to the address at once
+	if (error?.code === "PGRST202") throw new Error(RPC_UNAVAILABLE)
+	if (error) throw new Error(`accept_workspace_invite failed: ${error.message}`)
+	return data === true
+}
+
+/** Drops the caller's invitation to the workspace */
+export async function decline_workspace_invite(client: SupabaseClient, workspace_id: string): Promise<boolean> {
+	const { data, error } = await client.rpc("decline_workspace_invite", { p_workspace: workspace_id })
+	if (error?.code === "PGRST202") throw new Error(RPC_UNAVAILABLE)
+	if (error) throw new Error(`decline_workspace_invite failed: ${error.message}`)
+	return data === true
+}
+
+/** The caller stops being a member of someone else's workspace */
+export async function leave_workspace(client: SupabaseClient, workspace_id: string): Promise<boolean> {
+	const { data, error } = await client.rpc("leave_workspace", { p_workspace: workspace_id })
+	if (error?.code === "PGRST202") throw new Error(RPC_UNAVAILABLE)
+	if (error) throw new Error(`leave_workspace failed: ${error.message}`)
+	return data === true
 }
 
 /** Members with emails for the share dialog (owner or member) */

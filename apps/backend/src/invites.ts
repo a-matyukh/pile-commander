@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError, bearer_token, internal_error, require_user, require_workspace_owner, user_client } from "./auth";
 import type { Env } from "./env";
 import {
@@ -30,6 +31,9 @@ export function map_add_member_error(message: string): ApiError {
 	const text = message.toLowerCase();
 	if (text.includes("already a member")) return new ApiError(409, "already a member");
 	if (text.includes("too many pending")) return new ApiError(429, "too many pending invites");
+	if (text.includes("already sent today")) return new ApiError(429, "invite already sent today");
+	if (text.includes("too many invites to this address")) return new ApiError(429, "too many invites to this address today");
+	if (text.includes("too many invites today")) return new ApiError(429, "too many invites today");
 	if (text.includes("cannot be shared") || text.includes("system workspace")) {
 		return new ApiError(400, "cannot share this workspace");
 	}
@@ -60,12 +64,26 @@ export function parse_add_member_result(data: unknown): AddMemberResult {
 	throw internal_error("add workspace member", "unexpected rpc payload");
 }
 
-function default_add_member(env: Env, req: Request): AddMemberFn {
+// The invite RPC is the service role's (rpc.sql, add_workspace_member): the
+// owner's JWT is checked here, and every invite it records is a mail this
+// handler sends. A database from before that (PGRST202) still has the
+// owner-callable add_workspace_member; remove the fallback once the diff is live
+function default_add_member(env: Env, req: Request, service: SupabaseClient | null): AddMemberFn {
 	return async (workspace_id, email, role) => {
 		const token = bearer_token(req);
 		const client = user_client(env, token);
 		const user = await require_user(client, token);
 		await require_workspace_owner(client, user, workspace_id);
+		if (service) {
+			const { data, error } = await service.rpc("invite_workspace_member", {
+				p_inviter: user.id,
+				p_workspace: workspace_id,
+				p_email: email,
+				p_role: role,
+			});
+			if (!error) return parse_add_member_result(data);
+			if (error.code !== "PGRST202") throw map_add_member_error(error.message);
+		}
 		const { data, error } = await client.rpc("add_workspace_member", {
 			p_workspace: workspace_id,
 			p_email: email,
@@ -76,13 +94,17 @@ function default_add_member(env: Env, req: Request): AddMemberFn {
 	};
 }
 
-// POST /workspace/invite — owner JWT. Registered email becomes a member at
-// once and gets a "shared with you" notice; otherwise pending + an invite
-// mail. Resend is the same path (RPC upserts).
+// POST /workspace/invite — owner JWT. Every address gets a pending invite
+// and an invite mail, registered or not: nobody joins a board without
+// accepting it, and the answer does not say who has an account. The RPC
+// decides whether a mail may go out (its daily budgets). Resend is the same
+// path (RPC upserts). The "member" branch serves a database from before that
+// change and can go once the diff is live.
 export async function handle_workspace_invite(
 	env: Env,
 	req: Request,
-	add_member: AddMemberFn = default_add_member(env, req),
+	service: SupabaseClient | null = null,
+	add_member: AddMemberFn = default_add_member(env, req, service),
 	send: FetchLike = fetch,
 ): Promise<Response> {
 	let body: Record<string, unknown>;

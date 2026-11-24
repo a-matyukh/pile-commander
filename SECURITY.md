@@ -66,6 +66,25 @@ show only these intentional INFOs. Anything else is a regression.
   can mean a committed transaction whose response was lost, and the old
   `delete on refused insert` could therefore reclaim a blob a live row already
   pointed at. Unused copies and consumed staging keys are left to reconcile.
+- **A doomed finalize copies nothing, and a ticket is spent after 5 tries.**
+  `prepare_upload` runs the real `create_blob_entry` / `replace_blob_entry`
+  on a placeholder key and size 0 in a subtransaction it always rolls back,
+  so whatever the insert would refuse (folder, id, name, `client_id`, entry
+  cap) is refused before the copy. It answers `used_bytes` / `quota_bytes`
+  and, for a replace, `replaced_bytes`, so the backend refuses a file whose
+  growth would break the quota after its stat and before the copy (the
+  database still decides under the billing lock). Right before the copy the
+  backend calls `begin_upload_copy`, which bumps `upload_sessions.attempts`
+  in its own transaction; past 5 copies without a result the ticket is
+  `upload_expired`, and a finalize that stops earlier costs nothing. One
+  finalize per ticket runs at a time in the process (`with_ticket_lock`):
+  parallel ones would each copy to a key of their own. Without these, a
+  failing `complete_upload` rolled back and left the ticket fresh: every
+  retry was a new copy living ~49 h. `/blobs/copy-clones` runs one call per
+  account at a time; every copy (that route and the GC re-key) takes its
+  row in a process-wide in-flight set and re-reads it first, so nothing is
+  copied twice. The re-key sweep skips trashed rows and workspaces. Forks are
+  20 an hour per account, counted and recorded under one advisory lock.
 - **Reconcile owns every abandoned object.** It runs **hourly** and treats a
   managed key with no row as an orphan once it is older than
   `max(RECONCILE_GRACE_HOURS, PRESIGN_PUT_TTL_SECONDS + 30 min)`
@@ -139,15 +158,40 @@ show only these intentional INFOs. Anything else is a regression.
   their SELECT policies scoped by workspace alone until 0001, so a plain
   PostgREST read returned the ink and edges of a trashed folder for the 30 days
   before the hard delete. All four now carry the same live-entry branch.
-- **Memberships come from `add_workspace_member`.** No client INSERT on
-  `workspace_members` or `workspace_invites`. A registered email becomes a
-  member; otherwise a pending invite (14-day token). Share never oracles
-  whether the address already has an account (`Added` / `Invite sent`;
-  `no user with email` is gone). `handle_new_user` converts live pending
-  rows after signup. The owner may change `role` or remove a member or
-  pending row directly. Invite mail is `POST /workspace/invite` (Plunk),
-  not the client, and is capped (20 live pending per owner in SQL; 10 mails
-  / hour / user and 30 / hour / IP on the backend — not PostgREST alone).
+- **Nobody joins a board unasked.** No client INSERT on `workspace_members`
+  or `workspace_invites`. `add_workspace_member` makes a pending invite
+  (14-day token) for every address, registered or not, with the same answer
+  either way, so it says nothing about who has an account. The invite turns
+  into a membership only through `accept_workspace_invite`, from a session
+  whose address is **confirmed** (`email_confirmed_at`): an unconfirmed
+  signup may be anyone who typed the address. Signup converts nothing.
+  `decline_workspace_invite` drops it, `leave_workspace` takes a member out,
+  `list_my_invites` is the in-app list. `claim_workspace_invites()` is a
+  no-op kept for older desktop builds. The owner may change `role` or remove
+  a member or pending row directly. Invites come only from
+  `POST /workspace/invite`: the backend checks the owner's JWT and calls the
+  service-role `invite_workspace_member` with the owner's id, then sends the
+  mail (Plunk), so every invite counted is a mail that went out — an
+  owner-callable RPC let invites without mails spend someone else's mailbox
+  budget. Expired invites are deleted 30 days later
+  (`workspace-invites-prune`). The budget lives in SQL (`private.rate_events`,
+  counted under advisory locks per owner and per mailbox), so a direct
+  PostgREST call cannot skip it: 30 a day per owner (10 while the account is
+  under a week old), the same mailbox on the same board 3 a day, one mailbox
+  5 a day from everyone, 20 live pending per owner. A mailbox is the address
+  without its +tag, and without dots at Gmail (`private.mailbox_of`). The
+  count survives the account (`actor` is `on delete set null`). The backend
+  adds 10 / hour / user and 30 / hour / IP.
+- **An unconfirmed address is freed after a day.** Supabase Auth keeps an
+  unconfirmed signup and only resends the mail when the address signs up
+  again, keeping the first password. The `on_auth_user_confirmed` trigger
+  empties `encrypted_password` when `email_confirmed_at` goes from null to
+  set, so the password typed before the confirmation never survives it; the
+  app then asks the confirmed session for a password
+  (`password_prompt = 'confirm_signup'`, no "Not now"), and whoever closes
+  the tab signs in through "Forgot password". The `unconfirmed-users-prune`
+  cron deletes unconfirmed accounts after a day (never one that owns a
+  workspace).
 - **Blob sharing is by design within a workspace.** `copy_entry` clones point
   at the same immutable object; the GC keeps an object while any row
   references it. Only forks (foreign key prefix) are re-keyed — by
@@ -179,7 +223,7 @@ show only these intentional INFOs. Anything else is a regression.
   `max_hub_listings`, and the row fences `max_entries` / `max_strokes` /
   `max_connections` (trash included; null = unlimited; free seeds
   20000 / 20000 / 20000, pro is larger but finite). CHECKs cap `xattrs`
-  (64 KB), names (255), stroke
+  (16 KB on entries and workspaces), names (255), stroke
   `points` (32 KiB), `position` (512 B), `color` (64), connection `props`
   (8 KiB) / `id` (2048) / `label` (500), `updated_by_client` (64), and
   telemetry mimes. Strokes and connections are also capped at 5000 per
@@ -307,6 +351,12 @@ show only these intentional INFOs. Anything else is a regression.
   `storage.from('feedback').remove(paths)` and then `DELETE` the row — a SQL
   delete of `storage.objects` orphans the file. Workspace
   invites (`POST /workspace/invite`) are 10 / hour / user and 30 / hour / IP.
+  The periodic sweep of quiet keys judges each key by its own rule's window:
+  judging by the window of whichever rule ran the sweep (the global minute
+  fence) used to empty every hourly bucket after a minute of quiet.
+  `POST /auth/send-email` pays no IP fence at all (`SIGNED_ROUTES`): Supabase
+  Auth is its only caller, from shared addresses, and the webhook signature is
+  its gate.
 - **Shutdown drains.** On SIGTERM (a Render deploy) the server stops taking
   connections, waits for in-flight requests and a running GC/reconcile
   tick, kills a preview's ffmpeg in flight (the blob stays pending, no
@@ -461,9 +511,18 @@ separately, as abuse fences rather than advertised plan limits:
   64; `quota_wall_events.file_mime` / `bridge_events.largest_file_mime`
   255; `bytes_by_kind` 4 KiB.
 
-Worst case one free account is still about 2 GB of jsonb (20k × 64 KB
+Worst case one free account is still about 1 GB of jsonb (20k × 16 KB
 `xattrs` + 20k × 32 KiB points). That is the cost of no PostgREST rate
-limit, not an unbounded table. `xattrs` stays 64 KB.
+limit, not an unbounded table. The other client-written tables are bounded
+too: workspaces only through `create_workspace` / `fork_workspace` (no
+INSERT grant; 1000 per account, forks 20 an hour), and row caps per account
+on `quota_wall_events` (2000, 200 a day; `answer` 2000 chars, the only
+column a later write may change), `bridge_events` (20000, 1000 a day) and
+`sync_devices` (1000) by the `owner_rows_cap` trigger. Strokes and edges
+cannot be moved by UPDATE to another workspace, nor into a folder already
+holding 5000 (the count runs under an advisory lock per folder, so two
+writers cannot both take the last place) (an upsert needs UPDATE on every column, so grants cannot stop
+it; the guard triggers do).
 
 ### Presigned PUT
 

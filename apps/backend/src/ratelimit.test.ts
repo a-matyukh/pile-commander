@@ -41,6 +41,28 @@ describe("RateLimiter", () => {
 		expect(limiter.check("k", rule).allowed).toBe(false);
 	});
 
+	test("a sweep keeps an hourly bucket that a minute rule triggered", () => {
+		const c = clock();
+		const limiter = new RateLimiter(c.now);
+		const hourly = { limit: 10, window_ms: 3_600_000 };
+		const minute = { limit: 1_000_000, window_ms: 60_000 };
+		for (let i = 0; i < 10; i++) expect(limiter.check("invite", hourly).allowed).toBe(true);
+		expect(limiter.check("invite", hourly).allowed).toBe(false);
+		c.advance(120_000);
+		// enough checks on a minute rule to run the sweep
+		for (let i = 0; i < 5000; i++) limiter.check(`other:${i % 3}`, minute);
+		expect(limiter.check("invite", hourly).allowed).toBe(false);
+	});
+
+	test("a sweep drops a key once its own window has passed", () => {
+		const c = clock();
+		const limiter = new RateLimiter(c.now);
+		limiter.check("old", { limit: 5, window_ms: 60_000 });
+		c.advance(61_000);
+		for (let i = 0; i < 5000; i++) limiter.check("busy", { limit: 1_000_000, window_ms: 3_600_000 });
+		expect(limiter.size()).toBe(1);
+	});
+
 	test("keys are independent", () => {
 		const limiter = new RateLimiter(clock().now);
 		const rule = { limit: 1, window_ms: 1000 };
@@ -141,5 +163,13 @@ describe("enforce_rate_limits", () => {
 		const req = new Request("http://x/", { headers: { "x-forwarded-for": "7.7.7.7" } });
 		for (let i = 0; i < 1000; i += 1) expect(enforce_rate_limits(limiter, req, "GET /", "5.5.5.5")).toBeNull();
 		expect(enforce_rate_limits(limiter, req, "GET /", "5.5.5.5")).toBeGreaterThan(0);
+	});
+
+	test("the signed mail hook pays no IP fence at all", () => {
+		const limiter = new RateLimiter(clock().now);
+		const req = new Request("http://x/auth/send-email", { method: "POST" });
+		for (let i = 0; i < 2000; i += 1) {
+			expect(enforce_rate_limits(limiter, req, "POST /auth/send-email", "5.5.5.5")).toBeNull();
+		}
 	});
 });

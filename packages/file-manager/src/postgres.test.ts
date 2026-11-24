@@ -97,6 +97,45 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 		return false
 	}
 
+	for (const table of ["folder_strokes", "folder_connections"] as const) {
+		test(`${table}: two writers cannot both take the last place of a folder`, async () => {
+			const f = await fixture()
+			// 4999 rows as the table owner, then two concurrent inserts as the account
+			if (table === "folder_strokes") {
+				await db`insert into public.folder_strokes (id, entry_id, workspace_id, z, position, points, color, stroke_width, width, height)
+					select gen_random_uuid(), ${f.target}::uuid, ${f.workspace}::uuid, g, '{"x":0,"y":0}', '[]', '#000', 1, 1, 1 from generate_series(1, 4999) g`
+			} else {
+				await db`insert into public.folder_connections (id, entry_id, workspace_id, from_entry, to_entry)
+					select 'edge-' || g, ${f.target}::uuid, ${f.workspace}::uuid, ${f.folder}::uuid, ${f.file}::uuid from generate_series(1, 4999) g`
+			}
+			const a = await db.reserve()
+			const b = await db.reserve()
+			try {
+				for (const connection of [a, b]) {
+					await connection.unsafe("begin; set local role authenticated; set local search_path = public, extensions; set local statement_timeout = '5s'").simple()
+					await connection`select set_config('request.jwt.claims', ${JSON.stringify({ sub: f.owner, role: "authenticated" })}, true)`
+				}
+				const insert = (c: typeof a, n: string) => table === "folder_strokes"
+					? c`insert into public.folder_strokes (id, entry_id, workspace_id, z, position, points, color, stroke_width, width, height)
+						values (gen_random_uuid(), ${f.target}::uuid, ${f.workspace}::uuid, 9000, '{"x":0,"y":0}', '[]', '#000', 1, 1, 1)`
+					: c`insert into public.folder_connections (id, entry_id, workspace_id, from_entry, to_entry)
+						values (${"race-" + n}, ${f.target}::uuid, ${f.workspace}::uuid, ${f.folder}::uuid, ${f.file}::uuid)`
+				await insert(a, "a")
+				const [{ pid }] = await b`select pg_backend_pid() as pid`
+				const pending = insert(b, "b").then(() => null, (error: Error) => error)
+				expect(await is_waiting_for_lock(pid)).toBe(true)
+				await a.unsafe("commit").simple()
+				const error = await pending
+				expect(error?.message).toContain("already holds 5000")
+			} finally {
+				await a.unsafe("rollback").simple()
+				await b.unsafe("rollback").simple()
+				a.release()
+				b.release()
+			}
+		})
+	}
+
 	for (const operation of ["rename", "insert", "move", "delete-insert"] as const) {
 		test(`tree lock: concurrent ${operation} re-reads the committed parent`, async () => {
 			const f = await fixture()

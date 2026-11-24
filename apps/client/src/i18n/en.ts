@@ -479,6 +479,9 @@ export const en: typeof ru = {
 		sync_whole: 'Sync the whole folder',
 	},
 	menu: {
+		leave_folder: 'Leave folder',
+		leave_folder_title: 'Leave “{name}”?',
+		leave_folder_description: 'The folder leaves your list. Only its owner can share it with you again.',
 		open: 'Open',
 		new_folder: 'New folder',
 		bookmark_add: 'Add to bookmarks',
@@ -774,6 +777,12 @@ export const en: typeof ru = {
 		report_failed: 'Could not send the report',
 	},
 	invite: {
+		unavailable: 'This isn’t available yet. Try again in a few minutes.',
+		gone: 'This invitation is no longer valid',
+		accept: 'Accept',
+		decline: 'Decline',
+		list_title: 'Invitations',
+		list_item: '{inviter} invited you to {workspace}',
 		loading: 'Loading invitation…',
 		invited: '{inviter} invited you to {workspace}',
 		someone: 'Someone',
@@ -841,6 +850,8 @@ export const en: typeof ru = {
 		saved: 'Profile saved',
 	},
 	password: {
+		confirm_title: 'Choose your password',
+		confirm_description: 'Your email is confirmed. Choose the password for this account: the one typed at sign-up is not kept, so nobody who registered this address before you can sign in with theirs.',
 		title: 'Change password',
 		description: 'Enter your current password, then a new one',
 		current: 'Current password',

@@ -132,7 +132,7 @@ const server = Bun.serve({
 				case "POST /auth/send-email":
 					return respond(await handle_send_email(env, req));
 				case "POST /workspace/invite":
-					return respond(await handle_workspace_invite(env, req));
+					return respond(await handle_workspace_invite(env, req, service));
 				case "POST /feedback":
 					return respond(await handle_feedback(env, req));
 				default:

@@ -37,7 +37,33 @@ async function with_copy_slot<T>(task: (waited: boolean) => Promise<T>): Promise
 	}
 }
 
-type UploadState = { workspace_id: string; max_bytes: number; result: Record<string, unknown> | null };
+// One finalize per ticket at a time in this process (one Render instance):
+// parallel finalizes of one ticket would each copy the staging object to a
+// key of its own and leave all but one copy behind. A waiter runs after the
+// first one is done and reads its receipt
+const ticket_tails = new Map<string, Promise<unknown>>();
+async function with_ticket_lock<T>(key: string, task: () => Promise<T>): Promise<T> {
+	const before = ticket_tails.get(key) ?? Promise.resolve();
+	const run = before.then(task, task);
+	const tail = run.catch(() => undefined);
+	ticket_tails.set(key, tail);
+	try {
+		return await run;
+	} finally {
+		if (ticket_tails.get(key) === tail) ticket_tails.delete(key);
+	}
+}
+
+type UploadState = {
+	workspace_id: string;
+	max_bytes: number;
+	/** the owner's storage picture for a blob ticket; absent on a database without it */
+	used_bytes?: number | null;
+	quota_bytes?: number | null;
+	/** a replace: the bytes of the file it replaces */
+	replaced_bytes?: number | null;
+	result: Record<string, unknown> | null;
+};
 type MapError = (error: PostgrestError, context: string) => Error;
 
 /** Every attempt writes a NEW key. No retry can overwrite a finalized blob. */
@@ -63,6 +89,7 @@ export async function finalize_upload(
 		}
 		return state;
 	});
+	return with_ticket_lock(key, async () => {
 	const initial = await prepare();
 	if (initial.result) return initial.result;
 	const queued = performance.now();
@@ -83,6 +110,28 @@ export async function finalize_upload(
 		});
 		const changed = () => new ApiError(409, "upload changed while it was being saved — finalize again");
 		if (source.size > max_bytes) throw too_large(source.size);
+		// A file that cannot fit the quota is refused before the copy:
+		// create/replace_blob_entry would refuse it after, and the copy would
+		// stay in storage until the reconcile. A replace needs only the growth
+		// over the file it replaces. The database keeps the last word under the
+		// billing lock; prepare_upload has already refused everything else
+		const used = state.used_bytes == null ? null : Number(state.used_bytes);
+		const quota = state.quota_bytes == null ? null : Number(state.quota_bytes);
+		const replaced = "replace" in request ? Number(state.replaced_bytes ?? 0) : 0;
+		const growth = source.size - (Number.isFinite(replaced) ? replaced : 0);
+		if (kind === "blob" && used !== null && quota !== null && growth > 0
+			&& Number.isFinite(used) && Number.isFinite(quota) && used + growth > quota) {
+			throw new ApiError(413, `quota_exceeded: used ${used} of ${quota} bytes, need ${growth} more`, {
+				kind: "quota", used_bytes: used, quota_bytes: quota, needed_bytes: growth, file_bytes: source.size,
+				...(typeof request.mime === "string" ? { file_mime: request.mime } : {}),
+			});
+		}
+		// Counted only now, past the stat and the size and quota checks: a
+		// finalize that stops earlier left nothing in storage. A database
+		// without the counter (PGRST202) is let through
+		const { error: attempt_error } = await timing.step("attempt", async () =>
+			await db.rpc("begin_upload_copy", { p_key: key, p_user: user, p_kind: kind }));
+		if (attempt_error && attempt_error.code !== "PGRST202") throw map_error(attempt_error, "begin copy");
 		try {
 			// Inside the storage, only while staging still has the ETag just
 			// measured (a replayed PUT in between fails it), and with metadata
@@ -109,5 +158,6 @@ export async function finalize_upload(
 		// response. GC reclaims unused attempts and staging keys after the grace.
 		if (error) throw map_error(error, "finalize");
 		return data as Record<string, unknown>;
+	});
 	});
 }

@@ -18,6 +18,7 @@ import { report_error } from '@/store/helpers/reportError'
 import HomeGlyph from '@/ui/explorer/HomeGlyph.vue'
 import IconButton from '@/ui/kit/IconButton.vue'
 import SidebarResizer from './SidebarResizer.vue'
+import InvitesList from './InvitesList.vue'
 import TreeMenus from './TreeMenus.vue'
 import TreeRow from './TreeRow.vue'
 import { cloud_source_opens_page, source_tree_visible } from './source_open'
@@ -348,6 +349,7 @@ watchEffect(() => {
 				<Icon icon="tabler:loader-2" class="spin" />
 			</div>
 		</div>
+		<InvitesList v-if="!hub_open" />
 		<template v-if="!hub_open">
 			<div v-if="filtered" class="chip">
 				<Icon :icon="TREE_FILTERS[explorer_tree_view.filter].icon" />

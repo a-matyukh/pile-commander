@@ -47,6 +47,14 @@ describe('cloud tile context menu', () => {
 			desktop: false,
 			owner: false,
 		}).rename).toBe(false)
+		expect(folder_menu_items(editor.folder, {
+			item: cloud_item(),
+			can_write: editor.can_write,
+			desktop: false,
+			owner: false,
+			member: true,
+		}).leave).toBe(true)
+		expect(owner.leave).toBe(false)
 
 		const viewer = cloud_tile_context_menu(
 			{ preventDefault: vi.fn(), clientX: 0, clientY: 0 },

@@ -87,6 +87,18 @@ describe("map_add_member_error / parse_add_member_result", () => {
 			status: 409,
 			message: "already a member",
 		});
+		expect(map_add_member_error("add_workspace_member: invite already sent today")).toMatchObject({
+			status: 429,
+			message: "invite already sent today",
+		});
+		expect(map_add_member_error("add_workspace_member: too many invites to this address today")).toMatchObject({
+			status: 429,
+			message: "too many invites to this address today",
+		});
+		expect(map_add_member_error("add_workspace_member: too many invites today")).toMatchObject({
+			status: 429,
+			message: "too many invites today",
+		});
 		expect(map_add_member_error("add_workspace_member: too many pending invites")).toMatchObject({
 			status: 429,
 			message: "too many pending invites",
@@ -141,6 +153,7 @@ describe("handle_workspace_invite", () => {
 		const res = await handle_workspace_invite(
 			invite_env({ public_app_url: "https://app.example/" }),
 			invite_request({ workspace_id: WS, email: "Ada@Example.com", role: "editor" }),
+			null,
 			member,
 			send,
 		);
@@ -167,12 +180,14 @@ describe("handle_workspace_invite", () => {
 		await handle_workspace_invite(
 			invite_env(),
 			invite_request({ workspace_id: WS, email: "ada@example.com", role: "editor", locale: "ru" }),
+			null,
 			member,
 			send,
 		);
 		await handle_workspace_invite(
 			invite_env(),
 			invite_request({ workspace_id: WS, email: "new@example.com", role: "editor", locale: "ru" }),
+			null,
 			async () => ({ kind: "pending", token: "ab".repeat(32), workspace_name: "Notes", inviter: "Ada" }),
 			send,
 		);
@@ -187,6 +202,7 @@ describe("handle_workspace_invite", () => {
 		const res = await handle_workspace_invite(
 			invite_env(),
 			invite_request({ workspace_id: WS, email: "ada@example.com", role: "viewer" }),
+			null,
 			member,
 			failing,
 		);
@@ -200,6 +216,7 @@ describe("handle_workspace_invite", () => {
 		const quiet = await handle_workspace_invite(
 			invite_env({ plunk_secret_key: null }),
 			invite_request({ workspace_id: WS, email: "ada@example.com", role: "viewer" }),
+			null,
 			member,
 			send,
 		);
@@ -225,6 +242,7 @@ describe("handle_workspace_invite", () => {
 		const res = await handle_workspace_invite(
 			invite_env(),
 			invite_request({ workspace_id: WS, email: "new@example.com", role: "viewer" }),
+			null,
 			add_member,
 			send,
 		);
@@ -253,6 +271,7 @@ describe("handle_workspace_invite", () => {
 			handle_workspace_invite(
 				invite_env({ public_app_url: null }),
 				invite_request({ workspace_id: WS, email: "new@example.com", role: "editor" }),
+				null,
 				add_member,
 			),
 		).rejects.toMatchObject({ status: 503 } satisfies Partial<ApiError>);
@@ -260,6 +279,7 @@ describe("handle_workspace_invite", () => {
 			handle_workspace_invite(
 				invite_env({ plunk_secret_key: null }),
 				invite_request({ workspace_id: WS, email: "new@example.com", role: "editor" }),
+				null,
 				add_member,
 			),
 		).rejects.toMatchObject({ status: 503 } satisfies Partial<ApiError>);
@@ -268,12 +288,13 @@ describe("handle_workspace_invite", () => {
 	test("refuses a malformed body", async () => {
 		const add_member = member;
 		await expect(
-			handle_workspace_invite(invite_env(), invite_request({ email: "a@b.com", role: "editor" }), add_member),
+			handle_workspace_invite(invite_env(), invite_request({ email: "a@b.com", role: "editor" }), null, add_member),
 		).rejects.toMatchObject({ status: 400, message: "invalid workspace" });
 		await expect(
 			handle_workspace_invite(
 				invite_env(),
 				invite_request({ workspace_id: WS, email: "not-an-email", role: "editor" }),
+				null,
 				add_member,
 			),
 		).rejects.toMatchObject({ status: 400, message: "invalid email" });

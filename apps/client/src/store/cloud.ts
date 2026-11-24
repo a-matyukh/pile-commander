@@ -14,7 +14,12 @@ import {
 	list_sync_devices,
 	list_trash,
 	list_user_publications,
-	claim_workspace_invites,
+	list_my_invites,
+	accept_workspace_invite,
+	decline_workspace_invite,
+	leave_workspace,
+	RPC_UNAVAILABLE,
+	type MyWorkspaceInvite,
 	list_workspace_members,
 	preview_workspace_invite,
 	set_workspace_public,
@@ -85,7 +90,7 @@ import {
 } from './helpers/inviteAccept'
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
-import { take_password_recovery } from '@/services/cloud/passwordRecovery'
+import { take_password_recovery, take_signup_confirmation } from '@/services/cloud/passwordRecovery'
 import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 import { locale, t } from '@/i18n'
@@ -186,9 +191,14 @@ export type CloudStore = {
 	notice: string | null
 	/**
 	 * Password dialog. `recovery` opens from the email link (no current
-	 * password). `change` opens from the account panel.
+	 * password). `confirm_signup` opens after the signup confirmation link:
+	 * the password typed at signup may not be this person's (an unconfirmed
+	 * signup keeps the password of whoever registered the address first), so
+	 * the confirmed session sets it. `change` opens from the account panel.
 	 */
-	password_prompt: 'recovery' | 'change' | null
+	password_prompt: 'recovery' | 'confirm_signup' | 'change' | null
+	/** Invitations to this account's confirmed address, waiting for Accept or Decline */
+	my_invites: MyWorkspaceInvite[]
 	/** /invite/<token> landing; null when not on that route */
 	invite_view: {
 		token: string
@@ -315,6 +325,14 @@ export type CloudStore = {
 	/** Loads the /invite/<token> landing; opens the board when the session already has access */
 	open_invite(token: string): Promise<void>
 	accept_invite(): Promise<boolean>
+	/** Declines the invitation on the /invite page. False on failure */
+	decline_invite(): Promise<boolean>
+	/** Reloads my_invites */
+	fetch_my_invites(): Promise<void>
+	accept_my_invite(workspace_id: string): Promise<boolean>
+	decline_my_invite(workspace_id: string): Promise<boolean>
+	/** Leaves someone else's shared workspace. False on failure */
+	leave_workspace(workspace_id: string): Promise<boolean>
 	/** Loads the /app/<workspace id> landing; opens the folder once signed in */
 	open_shared(workspace_id: string): Promise<void>
 	/** Opens the shared folder for the signed-in user. False: no access (or not signed in) */
@@ -344,6 +362,12 @@ export type CloudStore = {
 }
 
 let hub_gen = 0
+
+/** A share RPC's failure as the person reads it */
+function share_error_message(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error)
+	return message === RPC_UNAVAILABLE ? t('invite.unavailable') : message
+}
 let hub_authors_gen = 0
 let hub_tags_gen = 0
 
@@ -415,6 +439,7 @@ const cloud: CloudStore = {
 	last_error: null,
 	notice: null,
 	password_prompt: null,
+	my_invites: [],
 	invite_view: null,
 	shared_view: null,
 	my_profile: null,
@@ -459,6 +484,8 @@ const cloud: CloudStore = {
 				take_password_recovery()
 			}
 			if (session) {
+				// the session the confirmation link brought sets the password
+				if (!this.password_prompt && take_signup_confirmation()) this.password_prompt = 'confirm_signup'
 				this.user = session.user
 				set_pile_image_owner(session.user.id)
 				set_folder_list_owner(session.user.id)
@@ -495,6 +522,7 @@ const cloud: CloudStore = {
 			this.plan_loading = false
 			this.user = null
 			this.password_prompt = null
+			this.my_invites = []
 			// keep the /invite/:token card so signing out to switch accounts
 			// does not flash “no longer valid”
 			if (this.invite_view) this.invite_view = { ...this.invite_view, error: null }
@@ -529,7 +557,9 @@ const cloud: CloudStore = {
 		void this.fetch_plan()
 		// signing in while viewing a publication may unlock the Edit button
 		void this.refresh_public_edit_access()
-		if (this.invite_view) void this.accept_invite()
+		void this.fetch_my_invites()
+		// an invitation waits for its Accept; signing in only stops the spinner
+		if (this.invite_view?.loading) this.invite_view = { ...this.invite_view, loading: false }
 		if (this.shared_view) void this.accept_shared()
 	},
 
@@ -1413,12 +1443,13 @@ const cloud: CloudStore = {
 			if (!this.invite_view || this.invite_view.token !== token) return
 			if (preview) {
 				remember_invite_workspace(token, preview.workspace_id)
+				// shown with Accept and Decline: nobody joins a board unasked
 				this.invite_view = { token, preview, loading: false, error: null }
-				if (this.user) void this.accept_invite()
 				return
 			}
 			this.invite_view = { token, preview: null, loading: false, error: null }
-			if (this.user) {
+			// no live invite: already accepted (open the board) or gone
+			if (this.user && recalled_invite_workspace(token)) {
 				await this.accept_invite()
 				return
 			}
@@ -1444,12 +1475,6 @@ const cloud: CloudStore = {
 		if (!view || !this.user) return false
 		await wait_for_jwt_ready(require_supabase())
 		if (!this.user) return false
-		try {
-			await claim_workspace_invites(require_supabase())
-		} catch {
-			// membership may already exist from handle_new_user
-		}
-		await this.fetch_workspaces()
 		const workspace_id = view.preview?.workspace_id ?? recalled_invite_workspace(view.token)
 		if (view.preview?.email && !invite_emails_match(this.user.email, view.preview.email)) {
 			if (this.invite_view?.token === view.token) {
@@ -1473,6 +1498,28 @@ const cloud: CloudStore = {
 			}
 			return false
 		}
+		if (this.invite_view?.token === view.token) {
+			this.invite_view = { ...this.invite_view, loading: true, error: null }
+		}
+		let accepted: boolean
+		try {
+			// true also when this account is a member already (a second click)
+			accepted = await accept_workspace_invite(require_supabase(), workspace_id)
+		} catch (error) {
+			if (this.invite_view?.token === view.token) {
+				this.invite_view = { ...this.invite_view, loading: false, error: share_error_message(error) }
+			}
+			return false
+		}
+		if (!accepted) {
+			// revoked or expired between the preview and the click
+			if (this.invite_view?.token === view.token) {
+				this.invite_view = { ...this.invite_view, loading: false, error: t('invite.gone') }
+			}
+			return false
+		}
+		this.my_invites = this.my_invites.filter(invite => invite.workspace_id !== workspace_id)
+		await this.fetch_workspaces()
 		remember_invite_workspace(view.token, workspace_id)
 		const item = this.workspaces.find(ws => ws.id === workspace_id)
 		const role = this.role_of(workspace_id)
@@ -1498,6 +1545,84 @@ const cloud: CloudStore = {
 		} finally {
 			if (this.invite_view?.token === view.token) this.invite_view = null
 		}
+		return true
+	},
+
+	/** Declines the invitation on the /invite page; the owner sees it gone */
+	async decline_invite(): Promise<boolean> {
+		const view = this.invite_view
+		const workspace_id = view?.preview?.workspace_id
+		if (!view || !this.user || !workspace_id) return false
+		try {
+			await decline_workspace_invite(require_supabase(), workspace_id)
+		} catch (error) {
+			// the /invite page shows the card's own error line
+			if (this.invite_view?.token === view.token) {
+				this.invite_view = { ...this.invite_view, error: share_error_message(error) }
+			}
+			return false
+		}
+		this.my_invites = this.my_invites.filter(invite => invite.workspace_id !== workspace_id)
+		return true
+	},
+
+	async fetch_my_invites(): Promise<void> {
+		const user_id = this.user?.id
+		if (!user_id) return
+		try {
+			const invites = await list_my_invites(require_supabase())
+			// a sign-out or another account meanwhile: the list was not theirs
+			if (this.user?.id === user_id) this.my_invites = invites
+		} catch {
+			// a database without the RPC yet: no list, nothing else breaks
+		}
+	},
+
+	/** Accept from the list of invitations: joins and opens the folder */
+	async accept_my_invite(workspace_id: string): Promise<boolean> {
+		this.last_error = null
+		try {
+			if (!(await accept_workspace_invite(require_supabase(), workspace_id))) {
+				this.last_error = t('invite.gone')
+				void this.fetch_my_invites()
+				return false
+			}
+		} catch (error) {
+			this.last_error = share_error_message(error)
+			return false
+		}
+		this.my_invites = this.my_invites.filter(invite => invite.workspace_id !== workspace_id)
+		await this.fetch_workspaces()
+		const item = this.workspaces.find(ws => ws.id === workspace_id)
+		if (item) await open_workspace(item)
+		return true
+	},
+
+	async decline_my_invite(workspace_id: string): Promise<boolean> {
+		this.last_error = null
+		try {
+			await decline_workspace_invite(require_supabase(), workspace_id)
+		} catch (error) {
+			this.last_error = share_error_message(error)
+			return false
+		}
+		this.my_invites = this.my_invites.filter(invite => invite.workspace_id !== workspace_id)
+		return true
+	},
+
+	/** A member leaves someone else's workspace: it closes and leaves the list */
+	async leave_workspace(workspace_id: string): Promise<boolean> {
+		this.last_error = null
+		try {
+			await leave_workspace(require_supabase(), workspace_id)
+		} catch (error) {
+			this.last_error = share_error_message(error)
+			return false
+		}
+		if (store.workspace?.type === 'cloud' && store.workspace.uid === workspace_id) {
+			store.close_workspace()
+		}
+		await this.fetch_workspaces()
 		return true
 	},
 

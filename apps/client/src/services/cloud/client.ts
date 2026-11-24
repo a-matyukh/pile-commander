@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
-import { note_auth_event } from './passwordRecovery'
+import { note_auth_event, note_landing_url } from './passwordRecovery'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
@@ -135,6 +135,9 @@ export function fetch_with_timeout(
 	const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout
 	return fetch(input, { ...init, signal })
 }
+
+// The fragment of a confirmation link is gone once supabase-js has read it
+if (typeof window !== 'undefined') note_landing_url(window.location.href)
 
 export const supabase: SupabaseClient | null = is_cloud_configured
 	? createClient(url!, key!, { global: { fetch: fetch_with_timeout as typeof fetch } })

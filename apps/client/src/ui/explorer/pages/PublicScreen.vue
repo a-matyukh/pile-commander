@@ -40,6 +40,14 @@ const role_label = computed(() => {
 async function sign_out() {
 	await cloud.sign_out()
 }
+
+async function accept() {
+	await cloud.accept_invite()
+}
+
+async function decline() {
+	if (await cloud.decline_invite()) leave_invite()
+}
 </script>
 
 <template>
@@ -52,7 +60,12 @@ async function sign_out() {
 				<p v-if="view.error" class="err">{{ view.error }}</p>
 				<template v-if="cloud.user">
 					<p class="muted">{{ t('invite.signed_in', { email: cloud.user.email ?? '' }) }}</p>
-					<Button @click="sign_out">{{ t('account.sign_out') }}</Button>
+					<!-- nobody joins a board unasked: the invitee says yes or no -->
+					<div class="row">
+						<Button variant="primary" @click="accept">{{ t('invite.accept') }}</Button>
+						<Button @click="decline">{{ t('invite.decline') }}</Button>
+					</div>
+					<Button variant="link" @click="sign_out">{{ t('account.sign_out') }}</Button>
 				</template>
 				<AuthForm
 					v-else
@@ -117,6 +130,10 @@ h1 {
 }
 p {
 	margin: 0;
+}
+.row {
+	display: flex;
+	gap: 8px;
 }
 .muted {
 	color: var(--text-secondary);

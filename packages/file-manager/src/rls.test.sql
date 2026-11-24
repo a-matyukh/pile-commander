@@ -20,6 +20,16 @@ begin;
 create temp table __results (step text, ok boolean, detail text);
 grant all on __results to public;
 
+-- Invites are the backend's (service role, invite_workspace_member). The
+-- suite plays the backend for whichever account the claims name, so the
+-- invite checks keep their role switches; dropped with the session
+create function pg_temp.invite(p_workspace uuid, p_email text, p_role text)
+returns json
+language sql
+security definer
+set search_path = public, extensions
+as $fn$ select private.add_workspace_member(auth.uid(), p_workspace, p_email, p_role) $fn$;
+
 do $$
 declare
     -- fixtures (ids are fixed so the script is deterministic; the rollback
@@ -57,6 +67,8 @@ declare
     v_video   uuid;
     v_retry   uuid;
     v_ws2     uuid;
+    v_young_ws uuid;
+    v_ok      boolean;
     v_root2   uuid;
     v_file2   uuid;
     v_gone    uuid;   -- a trashed folder that carries ink and an edge
@@ -90,14 +102,34 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     v_ws := private.create_workspace('rls-suite');
     select e.id into v_root from public.entries e where e.workspace_id = v_ws and e.parent_id is null;
-    perform private.add_workspace_member(v_ws, 'rls-editor@example.invalid', 'editor');
-    v_json := private.add_workspace_member(v_ws, 'rls-viewer@example.invalid', 'viewer');
-    insert into __results values ('fixtures', v_ws is not null and v_root is not null, format('ws=%s', v_ws));
-    insert into __results values ('invites: registered member answer carries names for the mail',
-        v_json->>'kind' = 'member'
+    perform pg_temp.invite(v_ws, 'rls-editor@example.invalid', 'editor');
+    v_json := pg_temp.invite(v_ws, 'rls-viewer@example.invalid', 'viewer');
+    insert into __results values ('invites: a registered address gets a pending invite, not a membership',
+        v_json->>'kind' = 'pending'
+        and coalesce(v_json->>'token', '') <> ''
         and v_json->>'workspace_name' = 'rls-suite'
-        and coalesce(v_json->>'inviter', '') <> '',
+        and coalesce(v_json->>'inviter', '') <> ''
+        and not exists (select 1 from public.workspace_members where workspace_id = v_ws),
         v_json::text);
+    -- the editor and the viewer accept from their own (confirmed) sessions
+    perform set_config('request.jwt.claims', json_build_object('sub', c_editor, 'role', 'authenticated')::text, true);
+    insert into __results values ('invites: the invitee sees the invite in list_my_invites',
+        (select count(*) from private.list_my_invites() i
+          where i.workspace_id = v_ws and i.role = 'editor' and i.workspace_name = 'rls-suite') = 1, null);
+    v_ok := private.accept_workspace_invite(v_ws);
+    insert into __results values ('invites: accept makes the membership',
+        v_ok
+        and exists (select 1 from public.workspace_members
+                     where workspace_id = v_ws and user_id = c_editor and role = 'editor')
+        and not exists (select 1 from public.workspace_invites
+                         where workspace_id = v_ws and email = 'rls-editor@example.invalid'), null);
+    insert into __results values ('invites: a second accept is harmless',
+        private.accept_workspace_invite(v_ws), null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_viewer, 'role', 'authenticated')::text, true);
+    perform private.accept_workspace_invite(v_ws);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    insert into __results values ('fixtures', v_ws is not null and v_root is not null
+        and (select count(*) from public.workspace_members where workspace_id = v_ws) = 2, format('ws=%s', v_ws));
     insert into __results values ('fixtures: free plan seeds the egress, download and row fences',
         (select egress_bytes_month = 20::bigint * 1024 * 1024 * 1024 and max_public_file_bytes = 10 * 1024 * 1024
                 and download_bytes_month = 20::bigint * 1024 * 1024 * 1024
@@ -190,10 +222,10 @@ begin
 
     begin
         insert into public.entries (workspace_id, parent_id, name, kind, xattrs)
-        values (v_ws, v_root, 'fat', 'folder', jsonb_build_object('blob', repeat('x', 70000)));
-        insert into __results values ('xattrs: 64 KB cap', false, 'accepted');
+        values (v_ws, v_root, 'fat', 'folder', jsonb_build_object('blob', repeat('x', 17000)));
+        insert into __results values ('xattrs: 16 KB cap', false, 'accepted');
     exception when check_violation then
-        insert into __results values ('xattrs: 64 KB cap', true, null);
+        insert into __results values ('xattrs: 16 KB cap', true, null);
         execute 'set local role authenticated';
     end;
 
@@ -207,7 +239,7 @@ begin
 
     select count(*) into v_n
       from public.merge_entry_xattrs(v_ws, jsonb_build_array(
-               jsonb_build_object('path', '/docs', 'xattrs', jsonb_build_object('fat', repeat('x', 70000))),
+               jsonb_build_object('path', '/docs', 'xattrs', jsonb_build_object('fat', repeat('x', 17000))),
                jsonb_build_object('path', '/nope', 'xattrs', jsonb_build_object('a', '1')),
                jsonb_build_object('path', '/docs/note.md', 'xattrs', jsonb_build_object('c', '3'))), null) s
      where (s.path, s.status) in (('/docs', 'too_large'), ('/nope', 'missing'));
@@ -228,16 +260,16 @@ begin
                        from public.entries where id = v_file),
         (select xattrs::text from public.entries where id = v_file));
 
-    -- the 64 KB cap applies to the result: removing the big key while adding
+    -- the 16 KB cap applies to the result: removing the big key while adding
     -- another big one fits
     select count(*) into v_n from public.merge_entry_xattrs(v_ws, jsonb_build_array(
-        jsonb_build_object('path', '/docs', 'xattrs', jsonb_build_object('big', repeat('x', 40000)))), null);
+        jsonb_build_object('path', '/docs', 'xattrs', jsonb_build_object('big', repeat('x', 10000)))), null);
     select count(*) into v_n from public.merge_entry_xattrs(v_ws, jsonb_build_array(
         jsonb_build_object('path', '/docs',
-            'xattrs', jsonb_build_object('big', null, 'big2', repeat('y', 40000))))) s
+            'xattrs', jsonb_build_object('big', null, 'big2', repeat('y', 10000))))) s
      where s.status = 'too_large';
-    insert into __results values ('owner: merge_entry_xattrs counts the 64 KB cap after removals',
-        v_n = 0 and (select not (xattrs ? 'big') and length(xattrs->>'big2') = 40000
+    insert into __results values ('owner: merge_entry_xattrs counts the 16 KB cap after removals',
+        v_n = 0 and (select not (xattrs ? 'big') and length(xattrs->>'big2') = 10000
                        from public.entries where id = v_folder),
         format('refused=%s', v_n));
     perform public.merge_entry_xattrs(v_ws, jsonb_build_array(
@@ -425,7 +457,7 @@ begin
         execute 'set local role authenticated';
     end;
 
-    v_json := public.add_workspace_member(v_ws, '  RLS-Wait@example.invalid ', 'editor');
+    v_json := pg_temp.invite(v_ws, '  RLS-Wait@example.invalid ', 'editor');
     insert into __results values ('invites: pending for unknown email',
         v_json->>'kind' = 'pending'
         and (select count(*) from public.workspace_invites
@@ -433,7 +465,7 @@ begin
         v_json::text);
     v_key := v_json->>'token';
 
-    v_json := public.add_workspace_member(v_ws, 'rls-wait@example.invalid', 'viewer');
+    v_json := pg_temp.invite(v_ws, 'rls-wait@example.invalid', 'viewer');
     insert into __results values ('invites: upsert updates role without a second row',
         v_json->>'kind' = 'pending'
         and (select count(*) from public.workspace_invites
@@ -442,6 +474,17 @@ begin
               where workspace_id = v_ws and email = 'rls-wait@example.invalid') = 'viewer'
         and (v_json->>'token') is distinct from v_key,
         v_json::text);
+    -- a +tag is the same mailbox: the third mail of the day still goes, the fourth does not
+    perform pg_temp.invite(v_ws, 'rls-wait+again@example.invalid', 'viewer');
+    begin
+        perform pg_temp.invite(v_ws, 'rls-wait+more@example.invalid', 'viewer');
+        insert into __results values ('invites: one mailbox on one board 3 times a day, +tags included', false, 'accepted');
+    exception when others then
+        insert into __results values ('invites: one mailbox on one board 3 times a day, +tags included',
+            sqlerrm like '%already sent today%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    delete from public.workspace_invites where email = 'rls-wait+again@example.invalid';
     v_invite_token := v_json->>'token';
 
     begin
@@ -456,24 +499,91 @@ begin
         (public.preview_workspace_invite(v_invite_token)->>'email') = 'rls-wait@example.invalid',
         public.preview_workspace_invite(v_invite_token)::text);
 
-    v_json := public.add_workspace_member(v_ws, 'rls-new@example.invalid', 'editor');
+    v_json := pg_temp.invite(v_ws, 'rls-new@example.invalid', 'editor');
     execute 'reset role';
     insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
                             raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
     values (c_pending, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
             'rls-new@example.invalid', '', now(),
             '{"provider":"email","providers":["email"]}', '{}', now(), now());
-    insert into __results values ('invites: signup converts pending',
-        exists (
+    insert into __results values ('invites: signup alone joins nothing',
+        not exists (
+            select 1 from public.workspace_members
+             where workspace_id = v_ws and user_id = c_pending
+        )
+        and (select count(*) from public.workspace_invites where email = 'rls-new@example.invalid') = 1, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_pending, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ok := public.accept_workspace_invite(v_ws);
+    insert into __results values ('invites: the new account accepts its invite',
+        v_ok
+        and exists (
             select 1 from public.workspace_members
              where workspace_id = v_ws and user_id = c_pending and role = 'editor'
         ), null);
-    insert into __results values ('invites: pending removed after signup',
+    execute 'reset role';
+    insert into __results values ('invites: pending removed after accept',
         (select count(*) from public.workspace_invites where email = 'rls-new@example.invalid') = 0, null);
+
+    -- an unconfirmed account (anyone may have typed this address) sees and
+    -- accepts nothing
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    perform pg_temp.invite(v_ws, 'rls-unconfirmed@example.invalid', 'editor');
+    insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+                            raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+    values ('99999999-9999-4999-8999-999999999999', '00000000-0000-0000-0000-000000000000',
+            'authenticated', 'authenticated', 'rls-unconfirmed@example.invalid', '', null,
+            '{"provider":"email","providers":["email"]}', '{}', now() - interval '2 days', now());
+    perform set_config('request.jwt.claims', json_build_object(
+        'sub', '99999999-9999-4999-8999-999999999999', 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    insert into __results values ('invites: an unconfirmed account lists no invites',
+        (select count(*) from public.list_my_invites()) = 0, null);
+    begin
+        perform public.accept_workspace_invite(v_ws);
+        insert into __results values ('invites: an unconfirmed account cannot accept', false, 'accepted');
+    exception when others then
+        insert into __results values ('invites: an unconfirmed account cannot accept',
+            sqlerrm like '%confirm your email%'
+            and not exists (select 1 from public.workspace_members
+                             where user_id = '99999999-9999-4999-8999-999999999999'), sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    execute 'reset role';
+    if to_regclass('cron.job') is not null then
+        execute 'select command from cron.job where jobname = $1 limit 1'
+            into v_cron using 'unconfirmed-users-prune';
+    else
+        execute 'select command from cron.jobs where name = $1 limit 1'
+            into v_cron using 'unconfirmed-users-prune';
+    end if;
+    execute v_cron;
+    insert into __results values ('invites: the nightly job frees an address nobody confirmed in a day',
+        not exists (select 1 from auth.users where id = '99999999-9999-4999-8999-999999999999')
+        and exists (select 1 from auth.users where id = c_young), v_cron);
+    delete from public.workspace_invites where email = 'rls-unconfirmed@example.invalid';
+
+    -- the password typed before the confirmation does not survive it
+    insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+                            raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+    values ('99999999-9999-4999-8999-999999999998', '00000000-0000-0000-0000-000000000000',
+            'authenticated', 'authenticated', 'rls-squat@example.invalid', 'first-signup-hash', null,
+            '{"provider":"email","providers":["email"]}', '{}', now(), now());
+    update auth.users set email_confirmed_at = now() where id = '99999999-9999-4999-8999-999999999998';
+    insert into __results values ('auth: confirming the address drops the signup password',
+        (select encrypted_password from auth.users where id = '99999999-9999-4999-8999-999999999998') = '', null);
+    update auth.users set encrypted_password = 'chosen-after-confirm', email = 'rls-squat2@example.invalid'
+     where id = '99999999-9999-4999-8999-999999999998';
+    insert into __results values ('auth: later updates keep the password',
+        (select encrypted_password from auth.users where id = '99999999-9999-4999-8999-999999999998') = 'chosen-after-confirm', null);
+    insert into __results values ('invites: a mailbox drops its +tag, and its dots at Gmail',
+        private.mailbox_of(' Ann+Work@Example.Invalid ') = 'ann@example.invalid'
+        and private.mailbox_of('a.n.n+x@googlemail.com') = 'ann@gmail.com'
+        and private.mailbox_of('a.n.n@example.invalid') = 'a.n.n@example.invalid', null);
 
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_json := public.add_workspace_member(v_ws, 'rls-expired@example.invalid', 'viewer');
+    v_json := pg_temp.invite(v_ws, 'rls-expired@example.invalid', 'viewer');
     execute 'reset role';
     update public.workspace_invites
        set expires_at = now() - interval '1 day'
@@ -485,19 +595,20 @@ begin
     values (c_expired, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
             'rls-expired@example.invalid', '', now(),
             '{"provider":"email","providers":["email"]}', '{}', now(), now());
-    insert into __results values ('invites: expired signup does not convert',
-        not exists (
+    perform set_config('request.jwt.claims', json_build_object('sub', c_expired, 'role', 'authenticated')::text, true);
+    insert into __results values ('invites: an expired invite cannot be accepted',
+        not private.accept_workspace_invite(v_ws)
+        and not exists (
             select 1 from public.workspace_members
              where workspace_id = v_ws and user_id = c_expired
         ), null);
-    insert into __results values ('invites: expired pending is deleted on signup',
-        (select count(*) from public.workspace_invites where email = 'rls-expired@example.invalid') = 0, null);
+    delete from public.workspace_invites where email = 'rls-expired@example.invalid';
 
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
 
     begin
-        perform public.add_workspace_member(v_ws, 'rls-editor@example.invalid', 'editor');
+        perform pg_temp.invite(v_ws, 'rls-editor@example.invalid', 'editor');
         insert into __results values ('invites: already a member refused', false, 'accepted');
     exception when others then
         insert into __results values ('invites: already a member refused',
@@ -506,17 +617,21 @@ begin
     end;
 
     for v_n in 1..19 loop
-        v_json := public.add_workspace_member(v_ws, 'rls-cap-' || v_n || '@example.invalid', 'viewer');
+        v_json := pg_temp.invite(v_ws, 'rls-cap-' || v_n || '@example.invalid', 'viewer');
     end loop;
     begin
-        v_json := public.add_workspace_member(v_ws, 'rls-cap-20@example.invalid', 'viewer');
+        v_json := pg_temp.invite(v_ws, 'rls-cap-20@example.invalid', 'viewer');
         insert into __results values ('invites: 21st live pending refused', false, 'accepted');
     exception when others then
         insert into __results values ('invites: 21st live pending refused',
             sqlerrm like '%too many pending invites%', sqlerrm);
         execute 'set local role authenticated';
     end;
-    v_json := public.add_workspace_member(v_ws, 'rls-wait@example.invalid', 'viewer');
+    execute 'reset role';
+    update private.rate_events set created_at = created_at - interval '25 hours'
+     where subject = 'rls-wait@example.invalid';
+    execute 'set local role authenticated';
+    v_json := pg_temp.invite(v_ws, 'rls-wait@example.invalid', 'viewer');
     insert into __results values ('invites: resend of a live row is not capped',
         v_json->>'kind' = 'pending', v_json::text);
     v_invite_token := v_json->>'token';
@@ -531,15 +646,93 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform public.claim_workspace_invites();
-    insert into __results values ('invites: existing user claims pending',
-        exists (
+    insert into __results values ('invites: the old claim call joins nothing',
+        not exists (
             select 1 from public.workspace_members
-             where workspace_id = v_ws and user_id = c_other and role = 'viewer'
+             where workspace_id = v_ws and user_id = c_other
         )
-        and (select count(*) from public.workspace_invites where email = 'rls-other@example.invalid') = 0,
+        and (select count(*) from public.list_my_invites() i where i.workspace_id = v_ws) = 1,
+        null);
+    v_ok := public.decline_workspace_invite(v_ws);
+    insert into __results values ('invites: decline drops the invite',
+        v_ok
+        and (select count(*) from public.list_my_invites() i where i.workspace_id = v_ws) = 0
+        and not exists (select 1 from public.workspace_members where workspace_id = v_ws and user_id = c_other),
         null);
     execute 'reset role';
-    delete from public.workspace_members where workspace_id = v_ws and user_id = c_other;
+    insert into public.workspace_invites (
+        workspace_id, email, role, invited_by, token, expires_at
+    ) values (
+        v_ws, 'rls-other@example.invalid', 'viewer', c_owner, repeat('d', 64), now() + interval '14 days'
+    );
+    execute 'set local role authenticated';
+    perform public.accept_workspace_invite(v_ws);
+    v_ok := public.leave_workspace(v_ws);
+    insert into __results values ('members: a member leaves a board by themselves',
+        v_ok
+        and not exists (select 1 from public.workspace_members where workspace_id = v_ws and user_id = c_other),
+        null);
+    insert into __results values ('members: leaving twice answers false',
+        not public.leave_workspace(v_ws), null);
+    execute 'reset role';
+
+    -- the mail budget: an address takes 5 invites a day from everyone together,
+    -- a week-old account 10 a day
+    insert into private.rate_events (actor, action, subject, workspace_id)
+    select c_admin, 'invite', 'rls-hot@example.invalid', gen_random_uuid() from generate_series(1, 5);
+    -- the count outlives the account that made it
+    insert into auth.users (id, email, email_confirmed_at) values
+        ('99999999-9999-4999-8999-999999999997', 'rls-gone@example.invalid', now());
+    insert into private.rate_events (actor, action, subject)
+    values ('99999999-9999-4999-8999-999999999997', 'invite', 'rls-hot@example.invalid');
+    delete from auth.users where id = '99999999-9999-4999-8999-999999999997';
+    insert into __results values ('invites: a deleted account leaves its mail count behind',
+        (select count(*) from private.rate_events where subject = 'rls-hot@example.invalid') = 6, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+        perform pg_temp.invite(v_ws, 'RLS-Hot+tag@example.invalid', 'viewer');
+        insert into __results values ('invites: one address at most 5 a day', false, 'accepted');
+    exception when others then
+        insert into __results values ('invites: one address at most 5 a day',
+            sqlerrm like '%too many invites to this address%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', json_build_object('sub', c_young, 'role', 'authenticated')::text, true);
+    v_young_ws := private.create_workspace('rls-young-board');
+    for v_n in 1..10 loop
+        perform pg_temp.invite(v_young_ws, 'rls-young-' || v_n || '@example.invalid', 'viewer');
+    end loop;
+    begin
+        perform pg_temp.invite(v_young_ws, 'rls-young-11@example.invalid', 'viewer');
+        insert into __results values ('invites: a new account mails 10 invites a day', false, 'accepted');
+    exception when others then
+        insert into __results values ('invites: a new account mails 10 invites a day',
+            sqlerrm like '%too many invites today%', sqlerrm);
+    end;
+    delete from public.workspace_invites where workspace_id = v_young_ws;
+
+    -- workspaces come only from the RPCs that count them
+    execute 'set local role authenticated';
+    begin
+        insert into public.workspaces (owner_id, name) values (c_young, 'direct');
+        insert into __results values ('workspaces: direct insert refused', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('workspaces: direct insert refused', true, sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    execute 'reset role';
+    insert into public.workspaces (owner_id, name)
+    select c_young, 'filler ' || g from generate_series(1, 1000) g;
+    begin
+        perform private.create_workspace('one too many');
+        insert into __results values ('workspaces: 1000 per account', false, 'accepted');
+    exception when others then
+        insert into __results values ('workspaces: 1000 per account',
+            sqlerrm like '%workspaces_limit_exceeded%', sqlerrm);
+    end;
+    delete from public.workspaces where owner_id = c_young;
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
 
@@ -634,6 +827,25 @@ begin
     v_gone_edge := 'gone:default-gone:default';
     insert into public.folder_connections (id, entry_id, workspace_id, from_entry, to_entry)
     values (v_gone_edge, v_gone, v_ws, v_folder, v_file);
+    -- an UPDATE cannot carry ink or edges to another workspace (past the caps
+    -- the INSERT counted)
+    begin
+        update public.folder_strokes set workspace_id = v_ws2, entry_id = v_root2 where id = v_gone_stroke;
+        insert into __results values ('strokes: an update cannot move a stroke to another workspace', false, 'accepted');
+    exception when others then
+        insert into __results values ('strokes: an update cannot move a stroke to another workspace',
+            sqlerrm like '%cannot move to another workspace%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
+        update public.folder_connections set workspace_id = v_ws2, entry_id = v_root2,
+            from_entry = v_root2, to_entry = v_file2 where id = v_gone_edge;
+        insert into __results values ('connections: an update cannot move an edge to another workspace', false, 'accepted');
+    exception when others then
+        insert into __results values ('connections: an update cannot move an edge to another workspace',
+            sqlerrm like '%cannot move to another workspace%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
     perform public.delete_entry(v_gone, null);
     insert into __results values ('trash: a trashed folder keeps its ink and edge rows',
         (select count(*) from public.folder_strokes where id = v_gone_stroke) = 1
@@ -1288,7 +1500,19 @@ begin
     -- ------------------------------------------------------------------
     -- fork: rows carry the source prefix and are listed for re-key
     -- ------------------------------------------------------------------
+    insert into private.rate_events (actor, action)
+    select c_other, 'fork' from generate_series(1, 20);
     perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+        perform public.fork_workspace(v_ws);
+        insert into __results values ('fork: 20 an hour per account', false, 'accepted');
+    exception when others then
+        insert into __results values ('fork: 20 an hour per account', sqlerrm like '%too many forks%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    execute 'reset role';
+    delete from private.rate_events where actor = c_other and action = 'fork';
     execute 'set local role authenticated';
     v_fork := public.fork_workspace(v_ws);
     insert into __results values ('fork: a stranger is metered on the public source',
@@ -1746,6 +1970,44 @@ begin
         execute 'set local role authenticated';
     end;
     begin
+        insert into public.quota_wall_events (owner_id, kind, answer)
+        values (c_owner, 'quota', repeat('a', 2001));
+        insert into __results values ('limits: quota_wall answer 2000 cap', false, 'accepted');
+    exception when check_violation then
+        insert into __results values ('limits: quota_wall answer 2000 cap', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
+        update public.quota_wall_events set kind = 'hub_limit' where owner_id = c_owner;
+        insert into __results values ('limits: quota_wall rows change only their answer', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('limits: quota_wall rows change only their answer', true, null);
+        execute 'set local role authenticated';
+    end;
+    insert into public.quota_wall_events (owner_id, kind, created_at)
+    values (c_owner, 'quota', now() - interval '3 days');
+    insert into __results values ('limits: a row''s day is the server''s, not the client''s',
+        (select count(*) from public.quota_wall_events
+          where owner_id = c_owner and created_at < now() - interval '1 day') = 0, null);
+    begin
+        insert into public.quota_wall_events (owner_id, kind)
+        select c_owner, 'quota' from generate_series(1, 201);
+        insert into __results values ('limits: quota_wall 200 rows a day per account', false, 'accepted');
+    exception when others then
+        insert into __results values ('limits: quota_wall 200 rows a day per account',
+            sqlerrm like '%rows_limit_exceeded%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
+        insert into public.bridge_events (owner_id, step, door, source_type)
+        select c_owner, 'opened', 'list', 'browser' from generate_series(1, 1001);
+        insert into __results values ('limits: bridge_events 1000 rows a day per account', false, 'accepted');
+    exception when others then
+        insert into __results values ('limits: bridge_events 1000 rows a day per account',
+            sqlerrm like '%rows_limit_exceeded%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
         insert into public.quota_wall_events (owner_id, kind, file_mime)
         values (c_owner, 'quota', repeat('m', 256));
         insert into __results values ('limits: quota_wall file_mime 255 cap', false, 'accepted');
@@ -1876,6 +2138,45 @@ begin
         insert into __results values ('upload: existing blob cannot be a ticket', false, 'accepted');
     exception when others then
         insert into __results values ('upload: existing blob cannot be a ticket', sqlerrm like '%ticket not found%', sqlerrm);
+    end;
+    -- a finalize that create_blob_entry would refuse is refused before the
+    -- copy, and a ticket that keeps failing is spent
+    v_upload := public.register_upload(v_ws, c_owner, 'blob', '.png', 3600);
+    begin
+        perform public.prepare_upload(v_upload, c_owner, 'blob', jsonb_build_object(
+            'id', gen_random_uuid(), 'parent_id', gen_random_uuid(), 'name', 'x.png', 'mime', 'image/png'));
+        insert into __results values ('upload: a missing folder is refused before the copy', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a missing folder is refused before the copy',
+            sqlerrm like '%parent folder%', sqlerrm);
+    end;
+    begin
+        perform public.prepare_upload(v_upload, c_owner, 'blob', jsonb_build_object(
+            'id', gen_random_uuid(), 'parent_id', v_root, 'name', 'x.png', 'mime', 'image/png',
+            'client_id', repeat('c', 65)));
+        insert into __results values ('upload: anything the entry insert refuses is refused before the copy', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: anything the entry insert refuses is refused before the copy',
+            sqlstate = '23514', sqlerrm);
+    end;
+    v_request := jsonb_build_object('id', gen_random_uuid(), 'parent_id', v_root,
+        'name', 'spent.png', 'mime', 'image/png', 'client_id', null);
+    v_receipt := public.prepare_upload(v_upload, c_owner, 'blob', v_request)::jsonb;
+    insert into __results values ('upload: prepare answers the quota picture for the size check',
+        (v_receipt->>'quota_bytes')::bigint > 0 and (v_receipt->>'used_bytes') is not null, v_receipt::text);
+    -- prepares cost nothing; copies do
+    for v_n in 1..5 loop
+        perform public.prepare_upload(v_upload, c_owner, 'blob', v_request);
+    end loop;
+    for v_n in 1..5 loop
+        perform public.begin_upload_copy(v_upload, c_owner, 'blob');
+    end loop;
+    begin
+        perform public.prepare_upload(v_upload, c_owner, 'blob', v_request);
+        insert into __results values ('upload: a ticket is spent after 5 attempts', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a ticket is spent after 5 attempts',
+            sqlerrm like '%too many attempts%', sqlerrm);
     end;
     v_upload := public.register_upload(v_ws, c_owner, 'hub_preview', '.png', 3600);
     v_gc_a := 'hub/' || v_ws::text || '/' || gen_random_uuid()::text || '.png';
@@ -2011,9 +2312,16 @@ begin
         select *
           from (values
             -- backend-only: callable by neither anon nor authenticated
-            -- grants membership to an arbitrary user id for an arbitrary email;
-            -- only handle_new_user should reach this overload
-            ('private.claim_workspace_invites(uuid, text)', false, false),
+            ('private.owner_rows_cap()', false, false),
+            -- invites only from the backend, which sends the mail it counts
+            ('private.add_workspace_member(uuid, uuid, text, text)', false, false),
+            ('public.invite_workspace_member(uuid, uuid, text, text)', false, false),
+            ('private.begin_upload_copy(text, uuid, text)', false, false),
+            ('public.begin_upload_copy(text, uuid, text)', false, false),
+            ('private.assert_owner_workspaces(uuid)', false, false),
+            ('private.my_confirmed_email()', false, false),
+            ('private.mailbox_of(text)', false, false),
+            ('private.drop_password_on_confirm()', false, false),
             ('private.handle_new_user()', false, false),
             ('private.lock_workspace_tree(uuid)', false, false),
             ('private.lock_entry_workspace(uuid)', false, false),
@@ -2074,13 +2382,19 @@ begin
             ('public.list_hub_publications(text, text, int, int)', true, true),
 
             -- signed-in only
-            ('private.add_workspace_member(uuid, text, text)', false, true),
-            ('public.add_workspace_member(uuid, text, text)', false, true),
             ('private.plan_defaults(text)', false, true),
             ('public.plan_limits(text)', false, true),
             ('public.plan_catalog()', false, true),
             ('private.claim_workspace_invites()', false, true),
             ('public.claim_workspace_invites()', false, true),
+            ('private.list_my_invites()', false, true),
+            ('public.list_my_invites()', false, true),
+            ('private.accept_workspace_invite(uuid)', false, true),
+            ('public.accept_workspace_invite(uuid)', false, true),
+            ('private.decline_workspace_invite(uuid)', false, true),
+            ('public.decline_workspace_invite(uuid)', false, true),
+            ('private.leave_workspace(uuid)', false, true),
+            ('public.leave_workspace(uuid)', false, true),
             ('public.merge_entry_xattrs(uuid, jsonb, text)', false, true),
             ('public.report_hub_listing(uuid, text)', false, true),
             ('public.owner_usage()', false, true),

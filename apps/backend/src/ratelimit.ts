@@ -12,6 +12,9 @@ export type RateLimitDecision = { allowed: true } | { allowed: false; retry_afte
 
 export class RateLimiter {
 	private readonly hits = new Map<string, number[]>();
+	// each key's own window: the sweep must judge a key by the rule that
+	// filled it, not by whichever rule happens to run the sweep
+	private readonly windows = new Map<string, number>();
 	private checks_since_prune = 0;
 
 	constructor(private readonly now: () => number = Date.now) {}
@@ -29,7 +32,8 @@ export class RateLimiter {
 			stamps = [];
 			this.hits.set(key, stamps);
 		}
-		this.maybe_prune(floor);
+		this.windows.set(key, Math.max(this.windows.get(key) ?? 0, rule.window_ms));
+		this.maybe_prune(now);
 		if (stamps.length >= rule.limit) {
 			const retry_after_ms = stamps[0]! + rule.window_ms - now;
 			return { allowed: false, retry_after_s: Math.max(1, Math.ceil(retry_after_ms / 1000)) };
@@ -44,13 +48,21 @@ export class RateLimiter {
 	}
 
 	// Keys of clients that went quiet would otherwise accumulate forever;
-	// sweep them every few thousand checks (cheap relative to request cost)
-	private maybe_prune(floor: number): void {
+	// sweep them every few thousand checks (cheap relative to request cost).
+	// A key is stale only once its OWN window has passed: judging every key by
+	// the window of the rule that triggered the sweep (the global minute fence
+	// runs first on every request) emptied the hourly buckets after a minute
+	// of quiet — 10 invites, a minute's pause, 10 more
+	private maybe_prune(now: number): void {
 		this.checks_since_prune += 1;
 		if (this.checks_since_prune < 5000) return;
 		this.checks_since_prune = 0;
 		for (const [key, stamps] of this.hits) {
-			if (stamps.length === 0 || stamps[stamps.length - 1]! <= floor) this.hits.delete(key);
+			const window_ms = this.windows.get(key) ?? 0;
+			if (stamps.length === 0 || stamps[stamps.length - 1]! <= now - window_ms) {
+				this.hits.delete(key);
+				this.windows.delete(key);
+			}
 		}
 	}
 }
@@ -171,9 +183,19 @@ export const ROUTE_POLICIES: Record<string, RoutePolicy> = {
 	"POST /billing/checkout": { ip: { limit: 30, window_ms: HOUR }, user: { limit: 10, window_ms: HOUR } },
 	"POST /billing/portal": { ip: { limit: 60, window_ms: HOUR }, user: { limit: 20, window_ms: HOUR } },
 	"GET /billing/plans": { ip: { limit: 120, window_ms: MINUTE } },
-	"POST /auth/send-email": { ip: { limit: 120, window_ms: MINUTE } },
+	// POST /auth/send-email is left out on purpose: Supabase Auth is its only
+	// caller, so every request shares one IP and an IP fence would turn a burst
+	// of real sign-ups into lost confirmation mails. The Standard Webhooks
+	// signature is its gate, and the Auth email rate limit bounds the volume
 	"POST /feedback": { ip: { limit: 5, window_ms: HOUR } },
 };
+
+/**
+ * Routes no IP fence applies to, the global one included: their only caller is
+ * a server that signs every request (Supabase Auth's Send Email hook), so all
+ * of them arrive from a handful of shared addresses
+ */
+export const SIGNED_ROUTES: ReadonlySet<string> = new Set(["POST /auth/send-email"]);
 
 /** every request, any route — the outer fence */
 export const GLOBAL_IP_POLICY: RateLimitRule = { limit: 1000, window_ms: MINUTE };
@@ -194,6 +216,7 @@ export function enforce_rate_limits(
 	route: string,
 	ip: string,
 ): number | null {
+	if (SIGNED_ROUTES.has(route)) return null;
 	const global = limiter.check(`ip:*:${ip}`, GLOBAL_IP_POLICY);
 	if (!global.allowed) return global.retry_after_s;
 

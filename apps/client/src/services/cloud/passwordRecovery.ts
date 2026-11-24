@@ -15,3 +15,24 @@ export function take_password_recovery(): boolean {
 	pending = false
 	return seen
 }
+
+let signup_confirmed = false
+
+/**
+ * Reads the address the app was opened with before supabase-js consumes it:
+ * the signup confirmation link lands with `type=signup` in the fragment
+ * (implicit flow) and supabase-js sends no event of its own for it
+ */
+export function note_landing_url(href: string): void {
+	const hash = href.split('#')[1] ?? ''
+	const query = href.split('#')[0]!.split('?')[1] ?? ''
+	const type = new URLSearchParams(hash).get('type') ?? new URLSearchParams(query).get('type')
+	if (type === 'signup') signup_confirmed = true
+}
+
+/** True once after a signup confirmation link, then clears */
+export function take_signup_confirmation(): boolean {
+	const seen = signup_confirmed
+	signup_confirmed = false
+	return seen
+}

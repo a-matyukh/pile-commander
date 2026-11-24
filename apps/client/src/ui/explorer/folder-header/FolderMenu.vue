@@ -54,6 +54,13 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 const rename_open = ref(false)
 const remove_open = ref(false)
+const leave_open = ref(false)
+
+/** Someone else's shared folder leaves this account's list; only its owner can share it again */
+async function leave() {
+	leave_open.value = false
+	await cloud.leave_workspace(props.folder.root_id)
+}
 
 const item = computed(() => tree_item_for(props.folder))
 const home = use_home()
@@ -64,6 +71,8 @@ const items = computed(() => folder_menu_items(props.folder, {
 	can_paste: item.value ? clipboard.can_paste(item.value, props.folder.folder_id) : false,
 	home: home.value,
 	owner: props.folder.drive_id === 'cloud' && cloud.role_of(props.folder.root_id) === 'owner',
+	member: props.folder.drive_id === 'cloud'
+		&& ['editor', 'viewer'].includes(cloud.role_of(props.folder.root_id) ?? ''),
 }))
 const node = computed(() => ({ ...folder_menu_node(props.folder), name: props.name }))
 /** Which groups are there, so a line only ever sits between two of them */
@@ -184,8 +193,22 @@ function reveal() {
 			/>
 			<MenuItem v-if="items.move_to_trash" icon="tabler:trash" :label="t(remove_text.confirm)" :shortcut="remove_shortcut" @select="remove_open = true" />
 		</template>
+		<template v-if="items.leave">
+			<MenuSeparator v-if="groups.top || groups.look || spatial_workspace || groups.clipboard" />
+			<MenuItem icon="tabler:logout" :label="t('menu.leave_folder')" @select="leave_open = true" />
+		</template>
 	</DropMenu>
 	<RenameFolderDialog v-model:open="rename_open" :name="name" @confirm="rename" />
+	<Modal
+		v-model:open="leave_open"
+		:title="t('menu.leave_folder_title', { name })"
+		:description="t('menu.leave_folder_description')"
+	>
+		<template #footer>
+			<Button @click="leave_open = false">{{ t('dialog.cancel') }}</Button>
+			<Button variant="danger" @click="leave">{{ t('menu.leave_folder') }}</Button>
+		</template>
+	</Modal>
 	<Modal
 		v-if="item"
 		v-model:open="remove_open"

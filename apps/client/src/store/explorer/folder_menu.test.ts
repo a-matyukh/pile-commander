@@ -59,6 +59,7 @@ describe('folder header menu: items', () => {
 			cut: true,
 			duplicate: true,
 			paste: true,
+			leave: false,
 		})
 	})
 
@@ -88,6 +89,7 @@ describe('folder header menu: items', () => {
 			cut: false,
 			duplicate: false,
 			paste: false,
+			leave: false,
 		})
 	})
 
@@ -105,6 +107,7 @@ describe('folder header menu: items', () => {
 			cut: false,
 			duplicate: false,
 			paste: false,
+			leave: false,
 		})
 		expect(folder_menu_items(cloud_top, { ...writable(cloud_root), owner: false }).rename).toBe(false)
 		expect(folder_menu_items(cloud_top, writable(cloud_root)).rename).toBe(false)

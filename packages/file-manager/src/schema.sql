@@ -41,9 +41,13 @@
 -- 4. Sharing: whole workspaces only (workspace_members). No per-folder
 --    sharing. Roles: 'editor' can write, 'viewer' is read-only; the owner
 --    can always write. Enforcement lives in private.can_write_workspace —
---    every RPC and RLS policy goes through it. An email with no auth.users
---    row is a workspace_invites pending (not a member): handle_new_user
---    converts live rows after signup. Clients never INSERT either table.
+--    every RPC and RLS policy goes through it. Sharing by email always
+--    makes a workspace_invites row, registered address or not; it becomes
+--    a membership only when a session with that CONFIRMED address accepts
+--    it (accept_workspace_invite). Nothing joins anyone to a board by
+--    itself: not a signup (the address may belong to someone else until it
+--    is confirmed), not the owner. A member leaves with leave_workspace.
+--    Clients never INSERT either table.
 --
 -- 5. Visibility: a workspace starts private (owner + workspace_members).
 --    set_workspace_public flips is_public and sets slug on THE SAME row —
@@ -139,7 +143,7 @@ create table public.workspaces (
     -- same flat names as entries.xattrs so the board renders both tile kinds
     -- with one code path. Readable by anon when the workspace is public —
     -- never put anything private here. Size-capped like entries.xattrs
-    xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 65536),
+    xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 16384),
 
     -- public link: set only via set_workspace_public (not client UPDATE).
     -- Slug is unique per owner: the URL is /<username>/<slug>, so two users
@@ -188,9 +192,10 @@ create table public.workspace_members (
 -- "workspaces shared with me" and the user FK cascade (the PK leads with workspace_id)
 create index workspace_members_user_idx on public.workspace_members (user_id);
 
--- Pending share: the invitee has no auth.users row yet, so they cannot be a
--- workspace_members row (FK + RLS). Owner-only; converted in handle_new_user.
--- Token is for the email link (/invite/<token>) and is not granted to clients.
+-- Pending share, for any address: it turns into a workspace_members row only
+-- when the invitee accepts it from a confirmed session (rpc.sql,
+-- accept_workspace_invite), or is dropped when they decline. Token is for the
+-- email link (/invite/<token>) and is not granted to clients.
 create table public.workspace_invites (
     workspace_id uuid not null references public.workspaces (id) on delete cascade,
     email text not null check (
@@ -364,7 +369,7 @@ create table public.quota_wall_events (
     file_bytes bigint,
     file_mime text check (file_mime is null or char_length(file_mime) <= 255),
     needed_bytes bigint,
-    answer text,
+    answer text check (answer is null or char_length(answer) <= 2000),
     created_at timestamptz not null default now()
 );
 
@@ -533,44 +538,6 @@ create table public.egress_notices (
     primary key (owner_id, period, kind)
 );
 
--- Live pending invites for this address become memberships. Expired rows
--- are only deleted so a later invite can reuse (workspace_id, email).
--- handle_new_user and public.claim_workspace_invites (sign-in) both call this.
-create or replace function private.claim_workspace_invites(p_user uuid, p_email text)
-returns void
-language plpgsql
-security definer
-set search_path = public, extensions
-as $$
-declare
-    v_email text;
-begin
-    if p_user is null then
-        return;
-    end if;
-    v_email := lower(btrim(coalesce(p_email, '')));
-    if v_email = '' then
-        return;
-    end if;
-    insert into public.workspace_members (workspace_id, user_id, role)
-    select i.workspace_id, p_user, i.role
-      from public.workspace_invites i
-      join public.workspaces w on w.id = i.workspace_id
-     where i.email = v_email
-       and i.expires_at > now()
-       and w.owner_id <> p_user
-       and w.deleted_at is null
-    on conflict do nothing;
-    delete from public.workspace_invites i
-     where i.email = v_email
-       and exists (
-           select 1 from public.workspaces w
-            where w.id = i.workspace_id
-              and w.deleted_at is null
-       );
-end
-$$;
-
 create or replace function private.handle_new_user()
 returns trigger
 language plpgsql
@@ -589,9 +556,9 @@ begin
            d.egress_bytes_month, d.max_public_file_bytes, d.download_bytes_month
       from private.plan_defaults('free') d;
 
-    -- Live pending invites for this address become memberships. Expired rows
-    -- are only deleted so a later invite can reuse (workspace_id, email).
-    perform private.claim_workspace_invites(new.id, new.email);
+    -- Pending invites stay pending: this row exists before anyone proved they
+    -- own the address (an unconfirmed signup can be anybody's). The invitee
+    -- accepts them once confirmed (accept_workspace_invite)
     return new;
 end
 $$;
@@ -599,6 +566,36 @@ $$;
 create trigger on_auth_user_created
     after insert on auth.users
     for each row execute function private.handle_new_user();
+
+-- The password typed at signup is dropped when the address is confirmed.
+-- Supabase Auth keeps an unconfirmed signup as is when the address signs up
+-- again, password included, so the password on the row may be whoever
+-- registered the address first; the confirmation is the first moment the
+-- owner of the mailbox is known. The app then asks the confirmed session for
+-- a password (password_prompt = 'confirm_signup'); someone who closes it
+-- signs in with "Forgot password". Only the null → set step of
+-- email_confirmed_at: an email change or an admin confirmation at insert
+-- keeps the password
+create or replace function private.drop_password_on_confirm()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if OLD.email_confirmed_at is null and NEW.email_confirmed_at is not null then
+        NEW.encrypted_password := '';
+    end if;
+    return NEW;
+end
+$$;
+
+revoke execute on function private.drop_password_on_confirm() from public, anon, authenticated;
+
+drop trigger if exists on_auth_user_confirmed on auth.users;
+create trigger on_auth_user_confirmed
+    before update of email_confirmed_at on auth.users
+    for each row execute function private.drop_password_on_confirm();
 
 -- accounts created before this table existed get their rows now
 insert into public.profiles (id)
@@ -790,7 +787,7 @@ create table public.entries (
     -- client-written presentation attrs. Size-capped: xattrs are outside the
     -- byte quota and, with REPLICA IDENTITY FULL, every UPDATE broadcasts the
     -- whole row — Realtime drops events above 1 MB
-    xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 65536),
+    xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 16384),
 
     -- text payloads live in entry_contents (separate table, see below)
     storage_key text,  -- B2 object key: "<workspace_id>/<entry_uuid>"
@@ -1203,8 +1200,29 @@ begin
     if octet_length(NEW.points::text) > 32768 then -- 32 KiB per stroke
         raise exception 'folder_strokes: stroke exceeds 32768 bytes points limit';
     end if;
+    -- An UPDATE must not carry ink past the caps the INSERT counted: moving
+    -- strokes to another workspace would free the mover's own owner budget
+    -- and fill someone else's, and moving them into a folder would beat its
+    -- 5000. A PostgREST upsert needs UPDATE on every column of its body, so
+    -- column grants cannot stop this; the trigger does
+    if TG_OP = 'UPDATE' then
+        if NEW.workspace_id <> OLD.workspace_id then
+            raise exception 'folder_strokes: a stroke cannot move to another workspace';
+        end if;
+        if NEW.entry_id <> OLD.entry_id then
+            perform pg_advisory_xact_lock(hashtextextended(NEW.entry_id::text || ':strokes', 45));
+            if (select count(*) from public.folder_strokes s where s.entry_id = NEW.entry_id) >= 5000 then
+                raise exception 'folder_strokes: folder % already holds 5000 strokes', NEW.entry_id;
+            end if;
+        end if;
+    end if;
     v_new := TG_OP = 'INSERT'
         and not exists (select 1 from public.folder_strokes s where s.id = NEW.id);
+    -- one writer per folder at a time while it counts: two transactions
+    -- adding to a folder at 4999 would both read 4999 (held to the commit)
+    if v_new then
+        perform pg_advisory_xact_lock(hashtextextended(NEW.entry_id::text || ':strokes', 45));
+    end if;
     if v_new
        and (select count(*) from public.folder_strokes s where s.entry_id = NEW.entry_id) >= 5000
     then
@@ -1350,11 +1368,27 @@ begin
     ) then
         raise exception 'folder_connections: endpoints must belong to the same workspace';
     end if;
+    -- same as folder_strokes_guard: an UPDATE moves no edge past the caps
+    if TG_OP = 'UPDATE' then
+        if NEW.workspace_id <> OLD.workspace_id then
+            raise exception 'folder_connections: a connection cannot move to another workspace';
+        end if;
+        if NEW.entry_id <> OLD.entry_id then
+            perform pg_advisory_xact_lock(hashtextextended(NEW.entry_id::text || ':connections', 45));
+            if (select count(*) from public.folder_connections c where c.entry_id = NEW.entry_id) >= 5000 then
+                raise exception 'folder_connections: folder % already holds 5000 connections', NEW.entry_id;
+            end if;
+        end if;
+    end if;
     v_new := TG_OP = 'INSERT'
         and not exists (
             select 1 from public.folder_connections c
              where c.workspace_id = NEW.workspace_id and c.id = NEW.id
         );
+    -- one writer per folder at a time while it counts (see folder_strokes_guard)
+    if v_new then
+        perform pg_advisory_xact_lock(hashtextextended(NEW.entry_id::text || ':connections', 45));
+    end if;
     if v_new
        and (select count(*) from public.folder_connections c where c.entry_id = NEW.entry_id) >= 5000
     then
@@ -1884,12 +1918,9 @@ create policy workspaces_select on public.workspaces
         )
     );
 
-create policy workspaces_insert on public.workspaces
-    for insert with check (
-        owner_id = (select auth.uid())
-        and not is_public      -- is_public/slug are set only by set_workspace_public
-        and slug is null
-    );
+-- No INSERT policy (and no INSERT grant): a workspace is made only by
+-- create_workspace and fork_workspace, which count it against the account's
+-- caps. A direct insert counted nothing and had no root entry
 
 create policy workspaces_update on public.workspaces
     for update using (owner_id = (select auth.uid()) and deleted_at is null)
@@ -2293,12 +2324,109 @@ create table private.upload_sessions (
     request jsonb check (request is null or pg_column_size(request) <= 16384),
     result jsonb,
     expires_at timestamptz not null,
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    -- finalize attempts that reached the copy without a result: each one
+    -- leaves an object in storage until the reconcile, so a ticket that keeps
+    -- failing is spent (prepare_upload)
+    attempts int not null default 0
 );
 create index upload_sessions_workspace_idx on private.upload_sessions(workspace_id);
 create index upload_sessions_user_idx on private.upload_sessions(uploaded_by);
 create index upload_sessions_created_idx on private.upload_sessions(created_at);
 revoke all on private.upload_sessions from public, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- rate_events: actions that are cheap to call and costly to repeat — an
+-- invitation mail, a fork — one row each, counted in a rolling window by the
+-- RPC that performs the action (add_workspace_member, fork_workspace). It
+-- lives in SQL because those RPCs are reachable straight through PostgREST,
+-- past the backend's in-memory limits. Pruned daily (rate-events-prune)
+-- ----------------------------------------------------------------------------
+create table private.rate_events (
+    id bigint generated always as identity primary key,
+    -- set null, not cascade: deleting the account must not reset the
+    -- per-address count its invites made
+    actor uuid references auth.users (id) on delete set null,
+    action text not null check (action in ('invite', 'fork')),
+    -- invite: the mailbox (private.mailbox_of); fork: null
+    subject text check (subject is null or char_length(subject) <= 254),
+    workspace_id uuid,
+    created_at timestamptz not null default now()
+);
+create index rate_events_actor_idx on private.rate_events (actor, action, created_at);
+create index rate_events_subject_idx on private.rate_events (action, subject, created_at)
+    where subject is not null;
+revoke all on private.rate_events from public, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- Row caps per account on the tables clients insert into directly (the
+-- funnels and the sync stamps): rows are small, but PostgREST takes an array
+-- in one request, so without a cap one script fills the disk. TG_ARGV: rows
+-- per account in all, rows per account in the last day. An upsert of a row
+-- that already exists (touch_sync_device) is not a new row and passes
+-- ----------------------------------------------------------------------------
+create or replace function private.owner_rows_cap()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_total int := TG_ARGV[0]::int;
+    v_day int := TG_ARGV[1]::int;
+    v_n bigint;
+begin
+    if NEW.owner_id is null then
+        return NEW;
+    end if;
+    -- the day window counts server time, never a client's claim
+    NEW.created_at := now();
+    -- nested: PL/pgSQL resolves every NEW field of a condition, and only
+    -- sync_devices has device_id
+    if TG_TABLE_NAME = 'sync_devices' then
+        if exists (
+            select 1 from public.sync_devices d
+             where d.owner_id = NEW.owner_id
+               and d.workspace_id = (to_jsonb(NEW)->>'workspace_id')::uuid
+               and d.device_id = to_jsonb(NEW)->>'device_id'
+        ) then
+            return NEW;
+        end if;
+    end if;
+    perform pg_advisory_xact_lock(hashtextextended(NEW.owner_id::text || ':' || TG_TABLE_NAME, 43));
+    execute format('select count(*) from %I.%I where owner_id = $1', TG_TABLE_SCHEMA, TG_TABLE_NAME)
+       into v_n using NEW.owner_id;
+    if v_n >= v_total then
+        raise exception 'rows_limit_exceeded: % keeps % rows per account', TG_TABLE_NAME, v_total
+            using errcode = 'P0001';
+    end if;
+    execute format(
+        'select count(*) from %I.%I where owner_id = $1 and created_at > now() - interval ''1 day''',
+        TG_TABLE_SCHEMA, TG_TABLE_NAME
+    ) into v_n using NEW.owner_id;
+    if v_n >= v_day then
+        raise exception 'rows_limit_exceeded: % takes % rows per account a day', TG_TABLE_NAME, v_day
+            using errcode = 'P0001';
+    end if;
+    return NEW;
+end
+$$;
+revoke execute on function private.owner_rows_cap() from public, anon, authenticated;
+
+drop trigger if exists quota_wall_events_cap on public.quota_wall_events;
+create trigger quota_wall_events_cap
+    before insert on public.quota_wall_events
+    for each row execute function private.owner_rows_cap('2000', '200');
+
+drop trigger if exists bridge_events_cap on public.bridge_events;
+create trigger bridge_events_cap
+    before insert on public.bridge_events
+    for each row execute function private.owner_rows_cap('20000', '1000');
+
+drop trigger if exists sync_devices_cap on public.sync_devices;
+create trigger sync_devices_cap
+    before insert on public.sync_devices
+    for each row execute function private.owner_rows_cap('1000', '1000');
 
 -- Daily hard delete of rows that spent more than 30 days in the trash.
 -- pg_cron is supported by Supabase out of the box.
@@ -2381,6 +2509,35 @@ select cron.schedule(
     $$delete from public.egress_notices where period < current_date - 400$$
 );
 
+-- expired invites are only kept so the owner's list can say "expired" for a while
+select cron.schedule(
+    'workspace-invites-prune',
+    '47 3 * * *',
+    $$delete from public.workspace_invites where expires_at < now() - interval '30 days'$$
+);
+
+-- the windows in rate_events are a day at most
+select cron.schedule(
+    'rate-events-prune',
+    '45 3 * * *',
+    $$delete from private.rate_events where created_at < now() - interval '2 days'$$
+);
+
+-- An address nobody confirmed within a day is freed for its real owner.
+-- Supabase Auth keeps an unconfirmed signup as is and only resends the
+-- mail when the address signs up again, so whoever registered someone
+-- else's address first would otherwise keep that account, and the password
+-- they chose, once the owner confirms. The account has no data (every write
+-- needs a session, and a session needs the confirmation)
+select cron.schedule(
+    'unconfirmed-users-prune',
+    '50 3 * * *',
+    $$delete from auth.users u
+       where u.email_confirmed_at is null
+         and u.created_at < now() - interval '1 day'
+         and not exists (select 1 from public.workspaces w where w.owner_id = u.id)$$
+);
+
 -- ----------------------------------------------------------------------------
 -- Explicit privileges. Schema USAGE is lost when public is recreated manually
 -- (drop schema public cascade) and table grants normally come from the
@@ -2400,7 +2557,7 @@ grant usage on schema public to anon, authenticated, service_role;
 -- direct client calls are impossible through PostgREST regardless
 grant usage on schema private to authenticated, anon, service_role;
 
-grant select, insert, delete on public.workspaces to authenticated;
+grant select, delete on public.workspaces to authenticated;
 grant select on public.workspaces to anon;  -- public workspaces (is_public)
 
 -- members: inserted only via add_workspace_member (rpc.sql); the owner may
@@ -2424,7 +2581,10 @@ grant select on public.hub_publications to anon, authenticated, service_role;
 
 grant select on public.billing_accounts to authenticated;
 grant select, insert, update on public.billing_accounts to service_role;
-grant select, insert, update on public.quota_wall_events to authenticated;
+-- the answer is the only column a later write may change
+revoke all on public.quota_wall_events from public, anon, authenticated;
+grant select, insert on public.quota_wall_events to authenticated;
+grant update (answer) on public.quota_wall_events to authenticated;
 -- the bridge funnel is insert-only for clients: revoke whatever the "expose
 -- new tables" toggle granted, then allow reading and recording own steps
 -- (RLS scopes both to the owner)
@@ -2488,15 +2648,6 @@ revoke execute on function public.folder_connections_guard() from public, anon, 
 revoke execute on function public.folder_connections_touch() from public, anon, authenticated;
 revoke execute on function public.entries_queue_blob_deletion() from public, anon, authenticated;
 revoke execute on function private.handle_new_user() from public, anon, authenticated;
-
--- private.claim_workspace_invites(uuid, text) grants membership to an
--- arbitrary user id for an arbitrary email. handle_new_user calls it with
--- the new row. The session path is the no-arg overload in rpc.sql, which
--- binds to auth.uid(); that is the only client-callable one. EXECUTE
--- defaults to PUBLIC on every new function, so this has to be re-asserted
--- whenever the schema is applied
-revoke execute on function private.claim_workspace_invites(uuid, text)
-    from public, anon, authenticated;
 
 -- plan_defaults is recreated with `drop function` above, which resets EXECUTE
 -- to PUBLIC; public.plan_limits is a security-invoker wrapper, so authenticated

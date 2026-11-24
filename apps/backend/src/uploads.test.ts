@@ -23,6 +23,10 @@ type FixtureOptions = {
 	replay_after_stat?: Uint8Array;
 	/** a store that ignores x-amz-copy-source-if-match */
 	ignore_if_match?: boolean;
+	/** the owner's storage picture prepare_upload answers */
+	used_bytes?: number;
+	quota_bytes?: number;
+	replaced_bytes?: number;
 };
 
 function fixture(kind: UploadKind = "blob", options: FixtureOptions = {}) {
@@ -35,6 +39,7 @@ function fixture(kind: UploadKind = "blob", options: FixtureOptions = {}) {
 	let result: Record<string, unknown> | null = null;
 	let bound: string | null = null;
 	let completed = 0;
+	let attempts = 0;
 	let replayed = false;
 	const s3 = {
 		async stat(k: string) {
@@ -60,9 +65,15 @@ function fixture(kind: UploadKind = "blob", options: FixtureOptions = {}) {
 	const db = { async rpc(name: string, args: Record<string, unknown>) {
 		const fingerprint = JSON.stringify(args.p_request);
 		if (args.p_user !== USER || args.p_key !== key) return { data: null, error: { code: "P0001", message: "upload: ticket not found" } };
+		if (name === "begin_upload_copy") { attempts += 1; return { data: null, error: null }; }
 		if (bound !== null && bound !== fingerprint) return { data: null, error: { code: "P0001", message: "upload_conflict: bound" } };
 		bound = fingerprint;
-		if (name === "prepare_upload") return { data: { workspace_id: WS, max_bytes: 16, result }, error: null };
+		if (name === "prepare_upload") {
+			return {
+				data: { workspace_id: WS, max_bytes: 16, used_bytes: options.used_bytes, quota_bytes: options.quota_bytes, replaced_bytes: options.replaced_bytes, result },
+				error: null,
+			};
+		}
 		expect(name).toBe("complete_upload");
 		if (options.refuse) return { data: null, error: { code: "23505", message: "duplicate key" } };
 		if (!result) {
@@ -76,7 +87,7 @@ function fixture(kind: UploadKind = "blob", options: FixtureOptions = {}) {
 	} } as unknown as SupabaseClient;
 	const finalize = (body: Record<string, unknown> = kind === "blob" ? request : {}, user = USER) =>
 		finalize_upload(s3, db, key, user, kind, body, rpc_error_to_api);
-	return { key, objects, types, writes, deletions, finalize, completed: () => completed };
+	return { key, objects, types, writes, deletions, finalize, completed: () => completed, attempts: () => attempts };
 }
 
 describe("immutable upload finalization", () => {
@@ -173,5 +184,44 @@ describe("immutable upload finalization", () => {
 		const f = fixture();
 		f.objects.delete(f.key);
 		await expect(f.finalize()).rejects.toMatchObject({ status: 409 });
+	});
+});
+
+describe("finalize_upload quota before the copy", () => {
+	test("a new file over the quota is refused without a copy", async () => {
+		const f = fixture("blob", { used_bytes: 98, quota_bytes: 100 });
+		await expect(f.finalize()).rejects.toMatchObject({ status: 413, extra: { kind: "quota", used_bytes: 98, quota_bytes: 100 } });
+		expect(f.writes).toEqual([]);
+	});
+
+	test("a file that fits goes through", async () => {
+		const f = fixture("blob", { used_bytes: 96, quota_bytes: 100 });
+		await f.finalize();
+		expect(f.writes.length).toBe(1);
+	});
+
+	test("a replace counts only its growth over the file it replaces", async () => {
+		const fits = fixture("blob", { used_bytes: 100, quota_bytes: 100, replaced_bytes: 4 });
+		await fits.finalize({ ...request, replace: ID });
+		expect(fits.writes.length).toBe(1);
+		const grows = fixture("blob", { used_bytes: 100, quota_bytes: 100, replaced_bytes: 1 });
+		await expect(grows.finalize({ ...request, replace: ID })).rejects.toMatchObject({ status: 413 });
+		expect(grows.writes).toEqual([]);
+	});
+});
+
+describe("finalize_upload one ticket at a time", () => {
+	test("parallel finalizes of one ticket make one copy", async () => {
+		const f = fixture("blob");
+		const results = await Promise.all([f.finalize(), f.finalize(), f.finalize(), f.finalize()]);
+		expect(f.writes.length).toBe(1);
+		expect(f.attempts()).toBe(1);
+		expect(new Set(results.map((r) => JSON.stringify(r))).size).toBe(1);
+	});
+
+	test("a finalize that stops before the copy costs no attempt", async () => {
+		const f = fixture("blob", { used_bytes: 100, quota_bytes: 100 });
+		await expect(f.finalize()).rejects.toMatchObject({ status: 413 });
+		expect(f.attempts()).toBe(0);
 	});
 });

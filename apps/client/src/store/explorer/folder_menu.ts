@@ -22,6 +22,8 @@ export type FolderMenuItems = {
 	duplicate: boolean
 	/** Into this folder: something is on the clipboard and may go here */
 	paste: boolean
+	/** Someone else's cloud workspace shared with this account: its member may leave it */
+	leave: boolean
 }
 
 export type FolderMenuContext = {
@@ -35,6 +37,8 @@ export type FolderMenuContext = {
 	home?: string | null
 	/** Owner of this cloud workspace. Only an owner may rename it. */
 	owner?: boolean
+	/** Member (editor or viewer) of someone else's cloud workspace */
+	member?: boolean
 }
 
 /** The open folder as a tree node, for the tree's rename and remove */
@@ -70,6 +74,7 @@ export function folder_menu_items(ref: FolderRef, context: FolderMenuContext): F
 		cut: editable,
 		duplicate: editable,
 		paste: context.can_write && context.item !== null && !!context.can_paste,
+		leave: ref.drive_id === 'cloud' && is_root && context.member === true,
 	}
 }
 
