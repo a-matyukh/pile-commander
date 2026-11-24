@@ -294,8 +294,14 @@ show only these intentional INFOs. Anything else is a regression.
   per-visitor share 1/20 per day per IPv4 or IPv6 /64). A state reload
   leaves a flush in flight out, so the meter undercounts for a moment
   rather than refusing visitors on a double count.
-  `EGRESS_ENFORCE` = `off` (count + alert) | `file_size` | `all`; a refusal
-  is `media_unavailable` + `reason` (403, 429 for the visitor share). An
+  `EGRESS_ENFORCE` = `off` (count + alert) | `file_size` (the default) |
+  `all`; a refusal is `media_unavailable` + `reason` (403, 429 for the
+  visitor share). The author is told what `file_size` means for them: the
+  publish panel says which size visitors can open
+  (`billing_accounts.max_public_file_bytes`). In `all`, when an owner's
+  budget starts refusing visitors, the owner gets one mail that month
+  (`egress_paused_email_copy`, with the `alert_month` notice): they are
+  never refused themselves, so nothing else would tell them. An
   `<img>` has no token, so Hub covers are metered for everyone, the owner's
   own views included (≤2 MiB). Database down → downloads stay open.
   Download as .pile runs the same meter on its own ledger
@@ -704,9 +710,9 @@ deferred). Done work is in the invariants above.
 - Egress: `client_ip` now reads the proxy-appended hop (`TRUSTED_PROXY_HOPS`,
   default 1) instead of the first, so a forged header no longer dodges the
   per-visitor share. Confirm the hop count against Render in production —
-  the header shape is the one assumption left. `EGRESS_ENFORCE=all` ships only together
-  with an email to the owner — without it media pauses for visitors
-  silently (`pricing/stage 1/1/egress.md`, «На будущее»).
+  the header shape is the one assumption left. `EGRESS_ENFORCE=all` mails
+  the owner when their budget pauses media; it needs the Plunk env, and an
+  earlier warning (say at 80 %) would need one more kind in `egress_notices`.
 - Download as .pile: the allowance is per account, so several accounts from
   one address multiply it. Add an IP share on that ledger if it is abused.
 - `owner_usage` is a full sum on every text save / upload; a maintained
@@ -853,7 +859,8 @@ deferred). Done work is in the invariants above.
   `PRESIGN_TTL_SECONDS` alone (it silently applies the upload lifetime to
   downloads); `GC_MIN_AGE_HOURS`,
   `HUB_PREVIEW_MAX_BYTES`, `ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS`.
-- [ ] Egress env: `EGRESS_ENFORCE` (`off` for the beta), optional
+- [ ] Egress env: `EGRESS_ENFORCE` (`file_size` when unset; do not leave
+  `off` on Render; `all` once the visitor share and budget should refuse), optional
   `EGRESS_ALERT_EMAIL`; `EGRESS_ALERT_DAY_FRACTION` / `EGRESS_VISITOR_FRACTION`
   default to 0.25 / 0.05.
 - [ ] Preview env: `DERIV_ENABLE` — `generate` first (watch row counts by

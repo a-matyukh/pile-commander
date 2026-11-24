@@ -15,6 +15,8 @@ import {
 	PLUNK_SEND_URL,
 	type FetchLike,
 	hub_hidden_email_copy,
+	egress_paused_email_copy,
+	next_month_start,
 	hub_made_private_email_copy,
 	moderation_digest_email_copy,
 } from "./mail";
@@ -402,5 +404,33 @@ describe("hub moderation copy", () => {
 		expect(copy.body).toContain("New board");
 		expect(copy.body).toContain("Hidden board");
 		expect(copy.body).toContain("spam");
+	});
+});
+
+describe("egress_paused_email_copy", () => {
+	test("says until when, what visitors see and that nothing is lost", () => {
+		const copy = egress_paused_email_copy({
+			period: "2026-11-01",
+			budget_bytes: 20 * 1024 ** 3,
+			app_url: "https://app.example",
+		});
+		expect(copy.subject).toBe("Files on your public boards are paused for visitors until December 1");
+		expect(copy.body).toContain("In November visitors of your public boards downloaded 20 GB of files");
+		expect(copy.body).toContain("Until December 1 pictures, video and other files");
+		expect(copy.body).toContain("notes and layout are shown as before");
+		expect(copy.body).toContain("nothing is deleted");
+		expect(copy.body).toContain('<a href="https://app.example">Open Pile Commander</a>');
+	});
+
+	test("the allowance starts again on the first day of the next UTC month, across a year", () => {
+		expect(next_month_start("2026-11-01")).toBe("December 1");
+		expect(next_month_start("2026-12-01")).toBe("January 1");
+		expect(next_month_start("2026-01-31")).toBe("February 1");
+	});
+
+	test("without an app address the mail has no link", () => {
+		const copy = egress_paused_email_copy({ period: "2026-11-01", budget_bytes: 1.5 * 1024 ** 3, app_url: null });
+		expect(copy.body).toContain("1.5 GB of files");
+		expect(copy.body).not.toContain("<a ");
 	});
 });

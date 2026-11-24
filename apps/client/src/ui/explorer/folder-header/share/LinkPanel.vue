@@ -22,6 +22,7 @@ const pub = use_publication()
 
 	<template v-else-if="!pub.is_public.value">
 		<p class="muted">{{ t('publish.link_lead') }}</p>
+		<p v-if="pub.visitor_file_limit.value" class="muted">{{ t('publish.visitor_files', { size: pub.visitor_file_limit.value }) }}</p>
 		<SlugField />
 		<label class="opt">
 			<Switch :model-value="pub.allow_fork.value" @update:model-value="pub.set_fork" />
@@ -71,6 +72,7 @@ const pub = use_publication()
 				<span class="opt-h">{{ t('publish.forks_hint') }}</span>
 			</span>
 		</label>
+		<p v-if="pub.visitor_file_limit.value" class="muted note">{{ t('publish.visitor_files', { size: pub.visitor_file_limit.value }) }}</p>
 		<button type="button" class="quiet" @click="pub.close_link">{{ t('publish.close_link') }}</button>
 	</template>
 </template>
@@ -79,6 +81,10 @@ const pub = use_publication()
 .muted {
 	margin: 0;
 	color: var(--text-secondary);
+}
+.note {
+	font-size: 12px;
+	color: var(--text-muted);
 }
 .opt {
 	display: flex;

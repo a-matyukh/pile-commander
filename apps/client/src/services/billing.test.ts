@@ -25,6 +25,7 @@ function account(partial: Partial<BillingAccount> = {}): BillingAccount {
 		plan_status: 'active',
 		quota_bytes: 100,
 		max_file_bytes: 25,
+		max_public_file_bytes: 10 * 1024 * 1024,
 		max_hub_listings: 3,
 		grace_until: null,
 		external_subscription_id: null,

@@ -369,6 +369,7 @@ export const en: typeof ru = {
 		slug_invalid: '3–48 characters: lowercase letters, digits, hyphens',
 		address_label: 'Address',
 		link_lead: 'Anyone with the link can view this folder. You and editors keep changing it.',
+		visitor_files: 'Visitors can open files up to {size}. In place of a larger file they see a placeholder; you and the people you invited see it as usual.',
 		create_link: 'Create link',
 		open_badge: 'Open',
 		open_link: 'Open',

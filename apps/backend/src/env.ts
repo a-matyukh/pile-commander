@@ -42,8 +42,10 @@ export function polar_env(source: Record<string, string | undefined> = process.e
 
 /**
  * Which egress refusals are live (see egress.ts). `off` only counts and
- * alerts; `file_size` also refuses originals above max_public_file_bytes to
- * non-members; `all` adds the per-visitor share and the monthly budget
+ * alerts; `file_size` (the default) also refuses originals above
+ * max_public_file_bytes to non-members; `all` adds the per-visitor share
+ * and the monthly budget, and mails the owner when their budget pauses
+ * media for visitors
  */
 export type EgressMode = "off" | "file_size" | "all";
 
@@ -247,7 +249,7 @@ function deriv_mode(): DerivMode {
 }
 
 function egress_mode(): EgressMode {
-	const raw = process.env.EGRESS_ENFORCE?.trim().toLowerCase() || "off";
+	const raw = process.env.EGRESS_ENFORCE?.trim().toLowerCase() || "file_size";
 	if (raw === "off" || raw === "file_size" || raw === "all") return raw;
 	throw new Error(`Environment variable EGRESS_ENFORCE must be off, file_size or all, got: "${raw}"`);
 }
