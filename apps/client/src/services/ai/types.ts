@@ -27,6 +27,8 @@ export type AiErrorKind =
 	| 'keyring'
 	/** the user refused the system's prompt for the password storage */
 	| 'keyring_denied'
+	/** the user did not allow requests to an address the app does not know (desktop) */
+	| 'address_denied'
 
 export type AiErrorPayload = {
 	kind: AiErrorKind

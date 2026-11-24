@@ -14,6 +14,8 @@ export function create_window_manager(): WindowManager {
 			const path = await open({
 				directory: true,
 				multiple: false,
+				// the whole picked folder: an import or a sync writes below its top level
+				recursive: true,
 				title: options?.title,
 				defaultPath: options?.default_path,
 			})

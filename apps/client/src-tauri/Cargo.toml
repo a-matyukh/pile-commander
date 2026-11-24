@@ -36,6 +36,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 trash = "5"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 
+[dev-dependencies]
+# The glob crate Tauri's fs scope uses: the capability files are tested with it.
+glob = "0.3"
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

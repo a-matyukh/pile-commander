@@ -1,7 +1,9 @@
 use crate::models::{FolderWithChildrenXattrs, PathXattrsEntry, Xattr};
+use crate::{check, Access};
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::path::Path;
+use tauri::{AppHandle, Runtime};
 
 /// Sidecar dir with per-folder ink data — never surfaced as a board child.
 const PILE_DIR_NAME: &str = ".pile";
@@ -110,36 +112,68 @@ where
         .map_err(|e| e.to_string())
 }
 
+/// An attribute name the backends can store as one attribute. On Windows an
+/// attribute is the stream `path:name`, so a `:` in the name would address
+/// another stream — `:$DATA` is the file's own content — and a separator
+/// another file. `Zone.Identifier` is where Windows keeps the mark of a
+/// downloaded file; it is not ours to write or remove.
+fn check_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("Attribute name cannot be empty".into());
+    }
+    if name.contains([':', '/', '\\', '\0']) || name.eq_ignore_ascii_case("Zone.Identifier") {
+        return Err("Attribute name is not allowed".into());
+    }
+    Ok(())
+}
+
 /// Writes stay synchronous, on the main thread, so they land in the order
 /// they were called: two quick `position` writes on the blocking pool could
 /// finish in reverse and leave the older value on disk. A write goes to a
 /// file the user already opened, so it does not wait on a privacy prompt.
 #[tauri::command]
-pub fn set_xattr(path: String, name: String, value: String) -> Result<(), String> {
-    if name.trim().is_empty() {
-        return Err("Attribute name cannot be empty".into());
-    }
+pub fn set_xattr<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    name: String,
+    value: String,
+) -> Result<(), String> {
+    check_name(&name)?;
+    check(&app, &path, Access::Write)?;
     set_xattr_at(&path, &name, &value).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_xattr(path: String, name: String) -> Result<Option<String>, String> {
+pub async fn get_xattr<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    name: String,
+) -> Result<Option<String>, String> {
+    check_name(&name)?;
+    check(&app, &path, Access::Read)?;
     run_blocking(move || get_xattr_at(&path, &name)).await
 }
 
 /// Synchronous for the same reason as `set_xattr`: call order is write order.
 #[tauri::command]
-pub fn remove_xattr(path: String, name: String) -> Result<(), String> {
+pub fn remove_xattr<R: Runtime>(app: AppHandle<R>, path: String, name: String) -> Result<(), String> {
+    check_name(&name)?;
+    check(&app, &path, Access::Write)?;
     remove_xattr_at(&path, &name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn list_xattrs(path: String) -> Result<Vec<Xattr>, String> {
+pub async fn list_xattrs<R: Runtime>(app: AppHandle<R>, path: String) -> Result<Vec<Xattr>, String> {
+    check(&app, &path, Access::Read)?;
     run_blocking(move || list_xattrs_at(&path)).await
 }
 
 #[tauri::command]
-pub async fn folder_with_children_xattrs(path: String) -> Result<FolderWithChildrenXattrs, String> {
+pub async fn folder_with_children_xattrs<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+) -> Result<FolderWithChildrenXattrs, String> {
+    check(&app, &path, Access::Read)?;
     run_blocking(move || folder_with_children_xattrs_at(&path)).await
 }
 
@@ -304,9 +338,10 @@ mod tests {
         let missing = std::env::temp_dir().join("tauri-plugin-xattrs-missing-dir");
         fs::remove_dir_all(&missing).ok();
         let expected = fs::metadata(&missing).unwrap_err().to_string();
-        let error = tauri::async_runtime::block_on(folder_with_children_xattrs(
-            missing.to_string_lossy().into_owned(),
-        ))
+        let missing_path = missing.to_string_lossy().into_owned();
+        let error = tauri::async_runtime::block_on(run_blocking(move || {
+            folder_with_children_xattrs_at(&missing_path)
+        }))
         .unwrap_err();
         assert_eq!(error, expected);
         assert!(error.contains("os error 2"));
@@ -320,7 +355,18 @@ mod tests {
 
     #[test]
     fn empty_attribute_name_is_rejected_as_before() {
-        let error = set_xattr("/tmp".into(), " ".into(), "v".into()).unwrap_err();
-        assert_eq!(error, "Attribute name cannot be empty");
+        assert_eq!(check_name(" ").unwrap_err(), "Attribute name cannot be empty");
+        assert_eq!(check_name("").unwrap_err(), "Attribute name cannot be empty");
+    }
+
+    #[test]
+    fn a_name_that_would_address_another_stream_or_file_is_refused() {
+        for name in ["position", "is_preview", "floor_3d", "xdg.origin.url", "text-width"] {
+            assert!(check_name(name).is_ok(), "{name}");
+        }
+        // Windows: `file::$DATA` is the content, `file:a:$DATA` a typed stream
+        for name in [":$DATA", "a:$DATA", "..\\other.txt", "../other.txt", "a\0b", "Zone.Identifier", "zone.identifier"] {
+            assert_eq!(check_name(name).unwrap_err(), "Attribute name is not allowed", "{name}");
+        }
     }
 }

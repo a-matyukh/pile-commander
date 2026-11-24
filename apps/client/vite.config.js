@@ -5,6 +5,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 import ui from '@nuxt/ui/vite'
 import { offlineIconsPlugin } from './offlineIconsPlugin.ts'
 import { unfurlPlugin } from './unfurlPlugin.ts'
+import { desktopCspPlugin } from './desktopCspPlugin.ts'
 import { mcp_stdio_path } from './mcpStdioPath.ts'
 import pkg from './package.json' with { type: 'json' }
 
@@ -33,6 +34,7 @@ export default defineConfig(({ mode }) => ({
 	plugins: [
 		offlineIconsPlugin(srcDir),
 		unfurlPlugin(),
+		desktopCspPlugin(),
 		vue({
 			template: {
 				compilerOptions: {

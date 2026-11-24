@@ -293,6 +293,50 @@ function format_gib(bytes: number): string {
 	return `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
 }
 
+/** `2026-11-01` → "December 1": the day the month's allowance starts again (UTC). */
+export function next_month_start(period: string): string {
+	const first = new Date(`${period.slice(0, 7)}-01T00:00:00Z`);
+	first.setUTCMonth(first.getUTCMonth() + 1);
+	return first.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+}
+
+/** Plan room as the app shows it: "20 GB", "1.5 GB". */
+function format_gb(bytes: number): string {
+	const value = Math.round((bytes / 1024 ** 3) * 10) / 10;
+	return `${value} GB`;
+}
+
+export type EgressPausedMail = {
+	/** first day of the UTC month the allowance was used up in */
+	period: string;
+	budget_bytes: number;
+	/** the web app, for the link at the end; null leaves the link out */
+	app_url: string | null;
+};
+
+// To the owner of the boards, once a month, when EGRESS_ENFORCE=all has
+// started refusing their visitors: without it media would pause for
+// visitors while the owner, who is never refused, sees nothing change
+export function egress_paused_email_copy(mail: EgressPausedMail): { subject: string; body: string } {
+	const until = next_month_start(mail.period);
+	const month = new Date(`${mail.period.slice(0, 7)}-01T00:00:00Z`)
+		.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+	const link = mail.app_url
+		? `<p><a href="${escape_html(mail.app_url)}">Open Pile Commander</a></p>`
+		: "";
+	return {
+		subject: `Files on your public boards are paused for visitors until ${until}`,
+		body:
+			`<p>In ${escape_html(month)} visitors of your public boards downloaded ` +
+			`${format_gb(mail.budget_bytes)} of files, which is the monthly allowance of your plan.</p>` +
+			`<p>Until ${escape_html(until)} pictures, video and other files on your public boards ` +
+			`show a placeholder to visitors. The boards stay open: notes and layout are shown as before. ` +
+			`You and the people you invited see everything, and nothing is deleted.</p>` +
+			`<p>A larger plan has a larger allowance.</p>` +
+			link,
+	};
+}
+
 // Ops alert from the egress meter (egress.ts). Goes to EGRESS_ALERT_EMAIL,
 // never to the board's owner
 export function egress_alert_email_copy(alert: EgressAlert): { subject: string; body: string } {

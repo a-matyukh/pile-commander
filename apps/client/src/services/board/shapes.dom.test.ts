@@ -87,4 +87,15 @@ describe('SVG shapes from other people, under DOMPurify', () => {
 		)
 		expect(out).toContain('<style>.cls-1{fill:#f00}</style>')
 	})
+
+	test('a link around a shape loses its address and keeps the drawing', () => {
+		const html = sanitize_svg(
+			'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'
+			+ '<a href="https://evil.example/login"><rect width="10" height="10"/></a>'
+			+ '<a xlink:href="https://evil.example/x"><circle r="2"/></a></svg>',
+		)
+		expect(html).toContain('<rect')
+		expect(html).toContain('<circle')
+		expect(html).not.toContain('evil.example')
+	})
 })

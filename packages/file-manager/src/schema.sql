@@ -223,9 +223,11 @@ create index workspace_invites_invited_by_idx on public.workspace_invites (invit
 -- pattern matches the slug pattern (shorter)
 -- ----------------------------------------------------------------------------
 -- Mirror of RESERVED_SLUGS in packages/file-manager/src/reserved-slugs.ts:
--- words taken by the app's own top-level routes. The client validates too,
--- but a direct PostgREST update must not be able to claim /hub or /login as a
--- profile address. Keep both lists in sync
+-- words taken by the app's own top-level routes, and names that would pass
+-- for the product or its staff (a board at /support or /pile-commander reads
+-- as ours). The client validates too, but a direct PostgREST update must not
+-- be able to claim /hub or /login as a profile address. Keep both lists in
+-- sync, and the copy in apps/client/middleware.ts
 create or replace function private.is_reserved_username(p_username text)
 returns boolean
 language sql
@@ -238,7 +240,9 @@ as $$
         'api', 'p', 'public', 'static', 'assets', 'cdn', 'internal', 'health',
         'about', 'features', 'blog', 'docs', 'help', 'support', 'pricing',
         'terms', 'privacy',
-        'www', 'mail', 'ftp'
+        'www', 'mail', 'ftp',
+        'pile-commander', 'pilecommander', 'pile', 'official', 'team', 'staff',
+        'security', 'billing', 'moderator', 'moderation', 'abuse', 'administrator'
     ]);
 $$;
 
@@ -251,6 +255,88 @@ create table public.profiles (
     display_name text check (char_length(display_name) <= 80),
     updated_at timestamptz not null default now()
 );
+
+-- ----------------------------------------------------------------------------
+-- released_usernames: a username someone gave up, by changing it or by
+-- deleting the account. Links to /<username>/<slug> are out in the world;
+-- if another account could take the name the next minute, those links would
+-- open that account's boards under the old author's name. For 90 days the
+-- name can be taken back only by the account that released it. A deleted
+-- account's name (released_by null) waits the 90 days out. Pruned daily
+-- (released-usernames-prune)
+-- ----------------------------------------------------------------------------
+create table private.released_usernames (
+    username text primary key,
+    -- set null on account deletion: nobody can take the name back early
+    released_by uuid references auth.users (id) on delete set null,
+    released_at timestamptz not null default now()
+);
+create index released_usernames_by_idx on private.released_usernames (released_by);
+create index released_usernames_at_idx on private.released_usernames (released_at);
+revoke all on private.released_usernames from public, anon, authenticated;
+
+-- The message says "duplicate key" and the code is unique_violation on
+-- purpose: to the person the name is simply taken, and the client already
+-- has words for that
+create or replace function private.profiles_hold_username()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if NEW.username is not null
+       and (TG_OP = 'INSERT' or NEW.username is distinct from OLD.username)
+       and exists (
+           select 1 from private.released_usernames r
+            where r.username = NEW.username
+              and r.released_at > now() - interval '90 days'
+              and r.released_by is distinct from NEW.id
+       ) then
+        raise exception 'duplicate key: username "%" is not available', NEW.username
+            using errcode = '23505';
+    end if;
+    return NEW;
+end
+$$;
+
+create or replace function private.profiles_release_username()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if TG_OP = 'DELETE' then
+        if OLD.username is not null then
+            insert into private.released_usernames (username, released_by, released_at)
+            values (OLD.username, null, now())
+            on conflict (username) do update set released_by = null, released_at = now();
+        end if;
+        return OLD;
+    end if;
+    if OLD.username is not null and OLD.username is distinct from NEW.username then
+        insert into private.released_usernames (username, released_by, released_at)
+        values (OLD.username, OLD.id, now())
+        on conflict (username) do update set released_by = excluded.released_by, released_at = now();
+    end if;
+    -- taken back by the account that released it: no longer released
+    if NEW.username is not null and NEW.username is distinct from OLD.username then
+        delete from private.released_usernames where username = NEW.username;
+    end if;
+    return NEW;
+end
+$$;
+
+revoke execute on function private.profiles_hold_username() from public, anon, authenticated;
+revoke execute on function private.profiles_release_username() from public, anon, authenticated;
+
+create trigger profiles_hold_username
+    before insert or update of username on public.profiles
+    for each row execute function private.profiles_hold_username();
+create trigger profiles_release_username
+    after update of username or delete on public.profiles
+    for each row execute function private.profiles_release_username();
 
 -- Plan numbers live here so signup, backfill, the billing adapter
 -- (public.apply_billing_state) and the bridge preflight do not drift across
@@ -1689,24 +1775,56 @@ revoke execute on function private.lock_entry_workspace(uuid) from public, anon,
 -- assert_owner_quota serializes on the billing row.
 -- ----------------------------------------------------------------------------
 
+-- used_bytes also counts what the owner deleted for good while the storage
+-- still holds it. A purge takes the bytes out of entries at once, but the
+-- objects wait in blob_deletions for the GC (GC_MIN_AGE_HOURS, about a day):
+-- upload, purge, upload again — or fork, copy, purge — kept storage above the
+-- quota by whatever a day of that loop moved. Ordinary use is left alone:
+-- one full turnover of the plan's room, or 1 GiB if that is more, leaves the
+-- quota the moment it is purged (emptying the trash to make room works, and
+-- so does a file saved many times a day by sync). Only what goes beyond it
+-- counts until the GC has removed the objects. A queue row the GC failed to
+-- clear in three days is our problem, not the owner's, and stops counting.
+-- plpgsql, not sql: blob_deletions is created further down this file
 create or replace function private.owner_usage(p_owner uuid)
 returns table (
     used_bytes bigint,
     live_bytes bigint,
     trash_bytes bigint
 )
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public, extensions
 as $$
-    select
-        coalesce(sum(e.size_bytes), 0)::bigint,
-        coalesce(sum(e.size_bytes) filter (where e.deleted_at is null and w.deleted_at is null), 0)::bigint,
-        coalesce(sum(e.size_bytes) filter (where e.deleted_at is not null or w.deleted_at is not null), 0)::bigint
+declare
+    gb constant bigint := 1024 * 1024 * 1024;
+    v_live bigint;
+    v_trash bigint;
+    v_leaving bigint;
+    v_turnover bigint;
+begin
+    select coalesce(sum(e.size_bytes) filter (where e.deleted_at is null and w.deleted_at is null), 0),
+           coalesce(sum(e.size_bytes) filter (where e.deleted_at is not null or w.deleted_at is not null), 0)
+      into v_live, v_trash
       from public.entries e
       join public.workspaces w on w.id = e.workspace_id
      where w.owner_id = p_owner;
+
+    select coalesce(sum(d.size_bytes), 0) into v_leaving
+      from public.blob_deletions d
+     where d.owner_id = p_owner
+       and d.queued_at > now() - interval '3 days';
+
+    select greatest(b.quota_bytes, gb) into v_turnover
+      from public.billing_accounts b
+     where b.owner_id = p_owner;
+
+    used_bytes := v_live + v_trash + greatest(0, v_leaving - coalesce(v_turnover, gb));
+    live_bytes := v_live;
+    trash_bytes := v_trash;
+    return next;
+end
 $$;
 
 create or replace function private.assert_owner_can_add(
@@ -2198,23 +2316,42 @@ create table public.blob_deletions (
     storage_key text not null,
     queued_at timestamptz not null default now(),
     attempts integer not null default 0,
-    last_error text
+    last_error text,
+    -- Whose quota the object was in and how many bytes: private.owner_usage
+    -- keeps counting them until the GC removes the row. Null for an object
+    -- that was in nobody's quota (a Hub cover, a preview, an orphan the
+    -- reconcile found) and when the account itself is gone. No foreign key:
+    -- the row outlives the account
+    owner_id uuid,
+    size_bytes bigint check (size_bytes is null or size_bytes >= 0)
 );
+create index blob_deletions_owner_idx on public.blob_deletions (owner_id) where owner_id is not null;
 
 alter table public.blob_deletions enable row level security;
 
--- Any hard delete of a row with a blob (cron, cascade from workspace
--- deletion, manual trash purge) enqueues the key — the blob is never lost
+-- Any hard delete of a row with a blob (cron, manual trash purge) enqueues
+-- the key — the blob is never lost — with the owner of its workspace. When
+-- the workspace row is already gone this delete is its cascade, and
+-- workspaces_queue_blob_deletion below has queued the workspace's blobs
+-- with their owner: the entry's row cannot tell whose they were any more
 create or replace function public.entries_queue_blob_deletion()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, extensions
 as $$
+declare
+    v_owner uuid;
 begin
-    if OLD.storage_key is not null then
-        insert into public.blob_deletions (storage_key) values (OLD.storage_key);
+    if OLD.storage_key is null then
+        return OLD;
     end if;
+    select w.owner_id into v_owner from public.workspaces w where w.id = OLD.workspace_id;
+    if not found then
+        return OLD;
+    end if;
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values (OLD.storage_key, v_owner, OLD.size_bytes);
     return OLD;
 end
 $$;
@@ -2222,6 +2359,35 @@ $$;
 create trigger entries_queue_blob_deletion
     before delete on public.entries
     for each row execute function public.entries_queue_blob_deletion();
+
+-- A workspace deleted whole (purge_workspace, the 30-day cron, the account
+-- going) takes its entries by cascade. Its blobs are queued here, before
+-- the cascade, while the row still says whose they are. An account that is
+-- being deleted has nobody to count them for
+create or replace function public.workspaces_queue_blob_deletion()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_owner uuid;
+begin
+    select u.id into v_owner from auth.users u where u.id = OLD.owner_id;
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    select e.storage_key, v_owner, e.size_bytes
+      from public.entries e
+     where e.workspace_id = OLD.id
+       and e.storage_key is not null;
+    return OLD;
+end
+$$;
+
+revoke execute on function public.workspaces_queue_blob_deletion() from public, anon, authenticated;
+
+create trigger workspaces_queue_blob_deletion
+    before delete on public.workspaces
+    for each row execute function public.workspaces_queue_blob_deletion();
 
 -- Hub preview blobs are not entries: enqueue the old B2 key when the
 -- listing is deleted or the preview is replaced/cleared.
@@ -2354,7 +2520,12 @@ create table private.upload_sessions (
     -- finalize attempts that reached the copy without a result: each one
     -- leaves an object in storage until the reconcile, so a ticket that keeps
     -- failing is spent (prepare_upload)
-    attempts int not null default 0
+    attempts int not null default 0,
+    -- what the ticket may bring into staging: the size the client declared,
+    -- which the backend signs into the PUT (2 MiB for a Hub cover). Null on a
+    -- ticket from a backend that sent none: it reserves nothing
+    -- (register_upload counts these bytes per uploader)
+    size_bytes bigint check (size_bytes is null or size_bytes >= 0)
 );
 create index upload_sessions_workspace_idx on private.upload_sessions(workspace_id);
 create index upload_sessions_user_idx on private.upload_sessions(uploaded_by);
@@ -2570,6 +2741,13 @@ select cron.schedule(
     'mail-events-prune',
     '48 3 * * *',
     $$delete from private.mail_events where created_at < now() - interval '90 days'$$
+);
+
+-- a released username is free for anyone after 90 days
+select cron.schedule(
+    'released-usernames-prune',
+    '44 3 * * *',
+    $$delete from private.released_usernames where released_at < now() - interval '90 days'$$
 );
 
 -- the windows in rate_events are a day at most

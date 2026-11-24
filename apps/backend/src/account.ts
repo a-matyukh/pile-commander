@@ -1,5 +1,5 @@
 import type { Env } from "./env";
-import { ApiError, bearer_token, internal_error, require_user, service_client, user_client } from "./auth";
+import { ApiError, bearer_token, internal_error, require_live_user, service_client, user_client } from "./auth";
 import { PolarApi } from "./billing/polar";
 
 // Supabase access tokens carry `amr`: one entry per authentication method used
@@ -57,8 +57,11 @@ export async function handle_delete_account(
 	}
 	const token = bearer_token(req);
 	const client = user_client(env, token);
-	const user = await require_user(client, token);
-	// require_user validated the token; the claims below belong to that same string
+	// The session must still exist: a token carried off before "sign out
+	// everywhere" is fresh by its own claims for the minutes that follow a
+	// password entry, and this is the one request it must not win
+	const user = await require_live_user(client, token);
+	// the token is validated; the claims below belong to that same string
 	assert_recent_authentication(token!, env.account_delete_max_auth_age_seconds);
 
 	if (polar) await polar.delete_customer(user.id);

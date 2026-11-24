@@ -94,6 +94,7 @@ beforeEach(() => {
 		plan_status: 'active',
 		quota_bytes: 1000,
 		max_file_bytes: 500,
+		max_public_file_bytes: null,
 		max_hub_listings: null,
 		grace_until: null,
 		external_subscription_id: null,

@@ -52,7 +52,8 @@ export function bearer_token(req: Request): string | null {
 // JWKS (`getClaims`). `getUser` hits GET /auth/v1/user and looks up the
 // session row — after sign-out elsewhere, refresh-token rotation, or a
 // time-box, that row is gone (`session_not_found`) while the JWT is still
-// valid, so listing files works and /presign/upload returns 401.
+// valid, so listing files works and /presign/upload returns 401. This does
+// NOT tell whether the session still exists; `require_live_user` does.
 export async function require_user(client: SupabaseClient, token: string | null): Promise<User> {
 	if (!token) throw new ApiError(401, "missing bearer token");
 	try {
@@ -68,6 +69,35 @@ export async function require_user(client: SupabaseClient, token: string | null)
 		console.error("require_user:", err instanceof Error ? err.message : err);
 		throw new ApiError(401, "invalid or expired token");
 	}
+}
+
+// The same caller, and their session still exists. `require_user` trusts the
+// token until it expires: after "sign out everywhere" a token someone carried
+// off keeps working for up to an hour. That is the price of not asking Auth
+// on every upload. A route that cannot be taken back, or that leaves a way
+// in behind it (deleting the account, the payment portal, inviting someone
+// into a folder), asks Auth for the session row first: `getUser` is
+// GET /auth/v1/user, which answers `session_not_found` once the session was
+// signed out or replaced. When Auth cannot be reached the route is refused,
+// not waved through.
+export async function require_live_user(client: SupabaseClient, token: string | null): Promise<User> {
+	// signature and expiry first: a forged token costs no request to Auth
+	await require_user(client, token);
+	let result: Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
+	try {
+		result = await client.auth.getUser(token!);
+	} catch (err) {
+		console.error("require_live_user:", err instanceof Error ? err.message : err);
+		throw new ApiError(503, "could not verify the session");
+	}
+	if (result.data?.user) return result.data.user;
+	const status = (result.error as { status?: number } | null)?.status;
+	console.error("require_live_user:", result.error?.message ?? "no user for the token");
+	// Auth said no (signed out, replaced, user gone) — or it did not answer
+	if (status === 401 || status === 403 || status === 404) {
+		throw new ApiError(401, "invalid or expired token");
+	}
+	throw new ApiError(503, "could not verify the session");
 }
 
 // Mirrors private.can_write_workspace in schema.sql: the caller is the

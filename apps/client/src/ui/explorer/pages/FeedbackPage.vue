@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import { t } from '@/i18n'
-import { backend_url } from '@/services/cloud/client'
+import { backend_url, supabase } from '@/services/cloud/client'
 import {
 	FEEDBACK_ATTACHMENT_MAX,
 	FEEDBACK_IMAGE_TYPES,
@@ -45,6 +45,10 @@ const categories = computed(() => [
 	{ value: 'other' as const, label: t('feedback.other'), icon: 'tabler:message' },
 ])
 const accept = FEEDBACK_IMAGE_TYPES.join(',')
+// Screenshots are bytes in our storage, so the backend takes them from a
+// signed-in person only; a note in words is open to anyone
+const can_attach = computed(() => !!cloud.user)
+watch(can_attach, (allowed) => { if (!allowed) clear_shots() })
 const sent = computed(() => result.value === 'ok')
 const can_send = computed(() => {
 	const text = message.value.trim()
@@ -55,6 +59,7 @@ const error_text = computed(() => {
 	switch (result.value) {
 		case 'rate_limited': return t('feedback.rate_limited')
 		case 'invalid': return t('feedback.invalid')
+		case 'sign_in_needed': return t('feedback.screenshots_sign_in')
 		case 'upload_failed': return t('feedback.upload_failed')
 		case 'failed': return t('feedback.failed')
 		default: return ''
@@ -89,13 +94,14 @@ async function submit() {
 	result.value = null
 	files_refused.value = false
 	try {
+		const session = cloud.user && supabase ? (await supabase.auth.getSession()).data.session : null
 		result.value = await send_feedback(backend_url, {
 			email: email.value,
 			category: category.value,
 			message: message.value,
 			website: website.value,
 			files: shots.value.map(shot => shot.file),
-		})
+		}, undefined, session?.access_token ?? null)
 	} finally {
 		pending.value = false
 	}
@@ -162,9 +168,10 @@ onUnmounted(clear_shots)
 				<div class="field">
 					<div class="lbl">
 						<span>{{ t('feedback.screenshots') }}</span>
-						<span class="count">{{ shots.length }} / {{ FEEDBACK_ATTACHMENT_MAX }}</span>
+						<span v-if="can_attach" class="count">{{ shots.length }} / {{ FEEDBACK_ATTACHMENT_MAX }}</span>
 					</div>
-					<div class="hint">{{ t('feedback.screenshots_d') }}</div>
+					<div v-if="!can_attach" class="hint">{{ t('feedback.screenshots_sign_in') }}</div>
+					<div v-else class="hint">{{ t('feedback.screenshots_d') }}</div>
 					<ul v-if="shots.length" class="shots">
 						<li v-for="(shot, index) in shots" :key="shot.url">
 							<img :src="shot.url" :alt="shot.file.name" />
@@ -179,7 +186,7 @@ onUnmounted(clear_shots)
 							</button>
 						</li>
 					</ul>
-					<div>
+					<div v-if="can_attach">
 						<Button
 							icon="tabler:photo-plus"
 							:disabled="shots.length >= FEEDBACK_ATTACHMENT_MAX || pending"

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EgressMode, Env } from "./env";
-import { egress_alert_email_copy, plunk_send, type FetchLike } from "./mail";
+import { egress_alert_email_copy, egress_paused_email_copy, plunk_send, type FetchLike } from "./mail";
 
 // Public-link egress fair use. The storage quota counts bytes at rest; this
 // counts bytes presigned for NON-members (anon, signed-in strangers, Hub
@@ -496,14 +496,44 @@ function to_download_sync_row(raw: Record<string, unknown>): EgressSyncRow {
 	};
 }
 
-async function deliver_alert(env: Env, alert: EgressAlert, send: FetchLike): Promise<void> {
+/**
+ * The owner hears about the pause themselves: they are never refused, so
+ * their boards look the same to them while visitors get placeholders. Sent
+ * with the month's one `alert_month` notice, and only in a mode that refuses
+ * for the budget — in the others nothing changes for their visitors
+ */
+async function tell_owner_of_pause(env: Env, db: SupabaseClient, alert: EgressAlert, send: FetchLike): Promise<void> {
+	if (alert.kind !== "alert_month" || !enforces(alert.mode, "egress_budget")) return;
+	const { data, error } = await db.auth.admin.getUserById(alert.owner_id);
+	if (error) throw new Error(`getUserById: ${error.message}`);
+	const email = data.user?.email;
+	if (!email) return;
+	const copy = egress_paused_email_copy({
+		period: alert.period,
+		budget_bytes: alert.budget_bytes,
+		app_url: env.public_app_url,
+	});
+	await plunk_send(env, email, copy.subject, copy.body, send);
+}
+
+async function deliver_alert(env: Env, db: SupabaseClient, alert: EgressAlert, send: FetchLike): Promise<void> {
 	console.error(
 		`[egress-alert] ${alert.kind} owner=${alert.owner_id} period=${alert.period}` +
 			` today=${format_bytes(alert.day_bytes)} month=${format_bytes(alert.month_bytes)}` +
 			` budget=${format_bytes(alert.budget_bytes)} mode=${alert.mode}`,
 	);
+	if (!env.plunk_secret_key || !env.plunk_from_email) return;
+	// the owner first, and a failure there does not keep the ops copy back
+	try {
+		await tell_owner_of_pause(env, db, alert, send);
+	} catch (err) {
+		console.error(
+			`[egress-alert] owner mail failed for ${alert.owner_id}:`,
+			err instanceof Error ? err.message : err,
+		);
+	}
 	const to = env.egress.alert_email;
-	if (!to || !env.plunk_secret_key || !env.plunk_from_email) return;
+	if (!to) return;
 	const copy = egress_alert_email_copy(alert);
 	await plunk_send(env, to, copy.subject, copy.body, send);
 }
@@ -527,7 +557,7 @@ export function create_egress_meter(env: Env, db: SupabaseClient, send: FetchLik
 				if (error.code === "23505") return false;
 				throw new Error(`egress_notices: ${error.code} ${error.message}`);
 			},
-			alert: (alert) => deliver_alert(env, alert, send),
+			alert: (alert) => deliver_alert(env, db, alert, send),
 		},
 	);
 }

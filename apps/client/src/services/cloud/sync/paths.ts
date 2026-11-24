@@ -25,6 +25,22 @@ export function is_hidden_relative(relative: string): boolean {
 	return relative.split('/').some(is_hidden_entry_name)
 }
 
+/**
+ * A path as the default macOS and Windows file systems compare it: they
+ * ignore letter case and Unicode composition, so `Budget.xlsx` and
+ * `budget.xlsx`, or `й` as one character and as two, are one file there.
+ * The cloud keeps them apart.
+ */
+export function fold_relative(relative: string): string {
+	return relative.normalize('NFC').toLowerCase()
+}
+
+/** `relative` and its parent folders, the outermost first. */
+export function with_ancestors(relative: string): string[] {
+	const parts = relative.split('/')
+	return parts.map((_, index) => parts.slice(0, index + 1).join('/'))
+}
+
 export function parent_relative(relative: string): string {
 	const index = relative.lastIndexOf('/')
 	return index < 0 ? '' : relative.slice(0, index)

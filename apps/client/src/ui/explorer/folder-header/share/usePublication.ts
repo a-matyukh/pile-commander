@@ -1,4 +1,5 @@
 import { computed, inject, provide, ref, type InjectionKey } from 'vue'
+import { format_bytes } from '@/utils/format_bytes'
 import {
 	abuse_mailto,
 	hub_preview_url,
@@ -66,6 +67,14 @@ export function create_publication() {
 	const hub_hidden = computed(() => !!publication.value?.hub?.hidden_at)
 	const hub_used = computed(() => Object.keys(cloud.hub_listed).length)
 	const hub_cap = computed(() => cloud.billing?.max_hub_listings ?? null)
+	/**
+	 * The backend does not sign a larger file for a visitor, and the author,
+	 * who always sees their own files, would never learn of it otherwise
+	 */
+	const visitor_file_limit = computed(() => {
+		const limit = cloud.billing?.max_public_file_bytes
+		return limit == null ? null : format_bytes(Number(limit), { trim: true })
+	})
 	const hub_blocked = computed(() => hub_new_listing_blocked(hub_used.value, hub_cap.value, on_hub.value))
 	const slug_state = computed(() => slug_field_state(slug.value, share_publish.workspace_id, cloud.published_slugs))
 	const tag_issue = computed(() => tag_problem(tag_input.value, tags.value))
@@ -389,6 +398,7 @@ export function create_publication() {
 		hub_hidden,
 		hub_used,
 		hub_cap,
+		visitor_file_limit,
 		slug_state,
 		tag_issue,
 		username_issue,

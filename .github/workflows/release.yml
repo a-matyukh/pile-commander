@@ -103,6 +103,11 @@ jobs:
           # public (it is in the web bundle too): the sign-up form sends people to the
           # browser to create an account, where Turnstile checks them (signup.ts)
           VITE_TURNSTILE_SITE_KEY: 0x4AAAAAAGQj_kj4ZimqGpmv
+          # The storage prefix ending with the bucket, e.g.
+          # https://s3.us-east-005.backblazeb2.com/<bucket>/ (several: commas).
+          # Uploads are refused anywhere else (presigned_put.rs) and the window may
+          # connect to that host (desktopCspPlugin.ts). Unset: host check only
+          PILE_STORAGE_URLS: ${{ secrets.PILE_STORAGE_URLS }}
         with:
           projectPath: apps/client
           tauriScript: bun --filter @pile-commander/client tauri

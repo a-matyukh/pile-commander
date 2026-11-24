@@ -487,11 +487,13 @@ describe("createLocalFileManager", () => {
 		expect(await fm.restore_removed!(receipt)).toBe("gone")
 	})
 
-	test("open_file delegates to the opener plugin", async () => {
+	// Not plugin-opener: the app's command asks before a file that would run
+	test("open_file asks the app to open the path", async () => {
 		const fm = createLocalFileManager()
 		await fm.open_file("/home/user/readme.md")
 
-		expect(openPath).toHaveBeenCalledWith("/home/user/readme.md")
+		expect(invoke).toHaveBeenCalledWith("open_path", { path: "/home/user/readme.md", lang: undefined })
+		expect(openPath).not.toHaveBeenCalled()
 	})
 
 	test("xattr methods delegate to tauri-plugin-xattrs", async () => {

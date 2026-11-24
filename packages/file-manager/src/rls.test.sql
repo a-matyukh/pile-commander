@@ -788,6 +788,78 @@ begin
         execute 'set local role authenticated';
     end;
 
+    -- a name that would pass for the product or its staff
+    begin
+        update public.profiles set username = 'pile-commander' where id = c_owner;
+        insert into __results values ('profiles: a username that passes for the product is refused', false, 'accepted');
+    exception when check_violation then
+        insert into __results values ('profiles: a username that passes for the product is refused', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
+        update public.profiles set username = 'security' where id = c_owner;
+        insert into __results values ('profiles: a username that passes for staff is refused', false, 'accepted');
+    exception when check_violation then
+        insert into __results values ('profiles: a username that passes for staff is refused', true, null);
+        execute 'set local role authenticated';
+    end;
+
+    -- a username someone gave up is held for them for 90 days: links to
+    -- /<username>/<slug> must not start opening another account's boards
+    update public.profiles set username = 'rls-owner-renamed' where id = c_owner;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    begin
+        update public.profiles set username = 'rls-owner' where id = c_other;
+        insert into __results values ('profiles: a released username cannot be taken by another account', false, 'accepted');
+    exception when unique_violation then
+        insert into __results values ('profiles: a released username cannot be taken by another account',
+            sqlerrm like '%duplicate key%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    update public.profiles set username = 'rls-owner' where id = c_owner;
+    insert into __results values ('profiles: the account that released a username takes it back',
+        (select username from public.profiles where id = c_owner) = 'rls-owner', null);
+    execute 'reset role';
+    insert into __results values ('profiles: a username taken back is no longer listed as released',
+        (select count(*) from private.released_usernames where username = 'rls-owner') = 0
+        and (select released_by from private.released_usernames where username = 'rls-owner-renamed') = c_owner, null);
+    -- the hold ends after 90 days
+    update private.released_usernames set released_at = now() - interval '91 days'
+     where username = 'rls-owner-renamed';
+    perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    update public.profiles set username = 'rls-owner-renamed' where id = c_other;
+    insert into __results values ('profiles: after 90 days a released username is free',
+        (select username from public.profiles where id = c_other) = 'rls-owner-renamed', null);
+    execute 'reset role';
+    -- a deleted account's username waits the 90 days out for everyone
+    insert into auth.users (id, email, email_confirmed_at) values
+        ('99999999-9999-4999-8999-999999999990', 'rls-left@example.invalid', now());
+    update public.profiles set username = 'rls-left' where id = '99999999-9999-4999-8999-999999999990';
+    delete from auth.users where id = '99999999-9999-4999-8999-999999999990';
+    insert into __results values ('profiles: a deleted account''s username is held',
+        (select count(*) from private.released_usernames where username = 'rls-left' and released_by is null) = 1, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+        update public.profiles set username = 'rls-left' where id = c_owner;
+        insert into __results values ('profiles: nobody takes a deleted account''s username early', false, 'accepted');
+    exception when unique_violation then
+        insert into __results values ('profiles: nobody takes a deleted account''s username early', true, null);
+        execute 'set local role authenticated';
+    end;
+    -- the stranger has no username in the checks below
+    execute 'reset role';
+    update public.profiles set username = null where id = c_other;
+    delete from private.released_usernames;
+    insert into __results values ('profiles: the window cannot read or write the released names',
+        not has_table_privilege('authenticated', 'private.released_usernames', 'select')
+        and not has_table_privilege('anon', 'private.released_usernames', 'select')
+        and not has_table_privilege('authenticated', 'private.released_usernames', 'insert, delete'), null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
     -- trash: restore brings back only the batch trashed with the root
     v_json := public.create_text_file(v_folder, 'a.txt', 'text/plain', 'old', null, null);
     v_old := (v_json->>'id')::uuid;
@@ -2221,6 +2293,203 @@ begin
         v_receipt->>'storage_key' = v_gc_a and public.prepare_upload(v_upload, c_owner, 'hub_preview', '{}'::jsonb)->'result' = v_receipt, null);
     execute 'reset role';
 
+    -- ------------------------------------------------------------------
+    -- Upload tickets are bounded per uploader: what is in flight, and what a
+    -- day may start. c_owner is on Free: 100 MB of room, 20000 entries.
+    -- Tickets made above carry no size (the five-argument call) or are done.
+    insert into __results values ('upload: a Hub cover ticket holds its 2 MiB cap',
+        (select size_bytes from private.upload_sessions where storage_key = v_upload) = 2097152, null);
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, -1);
+        insert into __results values ('upload: a negative size is refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a negative size is refused', sqlerrm like '%invalid size%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    v_gc_a := public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+    v_gc_b := public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+    v_upload := public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 30 * 1024 * 1024);
+        insert into __results values ('upload: open tickets hold at most the plan''s room', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: open tickets hold at most the plan''s room',
+            sqlerrm like '%upload_rate_exceeded: too many unfinished uploads%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    -- a ticket from a backend that sends no size is counted, not sized
+    insert into __results values ('upload: a ticket without a size still opens beside a full room',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600) like 'uploads/blob/%', null);
+    execute 'reset role';
+    insert into __results values ('upload: the declared size is kept on the ticket',
+        (select size_bytes from private.upload_sessions where storage_key = v_gc_a) = 30 * 1024 * 1024, null);
+    -- a finished upload and an expired ticket give their room back
+    update private.upload_sessions set result = '{}'::jsonb where storage_key = v_gc_a;
+    update private.upload_sessions set expires_at = clock_timestamp() - interval '1 minute' where storage_key = v_gc_b;
+    execute 'set local role service_role';
+    insert into __results values ('upload: finished and expired tickets free the room',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 60 * 1024 * 1024) like 'uploads/blob/%', null);
+    execute 'reset role';
+    -- a day's tickets: 5 GiB on Free (three times the room is less)
+    update private.upload_sessions set result = '{}'::jsonb where uploaded_by = c_owner and result is null;
+    insert into private.upload_sessions (storage_key, workspace_id, uploaded_by, kind, expires_at, result, size_bytes)
+    values ('uploads/blob/' || v_ws::text || '/day-filler.bin', v_ws, c_owner, 'blob',
+            clock_timestamp() + interval '1 hour', '{}'::jsonb,
+            5::bigint * 1024 * 1024 * 1024 - 10 * 1024 * 1024
+              - (select coalesce(sum(size_bytes), 0) from private.upload_sessions where uploaded_by = c_owner));
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 20 * 1024 * 1024);
+        insert into __results values ('upload: a day''s tickets hold at most the daily allowance', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a day''s tickets hold at most the daily allowance',
+            sqlerrm like '%upload_rate_exceeded: too many uploads started today%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    insert into __results values ('upload: a ticket inside the daily allowance still opens',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 5 * 1024 * 1024) like 'uploads/blob/%', null);
+    execute 'reset role';
+    -- yesterday's tickets no longer count
+    update private.upload_sessions set created_at = clock_timestamp() - interval '25 hours'
+     where storage_key = 'uploads/blob/' || v_ws::text || '/day-filler.bin';
+    execute 'set local role service_role';
+    insert into __results values ('upload: the allowance is a rolling day',
+        public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 20 * 1024 * 1024) like 'uploads/blob/%', null);
+    execute 'reset role';
+    -- no more uploads in a day than the account may hold files
+    update private.upload_sessions set result = '{}'::jsonb where uploaded_by = c_owner and result is null;
+    update public.billing_accounts
+       set max_entries = (select count(*) from private.upload_sessions
+                           where uploaded_by = c_owner and created_at > clock_timestamp() - interval '1 day')
+     where owner_id = c_owner;
+    execute 'set local role service_role';
+    begin
+        perform public.register_upload(v_ws, c_owner, 'blob', '.bin', 3600, 1);
+        insert into __results values ('upload: a day has at most max_entries tickets', false, 'accepted');
+    exception when others then
+        insert into __results values ('upload: a day has at most max_entries tickets',
+            sqlerrm like '%upload_rate_exceeded: too many uploads started today%', sqlerrm);
+        execute 'set local role service_role';
+    end;
+    execute 'reset role';
+    update public.billing_accounts b set max_entries = d.max_entries
+      from private.plan_defaults('free') d where b.owner_id = c_owner;
+    delete from private.upload_sessions where storage_key = 'uploads/blob/' || v_ws::text || '/day-filler.bin';
+
+    -- ------------------------------------------------------------------
+    -- Bytes deleted for good stay in the owner's count while the storage
+    -- still holds them, beyond one turnover of the plan's room (as postgres)
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    v_ws2 := public.create_workspace('rls-leaving');
+    select e.id into v_root2 from public.entries e where e.workspace_id = v_ws2 and e.parent_id is null;
+    insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
+    values (v_ws2, v_root2, 'a.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/31313131-3131-4131-8131-313131313131.bin', 7),
+           (v_ws2, v_root2, 'b.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin', 11),
+           (v_ws2, v_root2, 'c.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/33333333-3333-4333-8333-333333333333.bin', 13);
+    delete from public.entries where workspace_id = v_ws2 and name = 'a.bin';
+    insert into __results values ('gc queue: a purged file is queued with its owner and size',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/31313131-3131-4131-8131-313131313131.bin'
+            and owner_id = c_owner and size_bytes = 7) = 1, null);
+    execute 'set local role service_role';
+    perform public.replace_blob_entry(
+        (select id from public.entries where workspace_id = v_ws2 and name = 'c.bin'), v_ws2,
+        v_ws2::text || '/34343434-3434-4434-8434-343434343434.bin', 17, 'application/octet-stream', c_owner, null);
+    execute 'reset role';
+    insert into __results values ('gc queue: a replaced file leaves its old bytes with the owner',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/33333333-3333-4333-8333-333333333333.bin'
+            and owner_id = c_owner and size_bytes = 13) = 1, null);
+    delete from public.workspaces where id = v_ws2;
+    insert into __results values ('gc queue: a workspace deleted whole queues each blob once, with the owner',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin') = 1
+        and (select count(*) from public.blob_deletions
+              where storage_key in (v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin',
+                                    v_ws2::text || '/34343434-3434-4434-8434-343434343434.bin')
+                and owner_id = c_owner and size_bytes in (11, 17)) = 2, null);
+    -- an account that is deleted has nobody to count its blobs for
+    insert into auth.users (id, email, email_confirmed_at) values
+        ('99999999-9999-4999-8999-999999999991', 'rls-leaver@example.invalid', now());
+    perform set_config('request.jwt.claims',
+        json_build_object('sub', '99999999-9999-4999-8999-999999999991', 'role', 'authenticated')::text, true);
+    v_ws2 := public.create_workspace('rls-leaver-board');
+    select e.id into v_root2 from public.entries e where e.workspace_id = v_ws2 and e.parent_id is null;
+    insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
+    values (v_ws2, v_root2, 'gone.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/35353535-3535-4535-8535-353535353535.bin', 19);
+    delete from auth.users where id = '99999999-9999-4999-8999-999999999991';
+    insert into __results values ('gc queue: a deleted account''s blobs are queued for nobody',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/35353535-3535-4535-8535-353535353535.bin'
+            and owner_id is null and size_bytes = 19) = 1, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+
+    -- c_owner is on Free: 100 MB of room, so the turnover that leaves the
+    -- count at once is 1 GiB
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values ('probe/leaving-1', c_owner,
+            1024::bigint * 1024 * 1024
+              - (select coalesce(sum(size_bytes), 0) from public.blob_deletions where owner_id = c_owner));
+    insert into __results values ('quota: one turnover of deleted bytes leaves the count at once',
+        (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values ('probe/leaving-2', c_owner, 10 * 1024 * 1024);
+    insert into __results values ('quota: deleted bytes beyond it count until the GC removes them',
+        (select used_bytes = live_bytes + trash_bytes + 10 * 1024 * 1024 from private.owner_usage(c_owner)), null);
+    begin
+        -- fits beside the files, but not beside the 10 MB still in storage
+        perform private.assert_owner_can_add(c_owner,
+            (select 100 * 1024 * 1024 - live_bytes - trash_bytes - 5 * 1024 * 1024 from private.owner_usage(c_owner)), null);
+        insert into __results values ('quota: an upload does not fit while those bytes are still held', false, 'accepted');
+    exception when others then
+        insert into __results values ('quota: an upload does not fit while those bytes are still held',
+            sqlerrm like '%quota_exceeded%', sqlerrm);
+    end;
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values ('probe/leaving-3', c_other, 50::bigint * 1024 * 1024 * 1024),
+           ('probe/leaving-4', null, 50::bigint * 1024 * 1024 * 1024);
+    insert into __results values ('quota: another account''s and nobody''s deleted bytes are not counted',
+        (select used_bytes = live_bytes + trash_bytes + 10 * 1024 * 1024 from private.owner_usage(c_owner)), null);
+    -- the GC removing a row is what ends the count
+    delete from public.blob_deletions where storage_key = 'probe/leaving-2';
+    insert into __results values ('quota: the count ends when the GC removes the object',
+        (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
+    -- a row the GC could not clear in three days is not the owner's problem
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes, queued_at)
+    values ('probe/leaving-5', c_owner, 10 * 1024 * 1024, now() - interval '4 days');
+    insert into __results values ('quota: a deletion stuck for three days stops counting',
+        (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
+    delete from public.blob_deletions where storage_key like 'probe/leaving-%';
+
+    -- the operations watch reads counts and sizes, as the service role only
+    insert into public.blob_deletions (storage_key, attempts, queued_at)
+    values ('probe/ops-dead', 25, now() - interval '5 days'),
+           ('probe/ops-waiting', 0, now() - interval '30 hours');
+    insert into private.mail_events (kind, email) values ('complaint', 'rls-hot@example.invalid');
+    execute 'set local role service_role';
+    v_receipt := public.ops_snapshot(25);
+    insert into __results values ('ops: the snapshot counts what the watch mails about',
+        (v_receipt->>'database_bytes')::bigint > 0
+        and (v_receipt->>'stored_bytes')::bigint >= 0
+        and (v_receipt->>'gc_dead')::int = 1
+        and (v_receipt->>'gc_queue')::int >= 2
+        and (v_receipt->>'gc_oldest_hours')::numeric between 29 and 31
+        and (v_receipt->>'mail_complaints_day')::int >= 1, v_receipt::text);
+    execute 'set local role authenticated';
+    begin
+        perform public.ops_snapshot(25);
+        insert into __results values ('ops: an account cannot read the snapshot', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('ops: an account cannot read the snapshot', true, null);
+    end;
+    execute 'reset role';
+    delete from public.blob_deletions where storage_key like 'probe/ops-%';
+
     -- A thousand copies of one object cannot hide another object's reference.
     v_gc_a := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
     v_gc_b := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
@@ -2365,6 +2634,8 @@ begin
             ('private.drop_signup_captcha()', false, false),
             ('private.drop_password_on_confirm()', false, false),
             ('private.handle_new_user()', false, false),
+            ('private.profiles_hold_username()', false, false),
+            ('private.profiles_release_username()', false, false),
             ('private.lock_workspace_tree(uuid)', false, false),
             ('private.lock_entry_workspace(uuid)', false, false),
             ('private.purge_expired_entries()', false, false),
@@ -2372,9 +2643,11 @@ begin
             ('public.entries_tree_lock()', false, false),
             ('private.blob_references(text[])', false, false),
             ('public.blob_references(text[])', false, false),
+            ('private.ops_snapshot(int)', false, false),
+            ('public.ops_snapshot(int)', false, false),
             ('private.assert_upload_access(uuid, uuid, text)', false, false),
-            ('private.register_upload(uuid, uuid, text, text, int)', false, false),
-            ('public.register_upload(uuid, uuid, text, text, int)', false, false),
+            ('private.register_upload(uuid, uuid, text, text, int, bigint)', false, false),
+            ('public.register_upload(uuid, uuid, text, text, int, bigint)', false, false),
             ('private.prepare_upload(text, uuid, text, jsonb)', false, false),
             ('public.prepare_upload(text, uuid, text, jsonb)', false, false),
             ('private.complete_upload(text, uuid, text, jsonb, text, bigint)', false, false),

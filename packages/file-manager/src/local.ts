@@ -15,7 +15,6 @@ import {
 	type WatchEvent as TauriWatchEvent,
 	type WatchEventKind as TauriWatchEventKind,
 } from "@tauri-apps/plugin-fs"
-import { openPath } from "@tauri-apps/plugin-opener"
 import { invoke } from "@tauri-apps/api/core"
 import { basename, dirname, join } from "@tauri-apps/api/path"
 import * as xattrs from "@pile-commander/tauri-plugin-xattrs"
@@ -191,8 +190,12 @@ function createLocalFileManager(options?: LocalFileManagerOptions): FileManager 
 					.map((entry) => entry_to_child(folder_path, entry)),
 			)
 		},
+		// The app's own command, not plugin-opener: it asks in a system dialog
+		// before a file that would run a program (src-tauri/src/launch.rs)
 		async open_file(path: string) {
-			await openPath(path)
+			// the language of that dialog; the client keeps <html lang> current
+			const lang = typeof document === "undefined" ? undefined : document.documentElement.lang
+			await invoke("open_path", { path, lang })
 		},
 		async remove(path: string) {
 			if (options?.remove_to_trash) {

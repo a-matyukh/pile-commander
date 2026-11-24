@@ -4,8 +4,12 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
 mod ai;
+#[cfg(test)]
+mod capabilities;
+mod launch;
 mod mcp_access;
 mod mcp_pipe;
+mod paths;
 mod presigned_put;
 mod workspace_pack;
 
@@ -36,7 +40,8 @@ fn ensure_directory_path(path: &str) -> IoResult<()> {
 }
 
 #[tauri::command]
-fn ensure_directory(path: String) -> Result<(), String> {
+fn ensure_directory(app: AppHandle, path: String) -> Result<(), String> {
+    paths::readable(&app, &path)?;
     ensure_directory_path(&path).map_err(|e| e.to_string())
 }
 
@@ -54,14 +59,17 @@ fn mcp_current_exe() -> Result<String, String> {
 /// got in the Trash, on Windows and Linux the trash item's id. None when the
 /// trash cannot tell which item is this one: that delete cannot be undone.
 #[tauri::command]
-fn trash_path(path: String) -> Result<Option<String>, String> {
+fn trash_path(app: AppHandle, path: String) -> Result<Option<String>, String> {
+    // the entry itself: a link goes to the Trash, not what it points to
+    paths::writable_entry(&app, &path)?;
     trash_with_ticket(&path)
 }
 
 /// Puts a trashed item back where it was (undo of a delete). Refuses when
 /// something else took its place meanwhile, or the item left the trash.
 #[tauri::command]
-fn restore_trashed(ticket: String, original_path: String) -> Result<(), String> {
+fn restore_trashed(app: AppHandle, ticket: String, original_path: String) -> Result<(), String> {
+    paths::writable_entry(&app, &original_path)?;
     let original = std::path::Path::new(&original_path);
     if original.symlink_metadata().is_ok() {
         return Err(format!("“{original_path}” already exists"));
@@ -83,8 +91,32 @@ fn trash_with_ticket(path: &str) -> Result<Option<String>, String> {
     Ok(resulting.and_then(|url| url.path()).map(|path| path.to_string()))
 }
 
+/// The ticket is a path, and a rename moves whatever it names: only an item
+/// that sits in a Trash is moved back. `~/.Trash` on the home volume,
+/// `.Trashes/<uid>` at the root of any other.
+#[cfg(target_os = "macos")]
+fn is_in_trash(ticket: &std::path::Path) -> bool {
+    use std::path::Component;
+    if !ticket.is_absolute()
+        || ticket
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        return false;
+    }
+    let Some(parent) = ticket.parent() else {
+        return false;
+    };
+    parent.components().any(|part| {
+        matches!(part, Component::Normal(name) if name == ".Trash" || name == ".Trashes")
+    })
+}
+
 #[cfg(target_os = "macos")]
 fn restore_with_ticket(ticket: &str, original: &std::path::Path) -> Result<(), String> {
+    if !is_in_trash(std::path::Path::new(ticket)) {
+        return Err("the item is not in the Trash".to_string());
+    }
     // The Trash cannot be listed without Full Disk Access, but the item's own
     // path in it can be moved: the Trash is on the item's volume, so a rename
     std::fs::rename(ticket, original).map_err(|error| error.to_string())
@@ -143,17 +175,31 @@ mod trash_ticket_tests {
         std::fs::write(&file, "probe").unwrap();
         let path = file.to_str().unwrap().to_string();
 
-        let ticket = super::trash_path(path.clone()).unwrap().expect("a ticket");
+        let ticket = super::trash_with_ticket(&path).unwrap().expect("a ticket");
         assert!(!file.exists());
-        super::restore_trashed(ticket, path.clone()).unwrap();
+        super::restore_with_ticket(&ticket, &file).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "probe");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_an_item_in_a_trash_is_moved_back() {
+        use std::path::Path;
+        assert!(super::is_in_trash(Path::new("/Users/ann/.Trash/notes.txt")));
+        assert!(super::is_in_trash(Path::new("/Users/ann/.Trash/Folder 12.34.56/a.txt")));
+        assert!(super::is_in_trash(Path::new("/Volumes/Stick/.Trashes/501/photo.jpg")));
+
+        assert!(!super::is_in_trash(Path::new("/Users/ann/Documents/evil.plist")));
+        assert!(!super::is_in_trash(Path::new("/Users/ann/.Trash")));
+        assert!(!super::is_in_trash(Path::new("/Users/ann/.Trash/../Documents/a.txt")));
+        assert!(!super::is_in_trash(Path::new(".Trash/a.txt")));
     }
 }
 
 /// Returns `"directory"`, `"file"`, or `"other"` for an existing path.
 #[tauri::command]
-fn path_kind(path: String) -> Result<&'static str, String> {
+fn path_kind(app: AppHandle, path: String) -> Result<&'static str, String> {
+    paths::readable(&app, &path)?;
     let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
     if metadata.is_dir() {
         Ok("directory")
@@ -168,6 +214,10 @@ fn path_kind(path: String) -> Result<&'static str, String> {
 fn handle_opened_paths(app: &AppHandle, paths: Vec<String>) {
     if paths.is_empty() {
         return;
+    }
+    for path in &paths {
+        crate::paths::grant_opened(app, std::path::Path::new(path));
+        crate::paths::remember_granted(app, std::path::Path::new(path));
     }
 
     if app.webview_windows().is_empty() {
@@ -283,11 +333,84 @@ fn pin_scroll_views(view: &objc2_app_kit::NSView) {
     }
 }
 
+/// A page of the app itself: the bundled files (`tauri://localhost`, or
+/// `http(s)://tauri.localhost` on Windows) and, under `tauri dev`, the dev
+/// server. `about:` is the blank document a new frame starts from.
+fn is_app_url(url: &tauri::Url, dev_url: Option<&tauri::Url>) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => {
+            url.host_str() == Some("tauri.localhost")
+                || dev_url.is_some_and(|dev| dev.origin() == url.origin())
+        }
+        "about" => true,
+        _ => false,
+    }
+}
+
+/// The window never leaves the app. The page already sends link clicks to
+/// the system browser (services/openExternal.ts), but a link it does not
+/// know about — some element a sanitizer let through — would replace the
+/// app with another site in a window that has no address bar. Whatever
+/// tries to navigate, only the app's own pages load here.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|webview, url| {
+            let dev_url = if tauri::is_dev() {
+                webview.config().build.dev_url.clone()
+            } else {
+                None
+            };
+            let allowed = is_app_url(url, dev_url.as_ref());
+            if !allowed {
+                log::warn!("navigation refused: {}", url.scheme());
+            }
+            allowed
+        })
+        .build()
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::is_app_url;
+
+    fn url(text: &str) -> tauri::Url {
+        tauri::Url::parse(text).unwrap()
+    }
+
+    #[test]
+    fn the_window_stays_on_the_apps_own_pages() {
+        assert!(is_app_url(&url("tauri://localhost/"), None));
+        assert!(is_app_url(&url("tauri://localhost/demo/Features"), None));
+        assert!(is_app_url(&url("http://tauri.localhost/index.html"), None));
+        assert!(is_app_url(&url("https://tauri.localhost/"), None));
+        assert!(is_app_url(&url("about:blank"), None));
+
+        assert!(!is_app_url(&url("https://evil.example/login"), None));
+        assert!(!is_app_url(&url("http://localhost:5173/"), None));
+        assert!(!is_app_url(&url("tauri://evil.example/"), None));
+        assert!(!is_app_url(&url("https://tauri.localhost.evil.example/"), None));
+        assert!(!is_app_url(&url("file:///Users/ann/.ssh/id_rsa"), None));
+        assert!(!is_app_url(&url("blob:tauri://localhost/1b2c"), None));
+        assert!(!is_app_url(&url("data:text/html,<script>1</script>"), None));
+        assert!(!is_app_url(&url("javascript:alert(1)"), None));
+    }
+
+    #[test]
+    fn the_dev_server_is_a_page_of_the_app_only_under_tauri_dev() {
+        let dev = url("http://localhost:5173");
+        assert!(is_app_url(&url("http://localhost:5173/demo"), Some(&dev)));
+        assert!(!is_app_url(&url("http://localhost:8080/"), Some(&dev)));
+        assert!(!is_app_url(&url("https://evil.example/"), Some(&dev)));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(OpenedPaths(Mutex::new(vec![])))
         .manage(presigned_put::Uploads::default())
+        .manage(workspace_pack::PileZips::default())
         .manage(ai::Ai::default())
         .manage(mcp_access::Access::default());
     #[cfg(target_os = "macos")]
@@ -307,19 +430,32 @@ pub fn run() {
             .build(),
     );
     builder
+        .plugin(navigation_guard())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_xattrs::init())
+        // Layout attributes follow the files the app may read: they are
+        // `user.*` metadata, not content, so `Library` keeps its layout too.
+        .plugin(
+            tauri_plugin_xattrs::Builder::new()
+                .guard(|app, path, _access| paths::readable(app, path).map(|_| ()))
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             take_opened_paths,
             ensure_directory,
             path_kind,
             trash_path,
             restore_trashed,
+            launch::open_path,
             workspace_pack::export_workspace_zip,
             workspace_pack::import_workspace_zip,
+            workspace_pack::pile_zip_begin,
+            workspace_pack::pile_zip_folder,
+            workspace_pack::pile_zip_file,
+            workspace_pack::pile_zip_finish,
+            workspace_pack::pile_zip_abort,
             presigned_put::put_presigned_start,
             presigned_put::put_presigned_chunk,
             presigned_put::put_presigned_finish,
@@ -356,6 +492,8 @@ pub fn run() {
                     log::warn!("mcp stale socket: {error}");
                 }
             }
+            // Folders outside home the person gave the app earlier
+            paths::restore_granted(app.handle());
             // The config window starts hidden so restore does not flash the
             // default frame. Visibility is not part of the saved state: a
             // hidden launch used to be written back and the next open stayed
@@ -385,6 +523,17 @@ pub fn run() {
                 app.state::<mcp_access::Access>().shutdown();
                 #[cfg(target_os = "macos")]
                 correct_saved_window_height(app);
+            }
+            // plugin-fs lets the window into what was dropped on it; a folder
+            // is also remembered for the next launch
+            if let tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }),
+                ..
+            } = &event
+            {
+                for path in paths {
+                    crate::paths::remember_granted(app, path);
+                }
             }
             #[cfg(target_os = "macos")]
             match event {

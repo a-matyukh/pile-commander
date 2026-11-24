@@ -1,4 +1,4 @@
-import { base_name, cloud_relative, depth, is_hidden_relative, is_local_name, is_pile_carry_relative, is_within, parent_relative } from './paths'
+import { base_name, cloud_relative, depth, fold_relative, is_hidden_relative, is_local_name, is_pile_carry_relative, is_within, parent_relative, with_ancestors } from './paths'
 import type { BaseEntry, CloudEntry, LocalEntry, SkipReason, SyncAction, SyncPlan } from './types'
 
 export type ReconcileOptions = {
@@ -88,6 +88,16 @@ const by_depth = (a: string, b: string) => depth(a) - depth(b)
  *    through when the other side did not change the entry, and is undone
  *    (the entry comes back) when it did. A folder is removed on either side
  *    only when nothing in it would be lost.
+ *
+ * One name per computer. The cloud tells `Budget.xlsx` from `budget.xlsx`
+ * (and one Unicode form of a name from another); the default macOS and
+ * Windows file systems do not, so writing one of them here would land on
+ * the other: the download replaces the file, and the next pass reads the
+ * first name as deleted here and trashes it in the cloud for everyone. An
+ * entry whose path differs from one already on this computer only that way
+ * is left where it is, on both sides, and reported as `same_name`. The rule
+ * is the same on a file system that could hold both, so a folder syncs the
+ * same way on every computer.
  */
 export function reconcile(
 	base_record: Readonly<Record<string, BaseEntry>>,
@@ -117,13 +127,50 @@ export function reconcile(
 	}
 	const is_gone = (relative: string) => !local.has(relative) && !is_blocked(relative)
 
+	// ---- one name per computer ----------------------------------------------
+	// what sits on disk now, left-out entries included: they hold their names too
+	const held = new Set(local_entries.map(entry => entry.relative))
+	const held_by_fold = new Map(local_entries.map(entry => [fold_relative(entry.relative), entry.relative]))
+	/**
+	 * The entry on this computer that `relative` would land on: it, or one of
+	 * its parent folders, differs from something here only in letter case or
+	 * Unicode form. `own` is the entry being renamed itself, which is no clash.
+	 */
+	const twin_here = (relative: string, own?: string): string | null => {
+		for (const path of with_ancestors(relative)) {
+			if (held.has(path)) continue
+			const twin = held_by_fold.get(fold_relative(path))
+			if (twin !== undefined && twin !== own) return twin
+		}
+		return null
+	}
+	const same_name = new Set<string>()
+	const note_same_name = (relative: string) => {
+		if (same_name.has(relative)) return
+		same_name.add(relative)
+		skips.push({ kind: 'skip', relative, reason: 'same_name' })
+	}
+
 	// A hidden path is a cloud deletion on this device: it is not in cloud_by_id,
 	// so a rename to `.notes.txt` follows the existing "deleted in the cloud" branch.
 	const visible_cloud = cloud_entries.filter(row => row.path === '/' || !is_hidden_relative(cloud_relative(row.path)))
 	const cloud_by_id = new Map(visible_cloud.map(row => [row.id, row]))
 	const cloud_at = new Map<string, CloudEntry>()
 	const unwritable = new Set<string>()
-	for (const row of [...visible_cloud].sort((a, b) => by_depth(cloud_relative(a.path), cloud_relative(b.path)))) {
+	const linked_at = new Map([...base].map(([relative, entry]) => [entry.cloud_id, relative]))
+	// Of two cloud rows with one name here, the one this computer already
+	// syncs keeps it; then the one whose exact path is on disk; then the first
+	const claim = (row: CloudEntry): number => {
+		const relative = cloud_relative(row.path)
+		if (linked_at.has(row.id)) return 0
+		return held.has(relative) ? 1 : 2
+	}
+	const cloud_order = (a: CloudEntry, b: CloudEntry): number => {
+		const [at_a, at_b] = [cloud_relative(a.path), cloud_relative(b.path)]
+		return by_depth(at_a, at_b) || claim(a) - claim(b) || (at_a < at_b ? -1 : at_a > at_b ? 1 : 0)
+	}
+	const cloud_by_fold = new Map<string, string>()
+	for (const row of [...visible_cloud].sort(cloud_order)) {
 		if (row.path === '/') continue
 		const relative = cloud_relative(row.path)
 		const parent = parent_relative(relative)
@@ -132,6 +179,23 @@ export function reconcile(
 			unwritable.add(relative)
 			continue
 		}
+		// everything below a row left in the cloud stays there with it
+		if (parent !== '' && same_name.has(parent)) {
+			same_name.add(relative)
+			continue
+		}
+		const folded = fold_relative(relative)
+		// A row this computer already syncs is planned as before; what it would
+		// write here is checked where it is planned (`twin_here`)
+		if (!linked_at.has(row.id)) {
+			const sibling = cloud_by_fold.get(folded)
+			if ((sibling !== undefined && sibling !== relative) || twin_here(relative) !== null) {
+				if (!is_blocked(relative)) note_same_name(relative)
+				else same_name.add(relative)
+				continue
+			}
+		}
+		cloud_by_fold.set(folded, relative)
 		if (!is_blocked(relative)) cloud_at.set(relative, row)
 	}
 
@@ -223,6 +287,12 @@ export function reconcile(
 			// something else here already holds the target: leave both this pass
 			if (local.has(target) || base.has(target)) {
 				note_occupied(key)
+				continue
+			}
+			// a different entry here answers to the target's name; a change of
+			// only the letter case of this entry's own name is a plain rename
+			if (twin_here(target, key) !== null) {
+				note_same_name(target)
 				continue
 			}
 			local_moves.push({ kind: 'local_move', from: key, relative: target, cloud_id: entry.cloud_id })
@@ -410,8 +480,51 @@ export function reconcile(
 	}
 
 	structure.sort((a, b) => by_depth((a as { relative: string }).relative, (b as { relative: string }).relative))
+
+	// ---- one name per computer: what the plan would create ---------------------
+	// cloud rows that leave their path in this pass: trashed, or renamed from here
+	const leaving = new Set<string>()
+	for (const action of [...replaced, ...structure, ...content, ...removals]) {
+		if (action.kind !== 'delete' && action.kind !== 'move') continue
+		const row = cloud_by_id.get(action.cloud_id)
+		if (row) leaving.add(cloud_relative(row.path))
+	}
+	const stays_there = (relative: string) => ![...leaving].some(folder => is_within(relative, folder))
+	const cloud_folds = new Map<string, string[]>()
+	for (const row of visible_cloud) {
+		if (row.path === '/') continue
+		const relative = cloud_relative(row.path)
+		const folded = fold_relative(relative)
+		cloud_folds.set(folded, [...(cloud_folds.get(folded) ?? []), relative])
+	}
+	/** A cloud row that stays and that a new entry at `relative` would differ from only in case or form. */
+	const twin_there = (relative: string): boolean =>
+		with_ancestors(relative).some(path =>
+			(cloud_folds.get(fold_relative(path)) ?? []).some(other => other !== path && stays_there(other)))
+	// a folder held back keeps everything planned below it back too
+	const held_back: string[] = []
+	const one_name = (action: SyncAction): SyncAction => {
+		if (action.kind === 'skip' || action.kind === 'forget') return action
+		const relative = action.relative
+		if (held_back.some(folder => is_within(relative, folder))) {
+			return { kind: 'skip', relative, reason: 'parent_skipped' }
+		}
+		const clash = action.kind === 'download' || action.kind === 'download_folder'
+			? twin_here(relative) !== null
+			: action.kind === 'upload' || action.kind === 'create_folder'
+				? twin_there(relative)
+				: false
+		if (!clash) return action
+		held_back.push(relative)
+		return { kind: 'skip', relative, reason: 'same_name' }
+	}
+	// the cloud loop above may have reported the same path already
+	const planned = [...replaced, ...structure, ...content, ...removals]
+		.map(one_name)
+		.filter(action => !(action.kind === 'skip' && action.reason === 'same_name' && same_name.has(action.relative)))
+
 	return {
-		actions: [...forgotten, ...skips, ...replaced, ...structure, ...content, ...removals],
+		actions: [...forgotten, ...skips, ...planned],
 		deletes,
 		local_deletes,
 		base_files,

@@ -100,12 +100,62 @@ impl Uploads {
     }
 }
 
-fn storage_url(url: &str) -> Result<reqwest::Url, String> {
+/// The storage this build uploads to, from `PILE_STORAGE_URLS` at compile
+/// time (release.yml): one or more URL prefixes separated by commas, each
+/// ending with the bucket — `https://s3.us-east-005.backblazeb2.com/<bucket>/`.
+/// With it set, a presigned URL anywhere else is refused, so these commands
+/// cannot carry bytes to another customer's bucket on the same host. Unset
+/// (a local build without it), the host rules above decide alone. Before
+/// the storage moves, a release must list the new prefix here.
+const STORAGE_URLS: Option<&str> = option_env!("PILE_STORAGE_URLS");
+
+/// The prefixes of `list`, each a valid https URL ending with `/`.
+fn storage_prefixes(list: Option<&str>) -> Vec<String> {
+    list.unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|prefix| !prefix.is_empty())
+        .filter_map(|prefix| {
+            let mut url = reqwest::Url::parse(prefix).ok()?;
+            if url.scheme() != "https" || url.query().is_some() || url.fragment().is_some() {
+                return None;
+            }
+            // a bare host would pin nothing: the bucket is the first path part
+            if url.path().trim_matches('/').is_empty() {
+                return None;
+            }
+            if !url.path().ends_with('/') {
+                let path = format!("{}/", url.path());
+                url.set_path(&path);
+            }
+            Some(url.to_string())
+        })
+        .collect()
+}
+
+fn storage_url_with(url: &str, list: Option<&str>) -> Result<reqwest::Url, String> {
+    let refused = || "upload url is not the storage endpoint".to_string();
     let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
     if parsed.scheme() != "https" || !parsed.host_str().is_some_and(is_storage_host) {
-        return Err("upload url is not the storage endpoint".into());
+        return Err(refused());
+    }
+    let listed = list.is_some_and(|list| !list.trim().is_empty());
+    if listed {
+        // a list with no usable prefix refuses everything rather than
+        // falling back to "any bucket"
+        let prefixes = storage_prefixes(list);
+        if !prefixes
+            .iter()
+            .any(|prefix| parsed.as_str().starts_with(prefix.as_str()))
+        {
+            return Err(refused());
+        }
     }
     Ok(parsed)
+}
+
+fn storage_url(url: &str) -> Result<reqwest::Url, String> {
+    storage_url_with(url, STORAGE_URLS)
 }
 
 fn build_client() -> Result<reqwest::Client, String> {
@@ -271,25 +321,67 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
+    /// The host rules alone, as in a build without `PILE_STORAGE_URLS`.
+    fn by_host(url: &str) -> Result<reqwest::Url, String> {
+        storage_url_with(url, None)
+    }
+
     #[test]
     fn only_https_storage_urls_are_accepted() {
-        assert!(storage_url(&format!("https://{STORAGE_HOST}/bucket/key?sig=1")).is_ok());
-        assert!(storage_url(&format!("http://{STORAGE_HOST}/bucket/key")).is_err());
-        assert!(storage_url("https://example.com/bucket/key").is_err());
-        assert!(storage_url(&format!("https://{STORAGE_HOST}.example.com/key")).is_err());
-        assert!(storage_url("not a url").is_err());
+        assert!(by_host(&format!("https://{STORAGE_HOST}/bucket/key?sig=1")).is_ok());
+        assert!(by_host(&format!("http://{STORAGE_HOST}/bucket/key")).is_err());
+        assert!(by_host("https://example.com/bucket/key").is_err());
+        assert!(by_host(&format!("https://{STORAGE_HOST}.example.com/key")).is_err());
+        assert!(by_host("not a url").is_err());
     }
 
     #[test]
     fn r2_storage_urls_are_accepted() {
-        assert!(storage_url("https://abc123.r2.cloudflarestorage.com/bucket/key?sig=1").is_ok());
-        assert!(storage_url("https://bucket.abc123.r2.cloudflarestorage.com/key?sig=1").is_ok());
-        assert!(storage_url("https://abc123.eu.r2.cloudflarestorage.com/bucket/key").is_ok());
-        assert!(storage_url("http://abc123.r2.cloudflarestorage.com/bucket/key").is_err());
-        assert!(storage_url("https://r2.cloudflarestorage.com/bucket/key").is_err());
-        assert!(storage_url("https://.r2.cloudflarestorage.com/bucket/key").is_err());
-        assert!(storage_url("https://evilr2.cloudflarestorage.com/bucket/key").is_err());
-        assert!(storage_url("https://abc123.r2.cloudflarestorage.com.example.com/key").is_err());
+        assert!(by_host("https://abc123.r2.cloudflarestorage.com/bucket/key?sig=1").is_ok());
+        assert!(by_host("https://bucket.abc123.r2.cloudflarestorage.com/key?sig=1").is_ok());
+        assert!(by_host("https://abc123.eu.r2.cloudflarestorage.com/bucket/key").is_ok());
+        assert!(by_host("http://abc123.r2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(by_host("https://r2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(by_host("https://.r2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(by_host("https://evilr2.cloudflarestorage.com/bucket/key").is_err());
+        assert!(by_host("https://abc123.r2.cloudflarestorage.com.example.com/key").is_err());
+    }
+
+    #[test]
+    fn a_listed_bucket_is_the_only_one_accepted() {
+        let list = format!("https://{STORAGE_HOST}/pile-files");
+        let pinned = |url: &str| storage_url_with(url, Some(&list));
+
+        assert!(pinned(&format!("https://{STORAGE_HOST}/pile-files/uploads/a?sig=1")).is_ok());
+        // another customer's bucket on the same host
+        assert!(pinned(&format!("https://{STORAGE_HOST}/someone-else/uploads/a?sig=1")).is_err());
+        // a bucket whose name only starts the same
+        assert!(pinned(&format!("https://{STORAGE_HOST}/pile-files-copy/a")).is_err());
+        assert!(pinned(&format!("https://{STORAGE_HOST}/pile-files")).is_err());
+        // an R2 address is not on the list, whatever the host rule says
+        assert!(pinned("https://abc123.r2.cloudflarestorage.com/pile-files/a").is_err());
+    }
+
+    #[test]
+    fn several_storages_can_be_listed_for_a_move() {
+        let list = format!(
+            "https://{STORAGE_HOST}/pile-files/, https://abc123.r2.cloudflarestorage.com/pile-files/"
+        );
+        let pinned = |url: &str| storage_url_with(url, Some(&list));
+        assert!(pinned(&format!("https://{STORAGE_HOST}/pile-files/a")).is_ok());
+        assert!(pinned("https://abc123.r2.cloudflarestorage.com/pile-files/a").is_ok());
+        assert!(pinned("https://other.r2.cloudflarestorage.com/pile-files/a").is_err());
+    }
+
+    #[test]
+    fn an_empty_list_keeps_the_host_rules_and_a_broken_one_refuses() {
+        let url = format!("https://{STORAGE_HOST}/any-bucket/a");
+        assert!(storage_url_with(&url, Some("")).is_ok());
+        assert!(storage_url_with(&url, Some("  ")).is_ok());
+        // set, but nothing in it is a usable prefix
+        assert!(storage_url_with(&url, Some("not a url")).is_err());
+        assert!(storage_url_with(&url, Some(&format!("https://{STORAGE_HOST}"))).is_err());
+        assert!(storage_url_with(&url, Some(&format!("http://{STORAGE_HOST}/any-bucket/"))).is_err());
     }
 
     /// Reads one HTTP/1.1 request with a Content-Length body, answers 200 and

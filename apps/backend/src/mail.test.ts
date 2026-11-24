@@ -15,6 +15,8 @@ import {
 	PLUNK_SEND_URL,
 	type FetchLike,
 	hub_hidden_email_copy,
+	egress_paused_email_copy,
+	next_month_start,
 	hub_made_private_email_copy,
 	moderation_digest_email_copy,
 } from "./mail";
@@ -58,6 +60,7 @@ function mail_env(overrides: Partial<Env> = {}): Env {
 		b2_application_key: "a",
 		presign_get_ttl_seconds: 900,
 		presign_put_ttl_seconds: 3600,
+		presign_put_sign_length: false,
 		account_delete_max_auth_age_seconds: 600,
 		trusted_proxy_hops: 1,
 		hub_preview_max_bytes: 2 * 1024 * 1024,
@@ -81,7 +84,11 @@ function mail_env(overrides: Partial<Env> = {}): Env {
 		moderation_digest_cron: "0 9 * * 1",
 		moderation_mail_cron: "* * * * *",
 		feedback_origins: ["https://pile-commander.app"],
+		feedback_daily_max: 300,
+		feedback_daily_attachments_max: 200,
+		feedback_attachment_days: 90,
 		egress: { mode: "off", alert_day_fraction: 0.25, visitor_fraction: 0.05, alert_email: null },
+		ops: { alert_email: null, errors_per_window: 5, database_alert_bytes: 6 * 1024 ** 3, storage_alert_bytes: 1024 ** 4, bounces_per_day: 5 },
 		deriv: DERIV_OFF,
 		...overrides,
 	};
@@ -402,5 +409,33 @@ describe("hub moderation copy", () => {
 		expect(copy.body).toContain("New board");
 		expect(copy.body).toContain("Hidden board");
 		expect(copy.body).toContain("spam");
+	});
+});
+
+describe("egress_paused_email_copy", () => {
+	test("says until when, what visitors see and that nothing is lost", () => {
+		const copy = egress_paused_email_copy({
+			period: "2026-11-01",
+			budget_bytes: 20 * 1024 ** 3,
+			app_url: "https://app.example",
+		});
+		expect(copy.subject).toBe("Files on your public boards are paused for visitors until December 1");
+		expect(copy.body).toContain("In November visitors of your public boards downloaded 20 GB of files");
+		expect(copy.body).toContain("Until December 1 pictures, video and other files");
+		expect(copy.body).toContain("notes and layout are shown as before");
+		expect(copy.body).toContain("nothing is deleted");
+		expect(copy.body).toContain('<a href="https://app.example">Open Pile Commander</a>');
+	});
+
+	test("the allowance starts again on the first day of the next UTC month, across a year", () => {
+		expect(next_month_start("2026-11-01")).toBe("December 1");
+		expect(next_month_start("2026-12-01")).toBe("January 1");
+		expect(next_month_start("2026-01-31")).toBe("February 1");
+	});
+
+	test("without an app address the mail has no link", () => {
+		const copy = egress_paused_email_copy({ period: "2026-11-01", budget_bytes: 1.5 * 1024 ** 3, app_url: null });
+		expect(copy.body).toContain("1.5 GB of files");
+		expect(copy.body).not.toContain("<a ");
 	});
 });

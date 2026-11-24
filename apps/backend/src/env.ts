@@ -42,10 +42,23 @@ export function polar_env(source: Record<string, string | undefined> = process.e
 
 /**
  * Which egress refusals are live (see egress.ts). `off` only counts and
- * alerts; `file_size` also refuses originals above max_public_file_bytes to
- * non-members; `all` adds the per-visitor share and the monthly budget
+ * alerts; `file_size` (the default) also refuses originals above
+ * max_public_file_bytes to non-members; `all` adds the per-visitor share
+ * and the monthly budget, and mails the owner when their budget pauses
+ * media for visitors
  */
 export type EgressMode = "off" | "file_size" | "all";
+
+/** The operations watch (ops.ts): where its mail goes and when it writes */
+export type OpsEnv = {
+	/** OPS_ALERT_EMAIL, or MODERATION_DIGEST_EMAIL when unset; null → log only */
+	alert_email: string | null;
+	/** requests answered 500 (and unhandled rejections) in 10 minutes that are worth a mail */
+	errors_per_window: number;
+	database_alert_bytes: number;
+	storage_alert_bytes: number;
+	bounces_per_day: number;
+};
 
 export type EgressEnv = {
 	mode: EgressMode;
@@ -120,6 +133,13 @@ export type Env = {
 	presign_get_ttl_seconds: number;
 	/** upload (PUT) presign lifetime — must outlive a slow upload of max_file_bytes */
 	presign_put_ttl_seconds: number;
+	/**
+	 * Sign the declared size into the upload URL (s3_presign.ts), so the
+	 * storage refuses a body of any other size. On unless
+	 * PRESIGN_PUT_SIGN_LENGTH=off: B2 enforces it (check:signed-length,
+	 * passed 2026-11-24). Run that check before moving to another storage
+	 */
+	presign_put_sign_length: boolean;
 	/** /account/delete requires an authentication (amr timestamp) younger than this */
 	account_delete_max_auth_age_seconds: number;
 	/**
@@ -180,7 +200,14 @@ export type Env = {
 	 * separated, replaces the list (add http://localhost:<port> for local dev)
 	 */
 	feedback_origins: string[];
+	/** notes POST /feedback takes from everyone together in 24 hours */
+	feedback_daily_max: number;
+	/** screenshots it takes from everyone together in 24 hours (5 MB each at most) */
+	feedback_daily_attachments_max: number;
+	/** how long a note's screenshots are kept in Storage */
+	feedback_attachment_days: number;
 	egress: EgressEnv;
+	ops: OpsEnv;
 	deriv: DerivEnv;
 };
 
@@ -247,7 +274,7 @@ function deriv_mode(): DerivMode {
 }
 
 function egress_mode(): EgressMode {
-	const raw = process.env.EGRESS_ENFORCE?.trim().toLowerCase() || "off";
+	const raw = process.env.EGRESS_ENFORCE?.trim().toLowerCase() || "file_size";
 	if (raw === "off" || raw === "file_size" || raw === "all") return raw;
 	throw new Error(`Environment variable EGRESS_ENFORCE must be off, file_size or all, got: "${raw}"`);
 }
@@ -273,6 +300,7 @@ export function load_env(): Env {
 			"PRESIGN_PUT_TTL_SECONDS",
 			positive_int_or("PRESIGN_TTL_SECONDS", 3600),
 		),
+		presign_put_sign_length: on_off_or("PRESIGN_PUT_SIGN_LENGTH", true),
 		account_delete_max_auth_age_seconds: positive_int_or("ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS", 600),
 		trusted_proxy_hops: positive_int_or("TRUSTED_PROXY_HOPS", 1),
 		hub_preview_max_bytes: positive_int_or("HUB_PREVIEW_MAX_BYTES", 2 * 1024 * 1024),
@@ -297,6 +325,17 @@ export function load_env(): Env {
 		moderation_digest_cron: process.env.MODERATION_DIGEST_CRON?.trim() || "0 9 * * 1",
 		moderation_mail_cron: process.env.MODERATION_MAIL_CRON?.trim() || "* * * * *",
 		feedback_origins: parse_feedback_origins(process.env.FEEDBACK_ORIGINS),
+		feedback_daily_max: positive_int_or("FEEDBACK_DAILY_MAX", 300),
+		feedback_daily_attachments_max: positive_int_or("FEEDBACK_DAILY_ATTACHMENTS_MAX", 200),
+		feedback_attachment_days: positive_int_or("FEEDBACK_ATTACHMENT_DAYS", 90),
+		ops: {
+			alert_email: process.env.OPS_ALERT_EMAIL?.trim() || process.env.MODERATION_DIGEST_EMAIL?.trim() || null,
+			errors_per_window: positive_int_or("OPS_ERRORS_PER_10_MIN", 5),
+			// Supabase Pro comes with 8 GB of disk: write at three quarters
+			database_alert_bytes: positive_int_or("OPS_DATABASE_ALERT_BYTES", 6 * 1024 ** 3),
+			storage_alert_bytes: positive_int_or("OPS_STORAGE_ALERT_BYTES", 1024 ** 4),
+			bounces_per_day: positive_int_or("OPS_BOUNCES_PER_DAY", 5),
+		},
 		egress: {
 			mode: egress_mode(),
 			alert_day_fraction: fraction_or("EGRESS_ALERT_DAY_FRACTION", 0.25),

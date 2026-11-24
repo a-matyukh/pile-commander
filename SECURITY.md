@@ -30,11 +30,24 @@ show only these intentional INFOs. Anything else is a regression.
 
 ## Invariants the code relies on
 
+- **Deleted bytes are counted until they are really gone.** A purge takes
+  bytes out of `entries` at once, but the objects wait in `blob_deletions`
+  for the GC (`GC_MIN_AGE_HOURS`, about a day). Each queue row carries the
+  owner and the size (`entries_queue_blob_deletion`,
+  `workspaces_queue_blob_deletion` for a workspace deleted whole,
+  `replace_blob_entry` for the bytes a new version replaced), and
+  `private.owner_usage` adds them to `used_bytes` beyond one turnover of the
+  plan's room (or 1 GiB if that is more): emptying the trash to make room
+  works at once, a loop of upload → purge → upload (or fork → copy → purge)
+  does not hold storage above about twice the quota. A row the GC could not
+  clear in three days stops counting. Keys that were in nobody's quota
+  (covers, previews, orphans) and a deleted account's blobs have no owner.
 - **A client never holds write access to a referenced object.** Bun's
   `s3.presign` signs neither `content-length` nor arbitrary headers (`type` /
   `contentDisposition` become `response-*` GET overrides), and B2 offers no
-  POST policy here — so a PUT URL can cap nothing, and it stays replayable
-  until it expires. It is therefore only ever issued for a **staging** key,
+  POST policy here — so its PUT URL can cap nothing, and it stays replayable
+  until it expires. (For uploads the size is signed by our own code
+  instead; see "Presigned PUT".) It is therefore only ever issued for a **staging** key,
   `uploads/<blob|hub_preview>/<workspace_id>/<uuid>[.ext]`, minted by the
   service-role-only `register_upload` together with a row in
   `private.upload_sessions` binding it to the uploader, the workspace and a
@@ -263,6 +276,17 @@ show only these intentional INFOs. Anything else is a regression.
   not only disappearing from the gallery. `/{username}/{slug}` stays up until an admin
   `make_private`. Owner mail and the weekly digest are drained by the
   backend (`src/moderation.ts`), not by Postgres.
+- **A username is not something to squat or inherit.** Words that would
+  pass for the product or its staff (`pile-commander`, `official`, `team`,
+  `support`, `security`, `billing`, `moderator` and their neighbours) are
+  reserved next to the app's own routes: one list in `reserved-slugs.ts`,
+  `private.is_reserved_username` (the CHECK on `profiles.username`) and
+  `apps/client/middleware.ts`, compared by `reserved-slugs.test.ts`. A
+  username someone gave up — by changing it or deleting the account — is
+  held in `private.released_usernames` for 90 days: only the account that
+  released it can take it back, so links to `/<username>/<slug>` that are
+  out in the world do not start opening another account's boards. To
+  anyone else the name is simply taken (`unique_violation`).
 - **Downloads are short capabilities.** `PRESIGN_GET_TTL_SECONDS` (900 s)
   vs `PRESIGN_PUT_TTL_SECONDS` (3600 s); `GET /presign?entry=<id>` returns
   `expires_in` and the client media cache refreshes expired URLs.
@@ -294,8 +318,14 @@ show only these intentional INFOs. Anything else is a regression.
   per-visitor share 1/20 per day per IPv4 or IPv6 /64). A state reload
   leaves a flush in flight out, so the meter undercounts for a moment
   rather than refusing visitors on a double count.
-  `EGRESS_ENFORCE` = `off` (count + alert) | `file_size` | `all`; a refusal
-  is `media_unavailable` + `reason` (403, 429 for the visitor share). An
+  `EGRESS_ENFORCE` = `off` (count + alert) | `file_size` (the default) |
+  `all`; a refusal is `media_unavailable` + `reason` (403, 429 for the
+  visitor share). The author is told what `file_size` means for them: the
+  publish panel says which size visitors can open
+  (`billing_accounts.max_public_file_bytes`). In `all`, when an owner's
+  budget starts refusing visitors, the owner gets one mail that month
+  (`egress_paused_email_copy`, with the `alert_month` notice): they are
+  never refused themselves, so nothing else would tell them. An
   `<img>` has no token, so Hub covers are metered for everyone, the owner's
   own views included (≤2 MiB). Database down → downloads stay open.
   Download as .pile runs the same meter on its own ledger
@@ -351,6 +381,16 @@ show only these intentional INFOs. Anything else is a regression.
 - **Account deletion needs a fresh sign-in.** The session's newest `amr`
   timestamp must be younger than `ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS`
   (10 min); the client re-enters the password in the confirm dialog.
+- **A token is trusted until it expires, except where that would matter
+  most.** `require_user` checks signature and expiry (JWKS, `getClaims`),
+  not the session: after "sign out everywhere" a token someone carried off
+  works on uploads and downloads for up to an hour, the same as it does on
+  the Data API. Routes that cannot be taken back or that leave a way in
+  behind them ask Auth for the session row first (`require_live_user`,
+  `GET /auth/v1/user`): `POST /account/delete`, `POST /billing/checkout`,
+  `POST /billing/portal`, `POST /workspace/invite`. A session that was
+  signed out or replaced gets 401; when Auth cannot be reached they answer
+  503 and do nothing.
 - **Rate limits** (`src/ratelimit.ts`): global per-IP fence plus per-route
   buckets keyed by IP and by the JWT subject; 429 + `Retry-After`. Single
   Render instance — the counters are in-process. Request bodies are capped at
@@ -378,6 +418,13 @@ show only these intentional INFOs. Anything else is a regression.
   `POST /auth/send-email` pays no IP fence at all (`SIGNED_ROUTES`): Supabase
   Auth is its only caller, from shared addresses, and the webhook signature is
   its gate.
+  The route takes no sign-in and its `Origin` check is a header a script
+  can set, so one day is capped for everyone together: `FEEDBACK_DAILY_MAX`
+  notes and `FEEDBACK_DAILY_ATTACHMENTS_MAX` screenshots (300 and 200), then
+  429. Screenshots are accepted with a valid access token only; a note in
+  words stays open to anyone. A daily job removes the screenshots of notes
+  older than `FEEDBACK_ATTACHMENT_DAYS` (90) from Storage and keeps the
+  note.
 - **Shutdown drains.** On SIGTERM (a Render deploy) the server stops taking
   connections, waits for in-flight requests and a running GC/reconcile
   tick, kills a preview's ffmpeg in flight (the blob stays pending, no
@@ -389,13 +436,16 @@ show only these intentional INFOs. Anything else is a regression.
   returned; plan-limit RPC errors keep their JSON `detail` for the client.
 - **Client side.** `open_file` never opens HTML/SVG/XML as a same-origin
   `blob:` document (served as `text/plain`); SVG previews go through
-  DOMPurify's SVG profile; `vercel.json` enforces `object-src 'none'`,
+  DOMPurify's SVG profile; `vercel.json` enforces `script-src` (the app's
+  own scripts, `blob:` workers, WebAssembly and the Turnstile script; no
+  inline script, no event-handler attribute, no `eval`), `object-src 'none'`,
   `base-uri 'self'`, `frame-ancestors 'self'` (except `/demo`, which also
   allows the landing origin from `VITE_LANDING_URL` so the marketing hero
-  can embed the live demo), HSTS (two years,
+  can embed the live demo; `middleware.ts` answers `/demo` itself and
+  replaces the header, so it repeats the same `script-src`), HSTS (two years,
   `includeSubDomains`; the `preload` token is inert until the domain is
-  submitted to hstspreload.org) and ships the full CSP as Report-Only until the
-  remaining origins are confirmed in production. Both `v-html` sanitizers keep
+  submitted to hstspreload.org) and ships the rest of the CSP as Report-Only;
+  see "Web CSP and a custom provider address". Both `v-html` sanitizers keep
   a regex fallback for the DOM-less test environment — `parseNoteMarkdown`
   returned marked's raw output there, which was no sanitizer at all.
 - **A note cannot restyle or cover the app.** Note HTML lands in the app's own
@@ -428,6 +478,89 @@ show only these intentional INFOs. Anything else is a regression.
   `workspaces.name` and `profiles.display_name` are length-capped only — they
   have no control-character CHECK like `entries.name` — so a board name could
   otherwise carry a newline into a header line.
+
+---
+
+## Desktop window
+
+The desktop app is one webview that shows other people's notes, shapes and
+boards, and it can reach the file system. One sanitizer bug (the SVG shape
+XSS was one) would let a script run in that window, so the window itself is
+fenced. A page from another address cannot call the app's commands at all:
+Tauri checks the origin.
+
+- **The window runs only the app's own scripts.** `tauri.conf.json` sets
+  `app.security.csp`: `script-src 'self' 'wasm-unsafe-eval' blob:` (the
+  model decoders need WebAssembly and `blob:` workers), no inline script,
+  no event-handler attribute, `object-src 'none'`, `base-uri 'self'`.
+  `style-src` keeps `'unsafe-inline'`, and
+  `dangerousDisableAssetCspModification: ["style-src"]` stops Tauri from
+  adding a nonce there, which would switch `'unsafe-inline'` off. `tauri dev`
+  loads the page from Vite and gets no policy.
+- **It connects only to this build's hosts.** `desktopCspPlugin.ts` adds a
+  second policy to `index.html` of a desktop build: `connect-src` with the
+  Supabase and backend origins from the build's own environment, the
+  storage host, the changelog host and the model decoder host, plus `ipc:`
+  and `http://ipc.localhost`, which are how the window calls Rust. The hosts
+  are not written into the repository, and the policy cannot drift from the
+  bundle. `img-src` and `media-src` still allow any `https:` host, so a
+  picture address remains a way to send a few bytes out.
+- **It reads the home folder and writes less of it.** plugin-fs reads
+  `$HOME`. Its six write commands (`capabilities/home-writes-*.json`,
+  generated by `scripts/write-home-writes-capabilities.ts`) are denied
+  `~/Library` (macOS), `AppData` and the PowerShell profile folders
+  (Windows), and every dot entry at the top of home except `.pile`: shell
+  profiles, `.ssh`, `.config`, LaunchAgents. A script must not be able to
+  plant something that runs at the next login. The person sees "Pile
+  Commander only reads this folder." Deeper dot folders (`project/.git`)
+  stay writable: the file manager and sync work there. Known limits: a deny
+  is a glob on the path as written, so a symlink that already exists in
+  home and points into a protected folder is not caught for a new file;
+  nothing in the app creates symlinks.
+- **The app's own commands ask the same rule.** They run as the app, outside
+  the plugin's scope, so each one checks its paths in
+  `src-tauri/src/paths.rs`: readable means inside the fs scope (home, or a
+  path the person picked in a system dialog, dropped on the window or
+  opened with the app); writable means readable and not protected. A
+  folder outside home that was dropped or opened is remembered in
+  `granted-folders.json` in the app's config directory, which the window
+  cannot write, and returns to the scope at the next launch.
+  `trash_path`, `restore_trashed` (the ticket must be inside a Trash, or the
+  rename would move any file anywhere), `export_workspace_zip`,
+  `import_workspace_zip`, `pile_zip_*`, `ensure_directory`, `path_kind`.
+  The xattrs plugin takes a guard from the app and reads and writes only
+  readable paths; an attribute name with `:`, a separator or
+  `Zone.Identifier` is refused, because on Windows an attribute is the
+  stream `path:name` and `:$DATA` is the file's content.
+- **The window never leaves the app.** `navigation_guard` (`lib.rs`) lets
+  the webview load only the app's own pages (`tauri://localhost`,
+  `tauri.localhost` on Windows, the dev server under `tauri dev`); any other
+  navigation is refused, whatever started it. Before that the page itself
+  sends link clicks to the system browser (`listen_external_links`): an HTML
+  `<a>`, an image-map `<area>` and an SVG `<a>` with `href` or `xlink:href`,
+  with or without `download`. A note has no `<map>`, `<area>` or `usemap`,
+  and an `<a>` inside `<svg>` loses its address there and in SVG shapes, so
+  nothing invisible covers a note or a shape with a link. The window has no
+  address bar: a page from another site inside it could pass for the app.
+- **A file that runs is opened only after a yes.** The window has no
+  `opener:allow-open-path`. `open_path` (`launch.rs`) opens a file with its
+  default app, and for a file the system would run, install or mount (by
+  extension, or an executable file with no extension) it first asks in a
+  system dialog, which the page cannot draw over or click.
+- **Uploads go to this build's bucket.** `put_presigned_*` accepts the
+  storage host only, and with `PILE_STORAGE_URLS` set at build time
+  (release.yml) only a URL that starts with one of the listed prefixes, each
+  ending with the bucket. Without it any bucket on the host passes.
+- **A cloud folder is exported without a scratch copy.** `pile_zip_*` writes
+  the archive entry by entry into `<name>.partial` and renames it over the
+  target at the end, so the window needs no writable folder of its own (it
+  used to unpack into `~/Library/Caches`) and a failed export leaves an
+  older archive untouched.
+
+What a script in the window can still do: read any file in home through
+plugin-fs, change files outside the protected places, and use the signed-in
+session. The policy above is what keeps a script out; these are the reasons
+it matters.
 
 ---
 
@@ -473,10 +606,13 @@ Results are ordinary renames and `.md` notes; nothing is written to the database
   escaped, so a tag is text: a `video` poster, a `picture` source, a CSS
   `url()`, an unclosed tag. Markdown images are reduced to their alt text.
   Links are left, and load only on a click.
-- **The desktop webview has no CSP.** `tauri.conf.json` sets
-  `app.security.csp` to `null`. The limits above are enforced in Rust and in
-  the client, not by a page policy. This is older than the AI work and is
-  left as it is.
+- **A request leaves only for a provider the app names or an address the
+  person allowed.** The desktop commands that send (`ai_list_models`,
+  `ai_chat_stream`) pass the six preset origins. Any other origin waits for
+  a yes in a system dialog, once; the answer is kept in `ai-addresses.json`
+  in the app's config directory, which the window cannot write. A script in
+  the window cannot answer that dialog, so it cannot use these commands to
+  post the person's files to a host of its own. See "Desktop window".
 - **A local rename or move does not replace another file whose name matches
   ignoring case and Unicode composition.** `Beach.jpg` is the same name as
   `beach.jpg`, and one NFC `й` is the same as the NFD form. The check runs
@@ -488,25 +624,57 @@ Results are ordinary renames and `.md` notes; nothing is written to the database
 ### Web CSP and a custom provider address
 
 `apps/client/vercel.json` sends two policies. The enforcing
-`Content-Security-Policy` is only `object-src`, `base-uri` and
+`Content-Security-Policy` is `script-src`, `object-src`, `base-uri` and
 `frame-ancestors`. It does not set `connect-src`, so a fetch to a provider
-is not blocked today. The full policy, including `connect-src`, is
+is not blocked. The full policy, including `connect-src`, is
 `Content-Security-Policy-Report-Only`. `https://api.openai.com`,
 `https://openrouter.ai` and `https://api.fireworks.ai` are in that
-`connect-src`.
+`connect-src`. Its storage host is exact; the Supabase and backend hosts
+stay `*.supabase.co` and `*.onrender.com`, because the project's hosts are
+kept out of the repository and a Report-Only policy restricts nothing.
 
-A provider address the user types is not in the list. While the full policy
+A provider address the user types is not in the list. While `connect-src`
 stays Report-Only, the browser still connects and may file a report. If
 `connect-src` is ever enforced, that custom origin is blocked on the web.
 It is left out on purpose: opening `connect-src` to every `https` host would
-drop the restriction for the whole app. Custom addresses keep working in the
-desktop app, which has no CSP. Plain http to a private address such as
+drop the restriction for the whole app. That is why `connect-src` is not
+enforced on the web. Custom addresses keep working in the desktop app,
+where the request is sent from Rust and the page policy does not apply to
+it. Plain http to a private address such as
 `192.168.x.x` is blocked as mixed content from the https page.
 `http://localhost` and `127.0.0.1` are not: Chrome and Firefox allow them,
 and only Safari blocks them. Local providers are still unavailable on the
 web, because the Ollama and LM Studio presets are turned off there, and
 without `OLLAMA_ORIGINS` the request fails CORS. Turning that on is not
 part of this stage.
+
+---
+
+## Watching it run
+
+Nothing reads the Render log until something is already wrong, so the
+backend mails the operator itself (`apps/backend/src/ops.ts`), every ten
+minutes, one mail per cause in 24 hours, to `OPS_ALERT_EMAIL` (or
+`MODERATION_DIGEST_EMAIL`):
+
+- five or more requests answered 500, or unhandled rejections, in ten
+  minutes, with the first of them;
+- deletions the GC gave up on (dead letters), and a queue whose oldest row
+  has waited a day longer than `GC_MIN_AGE_HOURS`;
+- the database past `OPS_DATABASE_ALERT_BYTES` (6 GiB of Supabase Pro's 8)
+  and the stored files past `OPS_STORAGE_ALERT_BYTES`;
+- a complaint, or five bounces, in the last day (`private.mail_events`).
+
+The numbers come from `ops_snapshot` (service role only: counts and sizes).
+Egress has its own alerts (`EGRESS_ALERT_EMAIL`), Plunk complaints stop the
+account's invites (`mail_events.ts`).
+
+What the backend cannot report is that it is down. `GET /health` answers 200
+while the database answers and 503 when it does not, for a monitor outside:
+point one at `<backend>/health` and one at the web app. Still panels, not
+code: Render's bandwidth and deploy notifications, Supabase's own disk
+alerts, the B2 caps and their 75 % mail. Errors in the client are not
+collected anywhere yet.
 
 ---
 
@@ -547,9 +715,31 @@ it; the guard triggers do).
 
 ### Presigned PUT
 
-See the invariants above: the size of an upload cannot be signed, so a PUT URL
-is issued for a staging key only and `/finalize` copies it, inside the
-storage, to a key the client cannot write. No file crosses Render any more,
+See the invariants above: a PUT URL is issued for a staging key only and
+`/finalize` copies it, inside the storage, to a key the client cannot write.
+
+What a ticket may put into staging is bounded in three places:
+
+- **The size is signed into the URL** (`s3_presign.ts`: AWS Signature V4
+  with `content-length` as a signed header). The storage refuses a body of
+  any other size, so a ticket brings exactly the bytes its quota check saw.
+  B2 enforces it: `bun --filter @pile-commander/backend check:signed-length`
+  passed on 2026-11-24 (a longer and a shorter body got 403, the exact size
+  200). The browser and the desktop app both send the length of the blob
+  whose size they declared. `PRESIGN_PUT_SIGN_LENGTH=off` is the switch
+  back: a ticket then accepts any size and only `/finalize` learns the real
+  one. Run the check again before moving to another storage.
+- **`register_upload` bounds one uploader's tickets** by the plan of the
+  workspace's owner: open tickets hold at most `quota_bytes` together, a
+  day's tickets at most three times that or 5 GiB, and a day has at most
+  `max_entries` tickets. Past them `/presign/upload` answers 429.
+- **Staging does not keep what was never finalized**: the reconcile removes
+  it after its grace, and the bucket's lifecycle rule for `uploads/` (hide
+  after a day, delete a day later) does so even if the worker is down.
+
+Before these, one account could request 43 200 tickets a day and put any
+number of bytes through each, which the B2 spending cap would have turned
+into "nobody can upload". No file crosses Render any more,
 so a 1 GB upload costs the backend one CopyObject request — which B2 takes
 about a minute to answer for that size (~50 ms per MB, measured). `/finalize`
 has a 240 s request timeout (`index.ts`, under Bun's 255 s ceiling; the
@@ -566,23 +756,17 @@ deferred). Done work is in the invariants above.
 
 ### Schema and RPC
 
-- Hard-deleted bytes leave the quota at once, while their blobs wait for the
-  GC (`GC_MIN_AGE_HOURS`, about a day): upload → purge → upload, or fork →
-  copy-clones → purge, keeps storage above the quota by what a day of that
-  loop moves. Counting queued deletions (`blob_deletions`) in the owner's
-  quota until the GC runs would close it.
 - `remove_xattr` is still a client read-modify-write on `entries.xattrs`
   (`set_xattr` merges server-side through `merge_entry_xattrs`); an RPC with
   `-` would close that race too.
 - `list_workspace_members` shows member emails to every member; email should
   be owner-only, everyone else username / display_name.
-- Enforcing CSP. `vercel.json` still ships the full policy as Report-Only:
-  promoting it needs a production run first, since a missed origin
-  white-screens the app. The enforced header is the three directives above
-  plus HSTS. The Report-Only `connect-src` now also names
-  `https://api.openai.com`, `https://openrouter.ai` and
-  `https://api.fireworks.ai`. A custom AI origin
-  is intentionally not listed; see "Web CSP and a custom provider address".
+- Enforcing the rest of the web CSP. `script-src` is enforced; `connect-src`,
+  `img-src` and the others are still Report-Only in `vercel.json`.
+  `connect-src` cannot be enforced while a person may type any AI address in
+  the browser; see "Web CSP and a custom provider address". `img-src https:`
+  stays until external pictures in notes go through a proxy or load on a
+  click.
 - `hub_publications.fork_count` counts every fork, not unique forkers, and
   is not rate-limited.
 - `private.*` grants: the backend-only ones are revoked from
@@ -612,9 +796,9 @@ deferred). Done work is in the invariants above.
 - Egress: `client_ip` now reads the proxy-appended hop (`TRUSTED_PROXY_HOPS`,
   default 1) instead of the first, so a forged header no longer dodges the
   per-visitor share. Confirm the hop count against Render in production —
-  the header shape is the one assumption left. `EGRESS_ENFORCE=all` ships only together
-  with an email to the owner — without it media pauses for visitors
-  silently (`pricing/stage 1/1/egress.md`, «На будущее»).
+  the header shape is the one assumption left. `EGRESS_ENFORCE=all` mails
+  the owner when their budget pauses media; it needs the Plunk env, and an
+  earlier warning (say at 80 %) would need one more kind in `egress_notices`.
 - Download as .pile: the allowance is per account, so several accounts from
   one address multiply it. Add an IP share on that ledger if it is abused.
 - `owner_usage` is a full sum on every text save / upload; a maintained
@@ -690,10 +874,11 @@ deferred). Done work is in the invariants above.
   Been Pwned is unreachable, Auth allows the password. Confirm email +
   redirect allowlist, Send Email Hook → `POST /auth/send-email` (Plunk;
   enable the hook only after the Plunk env is set).
-- Full enforcing CSP after the Report-Only run confirms the origins
-  (Supabase, backend, B2, model-viewer decoders, `api.openai.com`,
-  `openrouter.ai`, `api.fireworks.ai`). A custom AI origin stays out of `connect-src`; see
-  "Web CSP and a custom provider address".
+- Desktop release: set the repository secret `PILE_STORAGE_URLS` to the
+  storage prefix that ends with the bucket
+  (`https://s3.us-east-005.backblazeb2.com/<bucket>/`). Without it uploads
+  are checked by host only. Before the storage moves, list the new prefix
+  too and release the desktop first. See "Desktop window".
 - Linux AI key, before release: save a key where Secret Service is running,
   and confirm the "no password storage" sentence where it is not.
 
@@ -760,7 +945,8 @@ deferred). Done work is in the invariants above.
   `PRESIGN_TTL_SECONDS` alone (it silently applies the upload lifetime to
   downloads); `GC_MIN_AGE_HOURS`,
   `HUB_PREVIEW_MAX_BYTES`, `ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS`.
-- [ ] Egress env: `EGRESS_ENFORCE` (`off` for the beta), optional
+- [ ] Egress env: `EGRESS_ENFORCE` (`file_size` when unset; do not leave
+  `off` on Render; `all` once the visitor share and budget should refuse), optional
   `EGRESS_ALERT_EMAIL`; `EGRESS_ALERT_DAY_FRACTION` / `EGRESS_VISITOR_FRACTION`
   default to 0.25 / 0.05.
 - [ ] Preview env: `DERIV_ENABLE` — `generate` first (watch row counts by

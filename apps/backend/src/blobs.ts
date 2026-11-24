@@ -34,6 +34,18 @@ export function rpc_error_to_api(
 	extra?: Record<string, unknown>,
 ): ApiError {
 	if (/upload_conflict|upload_expired/.test(error.message)) return new ApiError(409, error.message);
+	// register_upload's bounds on one uploader's tickets (rpc.sql)
+	if (/upload_rate_exceeded/.test(error.message)) {
+		const today = /today/.test(error.message);
+		return new ApiError(
+			429,
+			today
+				? "Too many uploads started today. Try again tomorrow."
+				: "Too many unfinished uploads. Try again in an hour.",
+			{},
+			{ "Retry-After": today ? "86400" : "3600" },
+		);
+	}
 	if (/quota_exceeded|file_too_large|hub_listing_limit|entries_limit_exceeded/.test(error.message)) {
 		return new ApiError(413, error.message, {
 			...extra_from_postgrest(error.details),
@@ -58,6 +70,25 @@ function extra_from_postgrest(details: string | undefined): Record<string, unkno
 		return { details };
 	}
 	return { details };
+}
+
+type RegisterUploadArgs = { p_workspace: string; p_user: string; p_kind: string; p_ext: string; p_ttl: number };
+
+/**
+ * A staging key for the ticket. `size_bytes` is what the ticket may bring:
+ * register_upload counts it against the uploader's bounds (rpc.sql). A
+ * database from before that parameter answers PGRST202 (no function of this
+ * shape): the old call still works there. Remove the fallback once the diff
+ * is live
+ */
+export async function register_upload(
+	db: Pick<SupabaseClient, "rpc">,
+	args: RegisterUploadArgs,
+	size_bytes: number,
+): Promise<{ data: string | null; error: PostgrestError | null }> {
+	const sized = await db.rpc("register_upload", { ...args, p_size: Math.floor(size_bytes) });
+	if (sized.error?.code !== "PGRST202") return sized;
+	return await db.rpc("register_upload", args);
 }
 
 async function assert_upload_quota(
@@ -398,7 +429,7 @@ export function upload_presign_body(storage_key: string, url: string, expires_in
 // `replace` is echoed so the client can tell this backend accepts it before the PUT.
 export async function handle_upload_presign(
 	env: Env,
-	s3: S3Client,
+	s3: Pick<Storage, "presign" | "presign_sized">,
 	db: SupabaseClient | null,
 	req: Request,
 ): Promise<Response> {
@@ -438,12 +469,17 @@ export async function handle_upload_presign(
 		assert_upload_quota(client, workspace_id, replacing?.delta_bytes ?? size_bytes, size_bytes, file_mime));
 
 	const ext = /(\.[a-z0-9]{1,16})$/i.exec(name)?.[1].toLowerCase() ?? "";
-	const { data: storage_key, error } = await timing.step("register", async () => await db.rpc("register_upload", {
+	const { data: storage_key, error } = await timing.step("register", () => register_upload(db, {
 		p_workspace: workspace_id, p_user: user.id, p_kind: "blob", p_ext: ext, p_ttl: env.presign_put_ttl_seconds,
-	}));
+	}, size_bytes));
 	if (error) throw rpc_error_to_api(error, "register upload");
+	if (!storage_key) throw internal_error("register upload", "no staging key");
 
-	const url = s3.presign(storage_key, { method: "PUT", expiresIn: env.presign_put_ttl_seconds });
+	// With the size signed in, the storage takes exactly the bytes the quota
+	// was checked for; without, the ticket accepts a body of any size
+	const url = env.presign_put_sign_length
+		? s3.presign_sized({ key: storage_key, content_length: size_bytes, expires_in: env.presign_put_ttl_seconds })
+		: s3.presign(storage_key, { method: "PUT", expiresIn: env.presign_put_ttl_seconds });
 	return Response.json(
 		upload_presign_body(storage_key, url, env.presign_put_ttl_seconds, replacing?.replace ?? null),
 		{ headers: timing.headers() },

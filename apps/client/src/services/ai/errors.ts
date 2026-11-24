@@ -121,6 +121,8 @@ export function explain_ai_error(error: unknown, context: AiErrorContext): strin
 			return 'Couldn\'t use the key: this system has no password storage available.'
 		case 'keyring_denied':
 			return 'Pile Commander wasn\'t allowed to use the password storage. Try again and choose Allow when the system asks.'
+		case 'address_denied':
+			return `Requests to ${host} weren't allowed. Try again and choose Allow when Pile Commander asks.`
 		case 'invalid_url':
 		case 'invalid_input':
 			return error.message

@@ -101,6 +101,11 @@ const subtitle = computed(() => {
 	return at ? t('sync.last_synced', { when: sync_ago(at) }) : t('sync.not_synced_yet')
 })
 
+// A name that differs from another only in letter case is something the
+// person can fix by renaming, so it is named; the rest is a count
+const same_names = computed(() => (status.value?.skipped ?? []).filter(entry => entry.reason === 'same_name').map(entry => entry.relative))
+const other_skipped = computed(() => (status.value?.skipped.length ?? 0) - same_names.value.length)
+
 const tip = computed(() => hidden_tip.value ?? (link.value ? title.value : other.value ? t('sync.other_copy_title') : t('actions.sync')))
 const cloud_pause = computed(() => {
 	if (status.value?.reason === 'workspace_trashed') return t('sync.workspace_trashed')
@@ -167,7 +172,10 @@ const inner_names = computed(() => (in_cloud.value || link.value ? '' : links_in
 				<p v-if="status?.kept_for_hidden.length">
 					{{ t('sync.kept_hidden', { names: status.kept_for_hidden.slice(-3).join(', ') }) }}
 				</p>
-				<p v-if="status?.skipped.length" class="mu">{{ t('sync.skipped', { n: status.skipped.length }) }}</p>
+				<p v-if="same_names.length">
+					{{ t('sync.same_name', { n: same_names.length, names: same_names.slice(-3).join(', ') }) }}
+				</p>
+				<p v-if="other_skipped" class="mu">{{ t('sync.skipped', { n: other_skipped }) }}</p>
 				<div v-if="status?.errors.length" class="er">
 					<p>{{ t('sync.errors', { n: status.errors.length }) }}</p>
 					<p v-for="failure in status.errors.slice(0, 3)" :key="failure.relative" class="one" :title="failure.message">

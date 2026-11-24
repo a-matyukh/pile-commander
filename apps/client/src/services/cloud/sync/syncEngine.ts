@@ -286,12 +286,16 @@ export function create_sync_engine(deps: SyncEngineDeps, timing: SyncTiming = DE
 		const kept_still_here = (fresh: readonly string[]) =>
 			[...new Set([...status.kept_for_hidden.filter(folder => present.has(folder)), ...fresh])].slice(-CONFLICTS_SHOWN)
 		if (result.kind === 'unchanged') {
+			// A quick pass did not look at the cloud: a name the last full pass
+			// left there for clashing with one here is still left
+			const still_same_name = status.skipped.filter(entry =>
+				entry.reason === 'same_name' && !result.skipped.some(now => now.relative === entry.relative))
 			publish({
 				phase: 'idle',
 				reason: undefined,
 				message: undefined,
 				pending_deletes: undefined,
-				skipped: result.skipped,
+				skipped: [...result.skipped, ...still_same_name],
 				errors: [],
 				kept_for_hidden: kept_still_here([]),
 			})

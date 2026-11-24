@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { appCacheDir, basename, join } from '@tauri-apps/api/path'
-import { mkdir, remove, writeFile } from '@tauri-apps/plugin-fs'
+import { basename, join } from '@tauri-apps/api/path'
 import { makeZip } from 'client-zip'
 import {
 	PILE_ATTRS_FILE,
@@ -157,10 +156,12 @@ function file_progress(file: PileTreeFile, done: number, total: number): ImportP
 }
 
 /**
- * Cloud → .pile (desktop). The workspace is written into a temporary folder
- * under the app cache — text as text, blobs downloaded as originals — its
- * layout collected from the cloud (xattrs, ink, edges) and zipped by the
- * same command as a local export. The temporary folder goes away either way.
+ * Cloud → .pile (desktop). Rust writes the archive entry by entry as the
+ * files arrive (`pile_zip_*` in src-tauri/src/workspace_pack.rs) — text as
+ * text, blobs downloaded as originals — and puts it in place only when it is
+ * complete: a failed export leaves an older archive of that name untouched.
+ * Nothing is unpacked on disk first, so the window needs no folder of its
+ * own to write to.
  */
 export async function export_cloud_workspace_to_pile(
 	fm: FileManager,
@@ -169,33 +170,33 @@ export async function export_cloud_workspace_to_pile(
 	on_progress?: (progress: ImportProgress) => void,
 	on_packing?: () => void,
 ): Promise<void> {
-	const scratch = await join(await appCacheDir(), 'pile-export', crypto.randomUUID())
-	const root = await join(scratch, pile_root_name(name))
-	await mkdir(root, { recursive: true })
+	const tree = await list_pile_tree(fm)
+	const id = await invoke<number>('pile_zip_begin', { zipPath: zip_path, rootName: pile_root_name(name) })
 	try {
-		const tree = await list_pile_tree(fm)
-		// parents come first, so each folder's parent exists by its turn
 		for (const segments of tree.folders) {
-			await mkdir(await join(root, ...segments))
+			await invoke('pile_zip_folder', { id, segments })
 		}
 
 		let done = 0
 		await run_pool(tree.files, DOWNLOAD_CONCURRENCY, async (file) => {
 			const blob = await read_pile_file(fm, file)
-			await writeFile(await join(root, ...file.segments), new Uint8Array(await blob.arrayBuffer()))
+			await invoke('pile_zip_file', new Uint8Array(await blob.arrayBuffer()), {
+				headers: {
+					'x-pile-zip-id': String(id),
+					// a header holds ASCII only; names are any Unicode
+					'x-pile-zip-path': encodeURIComponent(JSON.stringify(file.segments)),
+				},
+			})
 			done += 1
 			on_progress?.(file_progress(file, done, tree.files.length))
 		})
 
 		on_packing?.()
 		const manifest = await collectPileAttrs(fm, '/')
-		await invoke('export_workspace_zip', {
-			rootPath: root,
-			zipPath: zip_path,
-			attrsJson: serializePileAttrsManifest(manifest),
-		})
-	} finally {
-		await remove(scratch, { recursive: true }).catch((error: unknown) => console.error(error))
+		await invoke('pile_zip_finish', { id, attrsJson: serializePileAttrsManifest(manifest) })
+	} catch (error) {
+		await invoke('pile_zip_abort', { id }).catch((abort_error: unknown) => console.error(abort_error))
+		throw error
 	}
 }
 

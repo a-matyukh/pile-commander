@@ -62,6 +62,7 @@ export const en: typeof ru = {
 		message_placeholder: 'What happened, or what you wish the app did.',
 		screenshots: 'Screenshots',
 		screenshots_d: 'Optional. JPEG, PNG, WebP or GIF, up to 5 MB each.',
+		screenshots_sign_in: 'Sign in to attach screenshots. A note in words goes without an account.',
 		add_screenshots: 'Add screenshots',
 		remove: 'Remove {name}',
 		send: 'Send',
@@ -369,6 +370,7 @@ export const en: typeof ru = {
 		slug_invalid: '3–48 characters: lowercase letters, digits, hyphens',
 		address_label: 'Address',
 		link_lead: 'Anyone with the link can view this folder. You and editors keep changing it.',
+		visitor_files: 'Visitors can open files up to {size}. In place of a larger file they see a placeholder; you and the people you invited see it as usual.',
 		create_link: 'Create link',
 		open_badge: 'Open',
 		open_link: 'Open',
@@ -450,6 +452,7 @@ export const en: typeof ru = {
 		conflicts: 'Changed on both sides: {n}. The cloud version kept the name; yours is beside it as a conflicted copy: {names}',
 		kept_hidden: 'Stayed on this Mac because of hidden files (like .git), empty in the cloud: {names}',
 		skipped: 'Not synced: {n}. Names the cloud refuses, files over the plan limit, files left out.',
+		same_name: 'Not synced: {n}. The name differs from another one in the folder only in letter case, and this computer treats such names as one: {names}. Rename one of the two.',
 		errors: 'Failed, will retry: {n}',
 		trash_cloud: 'Move to the cloud trash: {n}',
 		trash_local: 'Move to the Trash on this Mac: {n}',
@@ -1249,6 +1252,7 @@ export const en: typeof ru = {
 	errors: {
 		move_kept_both: 'The folder “{name}” changed while it was being moved. Nothing was lost: a copy is in the new place, and the original stayed where it was.',
 		folder_access_denied: 'No access to the folder “{name}”. Allow Pile Commander access in System Settings → Privacy & Security → Full Disk Access',
+		protected_folder: 'Pile Commander only reads this folder. It doesn’t change system and hidden folders of your home folder.',
 	},
 	board_chrome: {
 		select: 'Select',

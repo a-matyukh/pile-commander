@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
 	EgressMeter,
 	create_download_meter,
+	create_egress_meter,
 	enforces,
 	type EgressAlert,
 	type EgressConfig,
@@ -333,6 +334,95 @@ describe("create_download_meter", () => {
 		await meter.flush();
 		expect(calls.map((call) => call.name)).toEqual(["download_sync", "download_sync"]);
 		expect(calls[1]?.args.p_rows).toEqual([{ user_id: OWNER, day: expect.any(String), bytes: 600 * KIB }]);
+	});
+});
+
+describe("create_egress_meter", () => {
+	// egress_sync, egress_notices, the owner's address and Plunk, in memory
+	function wired(mode: "off" | "file_size" | "all", overrides: Record<string, unknown> = {}) {
+		const sent: { to: string; subject: string; body: string }[] = [];
+		const notices = new Set<string>();
+		let month_bytes = 0;
+		const db = {
+			rpc: async (_name: string, args: { p_rows: { bytes: number }[] }) => {
+				for (const row of args.p_rows) month_bytes += row.bytes;
+				return {
+					data: [{
+						owner_id: OWNER,
+						day_bytes: month_bytes,
+						month_bytes,
+						egress_bytes_month: 10 * MIB,
+						max_public_file_bytes: 100 * MIB,
+					}],
+					error: null,
+				};
+			},
+			from: () => ({
+				insert: async (row: { owner_id: string; period: string; kind: string }) => {
+					const key = `${row.owner_id} ${row.period} ${row.kind}`;
+					if (notices.has(key)) return { error: { code: "23505", message: "duplicate" } };
+					notices.add(key);
+					return { error: null };
+				},
+			}),
+			auth: { admin: { getUserById: async () => ({ data: { user: { email: "owner@example.com" } }, error: null }) } },
+		} as unknown as SupabaseClient;
+		const send = async (_url: string, init: RequestInit) => {
+			const mail = JSON.parse(String(init.body)) as { to: string; subject: string; body: string };
+			sent.push({ to: mail.to, subject: mail.subject, body: mail.body });
+			return new Response("{}", { status: 200 });
+		};
+		const env = {
+			egress: { mode, alert_day_fraction: 1, visitor_fraction: 1, alert_email: "ops@example.com" },
+			plunk_secret_key: "sk",
+			plunk_from_email: "no-reply@example.com",
+			plunk_from_name: null,
+			public_app_url: "https://app.example",
+			...overrides,
+		} as unknown as Env;
+		const meter = create_egress_meter(env, db, send);
+		const visit = (size: number) =>
+			meter.admit({ owner_id: OWNER, size_bytes: size, visitor: "203.0.113.7", gate_file_size: true });
+		return { meter, visit, sent };
+	}
+
+	test("all: when the budget starts refusing visitors, the owner is told once, with the ops copy", async () => {
+		const h = wired("all");
+		await h.visit(9 * MIB);
+		await h.meter.flush();
+		expect(h.sent).toEqual([]);
+
+		expect(await h.visit(2 * MIB)).toEqual({ allowed: false, reason: "egress_budget", status: 403 });
+		await h.meter.flush();
+		expect(h.sent.map((mail) => mail.to)).toEqual(["owner@example.com", "ops@example.com"]);
+		expect(h.sent[0]?.subject).toMatch(/^Files on your public boards are paused for visitors until \w+ 1$/);
+		expect(h.sent[0]?.body).toContain("https://app.example");
+
+		// the rest of the month refuses without another mail
+		await h.visit(2 * MIB);
+		await h.meter.flush();
+		expect(h.sent).toHaveLength(2);
+	});
+
+	test("off and file_size: the budget pauses nothing, so only ops hear that it was reached", async () => {
+		for (const mode of ["off", "file_size"] as const) {
+			const h = wired(mode);
+			expect(await h.visit(11 * MIB)).toEqual({ allowed: true });
+			await h.meter.flush();
+			// the day spike and the month, both to ops
+			expect(h.sent.map((mail) => mail.to)).toEqual(["ops@example.com", "ops@example.com"]);
+			expect(h.sent.some((mail) => mail.subject.includes("paused"))).toBe(false);
+		}
+	});
+
+	test("all: the owner is told even when no ops address is set", async () => {
+		const h = wired("all", {
+			egress: { mode: "all", alert_day_fraction: 1, visitor_fraction: 1, alert_email: null },
+		});
+		await h.visit(9 * MIB);
+		await h.visit(2 * MIB);
+		await h.meter.flush();
+		expect(h.sent.map((mail) => mail.to)).toEqual(["owner@example.com"]);
 	});
 });
 

@@ -57,4 +57,32 @@ describe('parseNoteMarkdown with DOMPurify', () => {
 		})
 		expect(svg).toContain('fill:#6366f1')
 	})
+
+	test('an image map cannot cover a note with a link', () => {
+		const html = parseNoteMarkdown(
+			'<img src="https://example.com/a.png" usemap="#m"><map name="m"><area shape="rect" coords="0,0,9999,9999" href="https://evil.example/login"></map>',
+		)
+		expect(html).toContain('<img')
+		expect(html).not.toContain('<map')
+		expect(html).not.toContain('<area')
+		expect(html).not.toContain('usemap')
+		expect(html).not.toContain('evil.example')
+	})
+
+	test('a link inside svg loses its address and keeps what it draws', () => {
+		const html = parseNoteMarkdown(
+			'<svg width="400" height="300"><a href="https://evil.example/login"><rect width="400" height="300" fill="transparent"></rect></a></svg>',
+		)
+		expect(html).toContain('<rect')
+		expect(html).not.toContain('evil.example')
+		const xlink = parseNoteMarkdown(
+			'<svg xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://evil.example/x"><rect width="9" height="9"></rect></a></svg>',
+		)
+		expect(xlink).not.toContain('evil.example')
+	})
+
+	test('an ordinary link keeps its address', () => {
+		const html = parseNoteMarkdown('[site](https://example.com/page)')
+		expect(html).toContain('<a href="https://example.com/page">site</a>')
+	})
 })

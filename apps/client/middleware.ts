@@ -12,6 +12,8 @@ const RESERVED = new Set([
 	"settings", "dashboard", "admin", "api", "p", "public", "static", "assets",
 	"cdn", "internal", "health", "about", "features", "blog", "docs", "help",
 	"support", "pricing", "terms", "privacy", "www", "mail", "ftp",
+	"pile-commander", "pilecommander", "pile", "official", "team", "staff",
+	"security", "billing", "moderator", "moderation", "abuse", "administrator",
 ])
 
 const APP_TITLE = "Pile Commander"
@@ -45,7 +47,13 @@ export function is_crawler(ua: string): boolean {
 	return CRAWLER_UA.test(ua)
 }
 
-const DEMO_CSP_BASE = "object-src 'none'; base-uri 'self'"
+/**
+ * The enforced policy without `frame-ancestors`. A response from this file
+ * replaces the header vercel.json sets for the same path, so the script
+ * rule is repeated here: keep it equal to vercel.json (csp.test.ts checks).
+ */
+const DEMO_CSP_BASE =
+	"script-src 'self' blob: 'wasm-unsafe-eval' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'"
 
 /** http(s) origin from a landing URL, or null when it cannot be framed to. */
 export function http_origin(url: string): string | null {

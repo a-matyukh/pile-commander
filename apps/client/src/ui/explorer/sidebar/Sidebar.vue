@@ -220,11 +220,11 @@ async function open_drive(drive: Drive) {
 /** "This Mac" has no trash page: its button opens the Finder's trash */
 async function open_finder_trash() {
 	try {
-		const [{ homeDir }, { openPath }] = await Promise.all([
+		const [{ homeDir }, { invoke }] = await Promise.all([
 			import('@tauri-apps/api/path'),
-			import('@tauri-apps/plugin-opener'),
+			import('@tauri-apps/api/core'),
 		])
-		await openPath(`${await homeDir()}/.Trash`)
+		await invoke('open_path', { path: `${await homeDir()}/.Trash`, lang: locale.value })
 	} catch (error) {
 		report_error(store, error)
 	}

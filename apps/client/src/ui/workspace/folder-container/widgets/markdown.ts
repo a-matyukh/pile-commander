@@ -9,9 +9,15 @@ marked.setOptions({ breaks: true })
 // able to restyle or cover the app: no <style> (it applies to the whole page),
 // no classes (the app's own utility classes would apply), and only text styling
 // in `style` (safeInlineStyle). No <form> either: it could post what a visitor
-// types to another site.
-const NOTE_FORBID_TAGS = ['style', 'form']
-const NOTE_FORBID_ATTR = ['class']
+// types to another site. The only link is an HTML <a>, which shows where it
+// goes: no image map (<map>, <area>, `usemap`) and no address on an <a>
+// inside <svg>, either of which can cover a whole note with a link nobody
+// sees and take the window to another site on any click.
+const NOTE_FORBID_TAGS = ['style', 'form', 'map', 'area']
+const NOTE_FORBID_ATTR = ['class', 'usemap']
+
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+const LINK_ATTRS: ReadonlySet<string> = new Set(['href', 'xlink:href'])
 
 // DOMPurify needs a DOM; in the node test environment it exports a factory
 // without `sanitize`. The app always runs in a webview, so the DOMPurify path
@@ -28,7 +34,11 @@ function createNotePurify() {
 	// A DOMPurify that finds the DOM lacking still has `sanitize`, and returns
 	// its input untouched: take the fallback then.
 	if (!purify.isSupported) return null
-	purify.addHook('uponSanitizeAttribute', (_node, data) => {
+	purify.addHook('uponSanitizeAttribute', (node, data) => {
+		if (LINK_ATTRS.has(data.attrName.toLowerCase()) && node.namespaceURI === SVG_NAMESPACE && node.localName === 'a') {
+			data.keepAttr = false
+			return
+		}
 		if (data.attrName !== 'style') return
 		const style = safeInlineStyle(data.attrValue)
 		if (style) data.attrValue = style
@@ -61,7 +71,8 @@ function fallbackSanitize(html: string): string {
 	return html
 		.replace(/<script\b[\s\S]*?>[\s\S]*?<\/script>/gi, '')
 		.replace(/<style\b[\s\S]*?>[\s\S]*?<\/style>/gi, '')
-		.replace(/<\/?form\b[^>]*>/gi, '')
+		.replace(/<\/?(?:form|map|area)\b[^>]*>/gi, '')
+		.replace(/\susemap\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
 		.replace(/<(?:iframe|embed|object|foreignObject)\b[\s\S]*?>[\s\S]*?<\/(?:iframe|embed|object|foreignObject)>/gi, '')
 		.replace(/<(?:iframe|embed|object|foreignObject)\b[^>]*\/?>/gi, '')
 		.replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')

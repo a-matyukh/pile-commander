@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
 use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,7 +12,8 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::async_runtime;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::oneshot;
 
 /// Keychain / Credential Manager / Secret Service entries live under this
@@ -45,6 +47,8 @@ pub enum AiErrorKind {
     Keyring,
     /// the user refused the system's prompt for the password storage
     KeyringDenied,
+    /// the user did not allow requests to an address the app does not know
+    AddressDenied,
 }
 
 /// What the client gets on failure. `message` is the provider's own text
@@ -548,20 +552,144 @@ async fn run_chat(
     }
 }
 
+/// Origins of the providers the app offers by name (`AI_PRESETS` in
+/// services/ai/presets.ts). Requests to them need no question.
+const KNOWN_ORIGINS: &[&str] = &[
+    "https://api.openai.com",
+    "https://api.deepseek.com",
+    "https://openrouter.ai",
+    "https://api.fireworks.ai",
+    "http://localhost:11434",
+    "http://localhost:1234",
+];
+
+/// Addresses the person allowed, one origin per entry, in the app's config
+/// directory. The window cannot write there (`capabilities/`), so a script
+/// in it cannot add an address of its own.
+const ALLOWED_FILE: &str = "ai-addresses.json";
+
+fn read_allowed(path: &Path) -> BTreeSet<String> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn write_allowed(path: &Path, allowed: &BTreeSet<String>) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, serde_json::to_vec_pretty(allowed)?)
+}
+
+fn is_known_origin(origin: &str) -> bool {
+    KNOWN_ORIGINS.contains(&origin)
+}
+
+fn address_question(lang: Option<&str>, origin: &str) -> (String, &'static str, &'static str, &'static str) {
+    if lang.is_some_and(|lang| lang.starts_with("ru")) {
+        (
+            format!("Pile Commander отправит на {origin} то, что вы даёте ИИ: имена файлов, текст заметок, картинки. Разрешайте только адрес, который указали сами."),
+            "Отправлять запросы ИИ на этот адрес?",
+            "Разрешить",
+            "Отмена",
+        )
+    } else {
+        (
+            format!("Pile Commander will send what you give to AI — file names, note text, pictures — to {origin}. Allow only an address you entered yourself."),
+            "Send AI requests to this address?",
+            "Allow",
+            "Cancel",
+        )
+    }
+}
+
 #[derive(Default)]
 struct AiInner {
     client: Option<reqwest::Client>,
     next_id: u32,
     active: HashMap<u32, oneshot::Sender<()>>,
+    /// origins the person allowed; read from `ALLOWED_FILE` on first use
+    allowed: Option<BTreeSet<String>>,
 }
 
 /// Chat streams in flight, keyed by the id `ai_chat_stream` hands out.
 #[derive(Default, Clone)]
-pub struct Ai(Arc<Mutex<AiInner>>);
+pub struct Ai {
+    inner: Arc<Mutex<AiInner>>,
+    /// one question at a time: a second request to the same new address
+    /// waits for the answer to the first instead of asking again
+    asking: Arc<tokio::sync::Mutex<()>>,
+}
 
 impl Ai {
+    fn is_allowed(&self, file: Option<&Path>, origin: &str) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        inner
+            .allowed
+            .get_or_insert_with(|| file.map(read_allowed).unwrap_or_default())
+            .contains(origin)
+    }
+
+    fn allow(&self, file: Option<&Path>, origin: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        let allowed = inner.allowed.get_or_insert_with(BTreeSet::new);
+        allowed.insert(origin.to_owned());
+        if let Some(file) = file {
+            if let Err(error) = write_allowed(file, allowed) {
+                log::warn!("ai addresses: {error}");
+            }
+        }
+    }
+
+    /// Requests leave for `base` only when it is a provider the app offers
+    /// by name or an address the person allowed in a system dialog. The page
+    /// cannot answer that dialog, so a script in it cannot send the person's
+    /// files to an address of its own through these commands.
+    async fn ensure_address<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        base: &Url,
+        lang: Option<&str>,
+    ) -> Result<(), AiError> {
+        let origin = origin_of(base);
+        if is_known_origin(&origin) {
+            return Ok(());
+        }
+        let file: Option<PathBuf> = app
+            .path()
+            .app_config_dir()
+            .ok()
+            .map(|dir| dir.join(ALLOWED_FILE));
+        let _asking = self.asking.lock().await;
+        if self.is_allowed(file.as_deref(), &origin) {
+            return Ok(());
+        }
+        let (message, title, allow, cancel) = address_question(lang, &origin);
+        let dialog = app
+            .dialog()
+            .message(message)
+            .title(title)
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                allow.to_string(),
+                cancel.to_string(),
+            ));
+        let allowed = async_runtime::spawn_blocking(move || dialog.blocking_show())
+            .await
+            .unwrap_or(false);
+        if !allowed {
+            return Err(AiError::new(
+                AiErrorKind::AddressDenied,
+                format!("requests to {origin} were not allowed"),
+            ));
+        }
+        self.allow(file.as_deref(), &origin);
+        Ok(())
+    }
+
     fn client(&self) -> Result<reqwest::Client, AiError> {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
         if let Some(client) = &inner.client {
             return Ok(client.clone());
         }
@@ -571,7 +699,7 @@ impl Ai {
     }
 
     fn insert(&self, cancel: oneshot::Sender<()>) -> u32 {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
         inner.next_id = inner.next_id.wrapping_add(1);
         let id = inner.next_id;
         inner.active.insert(id, cancel);
@@ -579,7 +707,7 @@ impl Ai {
     }
 
     fn remove(&self, id: u32) -> Option<oneshot::Sender<()>> {
-        self.0.lock().unwrap().active.remove(&id)
+        self.inner.lock().unwrap().active.remove(&id)
     }
 }
 
@@ -622,8 +750,14 @@ pub async fn ai_key_status(base_url: String) -> Result<bool, AiError> {
 
 /// `GET {base}/models`: the ids the provider offers, sorted.
 #[tauri::command]
-pub async fn ai_list_models(ai: State<'_, Ai>, base_url: String) -> Result<Vec<String>, AiError> {
+pub async fn ai_list_models(
+    app: AppHandle,
+    ai: State<'_, Ai>,
+    base_url: String,
+    lang: Option<String>,
+) -> Result<Vec<String>, AiError> {
     let base = parse_base_url(&base_url)?;
+    ai.ensure_address(&app, &base, lang.as_deref()).await?;
     let key = key_for(&base).await?;
     let request = with_key(ai.client()?.get(endpoint(&base, "models")), key.as_deref())
         .timeout(MODELS_TIMEOUT);
@@ -646,12 +780,15 @@ pub async fn ai_list_models(ai: State<'_, Ai>, base_url: String) -> Result<Vec<S
 /// stream stopped with `ai_cancel` sends nothing more.
 #[tauri::command]
 pub async fn ai_chat_stream(
+    app: AppHandle,
     ai: State<'_, Ai>,
     base_url: String,
     body: Value,
     on_event: Channel<AiEvent>,
+    lang: Option<String>,
 ) -> Result<u32, AiError> {
     let base = parse_base_url(&base_url)?;
+    ai.ensure_address(&app, &base, lang.as_deref()).await?;
     let body = chat_body(body)?;
     let key = key_for(&base).await?;
     let client = ai.client()?;
@@ -691,6 +828,50 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[test]
+    fn named_providers_need_no_question_and_other_addresses_do() {
+        let origin = |raw: &str| origin_of(&parse_base_url(raw).unwrap());
+        assert!(is_known_origin(&origin("https://api.openai.com/v1")));
+        assert!(is_known_origin(&origin("https://openrouter.ai/api/v1")));
+        assert!(is_known_origin(&origin("https://api.fireworks.ai/inference/v1")));
+        assert!(is_known_origin(&origin("https://api.deepseek.com/v1")));
+        assert!(is_known_origin(&origin("http://localhost:11434/v1")));
+        assert!(is_known_origin(&origin("http://localhost:1234/v1")));
+
+        assert!(!is_known_origin(&origin("https://api.openai.com.evil.example/v1")));
+        assert!(!is_known_origin(&origin("https://evil.example/v1")));
+        assert!(!is_known_origin(&origin("http://localhost:8080/v1")));
+        assert!(!is_known_origin(&origin("http://192.168.1.5:11434/v1")));
+    }
+
+    #[test]
+    fn an_allowed_address_is_remembered_across_launches() {
+        let dir = std::env::temp_dir().join(format!("pile-ai-addresses-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join(ALLOWED_FILE);
+
+        let first = Ai::default();
+        assert!(!first.is_allowed(Some(&file), "https://llm.example"));
+        first.allow(Some(&file), "https://llm.example");
+        assert!(first.is_allowed(Some(&file), "https://llm.example"));
+
+        let next_launch = Ai::default();
+        assert!(next_launch.is_allowed(Some(&file), "https://llm.example"));
+        assert!(!next_launch.is_allowed(Some(&file), "https://other.example"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_damaged_address_file_allows_nothing() {
+        let dir = std::env::temp_dir().join(format!("pile-ai-damaged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(ALLOWED_FILE);
+        std::fs::write(&file, b"{not json").unwrap();
+        assert!(!Ai::default().is_allowed(Some(&file), "https://llm.example"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn http_is_only_allowed_on_this_machine_and_the_local_network() {

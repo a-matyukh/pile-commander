@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { ABUSE_EMAIL, abuse_mailto } from '@pile-commander/file-manager'
 import { t } from '@/i18n'
+import { is_desktop } from '@/isDesktop'
+import { open_external } from '@/services/openExternal'
 import cloud from '@/store/cloud'
 import Button from '@/ui/kit/Button.vue'
 import Modal from '@/ui/kit/Modal.vue'
@@ -35,7 +37,10 @@ watch(visible, value => emit('visibleChange', value), { immediate: true })
 
 async function start_report() {
 	if (!cloud.user) {
-		window.location.href = mailto.value
+		// The desktop window never navigates away from the app, mail links
+		// included: the system opens them (src-tauri navigation_guard)
+		if (is_desktop) void open_external(mailto.value).catch((cause: unknown) => { error.value = String(cause) })
+		else window.location.href = mailto.value
 		return
 	}
 	error.value = null

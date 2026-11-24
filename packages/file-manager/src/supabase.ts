@@ -2538,6 +2538,11 @@ export type BillingAccount = {
 	plan_status: string
 	quota_bytes: number
 	max_file_bytes: number
+	/**
+	 * The largest file a visitor of this account's public boards may open
+	 * (apps/backend/src/egress.ts); null: no limit
+	 */
+	max_public_file_bytes: number | null
 	max_hub_listings: number | null
 	grace_until: string | null
 	external_subscription_id: string | null
@@ -2555,7 +2560,7 @@ export async function get_billing_account(client: SupabaseClient): Promise<Billi
 	const { data, error } = await client
 		.from("billing_accounts")
 		.select(
-			"owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_hub_listings, grace_until, external_subscription_id, billing_interval, period_end, cancel_at_period_end, next_plan, next_plan_at",
+			"owner_id, plan, plan_status, quota_bytes, max_file_bytes, max_public_file_bytes, max_hub_listings, grace_until, external_subscription_id, billing_interval, period_end, cancel_at_period_end, next_plan, next_plan_at",
 		)
 		.maybeSingle()
 	if (error) throw new Error(`get_billing_account failed: ${error.message}`)
