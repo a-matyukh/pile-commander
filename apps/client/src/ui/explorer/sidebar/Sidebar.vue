@@ -162,10 +162,14 @@ async function open_drive(drive: Drive) {
 	// The cloud's own "root" is the page of its top-level folders: when the
 	// cloud is already shown, or nothing in it was opened before. Signed out,
 	// that page asks to sign in — a saved folder cannot be opened.
+	// The saved place counts only if this account still has that folder: the
+	// place is kept per browser, so it may be another account's, or a deleted one
+	const saved_cloud = explorer_drive_locations.value.cloud
+	const has_saved_cloud = !!saved_cloud && cloud.workspaces.some(ws => ws.id === saved_cloud.root_id)
 	if (drive.kind === 'cloud' && cloud_source_opens_page(
 		cloud_signed_in.value,
 		active_source.value,
-		!!explorer_drive_locations.value.cloud,
+		has_saved_cloud,
 	)) {
 		void explorer_navigation.open_page('cloud')
 		return
@@ -193,7 +197,13 @@ async function open_drive(drive: Drive) {
 	switch_guard = setTimeout(() => { switching.value = false }, 15_000)
 	try {
 		const root = (await drive.roots())[0]
-		if (!root) return
+		if (!root) {
+			// nothing in this source yet: the cloud shows its page (create a
+			// folder there) instead of a click that does nothing
+			switching.value = false
+			if (drive.kind === 'cloud') void explorer_navigation.open_page('cloud')
+			return
+		}
 		await explorer_navigation.open_drive({
 			drive_id: drive.id,
 			root_id: root.id,
