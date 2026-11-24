@@ -2377,6 +2377,95 @@ begin
       from private.plan_defaults('free') d where b.owner_id = c_owner;
     delete from private.upload_sessions where storage_key = 'uploads/blob/' || v_ws::text || '/day-filler.bin';
 
+    -- ------------------------------------------------------------------
+    -- Bytes deleted for good stay in the owner's count while the storage
+    -- still holds them, beyond one turnover of the plan's room (as postgres)
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    v_ws2 := public.create_workspace('rls-leaving');
+    select e.id into v_root2 from public.entries e where e.workspace_id = v_ws2 and e.parent_id is null;
+    insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
+    values (v_ws2, v_root2, 'a.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/31313131-3131-4131-8131-313131313131.bin', 7),
+           (v_ws2, v_root2, 'b.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin', 11),
+           (v_ws2, v_root2, 'c.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/33333333-3333-4333-8333-333333333333.bin', 13);
+    delete from public.entries where workspace_id = v_ws2 and name = 'a.bin';
+    insert into __results values ('gc queue: a purged file is queued with its owner and size',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/31313131-3131-4131-8131-313131313131.bin'
+            and owner_id = c_owner and size_bytes = 7) = 1, null);
+    execute 'set local role service_role';
+    perform public.replace_blob_entry(
+        (select id from public.entries where workspace_id = v_ws2 and name = 'c.bin'), v_ws2,
+        v_ws2::text || '/34343434-3434-4434-8434-343434343434.bin', 17, 'application/octet-stream', c_owner, null);
+    execute 'reset role';
+    insert into __results values ('gc queue: a replaced file leaves its old bytes with the owner',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/33333333-3333-4333-8333-333333333333.bin'
+            and owner_id = c_owner and size_bytes = 13) = 1, null);
+    delete from public.workspaces where id = v_ws2;
+    insert into __results values ('gc queue: a workspace deleted whole queues each blob once, with the owner',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin') = 1
+        and (select count(*) from public.blob_deletions
+              where storage_key in (v_ws2::text || '/32323232-3232-4232-8232-323232323232.bin',
+                                    v_ws2::text || '/34343434-3434-4434-8434-343434343434.bin')
+                and owner_id = c_owner and size_bytes in (11, 17)) = 2, null);
+    -- an account that is deleted has nobody to count its blobs for
+    insert into auth.users (id, email, email_confirmed_at) values
+        ('99999999-9999-4999-8999-999999999991', 'rls-leaver@example.invalid', now());
+    perform set_config('request.jwt.claims',
+        json_build_object('sub', '99999999-9999-4999-8999-999999999991', 'role', 'authenticated')::text, true);
+    v_ws2 := public.create_workspace('rls-leaver-board');
+    select e.id into v_root2 from public.entries e where e.workspace_id = v_ws2 and e.parent_id is null;
+    insert into public.entries (workspace_id, parent_id, name, kind, mime, storage_key, size_bytes)
+    values (v_ws2, v_root2, 'gone.bin', 'file', 'application/octet-stream',
+            v_ws2::text || '/35353535-3535-4535-8535-353535353535.bin', 19);
+    delete from auth.users where id = '99999999-9999-4999-8999-999999999991';
+    insert into __results values ('gc queue: a deleted account''s blobs are queued for nobody',
+        (select count(*) from public.blob_deletions
+          where storage_key = v_ws2::text || '/35353535-3535-4535-8535-353535353535.bin'
+            and owner_id is null and size_bytes = 19) = 1, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+
+    -- c_owner is on Free: 100 MB of room, so the turnover that leaves the
+    -- count at once is 1 GiB
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values ('probe/leaving-1', c_owner,
+            1024::bigint * 1024 * 1024
+              - (select coalesce(sum(size_bytes), 0) from public.blob_deletions where owner_id = c_owner));
+    insert into __results values ('quota: one turnover of deleted bytes leaves the count at once',
+        (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values ('probe/leaving-2', c_owner, 10 * 1024 * 1024);
+    insert into __results values ('quota: deleted bytes beyond it count until the GC removes them',
+        (select used_bytes = live_bytes + trash_bytes + 10 * 1024 * 1024 from private.owner_usage(c_owner)), null);
+    begin
+        -- fits beside the files, but not beside the 10 MB still in storage
+        perform private.assert_owner_can_add(c_owner,
+            (select 100 * 1024 * 1024 - live_bytes - trash_bytes - 5 * 1024 * 1024 from private.owner_usage(c_owner)), null);
+        insert into __results values ('quota: an upload does not fit while those bytes are still held', false, 'accepted');
+    exception when others then
+        insert into __results values ('quota: an upload does not fit while those bytes are still held',
+            sqlerrm like '%quota_exceeded%', sqlerrm);
+    end;
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values ('probe/leaving-3', c_other, 50::bigint * 1024 * 1024 * 1024),
+           ('probe/leaving-4', null, 50::bigint * 1024 * 1024 * 1024);
+    insert into __results values ('quota: another account''s and nobody''s deleted bytes are not counted',
+        (select used_bytes = live_bytes + trash_bytes + 10 * 1024 * 1024 from private.owner_usage(c_owner)), null);
+    -- the GC removing a row is what ends the count
+    delete from public.blob_deletions where storage_key = 'probe/leaving-2';
+    insert into __results values ('quota: the count ends when the GC removes the object',
+        (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
+    -- a row the GC could not clear in three days is not the owner's problem
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes, queued_at)
+    values ('probe/leaving-5', c_owner, 10 * 1024 * 1024, now() - interval '4 days');
+    insert into __results values ('quota: a deletion stuck for three days stops counting',
+        (select used_bytes = live_bytes + trash_bytes from private.owner_usage(c_owner)), null);
+    delete from public.blob_deletions where storage_key like 'probe/leaving-%';
+
     -- A thousand copies of one object cannot hide another object's reference.
     v_gc_a := v_ws::text || '/' || gen_random_uuid()::text || '.bin';
     v_gc_b := v_ws::text || '/' || gen_random_uuid()::text || '.bin';

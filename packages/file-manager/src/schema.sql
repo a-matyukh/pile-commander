@@ -1775,24 +1775,56 @@ revoke execute on function private.lock_entry_workspace(uuid) from public, anon,
 -- assert_owner_quota serializes on the billing row.
 -- ----------------------------------------------------------------------------
 
+-- used_bytes also counts what the owner deleted for good while the storage
+-- still holds it. A purge takes the bytes out of entries at once, but the
+-- objects wait in blob_deletions for the GC (GC_MIN_AGE_HOURS, about a day):
+-- upload, purge, upload again — or fork, copy, purge — kept storage above the
+-- quota by whatever a day of that loop moved. Ordinary use is left alone:
+-- one full turnover of the plan's room, or 1 GiB if that is more, leaves the
+-- quota the moment it is purged (emptying the trash to make room works, and
+-- so does a file saved many times a day by sync). Only what goes beyond it
+-- counts until the GC has removed the objects. A queue row the GC failed to
+-- clear in three days is our problem, not the owner's, and stops counting.
+-- plpgsql, not sql: blob_deletions is created further down this file
 create or replace function private.owner_usage(p_owner uuid)
 returns table (
     used_bytes bigint,
     live_bytes bigint,
     trash_bytes bigint
 )
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public, extensions
 as $$
-    select
-        coalesce(sum(e.size_bytes), 0)::bigint,
-        coalesce(sum(e.size_bytes) filter (where e.deleted_at is null and w.deleted_at is null), 0)::bigint,
-        coalesce(sum(e.size_bytes) filter (where e.deleted_at is not null or w.deleted_at is not null), 0)::bigint
+declare
+    gb constant bigint := 1024 * 1024 * 1024;
+    v_live bigint;
+    v_trash bigint;
+    v_leaving bigint;
+    v_turnover bigint;
+begin
+    select coalesce(sum(e.size_bytes) filter (where e.deleted_at is null and w.deleted_at is null), 0),
+           coalesce(sum(e.size_bytes) filter (where e.deleted_at is not null or w.deleted_at is not null), 0)
+      into v_live, v_trash
       from public.entries e
       join public.workspaces w on w.id = e.workspace_id
      where w.owner_id = p_owner;
+
+    select coalesce(sum(d.size_bytes), 0) into v_leaving
+      from public.blob_deletions d
+     where d.owner_id = p_owner
+       and d.queued_at > now() - interval '3 days';
+
+    select greatest(b.quota_bytes, gb) into v_turnover
+      from public.billing_accounts b
+     where b.owner_id = p_owner;
+
+    used_bytes := v_live + v_trash + greatest(0, v_leaving - coalesce(v_turnover, gb));
+    live_bytes := v_live;
+    trash_bytes := v_trash;
+    return next;
+end
 $$;
 
 create or replace function private.assert_owner_can_add(
@@ -2284,23 +2316,42 @@ create table public.blob_deletions (
     storage_key text not null,
     queued_at timestamptz not null default now(),
     attempts integer not null default 0,
-    last_error text
+    last_error text,
+    -- Whose quota the object was in and how many bytes: private.owner_usage
+    -- keeps counting them until the GC removes the row. Null for an object
+    -- that was in nobody's quota (a Hub cover, a preview, an orphan the
+    -- reconcile found) and when the account itself is gone. No foreign key:
+    -- the row outlives the account
+    owner_id uuid,
+    size_bytes bigint check (size_bytes is null or size_bytes >= 0)
 );
+create index blob_deletions_owner_idx on public.blob_deletions (owner_id) where owner_id is not null;
 
 alter table public.blob_deletions enable row level security;
 
--- Any hard delete of a row with a blob (cron, cascade from workspace
--- deletion, manual trash purge) enqueues the key — the blob is never lost
+-- Any hard delete of a row with a blob (cron, manual trash purge) enqueues
+-- the key — the blob is never lost — with the owner of its workspace. When
+-- the workspace row is already gone this delete is its cascade, and
+-- workspaces_queue_blob_deletion below has queued the workspace's blobs
+-- with their owner: the entry's row cannot tell whose they were any more
 create or replace function public.entries_queue_blob_deletion()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, extensions
 as $$
+declare
+    v_owner uuid;
 begin
-    if OLD.storage_key is not null then
-        insert into public.blob_deletions (storage_key) values (OLD.storage_key);
+    if OLD.storage_key is null then
+        return OLD;
     end if;
+    select w.owner_id into v_owner from public.workspaces w where w.id = OLD.workspace_id;
+    if not found then
+        return OLD;
+    end if;
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    values (OLD.storage_key, v_owner, OLD.size_bytes);
     return OLD;
 end
 $$;
@@ -2308,6 +2359,35 @@ $$;
 create trigger entries_queue_blob_deletion
     before delete on public.entries
     for each row execute function public.entries_queue_blob_deletion();
+
+-- A workspace deleted whole (purge_workspace, the 30-day cron, the account
+-- going) takes its entries by cascade. Its blobs are queued here, before
+-- the cascade, while the row still says whose they are. An account that is
+-- being deleted has nobody to count them for
+create or replace function public.workspaces_queue_blob_deletion()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_owner uuid;
+begin
+    select u.id into v_owner from auth.users u where u.id = OLD.owner_id;
+    insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+    select e.storage_key, v_owner, e.size_bytes
+      from public.entries e
+     where e.workspace_id = OLD.id
+       and e.storage_key is not null;
+    return OLD;
+end
+$$;
+
+revoke execute on function public.workspaces_queue_blob_deletion() from public, anon, authenticated;
+
+create trigger workspaces_queue_blob_deletion
+    before delete on public.workspaces
+    for each row execute function public.workspaces_queue_blob_deletion();
 
 -- Hub preview blobs are not entries: enqueue the old B2 key when the
 -- listing is deleted or the preview is replaced/cleared.

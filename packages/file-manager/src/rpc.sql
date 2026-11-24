@@ -2468,6 +2468,7 @@ declare
     v_owner uuid;
     v_row public.entries%rowtype;
     v_old_key text;
+    v_old_size bigint;
 begin
     if p_user is null then
         raise exception 'replace_blob_entry: user is required';
@@ -2520,6 +2521,7 @@ begin
     end if;
 
     v_old_key := v_row.storage_key;
+    v_old_size := v_row.size_bytes;
     -- Row count does not change, so assert_owner_entries stays out.
     perform private.assert_owner_can_add(v_owner, p_size_bytes - coalesce(v_row.size_bytes, 0), p_size_bytes);
 
@@ -2539,8 +2541,11 @@ begin
      where id = p_entry
     returning * into v_row;
 
+    -- the replaced bytes stay in the owner's count until the GC removes
+    -- the old object (private.owner_usage)
     if v_old_key is not null then
-        insert into public.blob_deletions (storage_key) values (v_old_key);
+        insert into public.blob_deletions (storage_key, owner_id, size_bytes)
+        values (v_old_key, v_owner, v_old_size);
     end if;
 
     return to_json(v_row);

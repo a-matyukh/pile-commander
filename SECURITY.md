@@ -30,6 +30,18 @@ show only these intentional INFOs. Anything else is a regression.
 
 ## Invariants the code relies on
 
+- **Deleted bytes are counted until they are really gone.** A purge takes
+  bytes out of `entries` at once, but the objects wait in `blob_deletions`
+  for the GC (`GC_MIN_AGE_HOURS`, about a day). Each queue row carries the
+  owner and the size (`entries_queue_blob_deletion`,
+  `workspaces_queue_blob_deletion` for a workspace deleted whole,
+  `replace_blob_entry` for the bytes a new version replaced), and
+  `private.owner_usage` adds them to `used_bytes` beyond one turnover of the
+  plan's room (or 1 GiB if that is more): emptying the trash to make room
+  works at once, a loop of upload → purge → upload (or fork → copy → purge)
+  does not hold storage above about twice the quota. A row the GC could not
+  clear in three days stops counting. Keys that were in nobody's quota
+  (covers, previews, orphans) and a deleted account's blobs have no owner.
 - **A client never holds write access to a referenced object.** Bun's
   `s3.presign` signs neither `content-length` nor arbitrary headers (`type` /
   `contentDisposition` become `response-*` GET overrides), and B2 offers no
@@ -714,11 +726,6 @@ deferred). Done work is in the invariants above.
 
 ### Schema and RPC
 
-- Hard-deleted bytes leave the quota at once, while their blobs wait for the
-  GC (`GC_MIN_AGE_HOURS`, about a day): upload → purge → upload, or fork →
-  copy-clones → purge, keeps storage above the quota by what a day of that
-  loop moves. Counting queued deletions (`blob_deletions`) in the owner's
-  quota until the GC runs would close it.
 - `remove_xattr` is still a client read-modify-write on `entries.xattrs`
   (`set_xattr` merges server-side through `merge_entry_xattrs`); an RPC with
   `-` would close that race too.
