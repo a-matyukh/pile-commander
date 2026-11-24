@@ -36,3 +36,35 @@ export function take_signup_confirmation(): boolean {
 	signup_confirmed = false
 	return seen
 }
+
+const PENDING_KEY = 'pile_commander_password_pending'
+
+/**
+ * The account whose password is still to be chosen after the signup link.
+ * The link works once, so closing the tab before saving would leave the
+ * account signed in here with no password and no way back to the dialog;
+ * kept per browser until the password is saved
+ */
+export function mark_password_pending(user_id: string): void {
+	try {
+		localStorage.setItem(PENDING_KEY, user_id)
+	} catch {
+		// private mode: the dialog still opens this time
+	}
+}
+
+export function password_pending_for(user_id: string): boolean {
+	try {
+		return localStorage.getItem(PENDING_KEY) === user_id
+	} catch {
+		return false
+	}
+}
+
+export function clear_password_pending(): void {
+	try {
+		localStorage.removeItem(PENDING_KEY)
+	} catch {
+		// nothing kept
+	}
+}

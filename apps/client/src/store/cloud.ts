@@ -90,7 +90,13 @@ import {
 } from './helpers/inviteAccept'
 import { open_quota_wall_from_error } from '@/store/quotaWall'
 import { sign_up_error_message } from './helpers/signUpPasswordError'
-import { take_password_recovery, take_signup_confirmation } from '@/services/cloud/passwordRecovery'
+import {
+	clear_password_pending,
+	mark_password_pending,
+	password_pending_for,
+	take_password_recovery,
+	take_signup_confirmation,
+} from '@/services/cloud/passwordRecovery'
 import { synced_on_from, type SyncedOn } from '@/services/cloud/syncedOn'
 import { reset_pile_image_cache, set_pile_image_owner } from '@/services/workspace/pileImageCache'
 import { locale, t } from '@/i18n'
@@ -474,6 +480,8 @@ const cloud: CloudStore = {
 		// localStorage only — getSession() refreshes an expired access token
 		// and would hold the shell until the request times out
 		this.user = cached_session_user()
+		// a signup whose password was never saved asks for it again
+		if (this.user && !this.password_prompt && password_pending_for(this.user.id)) this.password_prompt = 'confirm_signup'
 		if (take_password_recovery()) this.password_prompt = 'recovery'
 		if (this.user) {
 			// the pictures kept on this device belong to this account
@@ -489,7 +497,12 @@ const cloud: CloudStore = {
 			}
 			if (session) {
 				// the session the confirmation link brought sets the password
-				if (!this.password_prompt && take_signup_confirmation()) this.password_prompt = 'confirm_signup'
+				if (!this.password_prompt && take_signup_confirmation()) {
+					this.password_prompt = 'confirm_signup'
+					mark_password_pending(session.user.id)
+				} else if (!this.password_prompt && password_pending_for(session.user.id)) {
+					this.password_prompt = 'confirm_signup'
+				}
 				this.user = session.user
 				set_pile_image_owner(session.user.id)
 				set_folder_list_owner(session.user.id)
@@ -653,7 +666,8 @@ const cloud: CloudStore = {
 			this.last_error = sign_up_error_message(error, 'Could not update the password')
 			return false
 		}
-		this.notice = 'Password updated.'
+		// the dialog says it itself; a notice here would turn up later on the account page
+		clear_password_pending()
 		return true
 	},
 
