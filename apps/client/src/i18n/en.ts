@@ -821,6 +821,7 @@ export const en: typeof ru = {
 		not_configured: 'The cloud is not set up in this build',
 	},
 	auth: {
+		sign_up_sent: 'Check your email: the link there confirms the address, and then you choose a password.',
 		sign_up_in_browser: 'An account is created in the browser. After you confirm the email there and choose a password, sign in here with it.',
 		sign_up_open_browser: 'Create an account in the browser',
 		captcha_unavailable: 'The robot check did not load. Check your connection or try another browser.',
@@ -853,8 +854,10 @@ export const en: typeof ru = {
 		saved: 'Profile saved',
 	},
 	password: {
-		confirm_title: 'Choose your password',
-		confirm_description: 'Your email is confirmed. Choose the password for this account: the one typed at sign-up is not kept, so nobody who registered this address before you can sign in with theirs.',
+		confirm_submit: 'Save password',
+		confirm_saved: 'Password saved',
+		confirm_title: 'Choose a password',
+		confirm_description: 'Your email is confirmed. Choose the password you will sign in with.',
 		title: 'Change password',
 		description: 'Enter your current password, then a new one',
 		current: 'Current password',

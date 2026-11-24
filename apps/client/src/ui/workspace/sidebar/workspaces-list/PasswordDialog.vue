@@ -91,7 +91,7 @@ async function submit() {
 		:title="title"
 		:description="description"
 	>
-		<p v-if="done" class="pw-ok">{{ t('password.updated') }}</p>
+		<p v-if="done" class="pw-ok">{{ is_confirm ? t('password.confirm_saved') : t('password.updated') }}</p>
 		<form v-else class="pw" @submit.prevent="submit">
 			<TextField
 				v-if="!is_recovery"
@@ -130,7 +130,7 @@ async function submit() {
 			<Button v-if="done" @click="cloud.dismiss_password_prompt()">{{ t('dialog.close') }}</Button>
 			<template v-else>
 				<Button v-if="!is_confirm" @click="cloud.dismiss_password_prompt()">{{ is_recovery ? t('password.not_now') : t('dialog.cancel') }}</Button>
-				<Button variant="primary" :loading="is_submitting" @click="submit">{{ t('password.submit') }}</Button>
+				<Button variant="primary" :loading="is_submitting" @click="submit">{{ is_confirm ? t('password.confirm_submit') : t('password.submit') }}</Button>
 			</template>
 		</template>
 	</Modal>

@@ -53,3 +53,13 @@ export function web_sign_up_url(): string {
 	const base = ((import.meta.env.VITE_PUBLIC_BASE_URL as string | undefined) ?? '').trim().replace(/\/$/, '')
 	return base || 'https://www.pile-commander.app'
 }
+
+/**
+ * The password a sign-up sends: nobody sees or types it. Supabase Auth needs
+ * one, and it is dropped anyway when the address is confirmed (schema.sql,
+ * on_auth_user_confirmed); the person chooses theirs after the email link
+ */
+export function throwaway_password(): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(32))
+	return `Aa1-${btoa(String.fromCharCode(...bytes)).replace(/[^A-Za-z0-9]/g, '')}`
+}

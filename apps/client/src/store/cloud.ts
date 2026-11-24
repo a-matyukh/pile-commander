@@ -586,7 +586,7 @@ const cloud: CloudStore = {
 		}
 		// email confirmation enabled → no session yet; disabled → onAuthStateChange sets the user
 		if (!data.session) {
-			this.notice = 'Account created — check your email to confirm the address'
+			this.notice = t('auth.sign_up_sent')
 		}
 	},
 

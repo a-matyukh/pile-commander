@@ -2,9 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { t } from '@/i18n'
 import { open_external } from '@/services/openExternal'
-import { sign_up_in_browser, turnstile_site_key, web_sign_up_url } from '@/services/cloud/turnstile'
+import { sign_up_in_browser, throwaway_password, turnstile_site_key, web_sign_up_url } from '@/services/cloud/turnstile'
 import cloud from '@/store/cloud'
-import { SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
 import Button from '@/ui/kit/Button.vue'
 import TextField from '@/ui/kit/TextField.vue'
 import TurnstileWidget from '@/ui/kit/TurnstileWidget.vue'
@@ -22,7 +21,6 @@ defineProps<{ next?: string | null }>()
 const mode = ref<'sign_in' | 'sign_up'>('sign_in')
 const email = ref('')
 const password = ref('')
-const too_short = ref(false)
 const email_missing = ref(false)
 const busy = ref(false)
 const resetting = ref(false)
@@ -31,30 +29,29 @@ const captcha_token = ref<string | null>(null)
 const captcha = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 const needs_captcha = computed(() => mode.value === 'sign_up' && !!turnstile_site_key && !sign_up_in_browser)
 const in_browser = computed(() => mode.value === 'sign_up' && sign_up_in_browser)
+/** The account is created and waits for its email: the form has nothing more to ask */
+const signed_up = ref(false)
 
-watch(password, (value) => {
-	if (value.length >= SIGN_UP_PASSWORD_MIN) too_short.value = false
-})
 watch(email, (value) => {
 	if (value) email_missing.value = false
 })
 
 async function submit() {
-	if (!email.value || !password.value || busy.value) return
+	// a sign-up asks for the email only: the password is chosen after the email link
+	const signing_up = mode.value === 'sign_up' && !SIGN_UP_CLOSED
+	if (!email.value || (!signing_up && !password.value) || busy.value) return
 	if (in_browser.value) return
-	if (mode.value === 'sign_up' && password.value.length < SIGN_UP_PASSWORD_MIN) {
-		too_short.value = true
-		cloud.clear_error()
-		return
-	}
 	busy.value = true
 	try {
 		if (mode.value === 'sign_in' || SIGN_UP_CLOSED) await cloud.sign_in(email.value, password.value)
-		else await cloud.sign_up(email.value, password.value, undefined, captcha_token.value)
+		else {
+			await cloud.sign_up(email.value, throwaway_password(), undefined, captcha_token.value)
+			signed_up.value = !cloud.last_error
+		}
 	} finally {
 		busy.value = false
-		// a token is good for one try
-		if (needs_captcha.value) captcha.value?.reset()
+		// a token is good for one try: a refused one asks for a new check
+		if (needs_captcha.value && !signed_up.value) captcha.value?.reset()
 	}
 }
 
@@ -76,7 +73,7 @@ async function forgot() {
 function toggle() {
 	if (SIGN_UP_CLOSED) return
 	mode.value = mode.value === 'sign_in' ? 'sign_up' : 'sign_in'
-	too_short.value = false
+	signed_up.value = false
 	email_missing.value = false
 	cloud.notice = null
 	cloud.clear_error()
@@ -95,14 +92,13 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)?.tr
 		</div>
 		<TextField v-model="email" type="email" icon="tabler:mail" :placeholder="t('auth.email')" autocomplete="email" autofocus />
 		<TextField
+			v-if="mode === 'sign_in'"
 			v-model="password"
 			type="password"
 			icon="tabler:lock"
 			:placeholder="t('auth.password')"
 			:autocomplete="mode === 'sign_in' ? 'current-password' : 'new-password'"
-			:invalid="too_short"
 		/>
-		<p v-if="mode === 'sign_up'" class="msg" :class="{ bad: too_short }">{{ t('auth.password_hint', { n: SIGN_UP_PASSWORD_MIN }) }}</p>
 		<p v-if="email_missing" class="msg bad">{{ t('auth.enter_email') }}</p>
 		<p v-if="cloud.last_error" class="msg bad">{{ cloud.last_error }}</p>
 		<p v-if="cloud.notice" class="msg ok">{{ cloud.notice }}</p>
@@ -110,7 +106,7 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)?.tr
 			<p class="msg">{{ t('auth.sign_up_in_browser') }}</p>
 			<Button variant="primary" block @click="open_external(web_sign_up_url())">{{ t('auth.sign_up_open_browser') }}</Button>
 		</template>
-		<template v-else>
+		<template v-else-if="!(mode === 'sign_up' && signed_up)">
 			<TurnstileWidget v-if="needs_captcha" ref="captcha" @token="captcha_token = $event">
 				<template #failed><p class="msg bad">{{ t('auth.captcha_unavailable') }}</p></template>
 			</TurnstileWidget>
@@ -119,7 +115,7 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)?.tr
 				variant="primary"
 				block
 				:loading="busy"
-				:disabled="!email || !password || (needs_captcha && !captcha_token)"
+				:disabled="!email || (mode === 'sign_in' && !password) || (needs_captcha && !captcha_token)"
 			>
 				{{ mode === 'sign_in' ? t('auth.sign_in') : t('auth.sign_up') }}
 			</Button>
