@@ -205,6 +205,13 @@ export type CloudStore = {
 	password_prompt: 'recovery' | 'confirm_signup' | 'change' | null
 	/** Invitations to this account's confirmed address, waiting for Accept or Decline */
 	my_invites: MyWorkspaceInvite[]
+	/**
+	 * The session is too old to set a password without a fresh sign-in
+	 * (Auth's "Secure password change"): the dialog offers a new email link
+	 */
+	password_needs_link: boolean
+	/** Mails a fresh password link to the signed-in address (the dialog's way out of password_needs_link) */
+	send_password_link(): Promise<boolean>
 	/** /invite/<token> landing; null when not on that route */
 	invite_view: {
 		token: string
@@ -373,6 +380,13 @@ export type CloudStore = {
 
 let hub_gen = 0
 
+/** Auth refused a password change because the session is not fresh enough */
+function is_reauthentication_needed(error: unknown): boolean {
+	const value = error as { code?: unknown; message?: unknown } | null
+	return value?.code === 'reauthentication_needed'
+		|| (typeof value?.message === 'string' && /reauthentication/i.test(value.message))
+}
+
 /** A share RPC's failure as the person reads it */
 function share_error_message(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error)
@@ -449,6 +463,7 @@ const cloud: CloudStore = {
 	last_error: null,
 	notice: null,
 	password_prompt: null,
+	password_needs_link: false,
 	my_invites: [],
 	invite_view: null,
 	shared_view: null,
@@ -662,10 +677,17 @@ const cloud: CloudStore = {
 			}
 			error = null
 		}
+		if (error && is_reauthentication_needed(error)) {
+			// a session older than a day may not set a password without a fresh
+			// sign-in; a new email link is one, and it opens this dialog again
+			this.password_needs_link = true
+			return false
+		}
 		if (error) {
 			this.last_error = sign_up_error_message(error, 'Could not update the password')
 			return false
 		}
+		this.password_needs_link = false
 		// the dialog says it itself; a notice here would turn up later on the account page
 		clear_password_pending()
 		return true
@@ -697,7 +719,17 @@ const cloud: CloudStore = {
 
 	dismiss_password_prompt() {
 		this.password_prompt = null
+		this.password_needs_link = false
 		this.last_error = null
+	},
+
+	async send_password_link() {
+		const email = this.user?.email
+		if (!email) return false
+		await this.request_password_reset(email)
+		// the dialog says it was sent; the notice would turn up later on the account page
+		this.notice = null
+		return !this.last_error
 	},
 
 	// Step-up: the backend refuses a session that did not authenticate within

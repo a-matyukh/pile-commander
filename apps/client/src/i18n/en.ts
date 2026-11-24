@@ -854,6 +854,9 @@ export const en: typeof ru = {
 		saved: 'Profile saved',
 	},
 	password: {
+		link_too_old: 'This sign-in is too old to set a password. We will mail you a new link: open it, and you can set the password.',
+		send_link: 'Send a new link',
+		link_sent: 'Sent. Open the link in the email to set the password.',
 		confirm_submit: 'Save password',
 		confirm_saved: 'Password saved',
 		confirm_title: 'Choose a password',

@@ -14,6 +14,18 @@ const too_short = ref(false)
 const mismatch = ref(false)
 const current_missing = ref(false)
 const done = ref(false)
+const link_sent = ref(false)
+const sending_link = ref(false)
+
+async function send_link() {
+	if (sending_link.value) return
+	sending_link.value = true
+	try {
+		link_sent.value = await cloud.send_password_link()
+	} finally {
+		sending_link.value = false
+	}
+}
 const is_submitting = ref(false)
 
 /** No current password asked: a recovery link, or the signup confirmation link */
@@ -29,8 +41,9 @@ const open = computed({
 	get: () => cloud.password_prompt != null,
 	set: (value: boolean) => {
 		// after the confirmation link the account has no password until one
-		// is set here: the dialog closes only by setting it (or on success)
-		if (!value && is_confirm.value && !done.value) return
+		// is set here: the dialog closes only by setting it (or on success),
+		// or once it has sent a new link because this session is too old
+		if (!value && is_confirm.value && !done.value && !link_sent.value) return
 		if (!value && cloud.password_prompt) cloud.dismiss_password_prompt()
 	},
 })
@@ -43,6 +56,7 @@ watch(() => cloud.password_prompt, () => {
 	mismatch.value = false
 	current_missing.value = false
 	done.value = false
+	link_sent.value = false
 })
 
 watch(password, (value) => {
@@ -91,7 +105,11 @@ async function submit() {
 		:title="title"
 		:description="description"
 	>
-		<p v-if="done" class="pw-ok">{{ is_confirm ? t('password.confirm_saved') : t('password.updated') }}</p>
+		<template v-if="cloud.password_needs_link && !done">
+			<p class="pw-bad">{{ t('password.link_too_old') }}</p>
+			<p v-if="link_sent" class="pw-ok">{{ t('password.link_sent') }}</p>
+		</template>
+		<p v-else-if="done" class="pw-ok">{{ is_confirm ? t('password.confirm_saved') : t('password.updated') }}</p>
 		<form v-else class="pw" @submit.prevent="submit">
 			<TextField
 				v-if="!is_recovery"
@@ -127,7 +145,11 @@ async function submit() {
 			<button type="submit" hidden />
 		</form>
 		<template #footer>
-			<Button v-if="done" @click="cloud.dismiss_password_prompt()">{{ t('dialog.close') }}</Button>
+			<template v-if="cloud.password_needs_link && !done">
+				<Button v-if="link_sent" @click="cloud.dismiss_password_prompt()">{{ t('dialog.close') }}</Button>
+				<Button v-else variant="primary" :loading="sending_link" @click="send_link">{{ t('password.send_link') }}</Button>
+			</template>
+			<Button v-else-if="done" @click="cloud.dismiss_password_prompt()">{{ t('dialog.close') }}</Button>
 			<template v-else>
 				<Button v-if="!is_confirm" @click="cloud.dismiss_password_prompt()">{{ is_recovery ? t('password.not_now') : t('dialog.cancel') }}</Button>
 				<Button variant="primary" :loading="is_submitting" @click="submit">{{ is_confirm ? t('password.confirm_submit') : t('password.submit') }}</Button>
