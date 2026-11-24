@@ -135,8 +135,9 @@ export type Env = {
 	presign_put_ttl_seconds: number;
 	/**
 	 * Sign the declared size into the upload URL (s3_presign.ts), so the
-	 * storage refuses a body of any other size. Off until
-	 * `bun run check:signed-length` has passed against the bucket
+	 * storage refuses a body of any other size. On unless
+	 * PRESIGN_PUT_SIGN_LENGTH=off: B2 enforces it (check:signed-length,
+	 * passed 2026-11-24). Run that check before moving to another storage
 	 */
 	presign_put_sign_length: boolean;
 	/** /account/delete requires an authentication (amr timestamp) younger than this */
@@ -299,7 +300,7 @@ export function load_env(): Env {
 			"PRESIGN_PUT_TTL_SECONDS",
 			positive_int_or("PRESIGN_TTL_SECONDS", 3600),
 		),
-		presign_put_sign_length: on_off_or("PRESIGN_PUT_SIGN_LENGTH", false),
+		presign_put_sign_length: on_off_or("PRESIGN_PUT_SIGN_LENGTH", true),
 		account_delete_max_auth_age_seconds: positive_int_or("ACCOUNT_DELETE_MAX_AUTH_AGE_SECONDS", 600),
 		trusted_proxy_hops: positive_int_or("TRUSTED_PROXY_HOPS", 1),
 		hub_preview_max_bytes: positive_int_or("HUB_PREVIEW_MAX_BYTES", 2 * 1024 * 1024),

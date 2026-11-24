@@ -46,8 +46,8 @@ show only these intentional INFOs. Anything else is a regression.
   `s3.presign` signs neither `content-length` nor arbitrary headers (`type` /
   `contentDisposition` become `response-*` GET overrides), and B2 offers no
   POST policy here — so its PUT URL can cap nothing, and it stays replayable
-  until it expires. (`PRESIGN_PUT_SIGN_LENGTH=on` signs the size ourselves;
-  see "Presigned PUT".) It is therefore only ever issued for a **staging** key,
+  until it expires. (For uploads the size is signed by our own code
+  instead; see "Presigned PUT".) It is therefore only ever issued for a **staging** key,
   `uploads/<blob|hub_preview>/<workspace_id>/<uuid>[.ext]`, minted by the
   service-role-only `register_upload` together with a row in
   `private.upload_sessions` binding it to the uploader, the workspace and a
@@ -720,13 +720,15 @@ See the invariants above: a PUT URL is issued for a staging key only and
 
 What a ticket may put into staging is bounded in three places:
 
-- **The size is signed into the URL** when `PRESIGN_PUT_SIGN_LENGTH=on`
-  (`s3_presign.ts`: AWS Signature V4 with `content-length` as a signed
-  header). The storage refuses a body of any other size, so a ticket brings
-  exactly the bytes its quota check saw. Off by default: turn it on after
-  `bun --filter @pile-commander/backend check:signed-length` has passed
-  against the bucket. While it is off a ticket accepts any size and only
-  `/finalize` learns the real one.
+- **The size is signed into the URL** (`s3_presign.ts`: AWS Signature V4
+  with `content-length` as a signed header). The storage refuses a body of
+  any other size, so a ticket brings exactly the bytes its quota check saw.
+  B2 enforces it: `bun --filter @pile-commander/backend check:signed-length`
+  passed on 2026-11-24 (a longer and a shorter body got 403, the exact size
+  200). The browser and the desktop app both send the length of the blob
+  whose size they declared. `PRESIGN_PUT_SIGN_LENGTH=off` is the switch
+  back: a ticket then accepts any size and only `/finalize` learns the real
+  one. Run the check again before moving to another storage.
 - **`register_upload` bounds one uploader's tickets** by the plan of the
   workspace's owner: open tickets hold at most `quota_bytes` together, a
   day's tickets at most three times that or 5 GiB, and a day has at most
