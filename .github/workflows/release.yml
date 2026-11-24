@@ -100,6 +100,9 @@ jobs:
           VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
           VITE_PUBLIC_BASE_URL: ${{ secrets.VITE_PUBLIC_BASE_URL }}
           VITE_LANDING_URL: https://www.pile-commander.com
+          # public (it is in the web bundle too): the sign-up form sends people to the
+          # browser to create an account, where Turnstile checks them (signup.ts)
+          VITE_TURNSTILE_SITE_KEY: 0x4AAAAAAGQj_kj4ZimqGpmv
         with:
           projectPath: apps/client
           tauriScript: bun --filter @pile-commander/client tauri
