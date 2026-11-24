@@ -156,6 +156,12 @@ export type Env = {
 	polar: PolarEnv;
 	/** Standard Webhooks secret for POST /auth/send-email (`v1,whsec_…`); unset → 503 */
 	send_email_hook_secret: string | null;
+	/** Standard Webhooks secret of the "Before User Created" hook (POST /auth/before-user-created) */
+	signup_hook_secret: string | null;
+	/** Cloudflare Turnstile secret; unset → the sign-up hook lets every sign-up through */
+	turnstile_secret_key: string | null;
+	/** Shared secret of the Plunk workflow webhook (POST /mail/plunk-events); unset → 503 */
+	plunk_webhook_secret: string | null;
 	/** Plunk secret API key (`sk_…`); unset → 503 on /auth/send-email */
 	plunk_secret_key: string | null;
 	plunk_from_email: string | null;
@@ -278,6 +284,9 @@ export function load_env(): Env {
 		reconcile_grace_hours: positive_int_or("RECONCILE_GRACE_HOURS", 24),
 		polar: polar_env(),
 		send_email_hook_secret: process.env.SEND_EMAIL_HOOK_SECRET?.trim() || null,
+		signup_hook_secret: process.env.SIGNUP_HOOK_SECRET?.trim() || null,
+		turnstile_secret_key: process.env.TURNSTILE_SECRET_KEY?.trim() || null,
+		plunk_webhook_secret: process.env.PLUNK_WEBHOOK_SECRET?.trim() || null,
 		plunk_secret_key: process.env.PLUNK_SECRET_KEY?.trim() || null,
 		plunk_from_email: process.env.PLUNK_FROM_EMAIL?.trim() || null,
 		plunk_from_name: process.env.PLUNK_FROM_NAME?.trim() || null,

@@ -16,7 +16,7 @@ export type AddMemberKind = "member" | "pending";
 
 export type AddMemberResult =
 	| { kind: "member"; workspace_name: string; inviter: string }
-	| { kind: "pending"; token: string; workspace_name: string; inviter: string };
+	| { kind: "pending"; token: string; workspace_name: string; inviter: string; inviter_id?: string };
 
 export type AddMemberFn = (
 	workspace_id: string,
@@ -81,7 +81,7 @@ function default_add_member(env: Env, req: Request, service: SupabaseClient | nu
 				p_email: email,
 				p_role: role,
 			});
-			if (!error) return parse_add_member_result(data);
+			if (!error) return { ...parse_add_member_result(data), inviter_id: user.id };
 			if (error.code !== "PGRST202") throw map_add_member_error(error.message);
 		}
 		const { data, error } = await client.rpc("add_workspace_member", {
@@ -161,6 +161,16 @@ export async function handle_workspace_invite(
 		url,
 		locale,
 	});
-	await plunk_send(env, email, copy.subject, copy.body, send);
+	const mail_id = await plunk_send(env, email, copy.subject, copy.body, send);
+	// a bounce or complaint on this mail is traced back to its sender by this id
+	if (mail_id && service && result.inviter_id) {
+		const { error } = await service.rpc("note_invite_mail", {
+			p_inviter: result.inviter_id,
+			p_workspace: workspace_id,
+			p_email: email,
+			p_mail_id: mail_id,
+		});
+		if (error && error.code !== "PGRST202") console.error("note invite mail:", error.message);
+	}
 	return Response.json({ ok: true, status: "pending" satisfies AddMemberKind });
 }

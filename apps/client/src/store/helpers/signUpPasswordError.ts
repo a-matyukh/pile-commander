@@ -6,6 +6,8 @@ export const SIGN_UP_PASSWORD_HINT = 'At least 8 characters.'
 
 const LENGTH_MESSAGE = 'Use at least 8 characters.'
 const PWNED_MESSAGE = 'This password has appeared in a data breach. Choose a different one.'
+/** The sign-up hook refused the Turnstile check (apps/backend/src/signup.ts) */
+const CAPTCHA_MESSAGE = 'The check that you are not a robot did not pass. Try again.'
 
 /**
  * Signup copy for a weak password. Length and breach checks are the only
@@ -23,6 +25,7 @@ export function sign_up_error_message(
 		if (parts.length > 0) return parts.join(' ')
 	}
 	const message = error_message(error)
+	if (message && /captcha_(required|failed)/.test(message)) return CAPTCHA_MESSAGE
 	return message ?? fallback
 }
 

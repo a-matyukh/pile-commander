@@ -821,6 +821,9 @@ export const en: typeof ru = {
 		not_configured: 'The cloud is not set up in this build',
 	},
 	auth: {
+		sign_up_in_browser: 'An account is created in the browser. After you confirm the email there and choose a password, sign in here with it.',
+		sign_up_open_browser: 'Create an account in the browser',
+		captcha_unavailable: 'The robot check did not load. Check your connection or try another browser.',
 		sign_in_title: 'Sign in to the cloud',
 		sign_up_title: 'Create an account',
 		why: 'Cloud folders, sync, sharing and publishing in the Hub',

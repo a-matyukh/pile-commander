@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { t } from '@/i18n'
+import { open_external } from '@/services/openExternal'
+import { sign_up_in_browser, turnstile_site_key, web_sign_up_url } from '@/services/cloud/turnstile'
 import cloud from '@/store/cloud'
+import TurnstileWidget from '@/ui/kit/TurnstileWidget.vue'
 import { SIGN_UP_PASSWORD_HINT, SIGN_UP_PASSWORD_MIN } from '@/store/helpers/signUpPasswordError'
 
 /** Registration is open. Flip to true to close it again: the form then only signs in and shows the notice */
@@ -26,6 +30,11 @@ const is_submitting = ref(false)
 const password_too_short = ref(false)
 const email_missing = ref(false)
 const is_resetting = ref(false)
+/** The Turnstile token of the sign-up form, when the check is on (and not in the desktop window) */
+const captcha_token = ref<string | null>(null)
+const captcha = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+const needs_captcha = computed(() => mode.value === 'sign_up' && !!turnstile_site_key && !sign_up_in_browser)
+const in_browser = computed(() => mode.value === 'sign_up' && sign_up_in_browser)
 
 watch(() => props.initial_email, (value) => {
 	if (value && !email.value) email.value = value
@@ -61,6 +70,7 @@ async function forgot() {
 
 async function submit() {
 	if (!email.value || !password.value || is_submitting.value) return
+	if (in_browser.value) return
 	// Length is known here. A leaked password is not: that answer comes back
 	// from Auth after the request, as sign_up_error_message.
 	if (mode.value === 'sign_up' && password.value.length < SIGN_UP_PASSWORD_MIN) {
@@ -74,10 +84,12 @@ async function submit() {
 		if (mode.value === 'sign_in' || SIGN_UP_CLOSED) {
 			await cloud.sign_in(email.value, password.value)
 		} else {
-			await cloud.sign_up(email.value, password.value, props.redirect_to)
+			await cloud.sign_up(email.value, password.value, props.redirect_to, captcha_token.value)
 		}
 	} finally {
 		is_submitting.value = false
+		// a token is good for one try
+		if (needs_captcha.value) captcha.value?.reset()
 	}
 }
 
@@ -123,9 +135,18 @@ const landing_url = (import.meta.env.VITE_LANDING_URL as string | undefined)
 		<p v-if="cloud.last_error" class="text-xs text-red-500 cursor-pointer" @click="cloud.clear_error()">
 			{{ cloud.last_error }}
 		</p>
-		<UButton type="submit" size="sm" block :loading="is_submitting">
-			{{ mode === 'sign_in' ? 'Sign in' : 'Sign up' }}
-		</UButton>
+		<template v-if="in_browser">
+			<p class="text-xs opacity-60">{{ t('auth.sign_up_in_browser') }}</p>
+			<UButton size="sm" block @click="open_external(web_sign_up_url())">{{ t('auth.sign_up_open_browser') }}</UButton>
+		</template>
+		<template v-else>
+			<TurnstileWidget v-if="needs_captcha" ref="captcha" @token="captcha_token = $event">
+				<template #failed><p class="text-xs text-red-500">{{ t('auth.captcha_unavailable') }}</p></template>
+			</TurnstileWidget>
+			<UButton type="submit" size="sm" block :loading="is_submitting" :disabled="needs_captcha && !captcha_token">
+				{{ mode === 'sign_in' ? 'Sign in' : 'Sign up' }}
+			</UButton>
+		</template>
 		<button
 			v-if="mode === 'sign_in'"
 			type="button"

@@ -248,7 +248,7 @@ export type CloudStore = {
 	init(): Promise<void>
 	/** Post-login loads (workspaces/profile); waits out JWT clock skew */
 	load_after_sign_in(): Promise<void>
-	sign_up(email: string, password: string, redirect_to?: string): Promise<void>
+	sign_up(email: string, password: string, redirect_to?: string, captcha_token?: string | null): Promise<void>
 	sign_in(email: string, password: string): Promise<void>
 	sign_out(): Promise<void>
 	/** Emails a recovery link. The link opens the password dialog. */
@@ -567,14 +567,18 @@ const cloud: CloudStore = {
 		if (this.shared_view) void this.accept_shared()
 	},
 
-	async sign_up(email: string, password: string, redirect_to?: string) {
+	async sign_up(email: string, password: string, redirect_to?: string, captcha_token?: string | null) {
 		this.last_error = null
 		this.notice = null
 		const origin = public_origin()
 		const { data, error } = await require_supabase().auth.signUp({
 			email,
 			password,
-			options: { emailRedirectTo: redirect_to || origin },
+			options: {
+				emailRedirectTo: redirect_to || origin,
+				// checked by the backend's "Before User Created" hook, then dropped
+				...(captcha_token ? { data: { captcha_token } } : {}),
+			},
 		})
 		if (error) {
 			this.last_error = sign_up_error_message(error)

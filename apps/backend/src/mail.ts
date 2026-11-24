@@ -450,7 +450,7 @@ export async function plunk_send(
 	subject: string,
 	body: string,
 	send: FetchLike,
-): Promise<void> {
+): Promise<string | null> {
 	const from = env.plunk_from_name
 		? { email: env.plunk_from_email!, name: env.plunk_from_name }
 		: env.plunk_from_email!;
@@ -467,6 +467,11 @@ export async function plunk_send(
 		console.error("plunk send:", res.status, detail);
 		throw new ApiError(502, "email delivery failed");
 	}
+	// Plunk's id for the mail, which its bounce and complaint webhooks carry
+	// (mail_events.ts); absent from an answer of another shape
+	const answer = (await res.json().catch(() => null)) as { data?: { emails?: { email?: unknown }[] } } | null;
+	const id = answer?.data?.emails?.[0]?.email;
+	return typeof id === "string" ? id : null;
 }
 
 function message_for(

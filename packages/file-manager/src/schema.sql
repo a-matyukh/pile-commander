@@ -567,6 +567,30 @@ create trigger on_auth_user_created
     after insert on auth.users
     for each row execute function private.handle_new_user();
 
+-- The sign-up form's Turnstile token rides in the user metadata to the
+-- "Before User Created" hook (apps/backend/src/signup.ts), which has checked
+-- it by the time the row is inserted; it is not kept on the account
+create or replace function private.drop_signup_captcha()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if NEW.raw_user_meta_data ? 'captcha_token' then
+        NEW.raw_user_meta_data := NEW.raw_user_meta_data - 'captcha_token';
+    end if;
+    return NEW;
+end
+$$;
+
+revoke execute on function private.drop_signup_captcha() from public, anon, authenticated;
+
+drop trigger if exists on_auth_user_signup_captcha on auth.users;
+create trigger on_auth_user_signup_captcha
+    before insert on auth.users
+    for each row execute function private.drop_signup_captcha();
+
 -- The password typed at signup is dropped when the address is confirmed.
 -- Supabase Auth keeps an unconfirmed signup as is when the address signs up
 -- again, password included, so the password on the row may be whoever
@@ -2353,12 +2377,36 @@ create table private.rate_events (
     -- invite: the mailbox (private.mailbox_of); fork: null
     subject text check (subject is null or char_length(subject) <= 254),
     workspace_id uuid,
+    -- invite: Plunk's id of the mail that went out (note_invite_mail), so a
+    -- bounce or complaint finds its sender
+    mail_id text check (mail_id is null or char_length(mail_id) <= 128),
     created_at timestamptz not null default now()
 );
+create index rate_events_mail_idx on private.rate_events (mail_id) where mail_id is not null;
 create index rate_events_actor_idx on private.rate_events (actor, action, created_at);
 create index rate_events_subject_idx on private.rate_events (action, subject, created_at)
     where subject is not null;
 revoke all on private.rate_events from public, anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- mail_events: permanent bounces and spam complaints Plunk reports for the
+-- mails we send (POST /mail/plunk-events → record_mail_event). actor is the
+-- account whose invite it was, null for system mail. A complaint in 30 days,
+-- or 3 permanent bounces in a day, stops that account's invites
+-- (private.invites_suspended); deleting its rows lifts the stop. Pruned
+-- after 90 days (mail-events-prune)
+-- ----------------------------------------------------------------------------
+create table private.mail_events (
+    id bigint generated always as identity primary key,
+    actor uuid references auth.users (id) on delete set null,
+    kind text not null check (kind in ('bounce', 'complaint')),
+    mail_id text check (mail_id is null or char_length(mail_id) <= 128),
+    email text check (email is null or char_length(email) <= 254),
+    created_at timestamptz not null default now()
+);
+create index mail_events_actor_idx on private.mail_events (actor, created_at);
+create index mail_events_created_idx on private.mail_events (created_at);
+revoke all on private.mail_events from public, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- Row caps per account on the tables clients insert into directly (the
@@ -2516,6 +2564,12 @@ select cron.schedule(
     'workspace-invites-prune',
     '47 3 * * *',
     $$delete from public.workspace_invites where expires_at < now() - interval '30 days'$$
+);
+
+select cron.schedule(
+    'mail-events-prune',
+    '48 3 * * *',
+    $$delete from private.mail_events where created_at < now() - interval '90 days'$$
 );
 
 -- the windows in rate_events are a day at most

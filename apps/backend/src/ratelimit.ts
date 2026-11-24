@@ -192,10 +192,15 @@ export const ROUTE_POLICIES: Record<string, RoutePolicy> = {
 
 /**
  * Routes no IP fence applies to, the global one included: their only caller is
- * a server that signs every request (Supabase Auth's Send Email hook), so all
- * of them arrive from a handful of shared addresses
+ * a server that signs every request (Supabase Auth's hooks, Plunk's
+ * webhooks), so all of them arrive from a handful of shared addresses
  */
-export const SIGNED_ROUTES: ReadonlySet<string> = new Set(["POST /auth/send-email"]);
+export const SIGNED_ROUTES: ReadonlySet<string> = new Set([
+	"POST /auth/send-email",
+	"POST /auth/before-user-created",
+	// Plunk's workflow runner: a shared secret is its gate
+	"POST /mail/plunk-events",
+]);
 
 /** every request, any route — the outer fence */
 export const GLOBAL_IP_POLICY: RateLimitRule = { limit: 1000, window_ms: MINUTE };

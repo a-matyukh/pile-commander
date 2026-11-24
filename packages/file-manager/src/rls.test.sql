@@ -676,6 +676,32 @@ begin
         not public.leave_workspace(v_ws), null);
     execute 'reset role';
 
+    -- a spam complaint on an invite mail stops its sender's invites
+    perform private.note_invite_mail(c_owner, v_ws, 'rls-wait@example.invalid', 'plunk-mail-1');
+    select * into v_grant from private.record_mail_event('plunk-mail-1', 'complaint', 'rls-wait@example.invalid');
+    insert into __results values ('mail: a complaint is traced to the invite''s sender and stops their invites',
+        v_grant.actor = c_owner and v_grant.suspended, row_to_json(v_grant)::text);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    begin
+        perform pg_temp.invite(v_ws, 'rls-after-complaint@example.invalid', 'viewer');
+        insert into __results values ('mail: a suspended account sends no invites', false, 'accepted');
+    exception when others then
+        insert into __results values ('mail: a suspended account sends no invites',
+            sqlerrm like '%suspended%', sqlerrm);
+    end;
+    select * into v_grant from private.record_mail_event('unknown-mail', 'bounce', 'x@example.invalid');
+    insert into __results values ('mail: system mail has no sender and suspends nobody',
+        v_grant.actor is null and not v_grant.suspended, row_to_json(v_grant)::text);
+    delete from private.mail_events;
+    insert into __results values ('mail: deleting the events lifts the stop',
+        not private.invites_suspended(c_owner), null);
+    insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+        ('99999999-9999-4999-8999-999999999996', 'rls-captcha@example.invalid', now(),
+         '{"captcha_token": "tok", "lang": "ru"}');
+    insert into __results values ('auth: the sign-up CAPTCHA token is not kept on the account',
+        (select raw_user_meta_data from auth.users where id = '99999999-9999-4999-8999-999999999996')
+            = '{"lang": "ru"}'::jsonb, null);
+
     -- the mail budget: an address takes 5 invites a day from everyone together,
     -- a week-old account 10 a day
     insert into private.rate_events (actor, action, subject, workspace_id)
@@ -2331,6 +2357,12 @@ begin
             ('private.assert_owner_workspaces(uuid)', false, false),
             ('private.my_confirmed_email()', false, false),
             ('private.mailbox_of(text)', false, false),
+            ('private.invites_suspended(uuid)', false, false),
+            ('private.note_invite_mail(uuid, uuid, text, text)', false, false),
+            ('public.note_invite_mail(uuid, uuid, text, text)', false, false),
+            ('private.record_mail_event(text, text, text)', false, false),
+            ('public.record_mail_event(text, text, text)', false, false),
+            ('private.drop_signup_captcha()', false, false),
             ('private.drop_password_on_confirm()', false, false),
             ('private.handle_new_user()', false, false),
             ('private.lock_workspace_tree(uuid)', false, false),

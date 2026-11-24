@@ -186,6 +186,23 @@ show only these intentional INFOs. Anything else is a regression.
   without its +tag, and without dots at Gmail (`private.mailbox_of`). The
   count survives the account (`actor` is `on delete set null`). The backend
   adds 10 / hour / user and 30 / hour / IP.
+- **A new account passes a CAPTCHA; signing in does not.** Supabase Auth's
+  "Before User Created" hook calls `POST /auth/before-user-created`
+  (Standard Webhooks, `SIGNUP_HOOK_SECRET`), which checks the sign-up form's
+  Cloudflare Turnstile token (`TURNSTILE_SECRET_KEY`, single use) from the
+  user metadata; the `on_auth_user_signup_captcha` trigger drops the token
+  before the row is written. Auth's own CAPTCHA stays off: it would guard
+  sign-in and password reset too and lock out the desktop window, which
+  Turnstile does not vouch for; the desktop creates accounts in the browser.
+  No Turnstile secret → every sign-up passes.
+- **Mail that bounces or draws complaints stops its sender's invites.** Plunk
+  workflows on `email.bounce` / `email.complaint` call `POST /mail/plunk-events`
+  (`Authorization: Bearer PLUNK_WEBHOOK_SECRET`). Plunk's id of each invite
+  mail is kept on its rate event (`note_invite_mail`), so `record_mail_event`
+  finds the sender; a complaint in 30 days or 3 permanent bounces in a day
+  (`private.invites_suspended`) refuses that account's invites, and the
+  moderation address gets a mail. Deleting its `private.mail_events` rows
+  lifts the stop.
 - **An unconfirmed address is freed after a day.** Supabase Auth keeps an
   unconfirmed signup and only resends the mail when the address signs up
   again, keeping the first password. The `on_auth_user_confirmed` trigger

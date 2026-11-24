@@ -2831,6 +2831,98 @@ $$;
 
 revoke execute on function private.mailbox_of(text) from public, anon, authenticated;
 
+-- invites_suspended: the mails of this account's invites drew a spam
+-- complaint in the last 30 days, or 3 permanent bounces in the last day
+-- (private.mail_events, from Plunk's webhook)
+create or replace function private.invites_suspended(p_actor uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+    select exists (
+        select 1 from private.mail_events m
+         where m.actor = p_actor and m.kind = 'complaint'
+           and m.created_at > now() - interval '30 days'
+    ) or (
+        select count(*) from private.mail_events m
+         where m.actor = p_actor and m.kind = 'bounce'
+           and m.created_at > now() - interval '1 day'
+    ) >= 3;
+$$;
+
+revoke execute on function private.invites_suspended(uuid) from public, anon, authenticated;
+
+-- note_invite_mail: the backend, right after Plunk accepted an invite mail,
+-- records Plunk's id for it on the invite's rate event
+create or replace function private.note_invite_mail(
+    p_inviter uuid, p_workspace uuid, p_email text, p_mail_id text
+)
+returns void
+language sql
+security definer
+set search_path = public, extensions
+as $$
+    update private.rate_events r
+       set mail_id = left(p_mail_id, 128)
+     where r.id = (
+        select r2.id from private.rate_events r2
+         where r2.actor = p_inviter and r2.action = 'invite'
+           and r2.subject = private.mailbox_of(p_email)
+           and r2.workspace_id = p_workspace
+         order by r2.created_at desc
+         limit 1
+     );
+$$;
+
+-- record_mail_event: one bounce or complaint from Plunk. The sender is the
+-- account whose invite carried that mail id (null for system mail); the
+-- answer says whether that account's invites are stopped now
+create or replace function private.record_mail_event(p_mail_id text, p_kind text, p_email text)
+returns table (actor uuid, suspended boolean)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+    v_actor uuid;
+begin
+    if p_kind not in ('bounce', 'complaint') then
+        raise exception 'record_mail_event: unknown kind %', p_kind;
+    end if;
+    if p_mail_id is not null then
+        select r.actor into v_actor from private.rate_events r
+         where r.mail_id = p_mail_id
+         order by r.created_at desc
+         limit 1;
+    end if;
+    insert into private.mail_events (actor, kind, mail_id, email)
+    values (v_actor, p_kind, left(p_mail_id, 128), left(lower(p_email), 254));
+    return query select v_actor, v_actor is not null and private.invites_suspended(v_actor);
+end
+$$;
+
+create or replace function public.note_invite_mail(
+    p_inviter uuid, p_workspace uuid, p_email text, p_mail_id text
+)
+returns void language sql security invoker set search_path = public, extensions
+as $$ select private.note_invite_mail(p_inviter, p_workspace, p_email, p_mail_id); $$;
+
+create or replace function public.record_mail_event(p_mail_id text, p_kind text, p_email text)
+returns table (actor uuid, suspended boolean)
+language sql security invoker set search_path = public, extensions
+as $$ select * from private.record_mail_event(p_mail_id, p_kind, p_email); $$;
+
+revoke execute on function private.note_invite_mail(uuid, uuid, text, text) from public, anon, authenticated;
+revoke execute on function public.note_invite_mail(uuid, uuid, text, text) from public, anon, authenticated;
+revoke execute on function private.record_mail_event(text, text, text) from public, anon, authenticated;
+revoke execute on function public.record_mail_event(text, text, text) from public, anon, authenticated;
+grant execute on function private.note_invite_mail(uuid, uuid, text, text) to service_role;
+grant execute on function public.note_invite_mail(uuid, uuid, text, text) to service_role;
+grant execute on function private.record_mail_event(text, text, text) to service_role;
+grant execute on function public.record_mail_event(text, text, text) to service_role;
+
 drop function if exists public.add_workspace_member(uuid, text, text);
 drop function if exists private.add_workspace_member(uuid, text, text);
 
@@ -2891,6 +2983,12 @@ begin
          where m.workspace_id = p_workspace and lower(u.email) = v_email
     ) then
         raise exception 'add_workspace_member: already a member';
+    end if;
+
+    -- mail that bounced or was reported as spam stops the sender's invites
+    if private.invites_suspended(p_inviter) then
+        raise exception 'add_workspace_member: invites are suspended for this account'
+            using errcode = 'P0001';
     end if;
 
     -- the mail budget: per owner, per (workspace, mailbox), per mailbox. A

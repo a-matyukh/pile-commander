@@ -15,6 +15,8 @@ import { handle_checkout, handle_plans, handle_portal } from "./billing/routes";
 import { handle_polar_webhook } from "./billing/webhook";
 import { handle_send_email } from "./mail";
 import { handle_workspace_invite } from "./invites";
+import { handle_before_user_created } from "./signup";
+import { handle_plunk_events } from "./mail_events";
 import { handle_feedback } from "./feedback";
 import { feedback_cors_headers, feedback_origin_allowed } from "./feedback_origins";
 import { start_gc_worker } from "./gc";
@@ -131,6 +133,10 @@ const server = Bun.serve({
 					return respond(await handle_plans(env));
 				case "POST /auth/send-email":
 					return respond(await handle_send_email(env, req));
+				case "POST /auth/before-user-created":
+					return respond(await handle_before_user_created(env, req));
+				case "POST /mail/plunk-events":
+					return respond(await handle_plunk_events(env, req, service));
 				case "POST /workspace/invite":
 					return respond(await handle_workspace_invite(env, req, service));
 				case "POST /feedback":
