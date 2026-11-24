@@ -21,6 +21,7 @@
     "build:web": "bun --filter @pile-commander/client build",
     "build:landing": "bun --filter @pile-commander/landing build",
     "build:desktop": "TAURI_SIGNING_PRIVATE_KEY=\"$(git rev-parse --show-toplevel)/.tauri/pile-commander.key\" bun --filter @pile-commander/client tauri:build",
+    "build:desktop:debug": "bun --filter @pile-commander/client tauri build --debug",
     "icon:desktop": "bun --filter @pile-commander/client tauri icon",
     "version:desktop": "bun apps/client/scripts/set-desktop-version.ts",
     "ship:desktop": "bun apps/client/scripts/ship-desktop.ts",

@@ -1,4 +1,4 @@
-import type { Plugin } from 'vite'
+import { loadEnv, type Plugin } from 'vite'
 import { desktop_connect_src } from './src/services/desktop/csp.ts'
 
 /**
@@ -19,7 +19,14 @@ export function desktopCspPlugin(): Plugin {
 		apply: 'build',
 		configResolved(config) {
 			if (!process.env.TAURI_ENV_PLATFORM) return
-			content = desktop_connect_src({ ...config.env, PILE_STORAGE_URLS: process.env.PILE_STORAGE_URLS })
+			// PILE_STORAGE_URLS has no VITE_ prefix (it must not reach the bundle),
+			// so Vite does not load it by itself: CI sets it in the environment,
+			// a local build keeps it in .env next to the VITE_ variables
+			const from_file = config.envDir === false ? {} : loadEnv(config.mode, config.envDir || config.root, 'PILE_')
+			content = desktop_connect_src({
+				...config.env,
+				PILE_STORAGE_URLS: process.env.PILE_STORAGE_URLS?.trim() || from_file.PILE_STORAGE_URLS,
+			})
 		},
 		transformIndexHtml() {
 			if (!content) return

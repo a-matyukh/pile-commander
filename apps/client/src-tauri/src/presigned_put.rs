@@ -362,6 +362,19 @@ mod tests {
         assert!(pinned("https://abc123.r2.cloudflarestorage.com/pile-files/a").is_err());
     }
 
+    /// What this very build was given (the environment, or apps/client/.env
+    /// through build.rs): a value that is set but names no usable prefix
+    /// would refuse every upload of the app it is built into
+    #[test]
+    fn the_storage_this_build_is_pinned_to_is_usable() {
+        if STORAGE_URLS.is_some_and(|list| !list.trim().is_empty()) {
+            assert!(
+                !storage_prefixes(STORAGE_URLS).is_empty(),
+                "PILE_STORAGE_URLS is set but holds no https prefix ending with a bucket"
+            );
+        }
+    }
+
     #[test]
     fn several_storages_can_be_listed_for_a_move() {
         let list = format!(
