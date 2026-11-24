@@ -149,8 +149,12 @@ show only these intentional INFOs. Anything else is a regression.
   (`trashed` for the owner or a member, `gone` for anyone else). Members
   and invites stay; the public link and Hub card do not. After 30 days
   `purge_expired_workspaces` deletes the row, and the entry cascade queues
-  blobs as a hard delete does today. A direct `DELETE` of a live workspace
-  remains for an unfinished copy and for moving a root into another root.
+  blobs as a hard delete does today. The client has no `DELETE` on
+  `workspaces` (no policy, no grant): an unfinished copy and a root moved
+  into another root leave through `trash_workspace` + `purge_workspace`,
+  which takes the tree lock and hard-deletes only a trashed workspace of the
+  caller. A stolen token still can do that in two calls; what is gone is the
+  one-request delete that skipped the trash and the lock.
 - **Trash is for writers.** Readers (anon on a public board, viewers) see
   live rows only; `GET /presign` refuses trashed rows. A 2-minute grace after
   `deleted_at` lets the soft-delete Realtime event reach readers. This covers
@@ -545,9 +549,11 @@ deferred). Done work is in the invariants above.
 
 ### Schema and RPC
 
-- Soft-delete workspaces. `DELETE workspaces` is instant and irreversible;
-  `GC_MIN_AGE_HOURS` only delays
-  blob drain, not the row.
+- Hard-deleted bytes leave the quota at once, while their blobs wait for the
+  GC (`GC_MIN_AGE_HOURS`, about a day): upload → purge → upload, or fork →
+  copy-clones → purge, keeps storage above the quota by what a day of that
+  loop moves. Counting queued deletions (`blob_deletions`) in the owner's
+  quota until the GC runs would close it.
 - `remove_xattr` is still a client read-modify-write on `entries.xattrs`
   (`set_xattr` merges server-side through `merge_entry_xattrs`); an RPC with
   `-` would close that race too.

@@ -285,7 +285,11 @@ export type CloudStore = {
 	/** Returns the new workspace UUID, or null on failure (see last_error) */
 	create(name: string): Promise<string | null>
 	rename(workspace_id: string, name: string): Promise<void>
-	/** Deletes the whole cloud workspace (entries cascade; blobs go async) */
+	/**
+	 * Deletes the whole cloud workspace for good, for a move or an unfinished
+	 * copy that leaves nothing behind (entries cascade; blobs go async). Goes
+	 * through the trash, as the client has no direct DELETE on workspaces
+	 */
 	remove(workspace_id: string): Promise<void>
 	open(item: WorkspacesListItem): Promise<void>
 	/** Opens the public workspace (/<username>/<slug> route). False = not found */
@@ -918,12 +922,16 @@ const cloud: CloudStore = {
 
 	async remove(workspace_id: string) {
 		this.last_error = null
-		const { error } = await require_supabase()
-			.from('workspaces')
-			.delete()
-			.eq('id', workspace_id)
-		if (error) {
-			this.last_error = error.message
+		// The trash first, then out of it: purge_workspace takes the tree lock
+		// and hard-deletes only a trashed workspace of the caller. A failure
+		// between the two leaves it in the trash, never half-deleted
+		try {
+			await trash_workspace(require_supabase(), workspace_id)
+			await purge_workspace(require_supabase(), workspace_id)
+		} catch (error) {
+			this.last_error = error instanceof Error ? error.message : String(error)
+			// a trashed workspace that the purge refused shows up in the trash
+			notify_cloud_workspace_trash_changed(workspace_id)
 			return
 		}
 		// deleting a public workspace drops the live URL; close the visitor view

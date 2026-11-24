@@ -1926,8 +1926,10 @@ create policy workspaces_update on public.workspaces
     for update using (owner_id = (select auth.uid()) and deleted_at is null)
     with check (owner_id = (select auth.uid()) and deleted_at is null);
 
-create policy workspaces_delete on public.workspaces
-    for delete using (owner_id = (select auth.uid()) and deleted_at is null);
+-- No DELETE policy (and no DELETE grant): a workspace leaves through the
+-- trash (trash_workspace), and out of it through purge_workspace or the
+-- 30-day cron. A direct DELETE skipped the trash and the tree lock, so one
+-- request with a stolen token erased a workspace for good
 
 create policy members_select on public.workspace_members
     for select using (
@@ -2557,7 +2559,7 @@ grant usage on schema public to anon, authenticated, service_role;
 -- direct client calls are impossible through PostgREST regardless
 grant usage on schema private to authenticated, anon, service_role;
 
-grant select, delete on public.workspaces to authenticated;
+grant select on public.workspaces to authenticated;
 grant select on public.workspaces to anon;  -- public workspaces (is_public)
 
 -- members: inserted only via add_workspace_member (rpc.sql); the owner may

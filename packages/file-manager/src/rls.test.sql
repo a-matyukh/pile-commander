@@ -722,6 +722,16 @@ begin
         insert into __results values ('workspaces: direct insert refused', true, sqlerrm);
         execute 'set local role authenticated';
     end;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    begin
+        delete from public.workspaces where id = v_ws;
+        insert into __results values ('workspaces: no direct delete, only the trash', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('workspaces: no direct delete, only the trash',
+            exists (select 1 from public.workspaces where id = v_ws), sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_young, 'role', 'authenticated')::text, true);
     execute 'reset role';
     insert into public.workspaces (owner_id, name)
     select c_young, 'filler ' || g from generate_series(1, 1000) g;
