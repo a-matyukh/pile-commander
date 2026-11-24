@@ -8,7 +8,8 @@
  * `javascript:` link do not survive. A block this schema does not know becomes
  * a raw block and is written back byte for byte.
  */
-import { Extension, Mark, Node, nodePasteRule } from '@tiptap/core'
+import { Extension, Mark, Node } from '@tiptap/core'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
 import type { AnyExtension, JSONContent, MarkdownLexerConfiguration, MarkdownToken, MarkdownTokenizer } from '@tiptap/core'
 import { StarterKit } from '@tiptap/starter-kit'
 import { CodeBlock } from '@tiptap/extension-code-block'
@@ -329,25 +330,63 @@ function safe_image_src(src: string | null | undefined): string | null {
 /** `![alt](address "title")` inside pasted text; the address has no spaces, as in a link. */
 const PASTED_IMAGE = /!\[([^\]\n]*)\]\(\s*([^\s()<>]+)(?:\s+["']([^"'\n]*)["'])?\s*\)/g
 
+/** Stands for a picture or another non-text piece when a line is read as text: keeps positions aligned. */
+const NOT_TEXT = '\ufffc'
+
 const NoteImage = Image.extend({
 	/**
-	 * Pasted markdown for a picture becomes the picture, as typing it does
-	 * (the input rule Tiptap ships). Without this the line stays as text with
-	 * a link in it, and saving escapes it: it never turns into a picture.
+	 * Pasted or dropped markdown for a picture becomes the picture, as typing
+	 * it does (the input rule Tiptap ships). Without this the line stays as
+	 * text with a link in it, and saving escapes it: it never turns into a
+	 * picture. Tiptap's own paste rules are not used: they skip text copied
+	 * from another note, and people copy such a line from wherever they have it.
 	 */
-	addPasteRules() {
+	addProseMirrorPlugins() {
+		const image = this.type
 		return [
-			nodePasteRule({
-				find: text =>
-					[...text.matchAll(PASTED_IMAGE)]
-						.filter(match => safe_image_src(match[2]) !== null)
-						.map(match => ({
-							index: match.index,
-							text: match[0],
-							data: { src: match[2], alt: match[1] || null, title: match[3] || null },
-						})),
-				type: this.type,
-				getAttributes: match => match.data ?? {},
+			...(this.parent?.() ?? []),
+			new Plugin({
+				key: new PluginKey('note_image_from_pasted_text'),
+				appendTransaction(transactions, _before, state) {
+					const pasted = transactions.filter(tr => {
+						const from = tr.getMeta('uiEvent') as string | undefined
+						return tr.docChanged && (from === 'paste' || from === 'drop')
+					})
+					if (!pasted.length) return null
+					// where the pasted text sits now
+					let start = Infinity
+					let end = -Infinity
+					for (const tr of pasted) {
+						tr.mapping.maps.forEach((map, index) => {
+							map.forEach((_from, _to, new_from, new_to) => {
+								const rest = tr.mapping.slice(index + 1)
+								start = Math.min(start, rest.map(new_from, -1))
+								end = Math.max(end, rest.map(new_to, 1))
+							})
+						})
+					}
+					if (start > end) return null
+					const found: { from: number; to: number; attrs: Record<string, string | null> }[] = []
+					state.doc.nodesBetween(Math.max(0, start), Math.min(state.doc.content.size, end), (node, pos) => {
+						if (!node.isTextblock) return true
+						if (node.type.spec.code) return false
+						const text = node.textBetween(0, node.content.size, undefined, NOT_TEXT)
+						for (const match of text.matchAll(PASTED_IMAGE)) {
+							const from = pos + 1 + match.index
+							const to = from + match[0].length
+							if (to <= start || from >= end) continue
+							if (safe_image_src(match[2]) === null) continue
+							// inline code keeps what is written in it
+							if (state.doc.rangeHasMark(from, to, state.schema.marks.code!)) continue
+							found.push({ from, to, attrs: { src: match[2]!, alt: match[1] || null, title: match[3] || null } })
+						}
+						return false
+					})
+					if (!found.length) return null
+					const tr = state.tr
+					for (const { from, to, attrs } of found.reverse()) tr.replaceWith(from, to, image.create(attrs))
+					return tr
+				},
 			}),
 		]
 	},

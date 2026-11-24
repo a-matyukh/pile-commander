@@ -182,6 +182,26 @@ describe('pasted markdown for a picture', () => {
 		expect(editor.getHTML()).toContain('alt="a cat"')
 	})
 
+	test('also when the line was copied from a note', () => {
+		const editor = open('')
+		// what a note's own copy puts on the clipboard
+		const html = '<p data-pm-slice="1 1 []">![](<a href="https://example.com/cat.png">https://example.com/cat.png</a>)</p>'
+		editor.view.pasteHTML(html, new Event('paste') as ClipboardEvent)
+		expect(markdown(editor)).toBe('![](https://example.com/cat.png)')
+	})
+
+	test('leaves the text around it and other lines alone', () => {
+		const editor = open('first ![](https://example.com/a.png) line')
+		paste(editor, ' and ![](https://example.com/b.png)')
+		expect(markdown(editor)).toBe('first ![](https://example.com/a.png) line and ![](https://example.com/b.png)')
+	})
+
+	test('stays code inside a code block', () => {
+		const editor = open('```\ncode\n```')
+		paste(editor, '![](https://example.com/cat.png)')
+		expect(editor.getHTML()).not.toContain('<img')
+	})
+
 	test('stays text when the address is not one a note may load', () => {
 		const editor = open('')
 		paste(editor, '![x](javascript:alert(1))')
