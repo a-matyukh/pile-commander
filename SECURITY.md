@@ -882,17 +882,27 @@ deferred). Done work is in the invariants above.
 - Owner, editor and invited viewer hold channels (viewers deliberately). A
   public-link visitor without membership reads the board once and holds
   none: `open_workspace_store` → `createWorkspaceStore(…, { live: false })`.
-- The visitor gate is client-side only. RLS still lets anon SELECT a public
-  workspace, and Postgres Changes authorizes by those SELECT policies, so a
-  modified client can subscribe anyway. Nothing leaks (the same rows are
-  readable over REST), but it is no server-side stop on Realtime usage. If
-  one is ever needed: make the channels private (`config: { private: true }`),
-  turn off "Allow public access" in Realtime Settings, and add a SELECT
-  policy on `realtime.messages` that admits `realtime.topic()` only for
-  members — topics carry the workspace id
-  (`file-manager-<kind>:<workspace_id>:…`), and
-  `private.readable_workspace_ids()` includes public workspaces, so it
-  needs a members-only twin. Not tried on the project yet.
+- **Channels are private, for members only.** The client asks for every
+  channel with `config: { private: true }`; Realtime then reads
+  `realtime.messages` as that client with the topic set, and the one policy
+  on it (`pile_workspace_channels`, `private.can_join_channel`) admits the
+  owner and the members of the workspace the topic names
+  (`file-manager-<kind>:<workspace_id>:…`). A public board opens no channel
+  to a visitor, signed in or not: the visitor gate used to be client-side
+  only. What a channel delivers is still each table's SELECT policy.
+  **The server-side stop is the project setting**: with "Allow public
+  access" off in Realtime Settings only private channels exist, so a script
+  with the publishable key can no longer hold hundreds of connections
+  against the project's limit. Turn it off only when every client in use
+  asks for private channels (web at once; desktops from the release that
+  carries this) — an older client keeps working until then and loses live
+  updates after. A database from before the policy refuses private joins;
+  the client then joins the same way as before within the same attempt
+  (`private_channels` in `supabase.ts`). Drop that fallback once the
+  setting is off. Realtime caches a client's permission for the life of
+  its token: a member removed from a board keeps its channel until the
+  token is refreshed (an hour at most), and still receives only rows the
+  table policies let them read, which is none.
 - `watch()` currently ignores Realtime DELETE (RLS strips the old row to
   the PK). Handling DELETE by `id` (id→path map from the last listing) is
   still needed if clients must drop a node without a follow-up UPDATE.

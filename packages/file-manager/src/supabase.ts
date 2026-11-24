@@ -815,14 +815,28 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 		return `file-manager-${kind}:${workspace_id}:${fm_realtime_id}:${watch_counter}`
 	}
 
+	// Channels are private: Realtime lets a client join one only if the policy
+	// on realtime.messages admits the topic, and that policy admits the
+	// workspace's owner and members (schema.sql, "Realtime channels"). With
+	// "Allow public access" off in the project's Realtime Settings nobody else
+	// can hold a connection at all. The rows a channel delivers are still
+	// decided by each table's own SELECT policy.
+	//
+	// A database from before that policy refuses every private join. The same
+	// attempt then goes on with a public channel, and once one has joined the
+	// session stops asking for private ones. A join that fails both ways is a
+	// network problem: the next attempt asks for a private channel again.
+	// Drop the fallback when the policy is live and public access is off
+	let private_channels = true
+
 	// One postgres_changes channel per FM instance and table, shared by every
 	// watcher of that table: all subscriptions carry the same workspace_id
 	// filter, so a channel per watcher would only deliver (and bill) every
 	// event once per watcher. Joined on the first ensure(), removed once the
 	// owner reports no watchers left.
 	//
-	// Only a failed first join is fatal: ensure() rejects and a retry gets a
-	// fresh topic. After the join, CHANNEL_ERROR / TIMED_OUT mean a dropped
+	// Only a failed first join is fatal (after the public try described
+	// above): ensure() rejects and a retry gets a fresh topic. After the join, CHANNEL_ERROR / TIMED_OUT mean a dropped
 	// connection — Phoenix rejoins by itself, and removing the channel here
 	// would cancel that. The events of the gap are lost, so the next
 	// SUBSCRIBED calls `on_resync` and the watchers re-read. A channel the
@@ -841,8 +855,9 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 
 		function ensure(): Promise<void> {
 			if (ready) return ready
-			const created = client
-				.channel(next_realtime_topic(kind))
+			const asks_private = private_channels
+			const topic = next_realtime_topic(kind)
+			const created = (asks_private ? client.channel(topic, { config: { private: true } }) : client.channel(topic))
 				.on(
 					"postgres_changes",
 					{ event: "*", schema: "public", table, filter: `workspace_id=eq.${workspace_id}` },
@@ -875,6 +890,14 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 						channel = null
 						ready = null
 						void client.removeChannel(created)
+						if (asks_private && status === "CHANNEL_ERROR") {
+							private_channels = false
+							ensure().then(resolve_subscribe, (error: unknown) => {
+								private_channels = true
+								reject_subscribe(error)
+							})
+							return
+						}
 						reject_subscribe(new Error(`${kind} watch subscribe failed: ${status}`))
 					} else if (status === "CLOSED" && joined) {
 						channel = null

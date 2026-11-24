@@ -1777,6 +1777,48 @@ as $$
        and w.deleted_at is null;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- Realtime channels. A client joins a channel per table of a workspace
+-- (supabase.ts: `file-manager-<kind>:<workspace_id>:<instance>:<n>`) and asks
+-- for it as a private one. Realtime then checks the SELECT policy on
+-- realtime.messages for that topic (pile_workspace_channels, below the row
+-- policies): only the workspace's owner and members may join. A public-link
+-- visitor reads the board once and holds no channel, so "public" does not
+-- open one: this is the members-only twin of can_read_workspace. With
+-- "Allow public access" off in the project's Realtime Settings, an anonymous
+-- script can no longer hold hundreds of connections against the project's
+-- limit. What a channel delivers is still each table's own SELECT policy.
+-- ----------------------------------------------------------------------------
+create or replace function private.can_join_channel(p_topic text)
+returns boolean
+language plpgsql
+security definer
+stable
+set search_path = public, extensions
+as $$
+declare
+    v_id text;
+    v_workspace uuid;
+begin
+    if (select auth.uid()) is null or p_topic is null or p_topic !~ '^file-manager-[a-z]+:' then
+        return false;
+    end if;
+    v_id := split_part(p_topic, ':', 2);
+    if v_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        return false;
+    end if;
+    v_workspace := v_id::uuid;
+    return exists (
+        select 1 from public.workspaces w
+         where w.id = v_workspace
+           and w.deleted_at is null
+           and w.owner_id = (select auth.uid())
+    ) or private.is_workspace_member(v_workspace);
+end
+$$;
+revoke execute on function private.can_join_channel(text) from public, anon;
+grant execute on function private.can_join_channel(text) to authenticated;
+
 -- Serialize structural operations on one workspace, including direct INSERTs
 -- and workspace/account cascades. NO KEY UPDATE permits FK KEY SHARE
 -- locks used by ordinary text saves; FOR UPDATE here would deadlock against a
@@ -2174,6 +2216,23 @@ create policy bridge_events_select on public.bridge_events
 
 create policy bridge_events_insert on public.bridge_events
     for insert with check (owner_id = (select auth.uid()));
+
+-- Who may join a Realtime channel (private.can_join_channel). The table is
+-- Realtime's own: RLS is already on and must not be altered here, only the
+-- policy is ours. A database without Realtime (the local test one, unless it
+-- stands one in) skips it
+do $$
+begin
+    if to_regclass('realtime.messages') is null then
+        return;
+    end if;
+    execute 'drop policy if exists pile_workspace_channels on realtime.messages';
+    execute $policy$
+        create policy pile_workspace_channels on realtime.messages
+            for select to authenticated
+            using (private.can_join_channel((select realtime.topic())))
+    $policy$;
+end $$;
 
 -- sync devices: an account sees and changes only its own rows, and stamps
 -- only workspaces it can open

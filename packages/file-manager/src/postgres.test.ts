@@ -46,6 +46,18 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 			$$;
 			drop publication if exists supabase_realtime;
 			create publication supabase_realtime;
+			-- Realtime's own schema is Supabase's too. The stand-in is what the
+			-- channel policy needs: the table it is written on and the topic a
+			-- client asks to join (Realtime sets it for the check, then rolls back)
+			drop schema if exists realtime cascade;
+			create schema realtime;
+			create table realtime.messages (topic text, extension text);
+			alter table realtime.messages enable row level security;
+			create function realtime.topic() returns text language sql stable as $$
+				select nullif(current_setting('realtime.topic', true), '')
+			$$;
+			grant usage on schema realtime to anon, authenticated, service_role;
+			grant select on realtime.messages to anon, authenticated;
 		`).simple()
 		const connection = await db.reserve()
 		try {
@@ -87,6 +99,39 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 			return { owner, workspace: ws.id as string, folder: folder.id as string, target: target.id as string, file: file.entry.id as string }
 		})
 	}
+
+	// Realtime decides a private channel join by reading realtime.messages as
+	// the client, with the topic set: a row comes back or it does not
+	test("the channel policy lets a workspace's member read Realtime's table for its topic, and nobody else", async () => {
+		const f = await fixture()
+		const viewer = crypto.randomUUID()
+		const stranger = crypto.randomUUID()
+		await db`insert into auth.users(id, email) values (${viewer}::uuid, ${`${viewer}@example.invalid`}), (${stranger}::uuid, ${`${stranger}@example.invalid`})`
+		await db`insert into public.workspace_members(workspace_id, user_id, role) values (${f.workspace}::uuid, ${viewer}::uuid, 'viewer')`
+		await db`update public.workspaces set is_public = true, slug = 'channel-case' where id = ${f.workspace}::uuid`
+		await db`insert into realtime.messages(topic, extension) values ('any', 'broadcast')`
+		const topic = `file-manager-entries:${f.workspace}:aaaa:1`
+		const sees = async (role: string, user: string | null, asked: string) => {
+			const connection = await db.reserve()
+			try {
+				await connection.unsafe(`begin; set local role ${role}`).simple()
+				await connection`select set_config('request.jwt.claims', ${user ? JSON.stringify({ sub: user, role }) : ""}, true)`
+				await connection`select set_config('realtime.topic', ${asked}, true)`
+				const [row] = await connection`select count(*)::int as n from realtime.messages`
+				return row.n > 0
+			} finally {
+				await connection.unsafe("rollback").simple()
+				connection.release()
+			}
+		}
+		expect(await sees("authenticated", f.owner, topic)).toBe(true)
+		expect(await sees("authenticated", viewer, topic)).toBe(true)
+		// public, and still no channel for a visitor, signed in or not
+		expect(await sees("authenticated", stranger, topic)).toBe(false)
+		expect(await sees("anon", null, topic)).toBe(false)
+		expect(await sees("authenticated", f.owner, `file-manager-entries:${crypto.randomUUID()}:aaaa:1`)).toBe(false)
+		expect(await sees("authenticated", f.owner, "some-other-topic")).toBe(false)
+	})
 
 	// Committed rows, then the deletion in a transaction of its own, as Auth
 	// does it: the workspace goes by cascade after the account row is gone

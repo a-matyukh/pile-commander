@@ -31,6 +31,8 @@ type PayloadCallback = (payload: unknown) => void
 
 type MockChannel = {
 	topic: string
+	/** asked for with `config: { private: true }` */
+	is_private: boolean
 	joining: boolean
 	handlers: PayloadCallback[]
 	on: (type: string, _filter: unknown, callback: PayloadCallback) => MockChannel
@@ -46,13 +48,18 @@ type MockChannel = {
  * instance by topic, and `.on('postgres_changes')` after subscribe/join
  * throws the error seen on mobile workspace load.
  */
-function create_mock_realtime_client(options?: { fail_next_subscribe?: number; connections?: ConnectionRow[] }) {
+function create_mock_realtime_client(options?: {
+	fail_next_subscribe?: number
+	connections?: ConnectionRow[]
+	/** a database from before the realtime.messages policy: no private channel joins */
+	refuses_private?: boolean
+}) {
 	const channels: MockChannel[] = []
 	const rpc_calls: { fn: string; params: Record<string, unknown> }[] = []
 	let remaining_failures = options?.fail_next_subscribe ?? 0
 	const topics_created: string[] = []
 
-	function channel(name: string): MockChannel {
+	function channel(name: string, opts?: { config?: { private?: boolean } }): MockChannel {
 		const topic = `realtime:${name}`
 		const exists = channels.find((candidate) => candidate.topic === topic)
 		if (exists) return exists
@@ -60,6 +67,7 @@ function create_mock_realtime_client(options?: { fail_next_subscribe?: number; c
 		let on_status: StatusCallback = () => {}
 		const created: MockChannel = {
 			topic,
+			is_private: opts?.config?.private === true,
 			joining: false,
 			handlers: [],
 			on(type, _filter, callback) {
@@ -74,8 +82,8 @@ function create_mock_realtime_client(options?: { fail_next_subscribe?: number; c
 			subscribe(callback) {
 				on_status = callback
 				created.joining = true
-				if (remaining_failures > 0) {
-					remaining_failures -= 1
+				if (remaining_failures > 0 || (options?.refuses_private && created.is_private)) {
+					if (remaining_failures > 0) remaining_failures -= 1
 					queueMicrotask(() => callback("CHANNEL_ERROR"))
 					return created
 				}
@@ -182,7 +190,7 @@ describe("cloud realtime strokes/connections channels", () => {
 	})
 
 	test("retry after CHANNEL_ERROR does not throw after-subscribe on leftover topic", async () => {
-		const { client } = create_mock_realtime_client({ fail_next_subscribe: 2 })
+		const { client } = create_mock_realtime_client({ fail_next_subscribe: 4 })
 		const fm = cloud_fm(client)
 
 		await expect(fm.strokes.watch_strokes("/", () => {})).rejects.toThrow(
@@ -326,7 +334,7 @@ describe("cloud realtime entries watch", () => {
 	})
 
 	test("retry after CHANNEL_ERROR does not throw after-subscribe on leftover topic", async () => {
-		const { client } = create_mock_realtime_client({ fail_next_subscribe: 1 })
+		const { client } = create_mock_realtime_client({ fail_next_subscribe: 2 })
 		const fm = cloud_fm(client)
 
 		await expect(fm.watch("/", () => {})).rejects.toThrow(
@@ -334,6 +342,45 @@ describe("cloud realtime entries watch", () => {
 		)
 
 		const unwatch = await fm.watch("/", () => {})
+		unwatch()
+	})
+})
+
+describe("cloud realtime channels are private", () => {
+	test("every channel is asked for as a private one", async () => {
+		const { client, channels } = create_mock_realtime_client()
+		const fm = cloud_fm(client)
+		const stop = [
+			await fm.watch("/", () => {}),
+			await fm.strokes.watch_strokes("/", () => {}),
+			await fm.connections.watch_connections("/", () => {}),
+		]
+		expect(channels.map((channel) => channel.is_private)).toEqual([true, true, true])
+		stop.forEach((unwatch) => unwatch())
+	})
+
+	test("a database from before the policy still gets live updates, and is asked once", async () => {
+		const { client, channels, topics_created } = create_mock_realtime_client({ refuses_private: true })
+		const fm = cloud_fm(client)
+		const seen: string[] = []
+		const unwatch = await fm.watch("/", (event) => { seen.push(event.kind) })
+		expect(channels.map((channel) => channel.is_private)).toEqual([false])
+		// the refused private try, then the public one
+		expect(topics_created).toHaveLength(2)
+
+		const unwatch_strokes = await fm.strokes.watch_strokes("/", () => {})
+		expect(topics_created).toHaveLength(3)
+		expect(channels.map((channel) => channel.is_private)).toEqual([false, false])
+		unwatch()
+		unwatch_strokes()
+	})
+
+	test("a join that fails both ways is not taken for an old database", async () => {
+		const { client, channels } = create_mock_realtime_client({ fail_next_subscribe: 2 })
+		const fm = cloud_fm(client)
+		await expect(fm.watch("/", () => {})).rejects.toThrow("entries watch subscribe failed: CHANNEL_ERROR")
+		const unwatch = await fm.watch("/", () => {})
+		expect(channels.map((channel) => channel.is_private)).toEqual([true])
 		unwatch()
 	})
 })
