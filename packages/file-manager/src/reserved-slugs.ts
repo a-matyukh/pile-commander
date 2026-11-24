@@ -7,7 +7,8 @@
  * username validator. Extend the list when adding new top-level routes — and
  * mirror the change in private.is_reserved_username (schema.sql), which
  * backs the CHECK on profiles.username so a direct PostgREST update cannot
- * bypass this list.
+ * bypass this list, and in the copy apps/client/middleware.ts keeps (it
+ * imports nothing). reserved-slugs.test.ts compares all three.
  */
 export const RESERVED_SLUGS: readonly string[] = [
 	// app routes
@@ -46,6 +47,20 @@ export const RESERVED_SLUGS: readonly string[] = [
 	"www",
 	"mail",
 	"ftp",
+	// names that would pass for the product or its staff: a board at
+	// /pile-commander or /security reads as ours
+	"pile-commander",
+	"pilecommander",
+	"pile",
+	"official",
+	"team",
+	"staff",
+	"security",
+	"billing",
+	"moderator",
+	"moderation",
+	"abuse",
+	"administrator",
 ]
 
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{2,63}$/

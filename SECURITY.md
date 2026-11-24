@@ -264,6 +264,17 @@ show only these intentional INFOs. Anything else is a regression.
   not only disappearing from the gallery. `/{username}/{slug}` stays up until an admin
   `make_private`. Owner mail and the weekly digest are drained by the
   backend (`src/moderation.ts`), not by Postgres.
+- **A username is not something to squat or inherit.** Words that would
+  pass for the product or its staff (`pile-commander`, `official`, `team`,
+  `support`, `security`, `billing`, `moderator` and their neighbours) are
+  reserved next to the app's own routes: one list in `reserved-slugs.ts`,
+  `private.is_reserved_username` (the CHECK on `profiles.username`) and
+  `apps/client/middleware.ts`, compared by `reserved-slugs.test.ts`. A
+  username someone gave up — by changing it or deleting the account — is
+  held in `private.released_usernames` for 90 days: only the account that
+  released it can take it back, so links to `/<username>/<slug>` that are
+  out in the world do not start opening another account's boards. To
+  anyone else the name is simply taken (`unique_violation`).
 - **Downloads are short capabilities.** `PRESIGN_GET_TTL_SECONDS` (900 s)
   vs `PRESIGN_PUT_TTL_SECONDS` (3600 s); `GET /presign?entry=<id>` returns
   `expires_in` and the client media cache refreshes expired URLs.

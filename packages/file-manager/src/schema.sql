@@ -223,9 +223,11 @@ create index workspace_invites_invited_by_idx on public.workspace_invites (invit
 -- pattern matches the slug pattern (shorter)
 -- ----------------------------------------------------------------------------
 -- Mirror of RESERVED_SLUGS in packages/file-manager/src/reserved-slugs.ts:
--- words taken by the app's own top-level routes. The client validates too,
--- but a direct PostgREST update must not be able to claim /hub or /login as a
--- profile address. Keep both lists in sync
+-- words taken by the app's own top-level routes, and names that would pass
+-- for the product or its staff (a board at /support or /pile-commander reads
+-- as ours). The client validates too, but a direct PostgREST update must not
+-- be able to claim /hub or /login as a profile address. Keep both lists in
+-- sync, and the copy in apps/client/middleware.ts
 create or replace function private.is_reserved_username(p_username text)
 returns boolean
 language sql
@@ -238,7 +240,9 @@ as $$
         'api', 'p', 'public', 'static', 'assets', 'cdn', 'internal', 'health',
         'about', 'features', 'blog', 'docs', 'help', 'support', 'pricing',
         'terms', 'privacy',
-        'www', 'mail', 'ftp'
+        'www', 'mail', 'ftp',
+        'pile-commander', 'pilecommander', 'pile', 'official', 'team', 'staff',
+        'security', 'billing', 'moderator', 'moderation', 'abuse', 'administrator'
     ]);
 $$;
 
@@ -251,6 +255,88 @@ create table public.profiles (
     display_name text check (char_length(display_name) <= 80),
     updated_at timestamptz not null default now()
 );
+
+-- ----------------------------------------------------------------------------
+-- released_usernames: a username someone gave up, by changing it or by
+-- deleting the account. Links to /<username>/<slug> are out in the world;
+-- if another account could take the name the next minute, those links would
+-- open that account's boards under the old author's name. For 90 days the
+-- name can be taken back only by the account that released it. A deleted
+-- account's name (released_by null) waits the 90 days out. Pruned daily
+-- (released-usernames-prune)
+-- ----------------------------------------------------------------------------
+create table private.released_usernames (
+    username text primary key,
+    -- set null on account deletion: nobody can take the name back early
+    released_by uuid references auth.users (id) on delete set null,
+    released_at timestamptz not null default now()
+);
+create index released_usernames_by_idx on private.released_usernames (released_by);
+create index released_usernames_at_idx on private.released_usernames (released_at);
+revoke all on private.released_usernames from public, anon, authenticated;
+
+-- The message says "duplicate key" and the code is unique_violation on
+-- purpose: to the person the name is simply taken, and the client already
+-- has words for that
+create or replace function private.profiles_hold_username()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if NEW.username is not null
+       and (TG_OP = 'INSERT' or NEW.username is distinct from OLD.username)
+       and exists (
+           select 1 from private.released_usernames r
+            where r.username = NEW.username
+              and r.released_at > now() - interval '90 days'
+              and r.released_by is distinct from NEW.id
+       ) then
+        raise exception 'duplicate key: username "%" is not available', NEW.username
+            using errcode = '23505';
+    end if;
+    return NEW;
+end
+$$;
+
+create or replace function private.profiles_release_username()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+    if TG_OP = 'DELETE' then
+        if OLD.username is not null then
+            insert into private.released_usernames (username, released_by, released_at)
+            values (OLD.username, null, now())
+            on conflict (username) do update set released_by = null, released_at = now();
+        end if;
+        return OLD;
+    end if;
+    if OLD.username is not null and OLD.username is distinct from NEW.username then
+        insert into private.released_usernames (username, released_by, released_at)
+        values (OLD.username, OLD.id, now())
+        on conflict (username) do update set released_by = excluded.released_by, released_at = now();
+    end if;
+    -- taken back by the account that released it: no longer released
+    if NEW.username is not null and NEW.username is distinct from OLD.username then
+        delete from private.released_usernames where username = NEW.username;
+    end if;
+    return NEW;
+end
+$$;
+
+revoke execute on function private.profiles_hold_username() from public, anon, authenticated;
+revoke execute on function private.profiles_release_username() from public, anon, authenticated;
+
+create trigger profiles_hold_username
+    before insert or update of username on public.profiles
+    for each row execute function private.profiles_hold_username();
+create trigger profiles_release_username
+    after update of username or delete on public.profiles
+    for each row execute function private.profiles_release_username();
 
 -- Plan numbers live here so signup, backfill, the billing adapter
 -- (public.apply_billing_state) and the bridge preflight do not drift across
@@ -2575,6 +2661,13 @@ select cron.schedule(
     'mail-events-prune',
     '48 3 * * *',
     $$delete from private.mail_events where created_at < now() - interval '90 days'$$
+);
+
+-- a released username is free for anyone after 90 days
+select cron.schedule(
+    'released-usernames-prune',
+    '44 3 * * *',
+    $$delete from private.released_usernames where released_at < now() - interval '90 days'$$
 );
 
 -- the windows in rate_events are a day at most

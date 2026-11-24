@@ -788,6 +788,78 @@ begin
         execute 'set local role authenticated';
     end;
 
+    -- a name that would pass for the product or its staff
+    begin
+        update public.profiles set username = 'pile-commander' where id = c_owner;
+        insert into __results values ('profiles: a username that passes for the product is refused', false, 'accepted');
+    exception when check_violation then
+        insert into __results values ('profiles: a username that passes for the product is refused', true, null);
+        execute 'set local role authenticated';
+    end;
+    begin
+        update public.profiles set username = 'security' where id = c_owner;
+        insert into __results values ('profiles: a username that passes for staff is refused', false, 'accepted');
+    exception when check_violation then
+        insert into __results values ('profiles: a username that passes for staff is refused', true, null);
+        execute 'set local role authenticated';
+    end;
+
+    -- a username someone gave up is held for them for 90 days: links to
+    -- /<username>/<slug> must not start opening another account's boards
+    update public.profiles set username = 'rls-owner-renamed' where id = c_owner;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    begin
+        update public.profiles set username = 'rls-owner' where id = c_other;
+        insert into __results values ('profiles: a released username cannot be taken by another account', false, 'accepted');
+    exception when unique_violation then
+        insert into __results values ('profiles: a released username cannot be taken by another account',
+            sqlerrm like '%duplicate key%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    update public.profiles set username = 'rls-owner' where id = c_owner;
+    insert into __results values ('profiles: the account that released a username takes it back',
+        (select username from public.profiles where id = c_owner) = 'rls-owner', null);
+    execute 'reset role';
+    insert into __results values ('profiles: a username taken back is no longer listed as released',
+        (select count(*) from private.released_usernames where username = 'rls-owner') = 0
+        and (select released_by from private.released_usernames where username = 'rls-owner-renamed') = c_owner, null);
+    -- the hold ends after 90 days
+    update private.released_usernames set released_at = now() - interval '91 days'
+     where username = 'rls-owner-renamed';
+    perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    update public.profiles set username = 'rls-owner-renamed' where id = c_other;
+    insert into __results values ('profiles: after 90 days a released username is free',
+        (select username from public.profiles where id = c_other) = 'rls-owner-renamed', null);
+    execute 'reset role';
+    -- a deleted account's username waits the 90 days out for everyone
+    insert into auth.users (id, email, email_confirmed_at) values
+        ('99999999-9999-4999-8999-999999999990', 'rls-left@example.invalid', now());
+    update public.profiles set username = 'rls-left' where id = '99999999-9999-4999-8999-999999999990';
+    delete from auth.users where id = '99999999-9999-4999-8999-999999999990';
+    insert into __results values ('profiles: a deleted account''s username is held',
+        (select count(*) from private.released_usernames where username = 'rls-left' and released_by is null) = 1, null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+        update public.profiles set username = 'rls-left' where id = c_owner;
+        insert into __results values ('profiles: nobody takes a deleted account''s username early', false, 'accepted');
+    exception when unique_violation then
+        insert into __results values ('profiles: nobody takes a deleted account''s username early', true, null);
+        execute 'set local role authenticated';
+    end;
+    -- the stranger has no username in the checks below
+    execute 'reset role';
+    update public.profiles set username = null where id = c_other;
+    delete from private.released_usernames;
+    insert into __results values ('profiles: the window cannot read or write the released names',
+        not has_table_privilege('authenticated', 'private.released_usernames', 'select')
+        and not has_table_privilege('anon', 'private.released_usernames', 'select')
+        and not has_table_privilege('authenticated', 'private.released_usernames', 'insert, delete'), null);
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
     -- trash: restore brings back only the batch trashed with the root
     v_json := public.create_text_file(v_folder, 'a.txt', 'text/plain', 'old', null, null);
     v_old := (v_json->>'id')::uuid;
@@ -2449,6 +2521,8 @@ begin
             ('private.drop_signup_captcha()', false, false),
             ('private.drop_password_on_confirm()', false, false),
             ('private.handle_new_user()', false, false),
+            ('private.profiles_hold_username()', false, false),
+            ('private.profiles_release_username()', false, false),
             ('private.lock_workspace_tree(uuid)', false, false),
             ('private.lock_entry_workspace(uuid)', false, false),
             ('private.purge_expired_entries()', false, false),

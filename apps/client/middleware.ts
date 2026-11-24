@@ -12,6 +12,8 @@ const RESERVED = new Set([
 	"settings", "dashboard", "admin", "api", "p", "public", "static", "assets",
 	"cdn", "internal", "health", "about", "features", "blog", "docs", "help",
 	"support", "pricing", "terms", "privacy", "www", "mail", "ftp",
+	"pile-commander", "pilecommander", "pile", "official", "team", "staff",
+	"security", "billing", "moderator", "moderation", "abuse", "administrator",
 ])
 
 const APP_TITLE = "Pile Commander"
