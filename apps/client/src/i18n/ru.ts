@@ -59,6 +59,7 @@ export const ru = {
 		message_placeholder: 'Что случилось или что приложение должно уметь.',
 		screenshots: 'Скриншоты',
 		screenshots_d: 'Необязательно. JPEG, PNG, WebP или GIF, до 5 МБ каждый.',
+		screenshots_sign_in: 'Чтобы приложить скриншоты, войдите в аккаунт. Сообщение текстом уходит и без него.',
 		add_screenshots: 'Добавить скриншоты',
 		remove: 'Убрать {name}',
 		send: 'Отправить',

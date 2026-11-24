@@ -188,6 +188,12 @@ export type Env = {
 	 * separated, replaces the list (add http://localhost:<port> for local dev)
 	 */
 	feedback_origins: string[];
+	/** notes POST /feedback takes from everyone together in 24 hours */
+	feedback_daily_max: number;
+	/** screenshots it takes from everyone together in 24 hours (5 MB each at most) */
+	feedback_daily_attachments_max: number;
+	/** how long a note's screenshots are kept in Storage */
+	feedback_attachment_days: number;
 	egress: EgressEnv;
 	deriv: DerivEnv;
 };
@@ -306,6 +312,9 @@ export function load_env(): Env {
 		moderation_digest_cron: process.env.MODERATION_DIGEST_CRON?.trim() || "0 9 * * 1",
 		moderation_mail_cron: process.env.MODERATION_MAIL_CRON?.trim() || "* * * * *",
 		feedback_origins: parse_feedback_origins(process.env.FEEDBACK_ORIGINS),
+		feedback_daily_max: positive_int_or("FEEDBACK_DAILY_MAX", 300),
+		feedback_daily_attachments_max: positive_int_or("FEEDBACK_DAILY_ATTACHMENTS_MAX", 200),
+		feedback_attachment_days: positive_int_or("FEEDBACK_ATTACHMENT_DAYS", 90),
 		egress: {
 			mode: egress_mode(),
 			alert_day_fraction: fraction_or("EGRESS_ALERT_DAY_FRACTION", 0.25),

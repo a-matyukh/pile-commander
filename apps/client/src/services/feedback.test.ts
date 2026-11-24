@@ -49,6 +49,18 @@ describe('send_feedback', () => {
 		expect(await send_feedback('b', draft(), async () => { throw new TypeError('offline') })).toBe('failed')
 	})
 
+	it('sends the signed-in person\'s token, which is what lets a note carry screenshots', async () => {
+		const fetch_impl = vi.fn(async (_input: string, _init?: RequestInit) => json(200, { ok: true, uploads: [] }))
+		await send_feedback('b', draft(), fetch_impl, 'access-token')
+		expect((fetch_impl.mock.calls[0]![1]?.headers as Record<string, string>).Authorization).toBe('Bearer access-token')
+		await send_feedback('b', draft(), fetch_impl)
+		expect((fetch_impl.mock.calls[1]![1]?.headers as Record<string, string>).Authorization).toBeUndefined()
+	})
+
+	it('reads 401 as "sign in to attach screenshots"', async () => {
+		expect(await send_feedback('b', draft([image('a.png')]), async () => json(401))).toBe('sign_in_needed')
+	})
+
 	it('says so when the note went but a screenshot did not', async () => {
 		const fetch_impl = async (input: string) =>
 			String(input).endsWith('/feedback')

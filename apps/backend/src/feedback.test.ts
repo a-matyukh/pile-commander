@@ -7,11 +7,14 @@ import {
 	FEEDBACK_MESSAGE_MAX,
 	delete_feedback,
 	handle_feedback,
+	prune_feedback_attachments,
 	normalize_feedback_attachments,
 	normalize_feedback_category,
 	normalize_feedback_message,
 	type DeleteFeedback,
+	type FeedbackDeps,
 	type FeedbackInsert,
+	type PruneFeedback,
 	type FeedbackUpload,
 	type SignUploads,
 } from "./feedback";
@@ -54,6 +57,9 @@ function feedback_env(overrides: Partial<Env> = {}): Env {
 		moderation_digest_cron: "0 9 * * 1",
 		moderation_mail_cron: "* * * * *",
 		feedback_origins: ["https://pile-commander.app"],
+		feedback_daily_max: 300,
+		feedback_daily_attachments_max: 200,
+		feedback_attachment_days: 90,
 		egress: { mode: "off", alert_day_fraction: 0.25, visitor_fraction: 0.05, alert_email: null },
 		deriv: {
 			mode: "off",
@@ -100,6 +106,17 @@ function feedback_request(body: unknown): Request {
 const silent_sign: SignUploads = async () => {
 	throw new Error("sign_uploads should not run");
 };
+
+/** A quiet day and a signed-in caller, unless the test says otherwise */
+function deps(insert: FeedbackInsert, sign_uploads: SignUploads, more: Partial<FeedbackDeps> = {}): Partial<FeedbackDeps> {
+	return {
+		insert,
+		sign_uploads,
+		day: async () => ({ notes: 0, attachments: 0 }),
+		signed_in: async () => true,
+		...more,
+	};
+}
 
 describe("normalize_feedback_category", () => {
 	test("accepts the three labels, case-insensitive", () => {
@@ -179,22 +196,20 @@ describe("handle_feedback", () => {
 	test("400 on missing or invalid fields", async () => {
 		const insert: FeedbackInsert = async () => ({ error: null });
 		await expect(
-			handle_feedback(feedback_env(), feedback_request({}), insert, silent_sign),
+			handle_feedback(feedback_env(), feedback_request({}), deps(insert, silent_sign)),
 		).rejects.toMatchObject({ status: 400, message: "invalid email" } satisfies Partial<ApiError>);
 		await expect(
 			handle_feedback(
 				feedback_env(),
 				feedback_request(valid_body({ email: "nope" })),
-				insert,
-				silent_sign,
+				deps(insert, silent_sign),
 			),
 		).rejects.toMatchObject({ status: 400, message: "invalid email" } satisfies Partial<ApiError>);
 		await expect(
 			handle_feedback(
 				feedback_env(),
 				feedback_request(valid_body({ category: "feature" })),
-				insert,
-				silent_sign,
+				deps(insert, silent_sign),
 			),
 		).rejects.toMatchObject({
 			status: 400,
@@ -204,8 +219,7 @@ describe("handle_feedback", () => {
 			handle_feedback(
 				feedback_env(),
 				feedback_request(valid_body({ message: "   " })),
-				insert,
-				silent_sign,
+				deps(insert, silent_sign),
 			),
 		).rejects.toMatchObject({
 			status: 400,
@@ -215,8 +229,7 @@ describe("handle_feedback", () => {
 			handle_feedback(
 				feedback_env(),
 				feedback_request(valid_body({ attachments: [{ mime: "image/png", size: 0 }] })),
-				insert,
-				silent_sign,
+				deps(insert, silent_sign),
 			),
 		).rejects.toMatchObject({
 			status: 400,
@@ -245,8 +258,7 @@ describe("handle_feedback", () => {
 		const res = await handle_feedback(
 			feedback_env(),
 			feedback_request(valid_body({ website: "https://spam", attachments: [{ mime: "image/png", size: 8 }] })),
-			insert,
-			silent_sign,
+			deps(insert, silent_sign),
 		);
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ ok: true });
@@ -266,8 +278,7 @@ describe("handle_feedback", () => {
 				category: " Bug ",
 				message: "  the board jumped  ",
 			}),
-			insert,
-			silent_sign,
+			deps(insert, silent_sign),
 		);
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ ok: true, uploads: [] });
@@ -313,8 +324,7 @@ describe("handle_feedback", () => {
 		const res = await handle_feedback(
 			feedback_env(),
 			feedback_request(valid_body({ attachments: claims })),
-			insert,
-			sign,
+			deps(insert, sign),
 		);
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { ok: boolean; uploads: FeedbackUpload[] };
@@ -329,6 +339,118 @@ describe("handle_feedback", () => {
 			"png",
 			"webp",
 		]);
+	});
+});
+
+describe("handle_feedback: what one day may bring", () => {
+	const stored: FeedbackInsert = async () => ({ error: null });
+	const signs: SignUploads = async (paths) => paths.map((path) => ({ path, token: "t", signedUrl: `https://s/${path}` }));
+	const shot = [{ mime: "image/png", size: 8 }];
+
+	test("screenshots are taken from a signed-in person only; a note in words from anyone", async () => {
+		let inserted = 0;
+		const insert: FeedbackInsert = async () => {
+			inserted += 1;
+			return { error: null };
+		};
+		const anonymous = { signed_in: async () => false };
+		await expect(
+			handle_feedback(feedback_env(), feedback_request(valid_body({ attachments: shot })), deps(insert, silent_sign, anonymous)),
+		).rejects.toMatchObject({ status: 401, extra: { reason: "attachments_need_sign_in" } });
+		expect(inserted).toBe(0);
+
+		const words = await handle_feedback(feedback_env(), feedback_request(valid_body()), deps(insert, silent_sign, anonymous));
+		expect(words.status).toBe(200);
+		expect(inserted).toBe(1);
+	});
+
+	test("past the day's notes the form is told to come back, and nothing is stored", async () => {
+		let inserted = 0;
+		const insert: FeedbackInsert = async () => {
+			inserted += 1;
+			return { error: null };
+		};
+		const env = feedback_env({ feedback_daily_max: 3 });
+		const full = { day: async () => ({ notes: 3, attachments: 0 }) };
+		await expect(
+			handle_feedback(env, feedback_request(valid_body()), deps(insert, silent_sign, full)),
+		).rejects.toMatchObject({ status: 429 });
+		expect(inserted).toBe(0);
+
+		const room = { day: async () => ({ notes: 2, attachments: 0 }) };
+		expect((await handle_feedback(env, feedback_request(valid_body()), deps(insert, silent_sign, room))).status).toBe(200);
+	});
+
+	test("the day's screenshots are counted for everyone together", async () => {
+		const env = feedback_env({ feedback_daily_attachments_max: 10 });
+		const nearly = { day: async () => ({ notes: 5, attachments: 9 }) };
+		const two = [...shot, ...shot];
+		await expect(
+			handle_feedback(env, feedback_request(valid_body({ attachments: two })), deps(stored, signs, nearly)),
+		).rejects.toMatchObject({ status: 429 });
+		// one still fits, and a note without screenshots is not held back by them
+		expect((await handle_feedback(env, feedback_request(valid_body({ attachments: shot })), deps(stored, signs, nearly))).status).toBe(200);
+		const at_cap = { day: async () => ({ notes: 5, attachments: 10 }) };
+		expect((await handle_feedback(env, feedback_request(valid_body()), deps(stored, silent_sign, at_cap))).status).toBe(200);
+	});
+
+	test("the trap answers ok before anything is counted or checked", async () => {
+		const res = await handle_feedback(
+			feedback_env(),
+			feedback_request(valid_body({ website: "https://spam", attachments: shot })),
+			deps(stored, silent_sign, {
+				signed_in: async () => { throw new Error("should not be asked"); },
+				day: async () => { throw new Error("should not be counted"); },
+			}),
+		);
+		expect(await res.json()).toEqual({ ok: true });
+	});
+});
+
+describe("prune_feedback_attachments", () => {
+	const NOW = Date.UTC(2026, 10, 24);
+	const shots = (id: string) => [{ path: `${id}/a.png`, mime: "image/png" as const, size_bytes: 8 }];
+
+	function ops_over(rows: { id: string }[], fail: { remove?: string; clear?: string } = {}) {
+		const removed: string[] = [];
+		const cleared: string[] = [];
+		const asked: { before: string; limit: number }[] = [];
+		const ops: PruneFeedback = {
+			old_with_attachments: async (before, limit) => {
+				asked.push({ before, limit });
+				return rows.map((row) => ({ id: row.id, attachments: shots(row.id) }));
+			},
+			remove_objects: async (paths) => {
+				if (fail.remove && paths.some((path) => path.startsWith(fail.remove!))) return { error: { message: "storage down" } };
+				removed.push(...paths);
+				return { error: null };
+			},
+			clear_attachments: async (id) => {
+				if (id === fail.clear) return { error: { message: "db down" } };
+				cleared.push(id);
+				return { error: null };
+			},
+		};
+		return { ops, removed, cleared, asked };
+	}
+
+	test("the files go first, then the note forgets them; the note itself stays", async () => {
+		const h = ops_over([{ id: "n1" }, { id: "n2" }]);
+		expect(await prune_feedback_attachments(90, h.ops, NOW)).toBe(2);
+		expect(h.removed).toEqual(["n1/a.png", "n2/a.png"]);
+		expect(h.cleared).toEqual(["n1", "n2"]);
+		expect(h.asked[0]?.before).toBe(new Date(NOW - 90 * 24 * 60 * 60 * 1000).toISOString());
+	});
+
+	test("a note whose files could not be removed keeps listing them for the next run", async () => {
+		const h = ops_over([{ id: "n1" }, { id: "n2" }], { remove: "n1" });
+		expect(await prune_feedback_attachments(90, h.ops, NOW)).toBe(1);
+		expect(h.cleared).toEqual(["n2"]);
+	});
+
+	test("a failed update is not counted as done", async () => {
+		const h = ops_over([{ id: "n1" }], { clear: "n1" });
+		expect(await prune_feedback_attachments(90, h.ops, NOW)).toBe(0);
 	});
 });
 

@@ -395,6 +395,13 @@ show only these intentional INFOs. Anything else is a regression.
   `POST /auth/send-email` pays no IP fence at all (`SIGNED_ROUTES`): Supabase
   Auth is its only caller, from shared addresses, and the webhook signature is
   its gate.
+  The route takes no sign-in and its `Origin` check is a header a script
+  can set, so one day is capped for everyone together: `FEEDBACK_DAILY_MAX`
+  notes and `FEEDBACK_DAILY_ATTACHMENTS_MAX` screenshots (300 and 200), then
+  429. Screenshots are accepted with a valid access token only; a note in
+  words stays open to anyone. A daily job removes the screenshots of notes
+  older than `FEEDBACK_ATTACHMENT_DAYS` (90) from Storage and keeps the
+  note.
 - **Shutdown drains.** On SIGTERM (a Render deploy) the server stops taking
   connections, waits for in-flight requests and a running GC/reconcile
   tick, kills a preview's ffmpeg in flight (the blob stays pending, no

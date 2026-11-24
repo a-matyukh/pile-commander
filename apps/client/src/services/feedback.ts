@@ -10,7 +10,8 @@ export const FEEDBACK_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'i
 export const FEEDBACK_CATEGORIES = ['bug', 'idea', 'other'] as const
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number]
 
-export type FeedbackResult = 'ok' | 'rate_limited' | 'invalid' | 'upload_failed' | 'failed'
+/** `sign_in_needed`: the note carried screenshots and the backend takes those from a signed-in person only */
+export type FeedbackResult = 'ok' | 'rate_limited' | 'invalid' | 'sign_in_needed' | 'upload_failed' | 'failed'
 
 export type FeedbackDraft = {
 	email: string
@@ -46,16 +47,23 @@ export function accept_feedback_files(current: File[], picked: Iterable<File>): 
 	return { files, refused }
 }
 
+/**
+ * `token` is the signed-in person's access token, or null. A note in words
+ * needs none; screenshots are accepted only with it.
+ */
 export async function send_feedback(
 	backend: string,
 	draft: FeedbackDraft,
 	fetch_impl: FetchLike = (input, init) => fetch(input, init),
+	token: string | null = null,
 ): Promise<FeedbackResult> {
 	let uploads: UploadTicket[]
 	try {
 		const response = await fetch_impl(`${backend.replace(/\/$/, '')}/feedback`, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: token
+				? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+				: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				email: draft.email.trim(),
 				category: draft.category,
@@ -65,6 +73,7 @@ export async function send_feedback(
 			}),
 		})
 		if (response.status === 429) return 'rate_limited'
+		if (response.status === 401) return 'sign_in_needed'
 		if (response.status === 400) return 'invalid'
 		if (!response.ok) return 'failed'
 		const body = (await response.json()) as { uploads?: UploadTicket[] }

@@ -17,7 +17,7 @@ import { handle_send_email } from "./mail";
 import { handle_workspace_invite } from "./invites";
 import { handle_before_user_created } from "./signup";
 import { handle_plunk_events } from "./mail_events";
-import { handle_feedback } from "./feedback";
+import { handle_feedback, start_feedback_worker } from "./feedback";
 import { feedback_cors_headers, feedback_origin_allowed } from "./feedback_origins";
 import { start_gc_worker } from "./gc";
 import { start_derivative_worker } from "./derivatives";
@@ -176,6 +176,7 @@ if (!env.background_workers) {
 } else if (meter && downloads) {
 	start_egress_worker(meter, downloads);
 }
+if (env.background_workers && service) start_feedback_worker(env, service);
 
 // Render stops the old instance with SIGTERM and SIGKILLs it after the
 // shutdown delay (30 s by default); without a handler Bun exits on the spot

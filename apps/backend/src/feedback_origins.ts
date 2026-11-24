@@ -38,7 +38,9 @@ export function feedback_cors_headers(
 ): Record<string, string> {
 	const headers: Record<string, string> = {
 		"Access-Control-Allow-Methods": "POST, OPTIONS",
-		"Access-Control-Allow-Headers": "Content-Type",
+		// Authorization: a signed-in person's token rides along, which is what
+		// lets a note carry screenshots (feedback.ts)
+		"Access-Control-Allow-Headers": "Authorization, Content-Type",
 		"Access-Control-Expose-Headers": "Retry-After",
 		Vary: "Origin",
 	};

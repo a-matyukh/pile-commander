@@ -62,6 +62,7 @@ export const en: typeof ru = {
 		message_placeholder: 'What happened, or what you wish the app did.',
 		screenshots: 'Screenshots',
 		screenshots_d: 'Optional. JPEG, PNG, WebP or GIF, up to 5 MB each.',
+		screenshots_sign_in: 'Sign in to attach screenshots. A note in words goes without an account.',
 		add_screenshots: 'Add screenshots',
 		remove: 'Remove {name}',
 		send: 'Send',
