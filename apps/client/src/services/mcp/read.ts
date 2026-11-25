@@ -17,6 +17,7 @@ import {
 	relative_to_root,
 } from './path'
 import {
+	FILE_TEXT_NOTE,
 	FOLDER_ENTRY_LIMIT,
 	McpError,
 	TEXT_BYTE_LIMIT,
@@ -137,6 +138,7 @@ export async function read_text(ctx: McpContext, args: ReadTextArgs): Promise<Re
 	const slice = truncated ? bytes.subarray(0, TEXT_BYTE_LIMIT) : bytes
 	return {
 		path: args.path,
+		note: FILE_TEXT_NOTE,
 		text: new TextDecoder().decode(slice),
 		truncated,
 	}

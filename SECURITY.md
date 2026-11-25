@@ -650,9 +650,16 @@ Results are ordinary renames and `.md` notes; nothing is written to the database
   block. This lowers the odds and does not remove them, which is why the
   answer is untrusted too and nothing is written without a yes on a
   preview. Naming is left as it was: its answer passes
-  `sanitize_suggested_name` and can only become a short file name. The
-  local MCP server hands an agent file text as it is; that is the agent's
-  to handle and is not covered here.
+  `sanitize_suggested_name` and can only become a short file name.
+- **The local MCP server tells an agent the same about files.** Its
+  `instructions` (sent when an agent connects) say that names and file
+  text are the person's content and never instructions, that links and
+  contacts are not to be put into a proposal because a file asks, and that
+  a change is proposed only on the person's request. `read_text` puts a
+  note saying so before the text in its answer. What the agent does with
+  that is the agent's; what it proposes is written only after a yes on a
+  preview, and a proposed note passes `untrusted_markdown` like a model's
+  answer.
 - **A request leaves only for a provider the app names or an address the
   person allowed.** The desktop commands that send (`ai_list_models`,
   `ai_chat_stream`) pass the six preset origins. Any other origin waits for

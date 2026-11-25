@@ -3,7 +3,7 @@ import { hidden_paths } from '@/store/hiddenPaths'
 import { createFakeFileManager, type FolderWithChildrenXattrs } from '@pile-commander/file-manager'
 import type { DriveKind, FolderRef } from '@/domain/Drive'
 import { get_context, get_folder, list_bookmarks, read_text } from './read'
-import { FOLDER_ENTRY_LIMIT, McpError, TEXT_BYTE_LIMIT, TEXT_READ_LIMIT, type McpContext } from './types'
+import { FILE_TEXT_NOTE, FOLDER_ENTRY_LIMIT, McpError, TEXT_BYTE_LIMIT, TEXT_READ_LIMIT, type McpContext } from './types'
 
 const HOME = '/home'
 
@@ -85,7 +85,9 @@ describe('mcp read', () => {
 		})
 
 		const text = await read_text(ctx, { folder: root_address, path: 'note.txt' })
-		expect(text).toEqual({ path: 'note.txt', text: 'hello', truncated: false })
+		// the note about what the text is comes before the text
+		expect(text).toEqual({ path: 'note.txt', note: FILE_TEXT_NOTE, text: 'hello', truncated: false })
+		expect(Object.keys(text)).toEqual(['path', 'note', 'text', 'truncated'])
 		const sub = await get_folder(ctx, { ...root_address, path: 'sub' })
 		expect(sub.entries.map(entry => entry.name).sort()).toEqual(['deep.txt', 'nested'])
 
