@@ -11,7 +11,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <LegalArticle title="Support, reports, and DMCA" updated="20 November 2026">
+  <LegalArticle title="Support, reports, and DMCA" updated="25 November 2026">
     <p>
       One address does all of it:
       <a :href="`mailto:${abuseEmail}`">{{ abuseEmail }}</a> — account

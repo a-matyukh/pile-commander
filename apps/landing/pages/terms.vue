@@ -13,7 +13,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Terms of use"
-    updated="23 November 2026"
+    updated="25 November 2026"
   >
     <p>
       Pile Commander is a file manager and a creative space. The app on your computer works

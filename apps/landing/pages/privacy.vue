@@ -13,7 +13,7 @@ useSeoMeta({
 <template>
   <LegalArticle
     title="Privacy"
-    updated="23 November 2026"
+    updated="25 November 2026"
     note="Written against what the code actually does. It changes when the product does."
   >
     <p>
