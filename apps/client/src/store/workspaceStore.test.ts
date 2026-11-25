@@ -814,6 +814,15 @@ describe('createWorkspaceStore: clipboard', () => {
 		expect(store.opened_folder.children.some(c => c.id === '/ws/note (1).txt')).toBe(true)
 	})
 
+	test('duplicate_entries selects the copies instead of the originals', async () => {
+		const { store } = await makeStore()
+		store.set_selection(['/ws/note.txt'])
+
+		await store.duplicate_entries(['/ws/note.txt'])
+
+		expect(store.selection).toEqual(['/ws/note (1).txt'])
+	})
+
 	test('a duplicate keeps its 3D height; only its place moves aside', async () => {
 		const { fake, store } = await makeStore()
 		fake.set_xattr('/ws/note.txt', 'position', JSON.stringify({ x: 100, y: 50 }))

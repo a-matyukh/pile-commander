@@ -2682,13 +2682,16 @@ export async function createWorkspaceStore(
 			const entry_ids = ids.filter(Boolean)
 			if (entry_ids.length === 0) return []
 
-			return own_action(
+			const created_ids = await own_action(
 				this,
 				options?.tx,
 				{ folder_id: this.opened_folder_id },
 				() => entries_label(this, entry_ids, 'undo.duplicate_one', 'undo.duplicate_many'),
 				tx => copy_entries_into(this, fm, this.opened_folder_id, entry_ids, tx),
 			)
+			// As in Finder: the copies are selected, so the next action takes them, not the originals
+			if (created_ids?.length) this.set_selection(created_ids)
+			return created_ids
 		},
 
 			async show_folder_children(
