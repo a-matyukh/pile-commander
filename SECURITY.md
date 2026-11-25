@@ -941,19 +941,18 @@ deferred). Done work is in the invariants above.
   (`file-manager-<kind>:<workspace_id>:…`). A public board opens no channel
   to a visitor, signed in or not: the visitor gate used to be client-side
   only. What a channel delivers is still each table's SELECT policy.
-  **The server-side stop is the project setting**: with "Allow public
-  access" off in Realtime Settings only private channels exist, so a script
-  with the publishable key can no longer hold hundreds of connections
-  against the project's limit. Turn it off only when every client in use
-  asks for private channels (web at once; desktops from the release that
-  carries this) — an older client keeps working until then and loses live
-  updates after. A database from before the policy refuses private joins;
-  the client then joins the same way as before within the same attempt
-  (`private_channels` in `supabase.ts`). Drop that fallback once the
-  setting is off. Realtime caches a client's permission for the life of
-  its token: a member removed from a board keeps its channel until the
-  token is refreshed (an hour at most), and still receives only rows the
-  table policies let them read, which is none.
+  **The server-side stop is the project setting**: "Allow public access"
+  is off in Realtime Settings (since 2026-11-25), so only private channels
+  exist and a script with the publishable key can no longer hold hundreds
+  of connections against the project's limit: a public channel answers
+  `PrivateOnly`, a private one from a non-member `Unauthorized`. The
+  client asks for private channels only and tries nothing else. Desktops
+  before 2.8.4 ask for public ones and have no live updates until they
+  update. On a fresh project turn the setting off after the policy exists.
+  Realtime caches a client's permission for the life of its token: a
+  member removed from a board keeps its channel until the token is
+  refreshed (an hour at most), and still receives only rows the table
+  policies let them read, which is none.
 - `watch()` currently ignores Realtime DELETE (RLS strips the old row to
   the PK). Handling DELETE by `id` (id→path map from the last listing) is
   still needed if clients must drop a node without a follow-up UPDATE.
