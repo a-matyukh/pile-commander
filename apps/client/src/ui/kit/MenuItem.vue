@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import { ContextMenuItem, DropdownMenuItem } from 'reka-ui'
+import { computed } from 'vue'
 import { use_menu_kind } from './menu_kind'
 
 const props = defineProps<{
@@ -18,6 +19,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [event: Event] }>()
 
+/** The modifier symbols (⌘ ⇧ ⌥ ⌃) are drawn small in the mono face: set apart, they go larger */
+const keys = computed(() => (props.shortcut ?? '').split(/([⌘⇧⌥⌃])/).filter(Boolean).map(text => ({ text, sym: /^[⌘⇧⌥⌃]$/.test(text) })))
+
 const item = use_menu_kind() === 'context' ? ContextMenuItem : DropdownMenuItem
 
 function on_select(event: Event) {
@@ -31,7 +35,7 @@ function on_select(event: Event) {
 		<slot name="leading" />
 		<Icon v-if="icon" :icon="icon" class="ic" :style="{ color: icon_color }" />
 		<span class="lb"><slot>{{ label }}</slot></span>
-		<span v-if="shortcut" class="k">{{ shortcut }}</span>
+		<span v-if="shortcut" class="k"><template v-for="(key, i) in keys" :key="i"><span v-if="key.sym" class="sym">{{ key.text }}</span><template v-else>{{ key.text }}</template></template></span>
 		<slot name="trailing" />
 		<Icon v-if="checked" icon="tabler:check" class="ck" />
 	</component>
@@ -63,10 +67,17 @@ function on_select(event: Event) {
 	color: var(--text-secondary);
 }
 .mi .k {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
 	margin-left: auto;
 	font-size: 11px;
 	color: var(--text-muted);
 	font-family: var(--font-mono);
+}
+.mi .k .sym {
+	font-size: 15px;
+	line-height: 1;
 }
 .mi .ck {
 	margin-left: auto;

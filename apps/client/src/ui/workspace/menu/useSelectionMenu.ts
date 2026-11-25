@@ -8,6 +8,7 @@ import { useFolderContainerScope } from '@/ui/workspace/folder-container/useFold
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
 import { clipboardIdsForMenu } from './clipboardIdsForMenu'
 import { delete_key_hint } from '@/ui/kit/delete_key'
+import { mod_kbds } from '@/ui/kit/mod_key'
 import { t } from '@/i18n'
 import { record_action } from '@/store/history'
 import { selectionCanSetSharedBackground } from './canHaveWidgetBackground'
@@ -104,6 +105,7 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 	const clipboardItems = computed<DropdownMenuItem[]>(() => [
 		{
 			label: 'Cut',
+			kbds: mod_kbds('X'),
 			disabled: readonly.value,
 			onSelect() {
 				applyClipboard('cut')
@@ -111,12 +113,14 @@ export function useSelectionMenu(node: MaybeRefOrGetter<WorkspaceTreeNode>) {
 		},
 		{
 			label: 'Copy',
+			kbds: mod_kbds('C'),
 			onSelect() {
 				applyClipboard('copy')
 			},
 		},
 		{
 			label: 'Duplicate',
+			kbds: mod_kbds('D'),
 			disabled: readonly.value,
 			onSelect() {
 				applyClipboard('duplicate')

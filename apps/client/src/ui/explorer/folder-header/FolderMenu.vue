@@ -28,6 +28,7 @@ import Modal from '@/ui/kit/Modal.vue'
 import RenameFolderDialog from '@/ui/explorer/sidebar/RenameFolderDialog.vue'
 import BackgroundItems from './BackgroundItems.vue'
 import FolderLookItems from './FolderLookItems.vue'
+import { mod_key_hint } from '@/ui/kit/mod_key'
 import TrashSyncNote from './TrashSyncNote.vue'
 import { tree_item_for } from '@/store/explorer/tree_item'
 
@@ -45,6 +46,8 @@ const props = defineProps<{
 	new_folder?: boolean
 	/** Set where F2 renames this folder: a row in the list or gallery */
 	rename_shortcut?: string
+	/** Set with `rename_shortcut`: the keys that cut, copy and duplicate the selected row are named in the menu */
+	clipboard_shortcuts?: boolean
 	/** Set where Delete / Backspace trashes this folder: a row in the list or gallery */
 	remove_shortcut?: string
 	/** The open board or canvas, from the folder header: its grid and background follow the look */
@@ -171,15 +174,15 @@ function reveal() {
 		</template>
 		<template v-if="groups.clipboard">
 			<MenuSeparator v-if="groups.top || groups.look || spatial_workspace" />
-			<MenuItem v-if="items.cut" icon="tabler:cut" :label="t('menu.cut')" @select="cut" />
-			<MenuItem v-if="items.copy" icon="tabler:copy" :label="t('menu.copy')" @select="copy" />
+			<MenuItem v-if="items.cut" icon="tabler:cut" :label="t('menu.cut')" :shortcut="clipboard_shortcuts ? mod_key_hint('X') : undefined" @select="cut" />
+			<MenuItem v-if="items.copy" icon="tabler:copy" :label="t('menu.copy')" :shortcut="clipboard_shortcuts ? mod_key_hint('C') : undefined" @select="copy" />
 			<MenuItem
 				v-if="items.paste && clipboard.clip"
 				icon="tabler:clipboard"
 				:label="t('menu.paste_folder', { name: clipboard.clip.name })"
 				@select="paste"
 			/>
-			<MenuItem v-if="items.duplicate" icon="tabler:copy-plus" :label="t('menu.duplicate')" @select="duplicate" />
+			<MenuItem v-if="items.duplicate" icon="tabler:copy-plus" :label="t('menu.duplicate')" :shortcut="clipboard_shortcuts ? mod_key_hint('D') : undefined" @select="duplicate" />
 		</template>
 		<template v-if="items.rename || items.move_to_trash">
 			<MenuSeparator v-if="groups.top || groups.look || spatial_workspace || groups.clipboard" />

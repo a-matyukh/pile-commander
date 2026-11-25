@@ -33,6 +33,7 @@ const preview_label = computed(() => {
 		align="end"
 		:can_write="workspace.can_write"
 		rename_shortcut="F2"
+		clipboard_shortcuts
 		:remove_shortcut="delete_key_hint"
 	>
 		<template #trigger>
