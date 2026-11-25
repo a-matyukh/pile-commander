@@ -1,7 +1,8 @@
 import { sanitize_suggested_name, type NameStyle } from './naming'
 import type { SummaryEntry, SummarySources } from './summarize'
 import { extract_json } from './text'
-import type { AiContentPart, AiMessage } from './types'
+import { board_message, data_fence, DATA_RULE, type DataFence } from './boardData'
+import type { AiMessage } from './types'
 
 /**
  * "Sort into folders" with the app's own model: the folder is read the way
@@ -18,22 +19,13 @@ const SYSTEM_PROMPT = [
 	'Use 2 to 8 folders. Items that end with "/" are folders already there: put things into one when it fits, by its name without "/".',
 	'Leave out items that fit nowhere; they stay where they are. Never put a folder into itself or into a folder that goes into it.',
 	'Copy item names exactly as listed. Name new folders in the language of the content, a few words each.',
+	DATA_RULE,
 ].join(' ')
 
-export function build_sort_messages(sources: SummarySources, folder_name: string): AiMessage[] {
-	const text = [
-		`Folder "${folder_name}" holds:`,
-		sources.names.map(name => `- ${name}`).join('\n') || '(nothing)',
-		...sources.notes.map(note => `\n## Note "${note.name}"\n${note.text}`),
-	].join('\n')
-	const content: AiContentPart[] = [{ type: 'text', text }]
-	for (const image of sources.images) {
-		content.push({ type: 'text', text: `Image "${image.name}":` })
-		content.push({ type: 'image_url', image_url: { url: image.url } })
-	}
+export function build_sort_messages(sources: SummarySources, folder_name: string, fence: DataFence = data_fence()): AiMessage[] {
 	return [
 		{ role: 'system', content: SYSTEM_PROMPT },
-		{ role: 'user', content: sources.images.length ? content : text },
+		{ role: 'user', content: board_message(`Folder "${folder_name}" holds:`, sources, fence) },
 	]
 }
 

@@ -364,6 +364,102 @@ export async function prune_feedback_attachments(
 	return cleared;
 }
 
+export type EraseFeedback = {
+	/** notes written before `before`, oldest first */
+	older_than: (before: string, limit: number) => Promise<{ id: string; attachments: FeedbackAttachment[] }[]>;
+	/** notes sent from this address */
+	sent_from: (email: string, limit: number) => Promise<{ id: string; attachments: FeedbackAttachment[] }[]>;
+	remove_objects: (paths: string[]) => Promise<{ error: { message?: string } | null }>;
+	remove_row: (id: string) => Promise<{ error: { message?: string } | null }>;
+};
+
+export function default_erase(db: SupabaseClient): EraseFeedback {
+	const rows = (data: unknown) =>
+		((data ?? []) as { id: string; attachments: unknown }[]).map((row) => ({
+			id: row.id,
+			attachments: Array.isArray(row.attachments) ? (row.attachments as FeedbackAttachment[]) : [],
+		}));
+	return {
+		async older_than(before, limit) {
+			const { data, error } = await db
+				.from("feedback")
+				.select("id, attachments")
+				.lt("created_at", before)
+				.order("created_at", { ascending: true })
+				.limit(limit);
+			if (error) throw internal_error("feedback retention list", error);
+			return rows(data);
+		},
+		async sent_from(email, limit) {
+			const { data, error } = await db.from("feedback").select("id, attachments").eq("email", email).limit(limit);
+			if (error) throw internal_error("feedback erase list", error);
+			return rows(data);
+		},
+		async remove_objects(paths) {
+			if (paths.length === 0) return { error: null };
+			const { error } = await db.storage.from(FEEDBACK_BUCKET).remove(paths);
+			return { error };
+		},
+		async remove_row(id) {
+			const { error } = await db.from("feedback").delete().eq("id", id);
+			return { error };
+		},
+	};
+}
+
+/** Screenshots first, then the row: a row gone while its files stayed would leave them with nothing pointing at them */
+async function erase_notes(
+	notes: { id: string; attachments: FeedbackAttachment[] }[],
+	ops: Pick<EraseFeedback, "remove_objects" | "remove_row">,
+): Promise<number> {
+	let erased = 0;
+	for (const note of notes) {
+		const paths = note.attachments.map((item) => item.path).filter((path) => typeof path === "string" && path);
+		const removed = await ops.remove_objects(paths);
+		if (removed.error) {
+			console.error("[feedback] screenshot removal failed:", note.id, removed.error.message ?? removed.error);
+			continue;
+		}
+		const deleted = await ops.remove_row(note.id);
+		if (deleted.error) {
+			console.error("[feedback] deleting a note failed:", note.id, deleted.error.message ?? deleted.error);
+			continue;
+		}
+		erased += 1;
+	}
+	return erased;
+}
+
+/**
+ * A note holds an email address and whatever its author wrote: it is kept
+ * for `days` days, then deleted with its screenshots. Returns how many
+ * went; a failure leaves the note for the next run
+ */
+export async function prune_feedback_notes(days: number, ops: EraseFeedback, now: number = Date.now()): Promise<number> {
+	const before = new Date(now - days * DAY_MS).toISOString();
+	return erase_notes(await ops.older_than(before, PRUNE_BATCH), ops);
+}
+
+/**
+ * Every note sent from one address, with its screenshots: when the account
+ * with that address is deleted, and when someone asks us to drop what they
+ * wrote (scripts/erase-feedback.ts). Returns how many went
+ */
+export async function erase_feedback_of(email: string, ops: EraseFeedback): Promise<number> {
+	const address = normalize_email(email);
+	if (!address) return 0;
+	let erased = 0;
+	// a batch that erased nothing would be read again: stop there
+	for (let round = 0; round < 50; round++) {
+		const notes = await ops.sent_from(address, PRUNE_BATCH);
+		if (notes.length === 0) break;
+		const done = await erase_notes(notes, ops);
+		erased += done;
+		if (done === 0) break;
+	}
+	return erased;
+}
+
 export function start_feedback_worker(env: Env, db: SupabaseClient): void {
 	// once a day is plenty: a screenshot a day older than the limit harms nobody
 	Bun.cron("41 4 * * *", async () => {
@@ -373,6 +469,12 @@ export function start_feedback_worker(env: Env, db: SupabaseClient): void {
 		} catch (err) {
 			console.error("[feedback] prune failed:", err);
 		}
+		try {
+			const erased = await prune_feedback_notes(env.feedback_note_days, default_erase(db));
+			if (erased > 0) console.log(`[feedback] deleted ${erased} note(s) older than ${env.feedback_note_days} days`);
+		} catch (err) {
+			console.error("[feedback] retention failed:", err);
+		}
 	});
-	console.log(`[feedback] screenshots are kept for ${env.feedback_attachment_days} days`);
+	console.log(`[feedback] screenshots are kept for ${env.feedback_attachment_days} days, notes for ${env.feedback_note_days}`);
 }

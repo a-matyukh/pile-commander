@@ -1062,7 +1062,13 @@ $$;
 -- purge_entry / purge_trash: explicit hard delete from the trash. The
 -- entries_queue_blob_deletion trigger enqueues the storage_key of every
 -- deleted row into blob_deletions; the GC worker removes B2 objects
--- asynchronously
+-- asynchronously.
+--
+-- Deleting for good is the owner's alone, here and in delete_moved_entry and
+-- sweep_pile_images below. An editor may move anything to the trash, where
+-- the owner has 30 days to bring it back (purge_expired_entries); an editor
+-- who could also empty the trash would erase the owner's files with nothing
+-- left to restore.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.purge_entry(p_entry uuid)
@@ -1080,8 +1086,8 @@ begin
     if not found then
         raise exception 'purge_entry: entry % not found in trash', p_entry;
     end if;
-    if not private.can_write_workspace(v_entry.workspace_id) then
-        raise exception 'purge_entry: access denied';
+    if not private.is_workspace_owner(v_entry.workspace_id) then
+        raise exception 'purge_entry: access denied, only the owner deletes for good';
     end if;
 
     delete from public.entries d
@@ -1105,6 +1111,9 @@ $$;
 -- watchers get the removal and nothing is left in the trash (the blob goes to
 -- blob_deletions through the trigger). By path: one round trip. Lock order:
 -- workspace (lock_entry_workspace) → folder row → files. Returns how many.
+-- Only the owner's call drops anything: an editor's leaves the spare files
+-- where they are (hidden, in `.pile`) for the owner's next sweep, rather than
+-- putting pictures with machine names into the trash.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.sweep_pile_images(
@@ -1131,6 +1140,9 @@ begin
         return 0;
     end if;
     perform private.lock_entry_workspace(v_id);
+    if not private.is_workspace_owner(p_workspace) then
+        return 0;
+    end if;
     select * into v_folder from public.entries e
      where e.id = v_id and e.deleted_at is null
        for update;
@@ -1193,7 +1205,8 @@ $$;
 --               keeps both and says so);
 --   'trashed' — an item trashed earlier lives inside it, which a hard delete
 --               would cascade to (entries.parent_id): soft delete only, so
---               that item can still be restored;
+--               that item can still be restored. The same for anyone but the
+--               owner: an editor's move leaves the source in the trash;
 --   'deleted' — soft delete (so watchers get the removal: Realtime trims a
 --               hard DELETE to its key) and hard delete in one transaction:
 --               the move leaves nothing in the trash;
@@ -1318,7 +1331,8 @@ begin
         return 'changed';
     end if;
 
-    if exists (
+    if not private.is_workspace_owner(v_entry.workspace_id)
+       or exists (
         select 1 from public.entries d
          where d.node_path <@ v_entry.node_path
            and d.deleted_at is not null
@@ -1343,8 +1357,8 @@ security definer
 set search_path = public, extensions
 as $$
 begin
-    if not private.can_write_workspace(p_workspace) then
-        raise exception 'purge_trash: access denied';
+    if not private.is_workspace_owner(p_workspace) then
+        raise exception 'purge_trash: access denied, only the owner deletes for good';
     end if;
     perform private.lock_workspace_tree(p_workspace);
 
@@ -1724,8 +1738,9 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- report_hub_listing: authenticated visitors, not the owner. One row per
--- (workspace, reporter). Accounts younger than 7 days still report; they
--- do not count toward auto-hide. 20 reports / reporter / day.
+-- (workspace, reporter). Every report is stored and reaches the moderator;
+-- which ones count toward auto-hide is maybe_auto_hide_hub_listing's rule
+-- (schema.sql). 20 reports / reporter / day.
 -- ----------------------------------------------------------------------------
 
 create or replace function private.report_hub_listing(p_workspace uuid, p_reason text)

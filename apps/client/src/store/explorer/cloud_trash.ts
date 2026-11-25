@@ -12,7 +12,9 @@ import { explorer_tree } from './tree'
  * The cloud's trash as one place, as in the prototype. Under the hood each
  * top-level cloud folder (a workspace) keeps its own trash, and only its
  * owner and editors may see it: the page gathers the trash of every folder
- * the user can change. Items stay 30 days, then the server deletes them
+ * the user can change. Items stay 30 days, then the server deletes them.
+ * Deleting for good is the owner's: in someone else's folder an editor can
+ * only restore (the server refuses the rest, rpc.sql purge_entry)
  */
 export type CloudTrashItem = TrashEntry & {
 	workspace_id: string
@@ -67,6 +69,9 @@ export function create_cloud_trash(source: TrashCloud) {
 	}
 
 	const key = (item: CloudTrashItem) => `${item.workspace_id}\0${item.path}`
+
+	/** The user's own folder: only there may they delete for good */
+	const can_purge = (item: CloudTrashItem) => source.role_of(item.workspace_id) === 'owner'
 
 	async function act(item: CloudTrashItem, run: () => Promise<boolean>) {
 		const k = key(item)
@@ -129,6 +134,7 @@ export function create_cloud_trash(source: TrashCloud) {
 	return {
 		state,
 		key,
+		can_purge,
 		load,
 		restore: (item: CloudTrashItem) => act(item, async () => {
 			if (!(await source.restore(item.workspace_id, item.path))) return false
@@ -167,9 +173,9 @@ export function create_cloud_trash(source: TrashCloud) {
 				state.busy.delete(k)
 			}
 		},
-		/** Every folder's trash that has something in it, and every trashed workspace */
+		/** The trash of every folder of the user's own that has something in it, and every trashed workspace */
 		async empty() {
-			const ids = [...new Set(state.items.map(item => item.workspace_id))]
+			const ids = [...new Set(state.items.filter(can_purge).map(item => item.workspace_id))]
 			await Promise.all([
 				...ids.map(id => source.purge_all(id)),
 				...state.workspaces.map(row => source.purge_trashed_workspace(row.id)),

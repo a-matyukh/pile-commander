@@ -61,14 +61,17 @@ function first_object(text: string): unknown {
  * escaped, so marked shows any tag as text: a `video` poster, a `picture`
  * source, a CSS background, an unclosed tag at the end of a stream. Markdown
  * images (`![alt](url)`, `![alt][id]`, and the shortcut `![alt]`) become
- * their alt text, because those load a remote address on render. Links stay:
- * they load only on a click. Inside `` `code` `` the escaped form shows as
- * `&lt;`, which is fine for a summary.
+ * their alt text, because those load a remote address on render. A link
+ * loads only on a click, but its words can say one thing and its address
+ * another ("Sign in" over someone's page): a link is written out with its
+ * address, `Sign in (https://…)`, so the person sees where it goes in the
+ * preview and in the saved note. Inside `` `code` `` the escaped form shows
+ * as `&lt;`, which is fine for a summary.
  */
 export function untrusted_markdown(text: string): string {
 	let current = text.replace(/</g, '&lt;')
 	for (let pass = 0; pass < 5; pass++) {
-		const next = strip_shortcut_images(strip_ref_images(replace_markdown_images(current)))
+		const next = show_link_addresses(strip_shortcut_images(strip_ref_images(replace_markdown_images(current))))
 		if (next === current) return current.trim()
 		current = next
 	}
@@ -123,4 +126,46 @@ function strip_ref_images(text: string): string {
 /** `![alt]` names a link definition and renders as an image too. */
 function strip_shortcut_images(text: string): string {
 	return text.replace(/!\[([^\]]*)\](?!\s*[([])/g, '$1')
+}
+
+/** The address of `[words](address "title")`, without the title and the angle brackets (escaped by now). */
+function link_address(inside: string): string {
+	let address = inside.trim()
+	const title = /^(\S+)\s+(?:"[^"]*"|'[^']*'|\([^)]*\))$/.exec(address)
+	if (title) address = title[1]!
+	const angled = /^&lt;(.*)>$/.exec(address)
+	return (angled ? angled[1]! : address).trim()
+}
+
+/**
+ * `[words](address)` → `words (address)`, or the address alone when the
+ * words are the address. A link by reference (`[words][id]` with `[id]:
+ * address` elsewhere) loses its link: the words stay, and the definition
+ * line, which markdown would hide, is left as text.
+ */
+function show_link_addresses(text: string): string {
+	let out = ''
+	let at = 0
+	const opening = /\[([^[\]\n]*)\]\(/g
+	for (let match = opening.exec(text); match; match = opening.exec(text)) {
+		let cursor = match.index + match[0].length
+		let depth = 1
+		while (cursor < text.length && depth > 0) {
+			const ch = text[cursor]!
+			if (ch === '\n') break
+			if (ch === '(') depth++
+			else if (ch === ')') depth--
+			cursor++
+		}
+		if (depth !== 0) continue
+		const words = match[1]!.trim()
+		const address = link_address(text.slice(match.index + match[0].length, cursor - 1))
+		out += text.slice(at, match.index)
+		out += !address ? words : !words || words === address ? address : `${words} (${address})`
+		at = cursor
+		opening.lastIndex = cursor
+	}
+	return (out + text.slice(at))
+		.replace(/\[([^[\]\n]+)\]\[[^\]\n]*\]/g, '$1')
+		.replace(/^( {0,3})\[([^\]\n]+)\]:/gm, '$1\\[$2]:')
 }

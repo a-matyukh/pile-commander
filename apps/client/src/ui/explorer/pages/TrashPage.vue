@@ -58,6 +58,8 @@ const visible_items = computed(() =>
 	trash.state.items.filter(item => is_listed_trash_row(item.name, item.path, show_hidden_files.value)),
 )
 const has_rows = computed(() => visible_items.value.length > 0 || trash.state.workspaces.length > 0)
+/** Something the user may delete for good: their own folders' items, and trashed folders (always their own) */
+const can_empty = computed(() => trash.state.items.some(trash.can_purge) || trash.state.workspaces.length > 0)
 </script>
 
 <template>
@@ -67,7 +69,7 @@ const has_rows = computed(() => visible_items.value.length > 0 || trash.state.wo
 			<div class="bar">
 				<p v-if="cloud.last_error" class="muted bad">{{ cloud.last_error }}</p>
 				<Button
-					v-if="has_rows"
+					v-if="can_empty"
 					variant="danger-link"
 					class="empty"
 					@click="empty_open = true"
@@ -113,6 +115,7 @@ const has_rows = computed(() => visible_items.value.length > 0 || trash.state.wo
 						{{ t('trash.restore') }}
 					</Button>
 					<Button
+						v-if="trash.can_purge(item)"
 						variant="danger-link"
 						:disabled="trash.state.busy.has(trash.key(item))"
 						@click="purge_target = item"

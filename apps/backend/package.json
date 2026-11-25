@@ -8,7 +8,8 @@
     "start": "bun src/index.ts",
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
-    "check:signed-length": "bun scripts/check-signed-length.ts"
+    "check:signed-length": "bun scripts/check-signed-length.ts",
+    "erase:feedback": "bun scripts/erase-feedback.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

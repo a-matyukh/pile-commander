@@ -168,8 +168,9 @@ useSeoMeta({
         linger a little longer.
       </li>
       <li>
-        Feedback notes and their screenshots: until we have acted on them, or
-        until you ask us to drop them.
+        Feedback notes: the screenshots for 90 days, the note itself for a
+        year at most. Deleting your account also deletes the notes sent from
+        its email address, and we delete them sooner if you ask.
       </li>
       <li>
         Billing: your plan and subscription details live as long as the account.

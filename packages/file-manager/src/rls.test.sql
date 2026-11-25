@@ -154,6 +154,8 @@ begin
 
     insert into public.entries (workspace_id, parent_id, name, kind) values (v_ws, v_root, 'docs', 'folder') returning id into v_folder;
     insert into __results values ('owner: folder insert', v_folder is not null, null);
+    insert into __results values ('owner: may join the workspace''s channels',
+        private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1'), null);
 
     v_json := public.create_text_file(v_folder, 'note.md', 'text/markdown', 'hello', 'suite', null);
     v_file := (v_json->>'id')::uuid;
@@ -1124,6 +1126,21 @@ begin
         insert into __results values ('service: feedback attachments cap', true, null);
         execute 'set local role service_role';
     end;
+    -- the backend forgets a note's screenshots after a while, then the note;
+    -- what someone wrote and from which address it never rewrites
+    update public.feedback set attachments = '[]'::jsonb where email = 'fb@example.invalid';
+    insert into __results values ('service: feedback screenshots can be cleared',
+        (select attachments = '[]'::jsonb from public.feedback where email = 'fb@example.invalid'), null);
+    begin
+        update public.feedback set email = 'other@example.invalid' where email = 'fb@example.invalid';
+        insert into __results values ('service: a feedback note cannot be rewritten', false, 'accepted');
+    exception when insufficient_privilege then
+        insert into __results values ('service: a feedback note cannot be rewritten', true, null);
+        execute 'set local role service_role';
+    end;
+    delete from public.feedback where email = 'fb@example.invalid';
+    insert into __results values ('service: a feedback note can be deleted',
+        (select count(*) from public.feedback where email = 'fb@example.invalid') = 0, null);
 
     -- egress: the blob row the readers below resolve, a finalized Hub
     -- preview to list later, and the meter's flush
@@ -1327,6 +1344,37 @@ begin
         jsonb_build_object('path', '/docs/note.md', 'xattrs', jsonb_build_object('by', 'editor'))), null);
     insert into __results values ('editor: merge_entry_xattrs',
         v_n = 0 and (select xattrs->>'by' = 'editor' from public.entries where id = v_file), null);
+    insert into __results values ('editor: may join the workspace''s channels',
+        private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1')
+        and private.can_join_channel('file-manager-strokes:' || v_ws || ':aaaa:7'), null);
+    -- deleting for good is the owner's: an editor fills the trash, never empties it
+    begin
+        perform public.purge_entry(v_old);
+        insert into __results values ('editor: purge_entry refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('editor: purge_entry refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    begin
+        perform public.purge_trash(v_ws);
+        insert into __results values ('editor: purge_trash refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('editor: purge_trash refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    insert into __results values ('editor: what was in the trash is still there',
+        (select deleted_at is not null from public.entries where id = v_old), null);
+    insert into public.entries (workspace_id, parent_id, name, kind)
+    values (v_ws, v_root, 'editor-moved', 'folder')
+    returning id into v_moved;
+    perform public.create_text_file(v_moved, 'inside.txt', 'text/plain', 'x', null, null);
+    select st.stamp into v_stamp from public.entry_subtree_stamp_at(v_ws, '/editor-moved') st;
+    v_moved_result := public.delete_moved_entry(v_moved, v_stamp, '/editor-moved', null);
+    insert into __results values ('editor: a moved folder goes to the trash, not away for good',
+        v_moved_result = 'trashed'
+        and (select count(*) from public.entries e
+              where e.deleted_at is not null and (e.id = v_moved or e.parent_id = v_moved)) = 2,
+        v_moved_result);
     execute 'reset role';
 
     -- ------------------------------------------------------------------
@@ -1346,6 +1394,8 @@ begin
         insert into __results values ('viewer: merge_entry_xattrs refused', sqlerrm like '%access denied%', sqlerrm);
         execute 'set local role authenticated';
     end;
+    insert into __results values ('viewer: may join the workspace''s channels',
+        private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1'), null);
     insert into __results values ('viewer: reads live rows', (select count(*) from public.entries where id = v_file) = 1, null);
     insert into __results values ('viewer: reads content', (select count(*) from public.entry_contents where entry_id = v_file) = 1, null);
     insert into __results values ('viewer: does not see the trash', (select count(*) from public.entries where id = v_old) = 0, null);
@@ -1386,6 +1436,12 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     insert into __results values ('stranger: sees nothing', (select count(*) from public.entries where workspace_id = v_ws) = 0, null);
+    insert into __results values ('stranger: may not join the workspace''s channels, nor a topic that names none',
+        not private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1')
+        and not private.can_join_channel('file-manager-entries:not-a-uuid:aaaa:1')
+        and not private.can_join_channel('room:' || v_ws)
+        and not private.can_join_channel(v_ws::text)
+        and not private.can_join_channel(null), null);
     insert into __results values ('stranger: download_target on a private board is empty',
         (select count(*) from public.download_target(v_blob)) = 0, null);
     insert into __results values ('stranger: username-less profiles hidden',
@@ -1876,6 +1932,10 @@ begin
 
     perform set_config('request.jwt.claims', json_build_object('sub', c_other, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
+    -- the board is public here: a visitor reads it, and still holds no channel
+    insert into __results values ('other: a public board opens no channel to a signed-in visitor',
+        (select is_public from public.workspaces where id = v_ws)
+        and not private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1'), null);
     perform public.report_hub_listing(v_ws, 'spam from other');
     insert into __results values ('other: hub_listing_reported is true after report',
         public.hub_listing_reported(v_ws) is true, null);
@@ -1897,6 +1957,14 @@ begin
         (select hidden_at is null from public.hub_publications where source_workspace_id = v_ws), null);
     execute 'reset role';
 
+    -- the editor already reported three other boards this week: a fourth
+    -- report is kept for the moderator and does not weigh on the card
+    insert into public.workspaces (id, owner_id, name)
+    select ('5eed0000-0000-4000-8000-00000000000' || g)::uuid, c_buyer, 'reported ' || g
+      from generate_series(1, 3) g;
+    insert into private.hub_reports (workspace_id, reporter_id, reason, created_at)
+    select ('5eed0000-0000-4000-8000-00000000000' || g)::uuid, c_editor, 'earlier', now() - interval '1 day'
+      from generate_series(1, 3) g;
     perform set_config('request.jwt.claims', json_build_object('sub', c_editor, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform public.report_hub_listing(v_ws, 'spam from editor');
@@ -1905,13 +1973,28 @@ begin
     execute 'set local role authenticated';
     perform public.report_hub_listing(v_ws, 'spam from viewer');
     execute 'reset role';
+    insert into __results values ('auto-hide: an account that reported three other boards this week does not count',
+        (select count(*) from private.hub_reports r where r.workspace_id = v_ws) = 4
+        and (select hidden_at is null from public.hub_publications where source_workspace_id = v_ws), null);
+
+    -- a board someone forked takes one more report
+    update public.hub_publications set fork_count = 1 where source_workspace_id = v_ws;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_buyer, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform public.report_hub_listing(v_ws, 'spam from buyer');
+    execute 'reset role';
+    insert into __results values ('auto-hide: three qualified reports do not hide a forked board',
+        (select hidden_at is null from public.hub_publications where source_workspace_id = v_ws), null);
+    update public.hub_publications set fork_count = 0 where source_workspace_id = v_ws;
+    perform private.maybe_auto_hide_hub_listing(v_ws);
 
     insert into __results values ('auto-hide: three qualified reports hide the listing',
         (select hidden_at is not null and hidden_reason = 'reports'
            from public.hub_publications where source_workspace_id = v_ws), null);
-    insert into __results values ('auto-hide: listing_hidden mail queued',
+    insert into __results values ('auto-hide: listing_hidden mail queued, the moderator not told yet',
         (select count(*) from public.moderation_mail m
-          where m.workspace_id = v_ws and m.kind = 'listing_hidden') = 1, null);
+          where m.workspace_id = v_ws and m.kind = 'listing_hidden'
+            and m.reason = 'reports' and m.moderator_notified_at is null) = 1, null);
 
     perform set_config('request.jwt.claims', '', true);
     execute 'set local role anon';
@@ -1990,6 +2073,16 @@ begin
     insert into __results values ('admin: listing_made_private mail queued',
         (select count(*) from public.moderation_mail m
           where m.workspace_id = v_ws and m.kind = 'listing_made_private') = 1, null);
+
+    -- Realtime's table carries our policy wherever Realtime exists, and
+    -- nothing lets anon in (the policy is for authenticated alone)
+    insert into __results values ('realtime: only members may join a channel, by one policy',
+        to_regclass('realtime.messages') is null
+        or ((select count(*) from pg_policies
+              where schemaname = 'realtime' and tablename = 'messages'
+                and policyname = 'pile_workspace_channels'
+                and cmd = 'SELECT' and roles = '{authenticated}') = 1
+            and not has_function_privilege('anon', 'private.can_join_channel(text)', 'execute')), null);
 
     execute 'set local role service_role';
     insert into __results values ('service: moderation_digest_payload is json',

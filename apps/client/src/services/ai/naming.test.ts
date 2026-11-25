@@ -18,13 +18,13 @@ describe('untrusted_markdown', () => {
 		expect(untrusted_markdown('![](https://evil.example/?q=secret)')).toBe('')
 		expect(untrusted_markdown('![photo](https://evil.example/a_(1).png "shot")')).toBe('photo')
 		expect(untrusted_markdown('![](<https://evil.example/a.png>)')).toBe('')
-		expect(untrusted_markdown('![secret][id]\n\n[id]: https://evil.example/a.png')).toBe('secret\n\n[id]: https://evil.example/a.png')
+		expect(untrusted_markdown('![secret][id]\n\n[id]: https://evil.example/a.png')).toBe('secret\n\n\\[id]: https://evil.example/a.png')
 		expect(untrusted_markdown('![secret]')).toBe('secret')
 		expect(untrusted_markdown('hello ![](https://evil.example/a.png')).toBe('hello')
 	})
 
 	test('keeps links and escapes every tag', () => {
-		expect(untrusted_markdown('Read [the notes](https://example.com/docs).')).toBe('Read [the notes](https://example.com/docs).')
+		expect(untrusted_markdown('Read [the notes](https://example.com/docs).')).toBe('Read the notes (https://example.com/docs).')
 		expect(untrusted_markdown('<video poster="https://evil.example/a.png">')).toBe('&lt;video poster="https://evil.example/a.png">')
 		expect(untrusted_markdown('<picture><source srcset="https://evil.example/a.png">')).toBe('&lt;picture>&lt;source srcset="https://evil.example/a.png">')
 		expect(untrusted_markdown('<p style="background:url(https://evil.example/a.png)">')).toBe('&lt;p style="background:url(https://evil.example/a.png)">')
@@ -123,6 +123,30 @@ describe('name styles', () => {
 		expect(prompt('spaces')).toContain('separated by spaces')
 		expect(prompt('kebab')).toContain('joined by hyphens')
 		expect(prompt('snake')).toContain('joined by underscores')
+	})
+})
+
+describe('untrusted_markdown: a link shows where it goes', () => {
+	test('the words and the address side by side', () => {
+		expect(untrusted_markdown('[Sign in](https://evil.example/login)')).toBe('Sign in (https://evil.example/login)')
+		expect(untrusted_markdown('[Sign in](https://evil.example/a_(1) "your bank")')).toBe('Sign in (https://evil.example/a_(1))')
+		expect(untrusted_markdown('[Sign in](<https://evil.example/login>)')).toBe('Sign in (https://evil.example/login)')
+		expect(untrusted_markdown('a [one](https://a.example) and [two](https://b.example).')).toBe('a one (https://a.example) and two (https://b.example).')
+	})
+
+	test('an address that is its own words is not doubled', () => {
+		expect(untrusted_markdown('[https://example.com](https://example.com)')).toBe('https://example.com')
+		expect(untrusted_markdown('[](https://example.com)')).toBe('https://example.com')
+	})
+
+	test('a link by reference keeps its words, and its hidden address line becomes text', () => {
+		const text = untrusted_markdown('[Sign in][1] now\n\n[1]: https://evil.example/login')
+		expect(text).toBe('Sign in now\n\n\\[1]: https://evil.example/login')
+	})
+
+	test('a task list and plain brackets are left alone', () => {
+		expect(untrusted_markdown('- [ ] buy film\n- [x] call (today)')).toBe('- [ ] buy film\n- [x] call (today)')
+		expect(untrusted_markdown('array[0] (first)')).toBe('array[0] (first)')
 	})
 })
 

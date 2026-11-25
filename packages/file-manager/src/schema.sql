@@ -540,6 +540,9 @@ create table public.billing_events (
 -- ----------------------------------------------------------------------------
 -- feedback: landing /feedback form. Service-role writes only (POST /feedback).
 -- Multiple rows per email are allowed. Message length matches the form cap.
+-- A note is personal data that no account owns: nothing cascades to it. The
+-- backend deletes it after FEEDBACK_NOTE_DAYS, and at once when the account
+-- with that address is deleted or its author asks (feedback.ts).
 -- Optional screenshots live in the private Storage bucket `feedback` at
 -- `{id}/{uuid}.ext`. Drop a note through the Storage API (remove those
 -- paths) THEN delete the row — a SQL delete of storage.objects orphans
@@ -821,8 +824,8 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- Post-moderation. Admins are a uid list (insert via SQL). Reports attach to
--- the workspace so they survive delist; a re-list with ≥3 qualified reports
--- auto-hides again. Mail is a queue the backend drains (Plunk) — triggers
+-- the workspace so they survive delist; a re-list with enough qualified
+-- reports (maybe_auto_hide_hub_listing) auto-hides again. Mail is a queue the backend drains (Plunk) — triggers
 -- never send. Digest cursor is a singleton row.
 -- ----------------------------------------------------------------------------
 
@@ -855,7 +858,11 @@ create table public.moderation_mail (
     created_at timestamptz not null default now(),
     sent_at timestamptz,
     attempts integer not null default 0 check (attempts >= 0),
-    last_error text
+    last_error text,
+    -- listing_hidden by reports: when the backend told the moderator
+    -- (MODERATION_DIGEST_EMAIL). Apart from sent_at: the owner's mail and
+    -- the moderator's succeed or fail on their own
+    moderator_notified_at timestamptz
 );
 
 create index moderation_mail_pending_idx
@@ -1563,9 +1570,21 @@ as $$
     );
 $$;
 
--- Auto-hide a Hub card when ≥3 distinct reporters with accounts older than
--- 7 days filed a report after reports_counted_after. No-op when there is no
--- visible listing. Enqueues listing_hidden mail for the owner.
+-- Auto-hide a Hub card on reports filed after reports_counted_after. No-op
+-- when there is no visible listing. Enqueues listing_hidden mail for the
+-- owner; the backend also writes to the moderator at once
+-- (moderation_mail.moderator_notified_at), so a wrong hide is undone in
+-- hours, not at the weekly digest.
+--
+-- Three accounts must not be able to clear the gallery. A report counts when
+--   * its author's account is older than 7 days, and
+--   * the author reported at most two other boards in the 7 days before it:
+--     an account's reports weigh on three boards a week, however many it
+--     files (report_hub_listing takes 20 a day, and all of them still reach
+--     the moderator's digest).
+-- A board people fork is harder to hide: 3 reports for a board nobody
+-- forked, one more at 1, 3, 7, 15 and 31 forks (8 at most). Views would be
+-- the better measure of a board's audience; they are not counted yet.
 create or replace function private.maybe_auto_hide_hub_listing(p_workspace uuid)
 returns void
 language plpgsql
@@ -1575,13 +1594,15 @@ as $$
 declare
     v_cutoff timestamptz;
     v_count bigint;
+    v_forks bigint;
+    v_need int;
     v_owner uuid;
     v_username text;
     v_slug text;
     v_name text;
 begin
-    select h.reports_counted_after, h.owner_id, p.username, w.slug, w.name
-      into v_cutoff, v_owner, v_username, v_slug, v_name
+    select h.reports_counted_after, h.owner_id, h.fork_count, p.username, w.slug, w.name
+      into v_cutoff, v_owner, v_forks, v_username, v_slug, v_name
       from public.hub_publications h
       join public.workspaces w on w.id = h.source_workspace_id
       join public.profiles p on p.id = h.owner_id
@@ -1591,14 +1612,31 @@ begin
         return;
     end if;
 
+    v_need := 3 + case
+        when v_forks >= 31 then 5
+        when v_forks >= 15 then 4
+        when v_forks >= 7 then 3
+        when v_forks >= 3 then 2
+        when v_forks >= 1 then 1
+        else 0
+    end;
+
     select count(*) into v_count
       from private.hub_reports r
       join auth.users u on u.id = r.reporter_id
      where r.workspace_id = p_workspace
        and r.created_at > v_cutoff
-       and u.created_at <= now() - interval '7 days';
+       and u.created_at <= now() - interval '7 days'
+       and (
+           select count(*) from private.hub_reports o
+            where o.reporter_id = r.reporter_id
+              and o.workspace_id <> r.workspace_id
+              and o.created_at > r.created_at - interval '7 days'
+              -- "before it"; two reports of one instant are ordered by board
+              and (o.created_at, o.workspace_id) < (r.created_at, r.workspace_id)
+       ) < 3;
 
-    if v_count < 3 then
+    if v_count < v_need then
         return;
     end if;
 
@@ -1738,6 +1776,48 @@ as $$
        and m.role = 'editor'
        and w.deleted_at is null;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- Realtime channels. A client joins a channel per table of a workspace
+-- (supabase.ts: `file-manager-<kind>:<workspace_id>:<instance>:<n>`) and asks
+-- for it as a private one. Realtime then checks the SELECT policy on
+-- realtime.messages for that topic (pile_workspace_channels, below the row
+-- policies): only the workspace's owner and members may join. A public-link
+-- visitor reads the board once and holds no channel, so "public" does not
+-- open one: this is the members-only twin of can_read_workspace. With
+-- "Allow public access" off in the project's Realtime Settings, an anonymous
+-- script can no longer hold hundreds of connections against the project's
+-- limit. What a channel delivers is still each table's own SELECT policy.
+-- ----------------------------------------------------------------------------
+create or replace function private.can_join_channel(p_topic text)
+returns boolean
+language plpgsql
+security definer
+stable
+set search_path = public, extensions
+as $$
+declare
+    v_id text;
+    v_workspace uuid;
+begin
+    if (select auth.uid()) is null or p_topic is null or p_topic !~ '^file-manager-[a-z]+:' then
+        return false;
+    end if;
+    v_id := split_part(p_topic, ':', 2);
+    if v_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        return false;
+    end if;
+    v_workspace := v_id::uuid;
+    return exists (
+        select 1 from public.workspaces w
+         where w.id = v_workspace
+           and w.deleted_at is null
+           and w.owner_id = (select auth.uid())
+    ) or private.is_workspace_member(v_workspace);
+end
+$$;
+revoke execute on function private.can_join_channel(text) from public, anon;
+grant execute on function private.can_join_channel(text) to authenticated;
 
 -- Serialize structural operations on one workspace, including direct INSERTs
 -- and workspace/account cascades. NO KEY UPDATE permits FK KEY SHARE
@@ -2136,6 +2216,23 @@ create policy bridge_events_select on public.bridge_events
 
 create policy bridge_events_insert on public.bridge_events
     for insert with check (owner_id = (select auth.uid()));
+
+-- Who may join a Realtime channel (private.can_join_channel). The table is
+-- Realtime's own: RLS is already on and must not be altered here, only the
+-- policy is ours. A database without Realtime (the local test one, unless it
+-- stands one in) skips it
+do $$
+begin
+    if to_regclass('realtime.messages') is null then
+        return;
+    end if;
+    execute 'drop policy if exists pile_workspace_channels on realtime.messages';
+    execute $policy$
+        create policy pile_workspace_channels on realtime.messages
+            for select to authenticated
+            using (private.can_join_channel((select realtime.topic())))
+    $policy$;
+end $$;
 
 -- sync devices: an account sees and changes only its own rows, and stamps
 -- only workspaces it can open
@@ -2835,9 +2932,13 @@ grant update (last_pass_at) on public.sync_devices to authenticated;
 grant select, insert on public.billing_events to service_role;
 
 -- feedback: no client grants; RLS with no policies is the backstop if the
--- project toggle exposes new tables to anon/authenticated
+-- project toggle exposes new tables to anon/authenticated. The backend
+-- writes a note, later clears its screenshots (FEEDBACK_ATTACHMENT_DAYS)
+-- and deletes it (FEEDBACK_NOTE_DAYS, a deleted account, a request by
+-- mail). It never rewrites the address or the text: no grant for that
 revoke all on public.feedback from public, anon, authenticated;
-grant select, insert on public.feedback to service_role;
+grant select, insert, delete on public.feedback to service_role;
+grant update (attachments) on public.feedback to service_role;
 
 -- egress meter: no client grants (RLS with no policies is the backstop).
 -- egress_daily / download_daily are written only through egress_sync /

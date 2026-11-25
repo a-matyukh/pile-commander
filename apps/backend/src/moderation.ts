@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Env } from "./env";
 import {
 	hub_hidden_email_copy,
+	hub_hidden_moderator_email_copy,
 	hub_made_private_email_copy,
 	moderation_digest_email_copy,
 	plunk_send,
@@ -111,6 +112,102 @@ export async function drain_moderation_mail(
 	return sent;
 }
 
+type HiddenRow = {
+	id: string;
+	workspace_id: string;
+	username: string | null;
+	slug: string | null;
+	workspace_name: string | null;
+};
+
+export type HiddenNotices = {
+	/**
+	 * Cards hidden by reports that the moderator has not been told about;
+	 * null from a database without moderation_mail.moderator_notified_at
+	 */
+	pending: (limit: number) => Promise<HiddenRow[] | null>;
+	/** how many reports each hidden card has, and what they say */
+	reports: () => Promise<HubDigestPayload["hidden"]>;
+	mark: (id: string) => Promise<{ error: { message?: string } | null }>;
+};
+
+function default_hidden_notices(db: SupabaseClient): HiddenNotices {
+	return {
+		async pending(limit) {
+			const { data, error } = await db
+				.from("moderation_mail")
+				.select("id, workspace_id, username, slug, workspace_name")
+				.eq("kind", "listing_hidden")
+				.eq("reason", "reports")
+				.is("moderator_notified_at", null)
+				.order("created_at", { ascending: true })
+				.limit(limit);
+			if (error) {
+				// 42703: the column comes with the П2 diff
+				if ((error as { code?: string }).code === "42703") return null;
+				throw new Error(error.message);
+			}
+			return (data ?? []) as HiddenRow[];
+		},
+		async reports() {
+			const { data, error } = await db.rpc("moderation_digest_payload");
+			if (error) throw new Error(error.message);
+			return parse_digest_payload(data).hidden;
+		},
+		async mark(id) {
+			const { error } = await db
+				.from("moderation_mail")
+				.update({ moderator_notified_at: new Date().toISOString() })
+				.eq("id", id);
+			return { error };
+		},
+	};
+}
+
+/**
+ * Writes to the moderator about each card that reports have just hidden.
+ * The owner's mail (drain_moderation_mail) is separate: either can fail and
+ * be tried again without the other being sent twice. Returns how many
+ * notices went
+ */
+export async function notify_moderator_of_hidden(
+	env: Env,
+	store: HiddenNotices,
+	send: FetchLike = fetch,
+): Promise<number> {
+	if (!plunk_ready(env) || !env.moderation_digest_email) return 0;
+	const rows = await store.pending(MAIL_BATCH);
+	if (!rows || rows.length === 0) return 0;
+	let reports: HubDigestPayload["hidden"] = [];
+	try {
+		reports = await store.reports();
+	} catch (err) {
+		// the notice is worth sending without the reasons
+		console.error("[moderation] hidden reports:", err instanceof Error ? err.message : err);
+	}
+	let sent = 0;
+	for (const row of rows) {
+		const found = reports.find((item) => item.workspace_id === row.workspace_id);
+		const copy = hub_hidden_moderator_email_copy({
+			workspace_id: row.workspace_id,
+			name: row.workspace_name || "A board",
+			url: board_url(env, row.username, row.slug),
+			report_count: found ? found.report_count : null,
+			reasons: found ? found.reasons : [],
+		});
+		try {
+			await plunk_send(env, env.moderation_digest_email, copy.subject, copy.body, send);
+		} catch (err) {
+			console.error("[moderation] moderator notice failed:", err instanceof Error ? err.message : err);
+			continue;
+		}
+		const marked = await store.mark(row.id);
+		if (marked.error) console.error("[moderation] mark moderator notice:", marked.error.message);
+		else sent += 1;
+	}
+	return sent;
+}
+
 export async function send_moderation_digest(
 	env: Env,
 	db: SupabaseClient,
@@ -164,6 +261,11 @@ export function start_moderation_worker(
 					await drain_moderation_mail(env, db);
 				} catch (err) {
 					console.error("[moderation] mail tick failed:", err);
+				}
+				try {
+					await notify_moderator_of_hidden(env, default_hidden_notices(db));
+				} catch (err) {
+					console.error("[moderation] moderator notice tick failed:", err);
 				}
 			}),
 		);
