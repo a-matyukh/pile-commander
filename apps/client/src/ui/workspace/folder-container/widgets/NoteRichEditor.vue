@@ -17,6 +17,7 @@ import { NoteEditing } from '@/services/text/editing'
 import { note_extensions, type Align } from '@/services/text/extensions'
 import { note_markdown } from '@/services/text/markdown'
 import { raw_html } from '@/services/text/render'
+import { useMediaRules } from '@/ui/workspace/useMediaRules'
 import FormatBubble from './FormatBubble.vue'
 
 const props = withDefaults(defineProps<{
@@ -40,13 +41,20 @@ const emit = defineEmits<{
 const bubble = useTemplateRef<InstanceType<typeof FormatBubble>>('bubble')
 
 const reader = note_markdown(props.defaultAlign)
+/** Pictures from other sites in someone else's folder wait for the person's yes. */
+const media = useMediaRules()
 const original = text.value
 /** What the opened document writes as: equal again means nothing changed. */
 let baseline: string | null = null
 
 const editor = new Editor({
 	extensions: [
-		...note_extensions({ default_align: props.defaultAlign, raw_html }),
+		...note_extensions({
+			default_align: props.defaultAlign,
+			raw_html: (raw, inline) => media.hold(raw_html(raw, inline)),
+			may_load_image: media.may_load,
+			on_pasted_image: media.chosen_by_person,
+		}),
 		NoteEditing.configure({
 			on_escape: () => emit('escape'),
 			on_link: () => void bubble.value?.openLink(),

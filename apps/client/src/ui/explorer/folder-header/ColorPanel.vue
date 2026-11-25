@@ -3,6 +3,8 @@ import { ref, watch } from 'vue'
 import { t } from '@/i18n'
 import { PRESET_COLORS } from '@/ui/workspace/menu/useColorSubmenu'
 import { isBlockedFillText } from '@/ui/workspace/folder-container/widgets/resolveBackground'
+import { loads_from_elsewhere } from '@/services/workspace/externalAddress'
+import { useMediaRules } from '@/ui/workspace/useMediaRules'
 import MenuItem from '@/ui/kit/MenuItem.vue'
 import MenuLabel from '@/ui/kit/MenuLabel.vue'
 
@@ -36,9 +38,13 @@ const picked = ref('#FFFFFF')
 watch(() => props.value, () => { if (HEX.test(current())) picked.value = current().toUpperCase() }, { immediate: true })
 watch(picked, (value) => { custom.value = value })
 
+/** A picture the person names by its link is theirs to see, in someone else's folder too. */
+const media = useMediaRules()
+
 function set(value: string) {
 	const trimmed = value.trim()
 	if (isBlockedFillText(trimmed)) return
+	if (loads_from_elsewhere(trimmed)) media.chosen_by_person()
 	emit('set', trimmed)
 }
 

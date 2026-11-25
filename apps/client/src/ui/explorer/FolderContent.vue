@@ -13,6 +13,7 @@ import { open_publish_panel, open_share_panel } from '@/store/explorer/sharePubl
 import { opens_in_editor } from '@/store/explorer/note_editor'
 import { use_folder_keys } from './folder_keys'
 import FolderPlaceholder from './FolderPlaceholder.vue'
+import ExternalMediaBar from './ExternalMediaBar.vue'
 import ListView from './views/ListView.vue'
 import GalleryView from './views/GalleryView.vue'
 import DeleteSelectedKeys from './views/DeleteSelectedKeys.vue'
@@ -94,6 +95,8 @@ watch(() => workspace.value?.opened_folder_id, (opened) => {
 	<!-- The old folder goes at once, with its own shortcuts (Delete, F2, the canvas tools) -->
 	<FolderPlaceholder v-if="opening" />
 	<div v-else-if="location && workspace" ref="box" class="fc">
+		<!-- Someone else's folder: pictures from other sites wait for a yes -->
+		<ExternalMediaBar />
 		<!-- The prototype's views replace the current ones one by one (steps 3.6–3.12) -->
 		<ListView
 			v-if="scope.container.value?.view === 'list'"

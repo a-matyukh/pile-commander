@@ -88,6 +88,49 @@ describe('SVG shapes from other people, under DOMPurify', () => {
 		expect(out).toContain('<style>.cls-1{fill:#f00}</style>')
 	})
 
+	test('a shape loads nothing from anywhere but itself', () => {
+		const out = prepare_svg_for_preview(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+			<defs><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><rect id="r" width="1" height="1"/></defs>
+			<image href="https://evil.example/pixel.png" width="1" height="1"/>
+			<image xlink:href="//evil.example/pixel.png" width="1" height="1"/>
+			<image href="http://192.168.1.1/admin.png" width="1" height="1"/>
+			<use href="https://evil.example/sprite.svg#a"/>
+			<rect fill="url(https://evil.example/f.svg#p)" width="1" height="1"/>
+			<rect fill="url(#g)" width="2" height="2"/>
+			<rect style="fill:url('https://evil.example/s.svg#p')" width="3" height="3"/>
+			<rect style="fill:url(#g)" width="4" height="4"/>
+			<rect filter="url(//evil.example/x.svg#f)" width="5" height="5"/>
+		</svg>`)
+		expect(out).not.toMatch(/evil\.example|192\.168/)
+		// what points inside the file stays
+		expect(out).toContain('fill="url(#g)"')
+		expect(out).toContain('style="fill:url(#g)"')
+		expect(out.match(/<rect/g)?.length).toBe(6)
+	})
+
+	test("a shape's style block keeps its colours and loses what it would load", () => {
+		const out = prepare_svg_for_preview(`<svg><style>
+			@import url("https://evil.example/a.css");
+			@import 'https://evil.example/b.css';
+			.cls-1{fill:#f00}
+			.cls-2{fill:url(#g)}
+			.cls-3{fill:url(https://evil.example/p.svg#x)}
+			.cls-4{background:image-set("https://evil.example/i.png" 1x)}
+			/* url(https://evil.example/hidden.png) */
+		</style><rect class="cls-1" width="1" height="1"/></svg>`)
+		expect(out).not.toContain('evil.example')
+		expect(out).not.toMatch(/@import/i)
+		expect(out).toContain('.cls-1{fill:#f00}')
+		expect(out).toContain('.cls-2{fill:url(#g)}')
+		expect(out).toContain('.cls-3{fill:none}')
+	})
+
+	test('a style block with CSS escapes is dropped whole: an escape can spell url(', () => {
+		const out = prepare_svg_for_preview('<svg><style>.a{fill:u\\72l(https://evil.example/p.svg#x)}</style><rect class="a" width="1" height="1"/></svg>')
+		expect(out).not.toContain('evil.example')
+		expect(out).toContain('<rect')
+	})
+
 	test('a link around a shape loses its address and keeps the drawing', () => {
 		const html = sanitize_svg(
 			'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'

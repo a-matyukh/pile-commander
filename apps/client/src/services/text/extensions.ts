@@ -15,7 +15,7 @@ import { StarterKit } from '@tiptap/starter-kit'
 import { CodeBlock } from '@tiptap/extension-code-block'
 import { HardBreak } from '@tiptap/extension-hard-break'
 import { Heading, type HeadingOptions } from '@tiptap/extension-heading'
-import { Image } from '@tiptap/extension-image'
+import { Image, type ImageOptions } from '@tiptap/extension-image'
 import { Link } from '@tiptap/extension-link'
 import { BulletList, OrderedList, TaskItem, TaskList } from '@tiptap/extension-list'
 import { Paragraph, type ParagraphOptions } from '@tiptap/extension-paragraph'
@@ -38,6 +38,14 @@ export type NoteExtensionOptions = {
 	 * inline piece (HTML). Without it a raw block shows its source.
 	 */
 	raw_html?: (raw: string, inline: boolean) => string
+	/**
+	 * May the editor load a picture from this address? Someone else's folder
+	 * holds pictures from other sites back until the person says to show
+	 * them (store/externalMedia.ts). Absent: every safe address loads.
+	 */
+	may_load_image?: (src: string) => boolean
+	/** The person pasted a picture's markdown themself: their own choice to see it. */
+	on_pasted_image?: () => void
 	/**
 	 * HTML for a block's inline content, used where markdown cannot carry the
 	 * block (an aligned paragraph). The markdown module supplies it; nothing
@@ -333,7 +341,15 @@ const PASTED_IMAGE = /!\[([^\]\n]*)\]\(\s*([^\s()<>]+)(?:\s+["']([^"'\n]*)["'])?
 /** Stands for a picture or another non-text piece when a line is read as text: keeps positions aligned. */
 const NOT_TEXT = '\ufffc'
 
-const NoteImage = Image.extend({
+type NoteImageOptions = {
+	may_load: ((src: string) => boolean) | null
+	on_pasted: (() => void) | null
+}
+
+const NoteImage = Image.extend<ImageOptions & NoteImageOptions>({
+	addOptions() {
+		return { ...(this.parent?.() as ImageOptions), may_load: null, on_pasted: null }
+	},
 	/**
 	 * Pasted or dropped markdown for a picture becomes the picture, as typing
 	 * it does (the input rule Tiptap ships). Without this the line stays as
@@ -343,6 +359,7 @@ const NoteImage = Image.extend({
 	 */
 	addProseMirrorPlugins() {
 		const image = this.type
+		const on_pasted = this.options.on_pasted
 		return [
 			...(this.parent?.() ?? []),
 			new Plugin({
@@ -383,6 +400,8 @@ const NoteImage = Image.extend({
 						return false
 					})
 					if (!found.length) return null
+					// before the pictures are drawn: they are the person's own
+					on_pasted?.()
 					const tr = state.tr
 					for (const { from, to, attrs } of found.reverse()) tr.replaceWith(from, to, image.create(attrs))
 					return tr
@@ -391,7 +410,9 @@ const NoteImage = Image.extend({
 		]
 	},
 	renderHTML({ HTMLAttributes }) {
-		return ['img', { ...HTMLAttributes, src: safe_image_src(HTMLAttributes.src as string | null) }]
+		const src = safe_image_src(HTMLAttributes.src as string | null)
+		const held = src !== null && this.options.may_load ? !this.options.may_load(src) : false
+		return ['img', { ...HTMLAttributes, src: held ? null : src }]
 	},
 	renderMarkdown(node) {
 		const src = String(node.attrs?.src ?? '')
@@ -771,7 +792,12 @@ export function note_extensions(options: NoteExtensionOptions = {}): AnyExtensio
 		NoteHardBreak,
 		NoteCodeBlock,
 		NoteLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true, defaultProtocol: 'https' }),
-		NoteImage.configure({ inline: true, allowBase64: true }),
+		NoteImage.configure({
+			inline: true,
+			allowBase64: true,
+			may_load: options.may_load_image ?? null,
+			on_pasted: options.on_pasted_image ?? null,
+		}),
 		NoteUnderline,
 		NoteTaskList,
 		// Tiptap's task node view (the editor) leaves `data-type` off the <li>

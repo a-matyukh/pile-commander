@@ -1261,6 +1261,12 @@ export const en: typeof ru = {
 		combine_selected: 'Combine selected',
 		remove_selected: 'Remove selected',
 	},
+	external_media: {
+		hidden: 'Pictures from other sites are hidden',
+		show: 'Show',
+		why: 'This is someone else\'s folder. While the pictures are hidden, the sites they load from do not learn that you opened it.',
+		model_held: 'This model loads files from another site',
+	},
 	clipboard: {
 		cut: '{items} cut',
 		copied: '{items} copied',

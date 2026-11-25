@@ -501,9 +501,38 @@ show only these intentional INFOs. Anything else is a regression.
   DOMPurify had never seen. `shapes.dom.test.ts` keeps that input. Without a
   DOM (node tests) the regex fallback runs alone; a window DOMPurify cannot
   use gets no shape markup. A shape's own `<style>` is kept: imported SVGs
-  color themselves with it and `apply_shape_color` edits it. It can still
-  restyle the app, which isolating the shape (not removing the block) has to
-  fix.
+  color themselves with it and `apply_shape_color` edits it.
+- **A shape is drawn in a shadow root and loads nothing but itself.**
+  `ShapeSvgPreview.vue` puts the sanitized markup into a shadow root, so a
+  shape's `<style>` reaches the shape and nothing else: it cannot repaint or
+  cover the app. The rules the board and the canvas apply to a line's
+  pointer events are repeated inside that root, since the app's own rules
+  no longer reach in. The sanitizer keeps only addresses inside the file
+  (`#id`): `href`/`src` to anywhere else, `url(…)` to anywhere else in any
+  attribute, `@import`, and any absolute address in a `<style>` block go; a
+  block with CSS escapes is dropped whole (`shape_css_without_outside`).
+  This holds in every folder, the person's own included: no shape the app
+  draws loads anything.
+- **In someone else's folder nothing loads from another site until the
+  person says so.** A picture in a note, a folder's background or cover
+  given as a link, a file a 3D model names: each makes the viewer's browser
+  ask a site the author chose, which tells that site who opened the board
+  and when, and an address inside the viewer's own network makes their
+  browser ask their router. `store/externalMedia.ts` decides: the person's
+  own folders (local, browser, demo, a cloud folder they own) load as
+  before; a cloud folder they do not own (a public link, or one they were
+  invited to as viewer or editor) holds such addresses back and shows one
+  bar, "Pictures from other sites are hidden · Show". The answer is kept on
+  the device per folder; a picture the person puts there by its link
+  themself (the colour panel, a paste into a note) counts as the answer. An
+  address of the viewer's own computer or network never loads there
+  (`is_private_address`). The sinks: `useResolvedFill` (every background
+  and cover), `hold_external_media` over a note's rendered HTML (previews,
+  shape text, raw HTML in the editor) and the editor's image node,
+  `ModelPreviewShell.vue` (the model's file is read and its `uri`s checked
+  before the viewer gets it, since the viewer offers no hook). Not covered:
+  a public name that resolves to a private address (only the network could
+  tell), and a folder the person forked, which is theirs from then on.
 - **User text never lands unescaped in a mail subject.** Bodies go through
   `escape_html`; subjects go through `subject_text` (`src/mail.ts`), which
   strips control characters, collapses whitespace and clamps to 120 chars.

@@ -7,6 +7,7 @@ import {
 	type MaybeRefOrGetter,
 } from 'vue'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { useMediaRules } from '@/ui/workspace/useMediaRules'
 import { toggle_task } from '@/services/text/tasks'
 import { explorer_navigation } from '@/store/explorer/navigation'
 import { t } from '@/i18n'
@@ -30,6 +31,7 @@ export function useNoteEditor(
 	const { editingNoteId, onNoteEditExit } = useEditingNoteId()
 	const requireWorkspace = useRequireWorkspace()
 	const workspace = useWorkspace()
+	const media = useMediaRules()
 	const text = ref('')
 	const previewHtml = ref('')
 	const isLoaded = ref(false)
@@ -67,15 +69,17 @@ export function useNoteEditor(
 			previewHtml.value = ''
 			return
 		}
+		// in someone else's folder a picture from another site waits for a yes
 		const render = loadedNoteRenderer()
 		if (render) {
-			previewHtml.value = render(text.value)
+			previewHtml.value = media.hold(render(text.value))
 			return
 		}
 		void loadNoteRenderer().then((loaded) => {
-			if (run === previewRun) previewHtml.value = loaded(text.value)
+			if (run === previewRun) previewHtml.value = media.hold(loaded(text.value))
 		})
 	}
+	watch(media.gate, refreshPreview)
 
 	/** Loads note content on first demand (visibility or edit), deduped via the session cache. */
 	function ensureLoaded(): Promise<void> {

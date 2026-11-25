@@ -13,6 +13,7 @@ import { t } from '@/i18n'
 import { read_shape_color } from '@/services/board/shapes'
 import { has_text_area_switch, SHAPE_TEXT_INSETS, shape_text_color, shape_text_kind } from '@/services/board/shape_text'
 import { useRequireWorkspace, useWorkspace } from '@/ui/workspace/useWorkspace'
+import { useMediaRules } from '@/ui/workspace/useMediaRules'
 import { record_action } from '@/store/history'
 import { armNoteKeyboardFocus, transferNoteKeyboardFocus } from '../noteKeyboardFocus'
 import { useEditingNoteId } from '../widgets/useEditingNoteId'
@@ -55,8 +56,10 @@ const boxStyle = computed(() => {
 // ─── Preview ───────────────────────────────────────────────────────────────
 
 const html = shallowRef('')
+const media = useMediaRules()
 let run = 0
-watch(text, (markdown) => {
+// the person's answer about pictures from other sites redraws the text too
+watch([text, media.gate], ([markdown]) => {
 	const current = ++run
 	if (!markdown) {
 		html.value = ''
@@ -64,11 +67,11 @@ watch(text, (markdown) => {
 	}
 	const render = loadedNoteRenderer()
 	if (render) {
-		html.value = render(markdown, 'center')
+		html.value = media.hold(render(markdown, 'center'))
 		return
 	}
 	void loadNoteRenderer().then((loaded) => {
-		if (current === run) html.value = loaded(markdown, 'center')
+		if (current === run) html.value = media.hold(loaded(markdown, 'center'))
 	})
 }, { immediate: true })
 

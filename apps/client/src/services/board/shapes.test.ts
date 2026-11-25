@@ -361,18 +361,20 @@ describe('sanitize_svg', () => {
 		expect(clean).not.toMatch(/iframe/i)
 	})
 
-	test('strips javascript: and data: urls in href/src', () => {
+	test('strips every address that leaves the file from href/src; `#id` stays', () => {
 		const raw = `
 			<svg>
 				<a href="javascript:alert(1)">x</a>
 				<a href="https://example.com">ok</a>
 				<image src="data:image/svg+xml;base64,abc" />
+				<textPath href="#curve">t</textPath>
 			</svg>
 		`
 		const clean = sanitize_svg(raw)
 		expect(clean).not.toMatch(/javascript:/i)
 		expect(clean).not.toMatch(/data:image/i)
-		expect(clean).toContain('https://example.com')
+		expect(clean).not.toContain('https://example.com')
+		expect(clean).toContain('href="#curve"')
 	})
 
 	test('strips dangerous style urls and expressions', () => {

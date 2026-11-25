@@ -2,11 +2,15 @@ import { onUnmounted, ref, toValue, watch, type MaybeRefOrGetter, type Ref } fro
 import { is_pile_image_token } from '@pile-commander/file-manager'
 import { useWorkspace } from '@/ui/workspace/useWorkspace'
 import { load_pile_url, pile_cache_key, release_pile_url } from '@/services/workspace/pileImageCache'
+import { may_load_media, media_gate } from '@/store/externalMedia'
 
 export type PileImageRead = (entry_id: string, token: string) => Promise<Uint8Array | null>
 
 /**
- * A color or a picture link passes through. A `pile:` token becomes a blob
+ * A color or a picture link passes through. A picture link in someone
+ * else's folder passes only once the person chose to see pictures from
+ * other sites there (store/externalMedia.ts); until then the fill is unset,
+ * as if the folder had none. A `pile:` token becomes a blob
  * URL of the file in `.pile`, or nothing when the file is missing. Switching
  * to another hash revokes the previous URL once nothing else shows it.
  * `read` loads the file from a workspace other than the one on screen
@@ -26,6 +30,16 @@ export function useResolvedFill(
 	let pendingKey: string | null = null
 	let generation = 0
 
+	/**
+	 * Whose folder the fill belongs to. A tile of another cloud folder (the
+	 * Cloud page) names it; otherwise it is the workspace on screen
+	 */
+	function scope_of(workspace_id: string) {
+		const ws = workspace.value
+		if (toValue(options?.workspace_id) !== undefined) return workspace_id ? { type: 'cloud' as const, uid: workspace_id } : null
+		return ws ? { type: ws.type, uid: ws.uid } : null
+	}
+
 	function drop() {
 		if (!held) return
 		release_pile_url(held)
@@ -44,12 +58,15 @@ export function useResolvedFill(
 			const workspace_id = toValue(options?.workspace_id) ?? workspace.value?.uid ?? ''
 			const id = toValue(entry_id)
 			const raw = toValue(value)?.trim() ?? ''
-			return `${workspace_id}\0${id}\0${raw}`
+			// the person's answer for this folder is part of what to show
+			const gate = media_gate(scope_of(workspace_id))
+			return `${gate}\0${workspace_id}\0${id}\0${raw}`
 		},
 		async (spec) => {
-			const first = spec.indexOf('\0')
+			const start = spec.indexOf('\0') + 1
+			const first = spec.indexOf('\0', start)
 			const second = spec.indexOf('\0', first + 1)
-			const workspace_id = spec.slice(0, first)
+			const workspace_id = spec.slice(start, first)
 			const id = spec.slice(first + 1, second)
 			const raw = spec.slice(second + 1)
 			const pile = raw !== '' && raw !== 'none' && is_pile_image_token(raw)
@@ -60,7 +77,7 @@ export function useResolvedFill(
 			if (!pile) {
 				pendingKey = null
 				drop()
-				resolved.value = !raw || raw === 'none' ? undefined : raw
+				resolved.value = !raw || raw === 'none' || !may_load_media(raw, scope_of(workspace_id)) ? undefined : raw
 				return
 			}
 			const read = toValue(options?.read)

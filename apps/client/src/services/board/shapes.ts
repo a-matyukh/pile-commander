@@ -516,13 +516,13 @@ export function apply_shape_color(svg: string, color: string): string {
 
 const DANGEROUS_URL = /^\s*(javascript:|data:)/i
 
-/** Drop href/src-like attributes whose value is a javascript: or data: URL. */
+/** Drop href/src-like attributes that point anywhere but inside the file (`#id`). */
 function strip_dangerous_url_attrs(html: string): string {
 	return html.replace(
 		/\s(?:href|xlink:href|src|action)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
 		(match, double_q: string | undefined, single_q: string | undefined, bare: string | undefined) => {
 			const value = double_q ?? single_q ?? bare ?? ''
-			return DANGEROUS_URL.test(value) ? '' : match
+			return DANGEROUS_URL.test(value) || !/^\s*#/.test(value) ? '' : match
 		},
 	)
 }
@@ -566,11 +566,49 @@ const SVG_PURIFY_CONFIG: Config = {
 
 const URL_ATTRS: ReadonlySet<string> = new Set(['href', 'xlink:href', 'src', 'action'])
 
-/** The regex fallback's url and style rules, applied to an attribute's parsed value. */
+/**
+ * A shape is one file and a picture: it may point inside itself (`#id`, a
+ * gradient, a clip path) and nowhere else. An address on another site —
+ * `<image href>`, `<use href>`, `fill="url(https://…)"`, a CSS `@import` —
+ * would make everyone who opens the board ask that site, which tells its
+ * owner who looked and when, and an address inside the viewer's own network
+ * makes their browser ask their router. No shape the app draws needs one,
+ * so they go, in every folder, with nothing to click.
+ */
+function points_outside(value: string): boolean {
+	return !/^\s*#/.test(value)
+}
+
+/** `url(…)` to anything but the file itself, a CSS escape that could spell one, or an old-IE expression. */
+function css_reaches_outside(value: string): boolean {
+	if (/expression\s*\(/i.test(value) || /@import/i.test(value)) return true
+	if (value.includes('\\') && value.includes('(')) return true
+	for (const match of value.matchAll(/url\s*\(\s*["']?\s*([^"')\s]*)/gi)) {
+		if (points_outside(match[1] ?? '')) return true
+	}
+	// image-set("https://…") and the like load without url()
+	return /(?:https?:)?\/\/[^\s"')]/i.test(value) && /\(/.test(value)
+}
+
+/** Which attributes go: an address, or a style or paint value, that leaves the file. */
 function is_dangerous_svg_attr(name: string, value: string): boolean {
-	if (URL_ATTRS.has(name)) return DANGEROUS_URL.test(value)
-	if (name !== 'style') return false
-	return /url\s*\(\s*['"]?\s*(javascript:|data:)/i.test(value) || /expression\s*\(/i.test(value)
+	if (URL_ATTRS.has(name)) return points_outside(value)
+	return css_reaches_outside(value)
+}
+
+/**
+ * A shape's `<style>` block stays (recoloring edits it) without what loads
+ * from elsewhere: `@import`, and any address on another site, whatever
+ * function carries it. A block with CSS escapes is dropped whole: an escape
+ * can spell `url(` or `@import` past any pattern, and no shape needs one.
+ */
+export function shape_css_without_outside(css: string): string {
+	const plain = css.replace(/\/\*[\s\S]*?\*\//g, '')
+	if (plain.includes('\\')) return ''
+	return plain
+		.replace(/@import\b[^;]*;?/gi, '')
+		.replace(/url\s*\(\s*["']?\s*(?!#)[^"')\s]*["']?\s*\)/gi, 'none')
+		.replace(/(?:https?:)?\/\/[^\s"')]+/gi, '')
 }
 
 /**
@@ -589,6 +627,11 @@ function create_svg_purify() {
 		// shape a link to another site: the element stays, its address goes
 		if (node.localName === 'a' && (name === 'href' || name === 'xlink:href')) data.keepAttr = false
 		else if (is_dangerous_svg_attr(name, data.attrValue)) data.keepAttr = false
+	})
+	purify.addHook('uponSanitizeElement', (node, data) => {
+		if (data.tagName !== 'style' || node.textContent === null) return
+		const clean = shape_css_without_outside(node.textContent)
+		if (clean !== node.textContent) node.textContent = clean
 	})
 	return purify
 }
