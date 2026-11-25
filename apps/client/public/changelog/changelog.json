@@ -1,6 +1,31 @@
 {
   "entries": [
     {
+      "version": "2.8.4",
+      "date": "2026-11-25",
+      "title": { "ru": "Копии выделяются после дублирования", "en": "Duplicates come out selected" },
+      "text": {
+        "ru": "После «Дублировать» выделены новые копии — их можно сразу перетащить, переименовать или удалить.",
+        "en": "After Duplicate, the new copies are selected, ready to drag, rename or delete."
+      }
+    },
+    {
+      "version": "2.8.4",
+      "title": { "ru": "Горячие клавиши в меню", "en": "Shortcuts in the menus" },
+      "text": {
+        "ru": "В меню файлов и папок рядом с «Вырезать», «Копировать» и «Дублировать» теперь подписаны ⌘X, ⌘C и ⌘D (Ctrl+… на Windows и Linux).",
+        "en": "The file and folder menus now show ⌘X, ⌘C and ⌘D next to Cut, Copy and Duplicate (Ctrl+… on Windows and Linux)."
+      }
+    },
+    {
+      "version": "2.8.4",
+      "title": { "ru": "Картинки с других сайтов в чужих папках", "en": "Pictures from other sites in someone else’s folder" },
+      "text": {
+        "ru": "В чужой папке картинки, фон или 3D-модель с другого сайта загружаются только после «Показать». Пока они скрыты, тот сайт не узнаёт, что вы открыли папку. Выбор запоминается для каждой папки, а ваши собственные папки показываются как раньше.",
+        "en": "In someone else’s folder, pictures, a background or a 3D model from another site load only after you click Show. While they stay hidden, that site can’t tell you opened the folder. Your choice is remembered per folder, and your own folders show everything as before."
+      }
+    },
+    {
       "version": "2.8.3",
       "date": "2026-11-24",
       "title": { "ru": "Картинка из вставленной ссылки", "en": "Pasted picture links become pictures" },
