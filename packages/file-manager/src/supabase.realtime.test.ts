@@ -53,6 +53,8 @@ function create_mock_realtime_client(options?: { fail_next_subscribe?: number; c
 	const rpc_calls: { fn: string; params: Record<string, unknown> }[] = []
 	let remaining_failures = options?.fail_next_subscribe ?? 0
 	const topics_created: string[] = []
+	/** "token" for a read of the session's token, "join" for a channel asked to subscribe */
+	const log: string[] = []
 
 	function channel(name: string, opts?: { config?: { private?: boolean } }): MockChannel {
 		const topic = `realtime:${name}`
@@ -77,6 +79,7 @@ function create_mock_realtime_client(options?: { fail_next_subscribe?: number; c
 			subscribe(callback) {
 				on_status = callback
 				created.joining = true
+				log.push("join")
 				if (remaining_failures > 0) {
 					remaining_failures -= 1
 					queueMicrotask(() => callback("CHANNEL_ERROR"))
@@ -117,6 +120,13 @@ function create_mock_realtime_client(options?: { fail_next_subscribe?: number; c
 
 	const client = {
 		channel,
+		// the socket reads the session's token; `log` keeps the order against joins
+		realtime: {
+			async setAuth() {
+				await Promise.resolve()
+				log.push("token")
+			},
+		},
 		getChannels: () => channels,
 		async removeChannel(target: MockChannel) {
 			const index = channels.indexOf(target)
@@ -152,6 +162,7 @@ function create_mock_realtime_client(options?: { fail_next_subscribe?: number; c
 
 	return {
 		client: client as unknown as SupabaseClient,
+		log,
 		topics_created,
 		channels,
 		rpc_calls,
@@ -362,6 +373,35 @@ describe("cloud realtime channels are private", () => {
 		const unwatch = await fm.watch("/", () => {})
 		expect(channels.map((channel) => channel.is_private)).toEqual([true])
 		unwatch()
+	})
+})
+
+describe("cloud realtime joins with the session's current token", () => {
+	test("the token is read before each join goes out", async () => {
+		const { client, log } = create_mock_realtime_client()
+		const fm = cloud_fm(client)
+		const unwatch = await fm.watch("/", () => {})
+		expect(log).toEqual(["token", "join"])
+		unwatch()
+	})
+
+	test("a join after a refused one reads the token again", async () => {
+		const { client, log } = create_mock_realtime_client({ fail_next_subscribe: 1 })
+		const fm = cloud_fm(client)
+		await expect(fm.watch("/", () => {})).rejects.toThrow("CHANNEL_ERROR")
+		const unwatch = await fm.watch("/", () => {})
+		expect(log).toEqual(["token", "join", "token", "join"])
+		unwatch()
+	})
+
+	test("watchers that arrive while the token is being read share one join", async () => {
+		const { client, log, channels } = create_mock_realtime_client()
+		const fm = cloud_fm(client)
+		const [a, b] = await Promise.all([fm.watch("/", () => {}), fm.watch("/", () => {})])
+		expect(log).toEqual(["token", "join"])
+		expect(channels).toHaveLength(1)
+		a()
+		b()
 	})
 })
 

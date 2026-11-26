@@ -823,6 +823,21 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 	// decided by each table's own SELECT policy. There is no public channel
 	// to fall back to: the project takes private ones only (since 2026-11-25)
 
+	// A private join is authorized by the token the socket holds at the moment
+	// the join goes out, and the socket learns that token by an async read of
+	// the session — a refresh over the network when it has expired, as on the
+	// first launch of a day. A join sent before the read ends carries the old
+	// token or none, and is refused: live updates then do not start until a
+	// reload. So the read is awaited before every join. A failure here is left
+	// to the join, which reports what is wrong
+	async function fresh_realtime_token(): Promise<void> {
+		try {
+			await client.realtime.setAuth()
+		} catch {
+			// the join decides
+		}
+	}
+
 	// One postgres_changes channel per FM instance and table, shared by every
 	// watcher of that table: all subscriptions carry the same workspace_id
 	// filter, so a channel per watcher would only deliver (and bill) every
@@ -849,6 +864,16 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 
 		function ensure(): Promise<void> {
 			if (ready) return ready
+			const attempt: Promise<void> = fresh_realtime_token().then(() => {
+				// released while the token was being read: nobody is watching
+				if (ready !== attempt) return
+				return join()
+			})
+			ready = attempt
+			return attempt
+		}
+
+		function join(): Promise<void> {
 			const created = client
 				.channel(next_realtime_topic(kind), { config: { private: true } })
 				.on(
@@ -857,7 +882,7 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 					on_payload,
 				)
 			channel = created
-			ready = new Promise<void>((resolve_subscribe, reject_subscribe) => {
+			return new Promise<void>((resolve_subscribe, reject_subscribe) => {
 				let joined = false
 				let interrupted = false
 				created.subscribe((status) => {
@@ -891,7 +916,6 @@ function createCloudFileManager(options: CloudFileManagerOptions): CloudFileMana
 					}
 				})
 			})
-			return ready
 		}
 
 		return {

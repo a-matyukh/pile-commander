@@ -977,7 +977,11 @@ deferred). Done work is in the invariants above.
   exist and a script with the publishable key can no longer hold hundreds
   of connections against the project's limit: a public channel answers
   `PrivateOnly`, a private one from a non-member `Unauthorized`. The
-  client asks for private channels only and tries nothing else. Desktops
+  client asks for private channels only and tries nothing else. It reads
+  the session's token (`realtime.setAuth()`) before every join: the join
+  is authorized by the token the socket holds when it goes out, and on a
+  launch with an expired session a join sent ahead of the refresh was
+  refused, leaving the folder without live updates until a reload. Desktops
   before 2.8.4 ask for public ones and have no live updates until they
   update. On a fresh project turn the setting off after the policy exists.
   Realtime caches a client's permission for the life of its token: a
