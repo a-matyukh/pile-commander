@@ -821,6 +821,10 @@ as $$
         exists (select 1 from public.entries e where e.storage_key = k)
         or exists (select 1 from public.hub_publications h where h.preview_key = k)
         or exists (select 1 from public.entry_derivatives d where d.deriv_key = k)
+        -- a Hub cover uploaded or taken off a listing within the week: it may
+        -- still be published (schema.sql, hub_preview_uploads)
+        or exists (select 1 from private.hub_preview_uploads u
+                    where u.storage_key = k and u.created_at > now() - interval '7 days')
     )), '{}'::jsonb)
     from (select distinct unnest(p_keys) as k) keys;
 $$;
@@ -1675,9 +1679,16 @@ begin
     -- Lowercase letters of any script, digits and hyphens, 2–32 characters.
     -- ASCII is limited to a-z0-9 and the hyphen; anything from U+00C0 up
     -- passes the range, so the check does not depend on the database locale.
+    -- That range also holds characters nobody sees: zero-width ones, the
+    -- marks and overrides that turn the direction of the text, blank
+    -- fillers, variation selectors, private-use code points. With them two
+    -- tags could look the same and be different, or a card's line of tags
+    -- could be shown backwards, so they are refused by name (the zero-width
+    -- joiners too: a tag is a short label, not running text)
     foreach v_tag in array coalesce(p_tags, '{}') loop
         if v_tag !~ '^[a-z0-9\u00C0-\uFFFF][a-z0-9\u00C0-\uFFFF-]{1,31}$'
-           or v_tag <> lower(v_tag) then
+           or v_tag <> lower(v_tag)
+           or v_tag ~ '[\u034F\u061C\u115F\u1160\u1680\u17B4\u17B5\u180B-\u180F\u2000-\u200F\u2028-\u202F\u205F-\u206F\u2800\u3000\u3164\uE000-\uF8FF\uFE00-\uFE0F\uFEFF\uFFA0\uFFF0-\uFFFF]' then
             raise exception 'set_hub_listing: invalid tag "%"', v_tag;
         end if;
     end loop;
@@ -1698,6 +1709,21 @@ begin
          where u.storage_key = v_preview_key and u.workspace_id = p_workspace
     ) then
         raise exception 'set_hub_listing: preview upload was not finalized';
+    end if;
+    -- A cover that is not on this listing already must be recent: its object
+    -- is kept for 7 days from the upload (or from leaving a listing), and a
+    -- key accepted later could have nothing behind it
+    if v_preview_key is not null
+       and not exists (
+           select 1 from public.hub_publications h
+            where h.source_workspace_id = p_workspace and h.preview_key = v_preview_key
+       )
+       and not exists (
+           select 1 from private.hub_preview_uploads u
+            where u.storage_key = v_preview_key and u.created_at > now() - interval '6 days'
+       )
+    then
+        raise exception 'set_hub_listing: preview upload expired, upload the picture again';
     end if;
 
     update public.workspaces
@@ -1985,7 +2011,18 @@ $$;
 -- their folders. storage_key rows point at the source's B2 objects (a
 -- foreign prefix) until they are re-keyed: the client calls
 -- /blobs/copy-clones with the NEW workspace id right away, and the backend
--- GC sweep (list_foreign_blob_entries) catches whatever that call missed
+-- GC sweep (list_foreign_blob_entries) catches whatever that call missed.
+--
+-- The source is read, never locked: the caller is a visitor of someone
+-- else's board, and a tree lock held for the length of the copy would stall
+-- the owner's own edits for as long as any visitor cared to fork. The whole
+-- tree is taken in ONE statement into the temp map (one snapshot, so every
+-- live row's parent is in it too), and the counts, the quota checks and the
+-- copy all work from that map.
+--
+-- A fork is one statement under the role's statement timeout (8 s), so a
+-- board too large to copy in that time is refused up front with words a
+-- person can read, instead of dying half-way with "canceling statement"
 -- ----------------------------------------------------------------------------
 create or replace function private.fork_workspace(p_workspace uuid)
 returns uuid
@@ -1994,13 +2031,12 @@ security definer
 set search_path = public, extensions
 as $$
 declare
+    -- measured on a laptop: about 60 µs a row, linear (20 000 rows 1.1 s,
+    -- 100 000 rows 5.9 s). 30 000 keeps a fork under 2 s there, which leaves
+    -- a slower database room under its 8 s
+    c_max_rows constant int := 30000;
     v_source public.workspaces%rowtype;
     v_workspace_id uuid;
-    -- the loop row carries entry_contents.content alongside e.*, so a
-    -- concrete %rowtype does not fit
-    v_row record;
-    v_new_id uuid;
-    v_new_parent_id uuid;
     v_delta bigint;
     v_rows int;
 begin
@@ -2024,7 +2060,6 @@ begin
     if not private.can_read_workspace(p_workspace) then
         raise exception 'fork_workspace: workspace % is not public', p_workspace;
     end if;
-    perform private.lock_workspace_tree(p_workspace);
 
     select * into v_source from public.workspaces w
      where w.id = p_workspace and w.is_public and w.deleted_at is null;
@@ -2035,10 +2070,42 @@ begin
         raise exception 'fork_workspace: this workspace does not allow forks';
     end if;
 
-    select coalesce(sum(e.size_bytes), 0), count(*) into v_delta, v_rows
+    -- an index-only count first: a board over the ceiling is refused before
+    -- a single row of it is read
+    select count(*) into v_rows
       from public.entries e
      where e.workspace_id = p_workspace
        and e.deleted_at is null;
+    if v_rows > c_max_rows then
+        raise exception 'fork_workspace: this workspace is too large to fork (% items, the limit is %)',
+            v_rows, c_max_rows
+            using errcode = 'P0001';
+    end if;
+
+    drop table if exists pg_temp.fork_map;
+    create temp table fork_map (
+        old_id uuid primary key,
+        new_id uuid not null,
+        old_parent uuid,
+        depth int not null,
+        name text,
+        kind text,
+        mime text,
+        xattrs jsonb,
+        storage_key text,
+        size_bytes bigint,
+        content text
+    ) on commit drop;
+    insert into fork_map (old_id, new_id, old_parent, depth, name, kind, mime, xattrs,
+                          storage_key, size_bytes, content)
+    select e.id, gen_random_uuid(), e.parent_id, nlevel(e.node_path), e.name, e.kind, e.mime,
+           e.xattrs, e.storage_key, e.size_bytes, c.content
+      from public.entries e
+      left join public.entry_contents c on c.entry_id = e.id
+     where e.workspace_id = p_workspace
+       and e.deleted_at is null;
+
+    select coalesce(sum(m.size_bytes), 0), count(*) into v_delta, v_rows from fork_map m;
     perform private.assert_owner_can_add(auth.uid(), v_delta, null);
     perform private.assert_owner_entries(auth.uid(), v_rows);
     perform private.assert_owner_workspaces(auth.uid());
@@ -2047,41 +2114,21 @@ begin
     values (auth.uid(), v_source.name, v_source.xattrs)
     returning id into v_workspace_id;
 
-    drop table if exists pg_temp.fork_map;
-    create temp table fork_map (
-        old_id uuid primary key,
-        new_id uuid not null
-    ) on commit drop;
+    -- by ascending depth: entries_derive_paths reads the parent's row, and a
+    -- row trigger sees the rows this same statement has already written
+    insert into public.entries (id, workspace_id, parent_id, name, kind, mime, xattrs, storage_key, size_bytes)
+    select m.new_id, v_workspace_id, p.new_id, m.name, m.kind, m.mime, m.xattrs,
+           m.storage_key,
+           -- a text's size is written by entry_contents_touch with its content
+           case when m.storage_key is not null then m.size_bytes end
+      from fork_map m
+      left join fork_map p on p.old_id = m.old_parent
+     order by m.depth;
 
-    for v_row in
-        select e.*, c.content as text_content
-          from public.entries e
-          left join public.entry_contents c on c.entry_id = e.id
-         where e.workspace_id = p_workspace
-           and e.deleted_at is null
-        order by nlevel(e.node_path)
-    loop
-        v_new_id := gen_random_uuid();
-        if v_row.parent_id is null then
-            v_new_parent_id := null;
-        else
-            select m.new_id into v_new_parent_id
-              from fork_map m
-             where m.old_id = v_row.parent_id;
-        end if;
-
-        insert into public.entries (id, workspace_id, parent_id, name, kind, mime, xattrs, storage_key, size_bytes)
-        values (v_new_id, v_workspace_id, v_new_parent_id, v_row.name, v_row.kind,
-                v_row.mime, v_row.xattrs, v_row.storage_key,
-                case when v_row.storage_key is not null then v_row.size_bytes end);
-
-        if v_row.text_content is not null then
-            insert into public.entry_contents (entry_id, workspace_id, content)
-            values (v_new_id, v_workspace_id, v_row.text_content);
-        end if;
-
-        insert into fork_map (old_id, new_id) values (v_row.id, v_new_id);
-    end loop;
+    insert into public.entry_contents (entry_id, workspace_id, content)
+    select m.new_id, v_workspace_id, m.content
+      from fork_map m
+     where m.content is not null;
 
     insert into public.folder_strokes (id, entry_id, workspace_id, z, position, points,
                                        color, stroke_width, width, height)
@@ -2090,6 +2137,9 @@ begin
       from public.folder_strokes s
       join fork_map m on m.old_id = s.entry_id;
 
+    -- the id is built from the endpoints and their handles, so two source
+    -- edges that differ only in other props would mint the same id: the copy
+    -- keeps one of them rather than failing the whole fork
     insert into public.folder_connections (id, entry_id, workspace_id, from_entry, to_entry, props)
     select concat(mf.new_id, ':', coalesce(s.props->>'from_handle', 'default'), '-',
                   mt.new_id, ':', coalesce(s.props->>'to_handle', 'default')),
@@ -2098,7 +2148,8 @@ begin
       from public.folder_connections s
       join fork_map mf_owner on mf_owner.old_id = s.entry_id
       join fork_map mf on mf.old_id = s.from_entry
-      join fork_map mt on mt.old_id = s.to_entry;
+      join fork_map mt on mt.old_id = s.to_entry
+    on conflict (workspace_id, id) do nothing;
 
     -- no-op when the source is not listed on the Hub
     update public.hub_publications h
@@ -2155,11 +2206,26 @@ $$;
 -- /blobs/copy-clones right after a fork is only an accelerator — if the tab
 -- closes first, this sweep still gives the fork its own objects, so the
 -- source owner's later deletes actually free their blobs. Backed by the
--- partial index entries_foreign_blob_idx (schema.sql). Service role only
+-- partial index entries_foreign_blob_idx (schema.sql). Service role only.
+--
+-- The sweep reads a batch per tick. Always from the oldest, a hundred rows
+-- whose source object is gone (it fails to copy every time) would be the
+-- batch forever, and no fork behind them would ever get its objects. So the
+-- list is read on from where the last batch ended (p_after_created,
+-- p_after_id: the last row's created_at and id) and starts over at the end.
+-- Without them it is the oldest rows, as before. The return type changed,
+-- hence the drops
 -- ----------------------------------------------------------------------------
 
-create or replace function private.list_foreign_blob_entries(p_limit int default 100)
-returns table (id uuid, workspace_id uuid, storage_key text)
+drop function if exists public.list_foreign_blob_entries(int);
+drop function if exists private.list_foreign_blob_entries(int);
+
+create or replace function private.list_foreign_blob_entries(
+    p_limit int default 100,
+    p_after_created timestamptz default null,
+    p_after_id uuid default null
+)
+returns table (id uuid, workspace_id uuid, storage_key text, created_at timestamptz)
 language sql
 security definer
 stable
@@ -2168,14 +2234,16 @@ as $$
     -- Trashed rows wait: their copy would only sit in storage until the
     -- purge. Until re-keyed they keep the source's object alive (GC checks
     -- references), and a restore puts them back in this list
-    select e.id, e.workspace_id, e.storage_key
+    select e.id, e.workspace_id, e.storage_key, e.created_at
       from public.entries e
       join public.workspaces w on w.id = e.workspace_id
      where e.storage_key is not null
        and lower(left(e.storage_key, 36)) <> e.workspace_id::text
        and e.deleted_at is null
        and w.deleted_at is null
-     order by e.created_at
+       and (p_after_created is null
+            or (e.created_at, e.id) > (p_after_created, coalesce(p_after_id, '00000000-0000-0000-0000-000000000000'::uuid)))
+     order by e.created_at, e.id
      limit least(greatest(coalesce(p_limit, 100), 1), 1000);
 $$;
 
@@ -2189,16 +2257,21 @@ $$;
 -- members get it in tiles when they ask for one (GET /presign?preview=1; the
 -- original stays theirs for viewing, downloads, export and sync). Until a
 -- blob is decided, everyone gets the original, as before.
--- Trashed rows count: the trash is restorable. All four are service role
--- only (revoked at the bottom of this file, private functions included)
+-- The trash is left out — a trashed file, and every file of a workspace in
+-- the trash: nobody is shown a tile of it there, and most of it is never
+-- restored. A restored file is live again and is simply picked up by the
+-- next pull; a preview made before the file was trashed stays (prune goes by
+-- references, and a trashed row is one). All four are service role only
+-- (revoked at the bottom of this file, private functions included)
 -- ----------------------------------------------------------------------------
 
 -- list_pending_derivatives: blobs that still need a decision for the kind
 -- their mime maps to (image/* → thumb, video/* → poster; p_kinds lets the
 -- backend leave video out while posters are off): no row yet, or a failed
 -- row past its backoff with attempts left. One row per key — copies share
--- the object — oldest blob first. The grouping runs over every image and
--- video blob per call; fine at this scale, a cursor or a pending flag later
+-- the object, and one live copy is enough — oldest blob first. The grouping
+-- runs over every live image and video blob per call; fine at this scale, a
+-- cursor or a pending flag later
 create or replace function private.list_pending_derivatives(
     p_kinds text[],
     p_max_attempts int,
@@ -2218,7 +2291,10 @@ as $$
                  max(e.size_bytes) as size_bytes,
                  min(e.created_at) as first_seen
             from public.entries e
+            join public.workspaces w on w.id = e.workspace_id
            where e.storage_key is not null
+             and e.deleted_at is null
+             and w.deleted_at is null
              and (lower(e.mime) like 'image/%' or lower(e.mime) like 'video/%')
            group by e.storage_key
       ) k
@@ -3332,8 +3408,10 @@ $$;
 
 -- ----------------------------------------------------------------------------
 -- list_workspace_members: members with emails for the share dialog. The join
--- to auth.users is possible only under security definer; access mirrors the
--- members_select policy (owner or member)
+-- to auth.users is possible only under security definer. For the owner
+-- alone: the owner invited these addresses, the members did not give them
+-- to each other. A member still sees who else is in the folder by role
+-- (workspace_members, the members_select policy), without an address
 -- ----------------------------------------------------------------------------
 
 create or replace function private.list_workspace_members(p_workspace uuid)
@@ -3347,10 +3425,7 @@ begin
     if auth.uid() is null then
         raise exception 'list_workspace_members: not authenticated';
     end if;
-    if not (
-        private.is_workspace_owner(p_workspace)
-        or private.is_workspace_member(p_workspace)
-    ) then
+    if not private.is_workspace_owner(p_workspace) then
         raise exception 'list_workspace_members: access denied';
     end if;
 
@@ -4302,20 +4377,24 @@ grant execute on function public.list_subtree_files(uuid) to service_role;
 revoke execute on function private.list_subtree_files(uuid) from public, anon, authenticated;
 grant execute on function private.list_subtree_files(uuid) to service_role;
 
-create or replace function public.list_foreign_blob_entries(p_limit int default 100)
-returns table (id uuid, workspace_id uuid, storage_key text)
+create or replace function public.list_foreign_blob_entries(
+    p_limit int default 100,
+    p_after_created timestamptz default null,
+    p_after_id uuid default null
+)
+returns table (id uuid, workspace_id uuid, storage_key text, created_at timestamptz)
 language sql
 security invoker
 stable
 set search_path = public, extensions
 as $$
-    select * from private.list_foreign_blob_entries(p_limit);
+    select * from private.list_foreign_blob_entries(p_limit, p_after_created, p_after_id);
 $$;
 
-revoke execute on function public.list_foreign_blob_entries(int) from public, anon, authenticated;
-grant execute on function public.list_foreign_blob_entries(int) to service_role;
-revoke execute on function private.list_foreign_blob_entries(int) from public, anon, authenticated;
-grant execute on function private.list_foreign_blob_entries(int) to service_role;
+revoke execute on function public.list_foreign_blob_entries(int, timestamptz, uuid) from public, anon, authenticated;
+grant execute on function public.list_foreign_blob_entries(int, timestamptz, uuid) to service_role;
+revoke execute on function private.list_foreign_blob_entries(int, timestamptz, uuid) from public, anon, authenticated;
+grant execute on function private.list_foreign_blob_entries(int, timestamptz, uuid) to service_role;
 
 create or replace function public.create_blob_entry(
     p_id uuid,
@@ -4603,3 +4682,60 @@ revoke execute on function private.ops_snapshot(int) from public, anon, authenti
 revoke execute on function public.ops_snapshot(int) from public, anon, authenticated;
 grant execute on function private.ops_snapshot(int) to service_role;
 grant execute on function public.ops_snapshot(int) to service_role;
+
+-- ----------------------------------------------------------------------------
+-- What a visitor without a session may call. A new function is executable
+-- by PUBLIC, so every wrapper above was an endpoint anyone with the
+-- publishable key could hit. None of these did anything for a caller
+-- without auth.uid(): each raised after a lookup or two. That lookup is the
+-- cost: unauthenticated requests doing real work, held back by the rate
+-- limiter alone. They are for signed-in callers now, and PostgREST refuses
+-- the rest before the function runs.
+--
+-- Left to anon, because a public board and the Hub are read without an
+-- account: folder_read, workspace_usage, download_target,
+-- hub_preview_target, list_hub_publications, list_hub_authors,
+-- list_hub_tags, preview_workspace_invite. rls.test.sql holds the list: a
+-- new wrapper fails the suite until it is placed on one side.
+-- ----------------------------------------------------------------------------
+revoke execute on function public.create_workspace(text) from public, anon;
+revoke execute on function public.set_workspace_xattr(uuid, text, text) from public, anon;
+revoke execute on function public.create_text_file(uuid, text, text, text, text, uuid, jsonb) from public, anon;
+revoke execute on function public.rename_entry(uuid, text, text) from public, anon;
+revoke execute on function public.move_entry(uuid, uuid, text, text) from public, anon;
+revoke execute on function public.copy_entry(uuid, uuid, text, text) from public, anon;
+revoke execute on function public.delete_entry(uuid, text) from public, anon;
+revoke execute on function public.sweep_pile_images(uuid, text, text[], text) from public, anon;
+revoke execute on function public.restore_entry(uuid, text) from public, anon;
+revoke execute on function public.list_trash(uuid) from public, anon;
+revoke execute on function public.purge_entry(uuid) from public, anon;
+revoke execute on function public.entry_subtree_stamp_at(uuid, text) from public, anon;
+revoke execute on function public.delete_moved_entry(uuid, text, text, text) from public, anon;
+revoke execute on function public.purge_trash(uuid) from public, anon;
+revoke execute on function public.set_workspace_public(uuid, text, boolean) from public, anon;
+revoke execute on function public.set_workspace_private(uuid) from public, anon;
+revoke execute on function public.set_hub_listing(uuid, text, text[], boolean, text) from public, anon;
+revoke execute on function public.remove_from_hub(uuid) from public, anon;
+revoke execute on function public.fork_workspace(uuid) from public, anon;
+revoke execute on function public.list_workspace_members(uuid) from public, anon;
+
+grant execute on function public.create_workspace(text) to authenticated, service_role;
+grant execute on function public.set_workspace_xattr(uuid, text, text) to authenticated, service_role;
+grant execute on function public.create_text_file(uuid, text, text, text, text, uuid, jsonb) to authenticated, service_role;
+grant execute on function public.rename_entry(uuid, text, text) to authenticated, service_role;
+grant execute on function public.move_entry(uuid, uuid, text, text) to authenticated, service_role;
+grant execute on function public.copy_entry(uuid, uuid, text, text) to authenticated, service_role;
+grant execute on function public.delete_entry(uuid, text) to authenticated, service_role;
+grant execute on function public.sweep_pile_images(uuid, text, text[], text) to authenticated, service_role;
+grant execute on function public.restore_entry(uuid, text) to authenticated, service_role;
+grant execute on function public.list_trash(uuid) to authenticated, service_role;
+grant execute on function public.purge_entry(uuid) to authenticated, service_role;
+grant execute on function public.entry_subtree_stamp_at(uuid, text) to authenticated, service_role;
+grant execute on function public.delete_moved_entry(uuid, text, text, text) to authenticated, service_role;
+grant execute on function public.purge_trash(uuid) to authenticated, service_role;
+grant execute on function public.set_workspace_public(uuid, text, boolean) to authenticated, service_role;
+grant execute on function public.set_workspace_private(uuid) to authenticated, service_role;
+grant execute on function public.set_hub_listing(uuid, text, text[], boolean, text) to authenticated, service_role;
+grant execute on function public.remove_from_hub(uuid) to authenticated, service_role;
+grant execute on function public.fork_workspace(uuid) to authenticated, service_role;
+grant execute on function public.list_workspace_members(uuid) to authenticated, service_role;

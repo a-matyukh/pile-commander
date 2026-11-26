@@ -66,11 +66,18 @@ show only these intentional INFOs. Anything else is a regression.
   concurrent or retried finalizes never collide. `POST /presign/upload` is 30/min per account, `/finalize` 60/min.
   `size_bytes` in the presign body remains a client claim used for the quota
   preflight only.
-  Residual, accepted: the copy's Content-Type is `entries.mime`, a client
-  claim, so a presigned GET can still serve an attacker-chosen Content-Type —
-  from the B2 host, which is a different origin from the app, under a
-  15-minute URL. The staging object keeps whatever the uploader sent, and is
-  never served.
+  The copy's Content-Type is `entries.mime`, a client claim, and the
+  storage would serve an object as that. So a download link says how the
+  object answers (`response_overrides`, `s3_presign.ts`; the parameters are
+  signed): a key ending in a picture, video, sound or PDF extension is
+  shown in place with the type that extension stands for, whatever was
+  stored; anything else comes with `Content-Disposition: attachment`. An
+  HTML or SVG file no longer opens as a page on the storage's domain, and a
+  page stored under a `.png` key answers as `image/png`. `GET /presign` and
+  `GET /hub-preview` sign this way; the app is not affected (`<img>` and
+  `<video>` ignore the disposition, `fetch` reads either). Checked against
+  the bucket 2026-11-26; a move to another store needs the same check. The
+  staging object keeps whatever the uploader sent, and is never served.
 - **A finalize is idempotent and never deletes.** `prepare_upload` binds the
   ticket to the first request body it sees (a mismatched retry is
   `upload_conflict`, 409) and `complete_upload` writes the entry and the
@@ -272,6 +279,15 @@ show only these intentional INFOs. Anything else is a regression.
   never the `uploads/hub_preview/…` staging key the owner PUT to. The 2 MB cap
   is enforced twice: on the copied bytes (`min(HUB_PREVIEW_MAX_BYTES, 2 MB)`)
   and again in `record_hub_preview_upload`.
+- **A Hub cover keeps its object while it can still be published.** No
+  listing points at a cover between its upload and the publish, nor after
+  it is taken off a listing, so the collector would delete the object while
+  `set_hub_listing` still accepted the key. A row of
+  `private.hub_preview_uploads` younger than 7 days is a reference
+  (`blob_references`); `set_hub_listing` takes a cover that is not on the
+  listing already only while its row is younger than 6 days ("upload the
+  picture again" after that); a cover leaving a listing gets its 7 days
+  again. Rows no listing uses are pruned after 30 days.
 - **Hub post-moderation.** `report_hub_listing` is authenticated-only (not
   the owner; 20 reports / day). `private.hub_reports` is not in the Data
   API. Three counted reports auto-set `hub_publications.hidden_at` (one
@@ -372,7 +388,11 @@ show only these intentional INFOs. Anything else is a regression.
   `list_pending_derivatives` / `record_derivative` / `fail_derivative` /
   `prune_entry_derivatives`, revoked from anon and authenticated (the
   private functions too). `owner_usage` / `workspace_usage` sum
-  `entries.size_bytes` only. Only public workspaces are processed. The
+  `entries.size_bytes` only. Every workspace is processed, public or not:
+  a non-member of a public board is given the preview in place of the
+  original, and a member gets one in tiles when the client asks
+  (`GET /presign?preview=1`). The trash is skipped — a trashed file and
+  every file of a trashed workspace — until it is restored. The
   object is written before its row; reconcile manages the `deriv/` prefix,
   and both GC key lists read preview keys, so an object whose row insert
   failed — queued as an orphan, then regenerated under the same key — is
@@ -782,12 +802,24 @@ separately, as abuse fences rather than advertised plan limits:
   64; connection `props` 8 KiB, `id` 2048, `label` 500; `updated_by_client`
   64; `quota_wall_events.file_mime` / `bridge_events.largest_file_mime`
   255; `bytes_by_kind` 4 KiB.
+- Shape CHECKs on what members write directly and every other member then
+  reads: `entries.xattrs` and `workspaces.xattrs` are a flat object of
+  strings (no number, array, nested object or null under a name); a
+  stroke's `z`, `stroke_width`, `width` and `height` are finite (no NaN or
+  Infinity, which the float types take from a JSON string). Hub tags refuse
+  zero-width characters, direction marks and overrides, blank fillers,
+  variation selectors and private-use code points, so two tags cannot look
+  alike and differ. A stroke's `position` and `points` are still any JSON
+  within their size.
 
 Worst case one free account is still about 1 GB of jsonb (20k × 16 KB
 `xattrs` + 20k × 32 KiB points). That is the cost of no PostgREST rate
 limit, not an unbounded table. The other client-written tables are bounded
 too: workspaces only through `create_workspace` / `fork_workspace` (no
-INSERT grant; 1000 per account, forks 20 an hour), and row caps per account
+INSERT grant; 1000 per account, forks 20 an hour; a fork reads the source
+in one statement and never takes its tree lock, so a visitor cannot make the
+owner's edits wait, and a board over 30 000 items is refused up front
+instead of running into the 8 s statement timeout), and row caps per account
 on `quota_wall_events` (2000, 200 a day; `answer` 2000 chars, the only
 column a later write may change), `bridge_events` (20000, 1000 a day) and
 `sync_devices` (1000) by the `owner_rows_cap` trigger. Strokes and edges
@@ -842,8 +874,10 @@ deferred). Done work is in the invariants above.
 - `remove_xattr` is still a client read-modify-write on `entries.xattrs`
   (`set_xattr` merges server-side through `merge_entry_xattrs`); an RPC with
   `-` would close that race too.
-- `list_workspace_members` shows member emails to every member; email should
-  be owner-only, everyone else username / display_name.
+- `list_workspace_members` (members with their addresses) answers the
+  owner alone, since 2026-11-26. A member sees the others by role through
+  `workspace_members`, without an address. Showing members a name
+  (username / display_name) is not built: the people panel is the owner's.
 - Enforcing the rest of the web CSP. `script-src` is enforced; `connect-src`,
   `img-src` and the others are still Report-Only in `vercel.json`.
   `connect-src` cannot be enforced while a person may type any AI address in
@@ -858,21 +892,18 @@ deferred). Done work is in the invariants above.
   functions in `rpc.sql` are recreated that way. That assertion immediately
   found `public.add_workspace_member`, granted to `authenticated` but never
   revoked from PUBLIC — fixed.
-- **20 `public.*` wrappers still carry the default PUBLIC EXECUTE** (`proacl is
-  null`), so anon can call them over `/rest/v1/rpc/…`: `copy_entry`,
-  `create_text_file`, `create_workspace`, `delete_entry`, `fork_workspace`,
-  `get_or_create_system_workspace`, `list_trash`, `list_workspace_members`,
-  `move_entry`, `purge_entry`, `purge_trash`, `remove_from_hub`,
-  `rename_entry`, `restore_entry`, `set_hub_listing`, `set_workspace_private`,
-  `set_workspace_public`, `set_workspace_xattr` — plus `folder_read` and
-  `workspace_usage`, which anon genuinely needs for public boards. None is
-  exploitable: each raises on a null `auth.uid()` or fails
-  `can_write_workspace`. But they are unauthenticated endpoints that do real
-  work before refusing, which is an abuse surface the rate limiter alone
-  covers. Closing it means revoking anon from the 18 and tracing each
-  public-board path first — `workspace_usage` in particular is reachable for a
-  public board and needs checking before it is touched. Verified against
-  production 2026-09-16.
+- **A visitor without a session may call eight functions, and the suite
+  holds the list.** `folder_read`, `workspace_usage`, `download_target`,
+  `hub_preview_target`, `list_hub_publications`, `list_hub_authors`,
+  `list_hub_tags` and `preview_workspace_invite` are what a public board
+  and the Hub read without an account. The other twenty wrappers that
+  carried the default PUBLIC EXECUTE (create, rename, move, copy, delete,
+  purge, publish, fork, members, …) are revoked from `public, anon` at the
+  end of `rpc.sql` and granted to `authenticated` and `service_role`: none
+  did anything for a null `auth.uid()`, but each did a lookup or two before
+  refusing. `rls.test.sql` compares the whole set of anon-executable
+  functions in `public` with that list, so a new wrapper fails the suite
+  until it is placed on one side.
 
 ### Performance and backend
 

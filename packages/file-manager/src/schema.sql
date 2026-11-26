@@ -142,8 +142,13 @@ create table public.workspaces (
     -- presentation attrs of the workspace-as-board-tile (position/size/color),
     -- same flat names as entries.xattrs so the board renders both tile kinds
     -- with one code path. Readable by anon when the workspace is public —
-    -- never put anything private here. Size-capped like entries.xattrs
+    -- never put anything private here. Size-capped like entries.xattrs,
+    -- and a flat object of strings for the same reason as there
     xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 16384),
+    constraint workspaces_xattrs_strings check (
+        jsonb_typeof(xattrs) = 'object'
+        -- strict: the lax mode would look inside an array and pass ["a"]
+        and not jsonb_path_exists(xattrs, 'strict $.* ? (@.type() != "string")', '{}', true)),
 
     -- public link: set only via set_workspace_public (not client UPDATE).
     -- Slug is unique per owner: the URL is /<username>/<slug>, so two users
@@ -776,7 +781,16 @@ create index hub_publications_hidden_at_idx on public.hub_publications (hidden_a
 -- (POST /hub-preview/finalize): set_hub_listing accepts only keys listed
 -- here, so an unbounded object can never become a listed preview. Lives in
 -- private (not exposed); written through record_hub_preview_upload under the
--- service role. Rows of previews that never got listed are harmless
+-- service role.
+--
+-- A row also keeps its object: a cover sits in storage with no listing
+-- pointing at it between the upload and the publish, and again after it is
+-- taken off a listing. The collector would call that an orphan and delete
+-- it, and set_hub_listing would then accept a key with nothing behind it.
+-- So a row younger than 7 days counts as a reference (blob_references),
+-- set_hub_listing takes a new cover only while its row is younger than
+-- 6 days, and a cover leaving a listing gets its 7 days again (the trigger
+-- on hub_publications). Rows of covers no listing uses go after 30 days
 create table private.hub_preview_uploads (
     storage_key text primary key,
     workspace_id uuid not null references public.workspaces (id) on delete cascade,
@@ -905,6 +919,15 @@ create table public.entries (
     -- byte quota and, with REPLICA IDENTITY FULL, every UPDATE broadcasts the
     -- whole row — Realtime drops events above 1 MB
     xattrs jsonb not null default '{}' check (pg_column_size(xattrs) <= 16384),
+    -- A flat object of strings and nothing else. Every reader takes a value
+    -- as a string (the client's xattrs.ts, the pile image tokens), and the
+    -- column is written straight through PostgREST, where a member with the
+    -- right to edit could otherwise leave an array, a number or a nested
+    -- object under any name for everyone who opens the folder
+    constraint entries_xattrs_strings check (
+        jsonb_typeof(xattrs) = 'object'
+        -- strict: the lax mode would look inside an array and pass ["a"]
+        and not jsonb_path_exists(xattrs, 'strict $.* ? (@.type() != "string")', '{}', true)),
 
     -- text payloads live in entry_contents (separate table, see below)
     storage_key text,  -- B2 object key: "<workspace_id>/<entry_uuid>"
@@ -1264,6 +1287,14 @@ create table public.folder_strokes (
     stroke_width real not null,
     width real not null,
     height real not null,
+    -- The float types take 'NaN' and 'Infinity' from a JSON string, and both
+    -- come back to every client as text where a number is expected. NaN
+    -- sorts above Infinity, so the upper bound refuses it as well
+    constraint folder_strokes_finite check (
+        z > '-Infinity' and z < 'Infinity'
+        and stroke_width > '-Infinity' and stroke_width < 'Infinity'
+        and width > '-Infinity' and width < 'Infinity'
+        and height > '-Infinity' and height < 'Infinity'),
 
     -- same audit/presence hint as entries.updated_by_client; echo
     -- suppression deliberately does NOT depend on it (see supabase.ts)
@@ -2498,11 +2529,14 @@ begin
     if TG_OP = 'DELETE' then
         if OLD.preview_key is not null then
             insert into public.blob_deletions (storage_key) values (OLD.preview_key);
+            -- the cover can be listed again for a week (hub_preview_uploads)
+            update private.hub_preview_uploads set created_at = now() where storage_key = OLD.preview_key;
         end if;
         return OLD;
     end if;
     if OLD.preview_key is distinct from NEW.preview_key and OLD.preview_key is not null then
         insert into public.blob_deletions (storage_key) values (OLD.preview_key);
+        update private.hub_preview_uploads set created_at = now() where storage_key = OLD.preview_key;
     end if;
     return NEW;
 end
@@ -2838,6 +2872,16 @@ select cron.schedule(
     'mail-events-prune',
     '48 3 * * *',
     $$delete from private.mail_events where created_at < now() - interval '90 days'$$
+);
+
+-- a cover no listing uses stopped keeping its object after 7 days
+-- (hub_preview_uploads); its row is only a record by now
+select cron.schedule(
+    'hub-preview-uploads-prune',
+    '46 3 * * *',
+    $$delete from private.hub_preview_uploads u
+       where u.created_at < now() - interval '30 days'
+         and not exists (select 1 from public.hub_publications h where h.preview_key = u.storage_key)$$
 );
 
 -- a released username is free for anyone after 90 days

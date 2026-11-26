@@ -1,7 +1,7 @@
 import { S3Client } from "bun";
 import type { Env } from "./env";
 import { create_s3_copy, type ObjectCopy, type S3CopyConfig } from "./s3_copy";
-import { create_sized_presign, type SizedPresign } from "./s3_presign";
+import { create_get_presign, create_sized_presign, type GetPresign, type SizedPresign } from "./s3_presign";
 
 /**
  * Bun's S3 client plus what it does not offer: a server-side copy
@@ -9,7 +9,12 @@ import { create_sized_presign, type SizedPresign } from "./s3_presign";
  * no bytes through this process — and an upload URL good for one exact size
  * (s3_presign.ts). All speak the plain S3 API, so the store stays swappable
  */
-export type Storage = S3Client & { copy: ObjectCopy; presign_sized: SizedPresign };
+export type Storage = S3Client & {
+	copy: ObjectCopy;
+	presign_sized: SizedPresign;
+	/** a download link for a reader: it says how the object answers (s3_presign.ts) */
+	presign_get: GetPresign;
+};
 
 export function storage_config(env: Env): S3CopyConfig {
 	return {
@@ -34,5 +39,6 @@ export function create_s3(env: Env): Storage {
 	return Object.assign(client, {
 		copy: create_s3_copy(storage_config(env)),
 		presign_sized: create_sized_presign(storage_config(env)),
+		presign_get: create_get_presign(storage_config(env)),
 	});
 }

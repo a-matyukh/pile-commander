@@ -39,6 +39,8 @@ export type PresignV4Input = {
 	path: string;
 	/** headers the request must carry with exactly these values, besides host */
 	signed_headers: Record<string, string>;
+	/** more query parameters, signed with the rest (`response-content-type`, …) */
+	query?: Record<string, string>;
 	expires_in: number;
 	now: Date;
 	region: string;
@@ -60,6 +62,7 @@ export function presign_v4(input: PresignV4Input): string {
 		["X-Amz-Date", stamp],
 		["X-Amz-Expires", String(input.expires_in)],
 		["X-Amz-SignedHeaders", names.join(";")],
+		...Object.entries(input.query ?? {}),
 	];
 	const canonical_query = query
 		.map(([name, value]) => `${encode_query(name)}=${encode_query(value)}`)
@@ -107,4 +110,75 @@ export function create_sized_presign(config: S3CopyConfig, now: () => Date = () 
 			secret_access_key: config.secret_access_key,
 		});
 	};
+}
+
+/**
+ * How a stored object answers a browser that opens its link.
+ *
+ * The object's own Content-Type is whatever the uploader's PUT said, and
+ * the storage serves it as that: an HTML file is a page on the storage's
+ * domain, an SVG a page that runs scripts there, and nothing stops a file
+ * named `photo.png` from being stored as `text/html`. The link therefore
+ * says what the answer is, and the storage obeys (`response-content-type`,
+ * `response-content-disposition` — signed, so the reader cannot drop them):
+ *
+ *   - a picture, a video, a sound or a PDF, by the extension of its key, is
+ *     shown in place and answers with the type that extension stands for,
+ *     whatever was stored;
+ *   - everything else is handed over as a download.
+ *
+ * The app itself is not affected: `<img>` and `<video>` ignore the
+ * disposition, and what it reads with fetch (text, models, archives) it
+ * reads the same either way.
+ */
+const SHOWN_IN_PLACE: Record<string, string> = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	webp: "image/webp",
+	bmp: "image/bmp",
+	avif: "image/avif",
+	mp4: "video/mp4",
+	webm: "video/webm",
+	mov: "video/quicktime",
+	mkv: "video/x-matroska",
+	ogv: "video/ogg",
+	mp3: "audio/mpeg",
+	wav: "audio/wav",
+	ogg: "audio/ogg",
+	flac: "audio/flac",
+	m4a: "audio/mp4",
+	aac: "audio/aac",
+	pdf: "application/pdf",
+};
+
+export function response_overrides(key: string): Record<string, string> {
+	const ext = /\.([a-z0-9]{1,16})$/i.exec(key)?.[1]?.toLowerCase() ?? "";
+	const type = SHOWN_IN_PLACE[ext];
+	return type
+		? { "response-content-type": type, "response-content-disposition": "inline" }
+		: { "response-content-disposition": "attachment" };
+}
+
+export type GetPresign = (key: string, expires_in: number) => string;
+
+/** GET /<bucket>/<key>, path-style, answering as `response_overrides` says */
+export function create_get_presign(config: S3CopyConfig, now: () => Date = () => new Date()): GetPresign {
+	const base = new URL(/^https?:\/\//.test(config.endpoint) ? config.endpoint : `https://${config.endpoint}`);
+	const bucket = encode_key(config.bucket);
+	return (key, expires_in) =>
+		presign_v4({
+			method: "GET",
+			origin: base.origin,
+			host: base.host,
+			path: `/${bucket}/${encode_key(key)}`,
+			signed_headers: {},
+			query: response_overrides(key),
+			expires_in,
+			now: now(),
+			region: config.region,
+			access_key_id: config.access_key_id,
+			secret_access_key: config.secret_access_key,
+		});
 }

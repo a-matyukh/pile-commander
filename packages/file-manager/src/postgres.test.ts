@@ -256,6 +256,65 @@ describe.skipIf(!database_url)("PostgreSQL security and concurrency", () => {
 		}, 15_000)
 	}
 
+	// A fork is a visitor's call on someone else's board: it reads the source
+	// and must not hold the owner's tree lock while it copies
+	test("a fork in flight does not make the source's owner wait", async () => {
+		const f = await fixture()
+		const visitor = crypto.randomUUID()
+		await db`insert into auth.users(id, email) values (${visitor}::uuid, ${`${visitor}@example.invalid`})`
+		await db`update public.workspaces set is_public = true, slug = ${"fork-" + f.workspace} where id = ${f.workspace}::uuid`
+		const a = await db.reserve()
+		const b = await db.reserve()
+		try {
+			await a.unsafe("begin; set local role authenticated; set local search_path = public, extensions").simple()
+			await a`select set_config('request.jwt.claims', ${JSON.stringify({ sub: visitor, role: "authenticated" })}, true)`
+			const [forked] = await a`select public.fork_workspace(${f.workspace}::uuid) as id`
+			await b.unsafe("begin; set local role authenticated; set local search_path = public, extensions; set local statement_timeout = '2s'").simple()
+			await b`select set_config('request.jwt.claims', ${JSON.stringify({ sub: f.owner, role: "authenticated" })}, true)`
+			await b`insert into public.entries(workspace_id, parent_id, name, kind)
+				values (${f.workspace}::uuid, ${f.folder}::uuid, 'made-during-a-fork', 'folder')`
+			await b`select * from public.rename_entry(${f.target}::uuid, 'renamed-during-a-fork')`
+			await b.unsafe("commit").simple()
+			await a.unsafe("commit").simple()
+			// the copy is the board as it stood when the fork read it
+			const paths = await db`select path from public.entries where workspace_id = ${forked.id}::uuid order by path`
+			expect(paths.map((row: { path: string }) => row.path)).toEqual(["/", "/a", "/a/child.txt", "/target"])
+			const [text] = await db`select c.content from public.entry_contents c
+				join public.entries e on e.id = c.entry_id where e.workspace_id = ${forked.id}::uuid`
+			expect(text.content).toBe("hello")
+		} finally {
+			await a.unsafe("rollback").simple()
+			await b.unsafe("rollback").simple()
+			a.release()
+			b.release()
+		}
+	})
+
+	test("a board too large to copy in one statement is refused before anything is written", async () => {
+		const f = await fixture()
+		const visitor = crypto.randomUUID()
+		await db`insert into auth.users(id, email) values (${visitor}::uuid, ${`${visitor}@example.invalid`})`
+		await db`update public.billing_accounts set max_entries = 1000000 where owner_id = ${visitor}::uuid`
+		await db`update public.workspaces set is_public = true, slug = ${"big-" + f.workspace} where id = ${f.workspace}::uuid`
+		// 30 000 more rows, written without the row triggers: paths by hand
+		await db.begin(async tx => {
+			await tx.unsafe("set local session_replication_role = replica; set local search_path = public, extensions").simple()
+			await tx`with made as materialized (select gen_random_uuid() as id, n from generate_series(1, 30000) n)
+				insert into public.entries(id, workspace_id, parent_id, name, kind, path, node_path)
+				select m.id, d.workspace_id, d.id, 'n' || m.n, 'folder', d.path || '/n' || m.n,
+				       d.node_path || replace(m.id::text, '-', '')::ltree
+				  from made m, public.entries d where d.id = ${f.target}::uuid`
+		})
+		const error = await db.begin(async tx => {
+			await tx.unsafe("set local role authenticated; set local search_path = public, extensions").simple()
+			await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: visitor, role: "authenticated" })}, true)`
+			await tx`select public.fork_workspace(${f.workspace}::uuid)`
+		}).then(() => null, (e: Error) => e)
+		expect(error?.message).toContain("too large to fork (30004 items, the limit is 30000)")
+		const [{ count }] = await db`select count(*)::int as count from public.workspaces where owner_id = ${visitor}::uuid`
+		expect(count).toBe(0)
+	}, 20_000)
+
 	test("a text upsert does not wait on an unrelated workspace tree lock", async () => {
 		const f = await fixture()
 		const a = await db.reserve()

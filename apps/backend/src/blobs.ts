@@ -300,7 +300,7 @@ export function download_presign_target(
 
 export async function handle_download_presign(
 	env: Env,
-	s3: S3Client,
+	s3: Pick<Storage, "presign_get">,
 	req: Request,
 	meter: EgressMeter | null,
 	downloads: EgressMeter | null,
@@ -358,7 +358,9 @@ export async function handle_download_presign(
 		));
 	}
 
-	const url = s3.presign(choice.key, { expiresIn: env.presign_get_ttl_seconds });
+	// the link says how the object answers a browser: a picture is shown,
+	// anything else is a download (s3_presign.ts)
+	const url = s3.presign_get(choice.key, env.presign_get_ttl_seconds);
 	return Response.json(
 		{ url, expires_in: env.presign_get_ttl_seconds, variant: choice.variant },
 		{ headers: timing.headers() },
@@ -572,7 +574,7 @@ export async function handle_hub_preview_finalize(
 // hit is metered as a visitor — the owner's own card views included (≤2 MiB)
 export async function handle_hub_preview_download(
 	env: Env,
-	s3: S3Client,
+	s3: Pick<Storage, "presign_get">,
 	req: Request,
 	meter: EgressMeter | null,
 	ip: string,
@@ -594,6 +596,6 @@ export async function handle_hub_preview_download(
 		);
 	}
 
-	const url = s3.presign(key, { expiresIn: env.presign_get_ttl_seconds });
+	const url = s3.presign_get(key, env.presign_get_ttl_seconds);
 	return Response.redirect(url, 302);
 }

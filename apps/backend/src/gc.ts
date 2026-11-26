@@ -125,17 +125,52 @@ export async function drain(env: Env, s3: S3Client, db: SupabaseClient): Promise
 // right after fork_workspace is only an accelerator — this is the guarantee.
 // Until a row is re-keyed the fork shares the source's object, and the drain
 // above keeps such an object alive (it is still referenced), so the source
-// owner cannot really free it. One batch per tick; the rest waits for the next
-async function rekey_foreign_blobs(s3: Storage, db: SupabaseClient): Promise<void> {
-	const { data, error } = await db.rpc("list_foreign_blob_entries", { p_limit: REKEY_BATCH });
-	if (error) {
-		console.error("[rekey] failed to list foreign-prefixed rows:", error.message);
-		return;
-	}
-	const rows = (data ?? []) as ForeignBlobRow[];
-	if (rows.length === 0) return;
-	const { copied, failed } = await copy_foreign_blobs(s3, db, rows, "[rekey]");
+// owner cannot really free it. One batch per tick; the rest waits for the next.
+//
+// The list is read on from where the last batch ended. Read from the oldest
+// row every time, a batch of rows that cannot be copied (their source object
+// is gone) would come back on every tick, and no fork behind them would ever
+// get its objects. With the cursor a row that fails is tried again one pass
+// later, and the pass always reaches the end.
+type RekeyRow = ForeignBlobRow & { created_at?: string | null };
+type RekeyCursor = { created_at: string; id: string };
+
+export type RekeySweep = {
+	list: (limit: number, after: RekeyCursor | null) => Promise<RekeyRow[] | null>;
+	copy: (rows: ForeignBlobRow[]) => Promise<{ copied: number; failed: unknown[] }>;
+};
+
+/** One batch. Returns where the next one starts; null means from the oldest row. */
+export async function rekey_batch(sweep: RekeySweep, cursor: RekeyCursor | null, limit = REKEY_BATCH): Promise<RekeyCursor | null> {
+	let rows = await sweep.list(limit, cursor);
+	if (!rows) return cursor;
+	// the end of the pass: start over, with whatever failed last time
+	if (rows.length === 0 && cursor) rows = (await sweep.list(limit, null)) ?? [];
+	if (rows.length === 0) return null;
+	const { copied, failed } = await sweep.copy(rows);
 	console.log(`[rekey] re-keyed ${copied} forked blob(s)${failed.length ? `, ${failed.length} failed` : ""}`);
+	const last = rows[rows.length - 1]!;
+	// a database from before the cursor returns no created_at: the oldest rows again, as it always did
+	return rows.length < limit || !last.created_at ? null : { created_at: last.created_at, id: last.id };
+}
+
+let rekey_cursor: RekeyCursor | null = null;
+
+async function rekey_foreign_blobs(s3: Storage, db: SupabaseClient): Promise<void> {
+	rekey_cursor = await rekey_batch({
+		async list(limit, after) {
+			const { data, error } = await db.rpc(
+				"list_foreign_blob_entries",
+				after ? { p_limit: limit, p_after_created: after.created_at, p_after_id: after.id } : { p_limit: limit },
+			);
+			if (error) {
+				console.error("[rekey] failed to list foreign-prefixed rows:", error.message);
+				return null;
+			}
+			return (data ?? []) as RekeyRow[];
+		},
+		copy: (rows) => copy_foreign_blobs(s3, db, rows, "[rekey]"),
+	}, rekey_cursor);
 }
 
 async function tick(env: Env, s3: Storage, db: SupabaseClient): Promise<void> {

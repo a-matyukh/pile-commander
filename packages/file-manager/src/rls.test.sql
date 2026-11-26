@@ -75,6 +75,7 @@ declare
     v_gone_stroke uuid;
     v_gone_edge   text;
     v_grant   record;
+    v_open    text[];
     v_gc_a    text;
     v_gc_b    text;
     v_upload  text;
@@ -154,6 +155,9 @@ begin
 
     insert into public.entries (workspace_id, parent_id, name, kind) values (v_ws, v_root, 'docs', 'folder') returning id into v_folder;
     insert into __results values ('owner: folder insert', v_folder is not null, null);
+    insert into __results values ('owner: list_workspace_members gives the members'' addresses',
+        (select count(*) from public.list_workspace_members(v_ws) m
+          where m.email in ('rls-editor@example.invalid', 'rls-viewer@example.invalid')) = 2, null);
     insert into __results values ('owner: may join the workspace''s channels',
         private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1'), null);
 
@@ -1344,6 +1348,16 @@ begin
         jsonb_build_object('path', '/docs/note.md', 'xattrs', jsonb_build_object('by', 'editor'))), null);
     insert into __results values ('editor: merge_entry_xattrs',
         v_n = 0 and (select xattrs->>'by' = 'editor' from public.entries where id = v_file), null);
+    -- the addresses of the people in a folder are the owner's to see
+    begin
+        perform public.list_workspace_members(v_ws);
+        insert into __results values ('editor: list_workspace_members refused', false, 'accepted');
+    exception when others then
+        insert into __results values ('editor: list_workspace_members refused', sqlerrm like '%access denied%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    insert into __results values ('editor: still sees who is in the folder, without addresses',
+        (select count(*) from public.workspace_members where workspace_id = v_ws) >= 2, null);
     insert into __results values ('editor: may join the workspace''s channels',
         private.can_join_channel('file-manager-entries:' || v_ws || ':aaaa:1')
         and private.can_join_channel('file-manager-strokes:' || v_ws || ':aaaa:7'), null);
@@ -1677,8 +1691,43 @@ begin
     end;
     execute 'reset role';
     delete from private.rate_events where actor = c_other and action = 'fork';
+    -- two edges between the same pair with the same handles, under different
+    -- ids: the copy mints one id for both
+    insert into public.folder_connections (id, entry_id, workspace_id, from_entry, to_entry)
+    values ('twin-1', v_root, v_ws, v_root, v_blob), ('twin-2', v_root, v_ws, v_root, v_blob);
     execute 'set local role authenticated';
     v_fork := public.fork_workspace(v_ws);
+    execute 'reset role';
+    insert into __results values ('fork: every live row is copied under the same path, texts with their content',
+        not exists (
+            (select e.path, c.content from public.entries e
+               left join public.entry_contents c on c.entry_id = e.id
+              where e.workspace_id = v_ws and e.deleted_at is null
+             except
+             select e.path, c.content from public.entries e
+               left join public.entry_contents c on c.entry_id = e.id
+              where e.workspace_id = v_fork)
+            union all
+            (select e.path, c.content from public.entries e
+               left join public.entry_contents c on c.entry_id = e.id
+              where e.workspace_id = v_fork
+             except
+             select e.path, c.content from public.entries e
+               left join public.entry_contents c on c.entry_id = e.id
+              where e.workspace_id = v_ws and e.deleted_at is null))
+        and (select count(*) from public.entries where workspace_id = v_fork) > 2,
+        (select count(*)::text from public.entries where workspace_id = v_fork));
+    insert into __results values ('fork: two edges that would get one id are copied as one',
+        (select count(*) from public.folder_connections c
+           join public.entries f on f.id = c.from_entry and f.parent_id is null
+           join public.entries t on t.id = c.to_entry and t.storage_key is not null
+          where c.workspace_id = v_fork) = 1, null);
+    delete from public.folder_connections where workspace_id in (v_ws, v_fork) and (id like 'twin-%'
+        or id in (select c.id from public.folder_connections c
+                    join public.entries f on f.id = c.from_entry and f.parent_id is null
+                    join public.entries t on t.id = c.to_entry and t.storage_key is not null
+                   where c.workspace_id = v_fork));
+    execute 'set local role authenticated';
     insert into __results values ('fork: a stranger is metered on the public source',
         (select count(*) from public.download_target(v_blob) t where t.owner_id = c_owner and not t.is_member) = 1, null);
     -- the fork row still points at the source's key, yet the forker owns it
@@ -1692,6 +1741,14 @@ begin
     execute 'set local role service_role';
     insert into __results values ('fork: foreign-prefixed rows queued for re-key',
         (select count(*) from public.list_foreign_blob_entries(100) f where f.workspace_id = v_fork) = 1, null);
+    -- the sweep reads on from the last row it saw, so rows that never copy
+    -- do not hold back the ones behind them
+    insert into __results values ('fork: the re-key list goes on after a given row and ends',
+        (select count(*) from public.list_foreign_blob_entries(100) f
+          cross join lateral public.list_foreign_blob_entries(100, f.created_at, f.id) rest
+          where f.workspace_id = v_fork and rest.id = f.id) = 0
+        and (select count(*) from public.list_foreign_blob_entries(100, now() + interval '1 day', null)) = 0
+        and (select count(*) from public.list_foreign_blob_entries(100, '-infinity', null) f where f.workspace_id = v_fork) = 1, null);
     insert into __results values ('fork: source rows are not re-keyed',
         (select count(*) from public.list_subtree_files(v_root)) = 0, null);
     execute 'reset role';
@@ -1775,19 +1832,38 @@ begin
     end;
     execute 'reset role';
 
-    -- past its backoff and in the trash: pending again (the trash is
-    -- restorable); out of attempts: a dead letter
+    -- past its backoff: pending again; out of attempts: a dead letter; in
+    -- the trash, the file's own or its workspace's: left alone until restored
     update public.entry_derivatives set next_attempt_at = now() - interval '1 minute'
      where storage_key = v_ws::text || '/14141414-1414-4414-8414-141414141414.jpg';
-    update public.entries set deleted_at = now() where id = v_retry;
     execute 'set local role service_role';
-    insert into __results values ('service: a trashed blob past its backoff is pending again',
+    insert into __results values ('service: a failed blob past its backoff is pending again',
         (select count(*) from public.list_pending_derivatives(array['thumb'], 5, 100) p
           where p.storage_key = v_ws::text || '/14141414-1414-4414-8414-141414141414.jpg' and p.attempts = 2) = 1, null);
     insert into __results values ('service: no attempts left is a dead letter',
         (select count(*) from public.list_pending_derivatives(array['thumb'], 2, 100) p
           where p.storage_key = v_ws::text || '/14141414-1414-4414-8414-141414141414.jpg') = 0, null);
     execute 'reset role';
+    update public.workspaces set deleted_at = now() where id = v_ws;
+    execute 'set local role service_role';
+    insert into __results values ('service: a workspace in the trash gets no previews',
+        (select count(*) from public.list_pending_derivatives(array['thumb', 'poster'], 5, 100) p
+          where p.storage_key like v_ws::text || '/%') = 0, null);
+    execute 'reset role';
+    update public.workspaces set deleted_at = null where id = v_ws;
+    update public.entries set deleted_at = now() where id = v_retry;
+    execute 'set local role service_role';
+    insert into __results values ('service: a trashed blob gets no preview',
+        (select count(*) from public.list_pending_derivatives(array['thumb'], 5, 100) p
+          where p.storage_key = v_ws::text || '/14141414-1414-4414-8414-141414141414.jpg') = 0, null);
+    execute 'reset role';
+    update public.entries set deleted_at = null where id = v_retry;
+    execute 'set local role service_role';
+    insert into __results values ('service: a restored blob is pending again',
+        (select count(*) from public.list_pending_derivatives(array['thumb'], 5, 100) p
+          where p.storage_key = v_ws::text || '/14141414-1414-4414-8414-141414141414.jpg') = 1, null);
+    execute 'reset role';
+    update public.entries set deleted_at = now() where id = v_retry;
 
     perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
     insert into __results values ('previews: owner and workspace usage do not count them',
@@ -2057,6 +2133,88 @@ begin
     exception when others then
         insert into __results values ('hub: a tag with a space is refused', sqlerrm like '%invalid tag%', sqlerrm);
     end;
+    -- zero-width space, right-to-left override, a blank filler, a variation selector
+    foreach v_state in array array['de' || chr(8203) || 'sign', chr(8238) || 'ngised', 'ab' || chr(12644), 'ab' || chr(65039)] loop
+        begin
+            perform public.set_hub_listing(v_ws, 'suite', array[v_state], true, v_hub_key);
+            insert into __results values ('hub: a tag with a character nobody sees is refused', false, 'accepted');
+        exception when others then
+            insert into __results values ('hub: a tag with a character nobody sees is refused', sqlerrm like '%invalid tag%', sqlerrm);
+        end;
+    end loop;
+    -- what a client does not expect in rows it reads: xattrs are a flat
+    -- object of strings, a stroke's numbers are finite
+    foreach v_state in array array['{"view": 5}', '{"view": {"a": "b"}}', '{"view": ["a"]}', '{"view": null}', '["view"]', '"view"'] loop
+        begin
+            update public.entries set xattrs = v_state::jsonb where id = v_root;
+            insert into __results values ('entries: xattrs other than strings by name are refused', false, v_state);
+        exception when check_violation then
+            insert into __results values ('entries: xattrs other than strings by name are refused', true, null);
+        end;
+        begin
+            update public.workspaces set xattrs = v_state::jsonb where id = v_ws;
+            insert into __results values ('workspaces: xattrs other than strings by name are refused', false, v_state);
+        exception when check_violation then
+            insert into __results values ('workspaces: xattrs other than strings by name are refused', true, null);
+        end;
+    end loop;
+    update public.entries set xattrs = xattrs || '{"suite_note": "a string"}' where id = v_root;
+    update public.entries set xattrs = xattrs - 'suite_note' where id = v_root;
+    foreach v_state in array array['z', 'stroke_width', 'width', 'height'] loop
+        foreach v_stamp in array array['NaN', 'Infinity', '-Infinity'] loop
+            begin
+                execute format('insert into public.folder_strokes (id, entry_id, workspace_id, z, position, points, color, stroke_width, width, height)
+                    select gen_random_uuid(), $1, $2, n.z, ''{"x":0,"y":0}'', ''[]'', ''#000'', n.stroke_width, n.width, n.height
+                      from jsonb_populate_record(null::public.folder_strokes,
+                               jsonb_build_object(''z'', 1, ''stroke_width'', 1, ''width'', 1, ''height'', 1) || jsonb_build_object(%L, %L)) n',
+                    v_state, v_stamp) using v_root, v_ws;
+                insert into __results values ('strokes: a number that is not finite is refused', false, v_state || ' ' || v_stamp);
+            exception when check_violation then
+                insert into __results values ('strokes: a number that is not finite is refused', true, null);
+            end;
+        end loop;
+    end loop;
+    perform public.set_hub_listing(v_ws, 'suite', array['rls'], true, v_hub_key);
+    execute 'reset role';
+
+    -- A cover and its object. The collector deletes what nothing references,
+    -- and a cover is referenced by no listing before it is published and
+    -- after it is taken off one
+    update private.hub_preview_uploads set created_at = now() - interval '40 days' where storage_key = v_hub_key;
+    perform set_config('request.jwt.claims', json_build_object('sub', c_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform public.set_hub_listing(v_ws, 'suite again', array['rls'], true, v_hub_key);
+    execute 'reset role';
+    insert into __results values ('hub: the cover a listing already has is saved again however old its upload',
+        (select description = 'suite again' and preview_key = v_hub_key
+           from public.hub_publications where source_workspace_id = v_ws), null);
+    insert into private.hub_preview_uploads (storage_key, workspace_id, size_bytes, uploaded_by, created_at)
+    values ('hub/' || v_ws::text || '/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd.png', v_ws, 10, c_owner, now() - interval '5 days'),
+           ('hub/' || v_ws::text || '/efefefef-efef-4fef-8fef-efefefefefef.png', v_ws, 10, c_owner, now() - interval '8 days');
+    insert into __results values ('hub: an unlisted cover keeps its object for a week, not longer',
+        private.blob_references(array[
+            'hub/' || v_ws::text || '/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd.png',
+            'hub/' || v_ws::text || '/efefefef-efef-4fef-8fef-efefefefefef.png'])
+        = jsonb_build_object(
+            'hub/' || v_ws::text || '/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd.png', true,
+            'hub/' || v_ws::text || '/efefefef-efef-4fef-8fef-efefefefefef.png', false), null);
+    execute 'set local role authenticated';
+    begin
+        perform public.set_hub_listing(v_ws, 'suite', array['rls'], true,
+            'hub/' || v_ws::text || '/efefefef-efef-4fef-8fef-efefefefefef.png');
+        insert into __results values ('hub: a cover uploaded too long ago is not published', false, 'accepted');
+    exception when others then
+        insert into __results values ('hub: a cover uploaded too long ago is not published', sqlerrm like '%upload the picture again%', sqlerrm);
+        execute 'set local role authenticated';
+    end;
+    perform public.set_hub_listing(v_ws, 'suite', array['rls'], true,
+        'hub/' || v_ws::text || '/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd.png');
+    execute 'reset role';
+    insert into __results values ('hub: a cover replaced on a listing is queued and gets its week again',
+        (select count(*) from public.blob_deletions where storage_key = v_hub_key) >= 1
+        and (select created_at > now() - interval '1 minute' from private.hub_preview_uploads where storage_key = v_hub_key)
+        and (private.blob_references(array[v_hub_key]) ->> v_hub_key)::boolean, null);
+    execute 'set local role authenticated';
     perform public.set_hub_listing(v_ws, 'suite', array['rls'], true, v_hub_key);
     execute 'reset role';
     insert into __results values ('re-list: old qualified reports auto-hide again',
@@ -2696,6 +2854,21 @@ begin
     -- to_regprocedure keeps a renamed signature from aborting the suite:
     -- it comes back as a failed row saying so
     -- ------------------------------------------------------------------
+    -- Everything in `public` that a caller without a session may run. A new
+    -- wrapper is executable by PUBLIC until someone decides otherwise: this
+    -- row fails until it is revoked or added here on purpose
+    select coalesce(array_agg(p.proname::text order by p.proname::text), '{}') into v_open
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prokind = 'f'
+       and has_function_privilege('anon', p.oid, 'execute')
+       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e');
+    insert into __results values ('grants: a visitor without a session may run only what a public board and the Hub need',
+        v_open = array['download_target', 'folder_read', 'hub_preview_target', 'list_hub_authors',
+                       'list_hub_publications', 'list_hub_tags', 'preview_workspace_invite', 'workspace_usage'],
+        array_to_string(v_open, ', '));
+
     for v_grant in
         select *
           from (values
@@ -2745,8 +2918,8 @@ begin
             -- list blob keys of an arbitrary subtree with no access check inside
             ('private.list_subtree_files(uuid)', false, false),
             ('public.list_subtree_files(uuid)', false, false),
-            ('private.list_foreign_blob_entries(int)', false, false),
-            ('public.list_foreign_blob_entries(int)', false, false),
+            ('private.list_foreign_blob_entries(int, timestamptz, uuid)', false, false),
+            ('public.list_foreign_blob_entries(int, timestamptz, uuid)', false, false),
             -- the meters and the preview worker write on the backend's word
             ('private.egress_sync(date, jsonb)', false, false),
             ('public.egress_sync(date, jsonb)', false, false),
@@ -2794,6 +2967,12 @@ begin
             ('private.leave_workspace(uuid)', false, true),
             ('public.leave_workspace(uuid)', false, true),
             ('public.merge_entry_xattrs(uuid, jsonb, text)', false, true),
+            ('public.create_text_file(uuid, text, text, text, text, uuid, jsonb)', false, true),
+            ('public.delete_entry(uuid, text)', false, true),
+            ('public.purge_trash(uuid)', false, true),
+            ('public.fork_workspace(uuid)', false, true),
+            ('public.list_workspace_members(uuid)', false, true),
+            ('public.sweep_pile_images(uuid, text, text[], text)', false, true),
             ('public.report_hub_listing(uuid, text)', false, true),
             ('public.owner_usage()', false, true),
             ('public.touch_sync_device(uuid, text)', false, true),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { background_jobs, drain, is_managed_key } from "./gc";
+import { background_jobs, drain, is_managed_key, rekey_batch, type RekeySweep } from "./gc";
 import type { S3Client } from "bun";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Env } from "./env";
@@ -122,5 +122,68 @@ describe("background_jobs", () => {
 			})()
 			.catch(() => {});
 		await jobs.stop();
+	});
+});
+
+describe("the re-key sweep reaches every forked blob", () => {
+	type Row = { id: string; workspace_id: string; storage_key: string; created_at: string };
+	const row = (n: number): Row => ({
+		id: `id-${String(n).padStart(3, "0")}`,
+		workspace_id: "ws",
+		storage_key: `src/${n}`,
+		created_at: `2026-11-26T10:00:${String(n).padStart(2, "0")}Z`,
+	});
+
+	/** A queue whose rows leave it once copied; `broken` ones never copy. */
+	function queue(rows: Row[], broken: Set<string> = new Set()) {
+		const asked: (string | null)[] = [];
+		const sweep: RekeySweep = {
+			list: async (limit, after) => {
+				asked.push(after ? after.id : null);
+				return rows
+					.filter((item) => !after || item.created_at > after.created_at || (item.created_at === after.created_at && item.id > after.id))
+					.slice(0, limit);
+			},
+			copy: async (batch) => {
+				const failed = batch.filter((item) => broken.has(item.id));
+				for (const item of batch) {
+					if (!broken.has(item.id)) rows.splice(rows.findIndex((other) => other.id === item.id), 1);
+				}
+				return { copied: batch.length - failed.length, failed };
+			},
+		};
+		return { sweep, rows, asked };
+	}
+
+	test("rows that never copy do not hold back the ones behind them", async () => {
+		// the three oldest rows have lost their source object
+		const q = queue([1, 2, 3, 4, 5, 6, 7].map(row), new Set(["id-001", "id-002", "id-003"]));
+		let cursor = await rekey_batch(q.sweep, null, 3);
+		expect(cursor).toEqual({ created_at: row(3).created_at, id: "id-003" });
+		expect(q.rows.map((item) => item.id)).toEqual(["id-001", "id-002", "id-003", "id-004", "id-005", "id-006", "id-007"]);
+		cursor = await rekey_batch(q.sweep, cursor, 3);
+		cursor = await rekey_batch(q.sweep, cursor, 3);
+		// everything that can be copied has been; the pass is over
+		expect(q.rows.map((item) => item.id)).toEqual(["id-001", "id-002", "id-003"]);
+		expect(cursor).toBeNull();
+	});
+
+	test("at the end the pass starts over, so a row that failed is tried again", async () => {
+		const q = queue([1, 2, 3].map(row), new Set(["id-001"]));
+		const cursor = await rekey_batch(q.sweep, { created_at: row(3).created_at, id: "id-003" }, 2);
+		expect(q.asked).toEqual(["id-003", null]);
+		expect(q.rows.map((item) => item.id)).toEqual(["id-001", "id-003"]);
+		expect(cursor).toEqual({ created_at: row(2).created_at, id: "id-002" });
+	});
+
+	test("a list that could not be read leaves the place where it is", async () => {
+		const at = { created_at: row(2).created_at, id: "id-002" };
+		expect(await rekey_batch({ list: async () => null, copy: async () => ({ copied: 0, failed: [] }) }, at)).toEqual(at);
+	});
+
+	test("a database from before the cursor is read from the oldest row every time, as it was", async () => {
+		const old_rows = [1, 2, 3].map((n) => ({ id: `id-${n}`, workspace_id: "ws", storage_key: `src/${n}` }));
+		const cursor = await rekey_batch({ list: async () => old_rows, copy: async () => ({ copied: 3, failed: [] }) }, null, 3);
+		expect(cursor).toBeNull();
 	});
 });
