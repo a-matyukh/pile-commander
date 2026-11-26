@@ -16,10 +16,16 @@ There is no standing staging project. Do not create one unless the user asks.
 Data-rewriting diffs (`not null` without a default, type changes, backfills)
 are rehearsed on a throwaway restore of a production dump into the local
 `pile_security_test` database, never by experimenting on the live project.
-When a diff rewrites existing rows (a backfill, a column added nullable and
-later set not null, a temporary default), commit that SQL in the same commit
-as the schema change, as its own file. `schema.sql` and `rpc.sql` stay the
-end state. Do not add a numbered migrations history for structural changes.
+Every diff for the live project is a file in `packages/file-manager/diffs/`,
+named by the date it was written and what it is
+(`2026-11-26-cloud-p3.sql`), and committed with the change it belongs to, so
+a review sees exactly what will reach production. A rewrite of existing rows
+(a backfill, a column added nullable and later set not null, a temporary
+default) is part of that file. The folder is a log, not a migration chain:
+nothing runs it, a fresh database never needs it, and a file that has been
+applied is neither edited nor applied again — a correction is a new file.
+`schema.sql` and `rpc.sql` stay the end state. `diffs/README.md` lists the
+files with the date each was applied.
 
 ## Running scripts in this monorepo (bun workspaces)
 
@@ -65,7 +71,8 @@ does not match the pin, follow
 ## Database (Supabase)
 
 `packages/file-manager/src/schema.sql` and `rpc.sql` are the source of truth
-(no migrations folder in the repo). The live project already has this schema;
+(`packages/file-manager/diffs/` is a log of what was applied to the live
+project, not migrations). The live project already has this schema;
 a change goes there as the diff described in the production section above (Supabase
 MCP `apply_migration` or the SQL editor) — otherwise the client gets 404 on
 RPC calls. Re-applying either file whole fails on existing tables and can

@@ -1068,8 +1068,8 @@ deferred). Done work is in the invariants above.
 - [ ] Apply `schema.sql` + `rpc.sql` and run `rls.test.sql` — 0 failed. The
       suite asserts function grants too, so a `drop function` that reopens a
       backend-only path fails the run instead of waiting for a review to catch
-      it. (AGENTS.md: the schema is applied directly, there is no migrations
-      folder in the repo.)
+      it. (AGENTS.md: the schema is applied directly; `packages/file-manager/diffs/`
+      is the log of diffs applied to the live project and is not run here.)
 - [ ] Supabase Auth → JWT keys: the project must be on **asymmetric** signing
       keys. `auth.getClaims` verifies locally by JWKS only when the token is
       not `HS*` and carries a `kid`; on the legacy shared secret it silently
