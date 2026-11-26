@@ -21,6 +21,11 @@ export type FolderChild = Entry & {
 	 * does not. Lets a caller act on exactly the entry it created
 	 */
 	entry_id?: string
+	/**
+	 * Local: a symbolic link. It is listed as a file whatever it points at,
+	 * and reading it reads its target, which may lie anywhere on the disk
+	 */
+	is_link?: true
 }
 
 type FolderChildPatch = Pick<FolderChild, "id" | "name">

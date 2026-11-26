@@ -118,7 +118,8 @@ async function pile_image_files(fm: FileManager, pile_id: string): Promise<Folde
 /**
  * Walks a local workspace and measures what a cloud copy takes: sizes, kinds,
  * the files the plan or the cloud refuses, and a default set to leave out.
- * OS litter is skipped. `.pile` contributes its cover and background files only.
+ * OS litter and symbolic links are skipped. `.pile` contributes its cover and
+ * background files only.
  */
 export async function preflight_tree(
 	fm: FileManager,
@@ -138,6 +139,9 @@ export async function preflight_tree(
 		let saw_pile = false
 		for (const child of await fm.FolderChildren(folder.id)) {
 			if (is_os_junk_name(child.name) || (is_hidden_entry_name(child.name) && child.name !== PILE_DIR_NAME)) continue
+			// A symbolic link is not copied: reading it reads its target, which
+			// may be a file anywhere on the disk (the sync skips links too)
+			if (child.is_link) continue
 			if (child.name === PILE_DIR_NAME) {
 				if (child.type !== 'folder') continue
 				saw_pile = true

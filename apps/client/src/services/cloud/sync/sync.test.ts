@@ -489,6 +489,27 @@ describe('scan_local', () => {
 		expect(layout.folders.get('')?.connections).toEqual([])
 	})
 
+	test('a symbolic link stays on this computer, and protects its folder like a hidden name', async () => {
+		const { local, stat } = make_local()
+		local.seed_folder('/ws/project')
+		local.seed_file('/ws/project/a.txt', 'a')
+		// a link to a file elsewhere on the disk, and one to a folder: both are listed as files
+		local.seed_file('/ws/project/key', 'what the link points at')
+		local.seed_file('/ws/shortcut', 'elsewhere')
+		const links = new Set(['/ws/project/key', '/ws/shortcut'])
+		const fm: FileManager = {
+			...local.fm,
+			async FolderChildren(id) {
+				return (await local.fm.FolderChildren(id)).map(child => links.has(child.id) ? { ...child, is_link: true as const } : child)
+			},
+		}
+
+		const scanned = await scan_local(fm, '/ws', stat)
+
+		expect(scanned.entries.map(entry => entry.relative).sort()).toEqual(['project', 'project/a.txt'])
+		expect([...scanned.folders_with_hidden].sort()).toEqual(['', 'project'])
+	})
+
 	test('OS junk does not protect a folder deleted in the cloud', async () => {
 		const { local, stat } = make_local()
 		local.seed_folder('/ws/docs')
@@ -1044,6 +1065,65 @@ describe('run_sync_pass', () => {
 
 		expect(upload).not.toHaveBeenCalled()
 		expect(result.state.entries['note.md']?.cloud_id).toBe(cloud.ids.get('/note.md'))
+	})
+})
+
+describe('adopting a file of the same size', () => {
+	test('a text with other words is not taken for the same: both versions are kept', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/todo.md', '- [x] ship')
+		const cloud = make_cloud()
+		await cloud.fm.upload_file('/', 'todo.md', new Blob(['- [ ] ship']), 'text/markdown')
+		const { deps } = make_deps(local, stat, cloud)
+
+		const result = await pass(deps, new_state())
+
+		expect(result.report.conflicts).toEqual(['todo.md'])
+		// the cloud keeps the name; this side's version goes up beside it
+		expect(await local.fm.read_text_file('/ws/todo.md')).toBe('- [ ] ship')
+		const texts = await Promise.all(
+			cloud.fake.list_entries().filter(entry => entry.type === 'file').map(entry => cloud.fm.read_text_file(entry.path)),
+		)
+		expect(texts.sort()).toEqual(['- [ ] ship', '- [x] ship'])
+	})
+
+	test('this side wins when the cloud copy has not changed since the link was made', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/todo.md', '- [x] ship')
+		const cloud = make_cloud()
+		await cloud.fm.upload_file('/', 'todo.md', new Blob(['- [ ] ship']), 'text/markdown')
+		const { deps } = make_deps(local, stat, cloud)
+		const dated: SyncPassDeps = {
+			...deps,
+			list_cloud: async () => (await cloud.list_cloud()).map(row => ({ ...row, modified_at: row.modified_at && '2026-01-01T00:00:00Z' })),
+		}
+
+		const result = await pass(dated, { ...new_state(), adopt_before: Date.parse('2026-02-01T00:00:00Z') })
+
+		expect(result.report.conflicts).toEqual([])
+		expect(result.report.updated).toBe(1)
+		expect(await cloud.fm.read_text_file('/todo.md')).toBe('- [x] ship')
+		expect(await local.fm.read_text_file('/ws/todo.md')).toBe('- [x] ship')
+		expect(cloud.fake.list_entries().filter(entry => entry.type === 'file')).toHaveLength(1)
+	})
+
+	test('the same text is adopted with one read, and a picture with none', async () => {
+		const { local, stat } = make_local()
+		local.seed_file('/ws/note.md', 'same')
+		await local.fm.upload_file('/ws', 'photo.png', bytes(64), 'image/png')
+		const cloud = make_cloud()
+		await cloud.fm.upload_file('/', 'note.md', new Blob(['same']), 'text/markdown')
+		await cloud.fm.upload_file('/', 'photo.png', bytes(64), 'image/png')
+		const read = vi.spyOn(cloud.fm, 'read_text_file')
+		const upload = vi.spyOn(cloud.fm, 'upload_file')
+		const { deps } = make_deps(local, stat, cloud)
+
+		const result = await pass(deps, new_state())
+
+		expect(upload).not.toHaveBeenCalled()
+		expect(read.mock.calls.map(call => call[0])).toEqual(['/note.md'])
+		expect(result.report.conflicts).toEqual([])
+		expect(Object.keys(result.state.entries).sort()).toEqual(['note.md', 'photo.png'])
 	})
 })
 

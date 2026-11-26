@@ -440,6 +440,20 @@ class PassRun {
 			case 'adopt': {
 				const row = this.cloud_by_id.get(action.cloud_id)
 				if (!row) throw new Error(`cloud entry is gone: ${action.relative}`)
+				if (row.kind === 'file' && await this.text_differs(action.relative, row)) {
+					// the same size and other words: what a different size means
+					// in reconcile — this side's version if the cloud copy has not
+					// changed since the link was made, both versions otherwise
+					if (this.untouched_since_link(row)) {
+						await this.update(action.relative, action.cloud_id)
+						this.report.updated += 1
+					} else {
+						await this.local_conflict(action.relative, action.cloud_id)
+						this.report.conflicts.push(action.relative)
+						await this.checkpoint(true)
+					}
+					return
+				}
 				this.paths.set(action.relative, row.path)
 				this.touched.add(action.relative)
 				return
@@ -501,6 +515,30 @@ class PassRun {
 				delete this.state.entries[action.relative]
 				delete this.state.layout[action.relative]
 		}
+	}
+
+	/**
+	 * A file is adopted when both sides hold one of the same size under the
+	 * same name, with no transfer. For a text the size proves little — a
+	 * ticked checkbox is the same size — and both versions are at hand, so
+	 * they are compared. A blob is still taken by its size: the cloud keeps
+	 * no hash of it (`LOCAL_SYNC.md`, "Limits").
+	 */
+	private async text_differs(relative: string, row: CloudEntry): Promise<boolean> {
+		if (row.is_blob || row.size > MAX_TEXT_CONTENT_BYTES) return false
+		const { blob, mime } = await this.read(relative)
+		if (!is_text_mime(mime) || blob.size > MAX_TEXT_CONTENT_BYTES) return false
+		const here = decode_text_content(new Uint8Array(await blob.arrayBuffer()))
+		if (here === null) return false
+		return here !== await this.deps.cloud_fm.read_text_file(row.path)
+	}
+
+	/** As in reconcile: the cloud copy is as it was when the link was made. */
+	private untouched_since_link(row: CloudEntry): boolean {
+		const adopt_before = this.state.adopt_before
+		return adopt_before !== undefined
+			&& row.modified_at !== null
+			&& Date.parse(row.modified_at) <= adopt_before
 	}
 
 	private local_entry(relative: string): LocalEntry {

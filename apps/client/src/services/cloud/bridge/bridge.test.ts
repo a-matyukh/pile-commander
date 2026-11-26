@@ -110,6 +110,22 @@ describe('bridge preflight', () => {
 		expect(dst.has('/.big.bin')).toBe(false)
 	})
 
+	test('does not measure or copy a symbolic link', async () => {
+		const src = await make_source()
+		src.seed_file('/ws/id_rsa', 'what the link points at')
+		const fm = {
+			...src.fm,
+			async FolderChildren(id: string) {
+				return (await src.fm.FolderChildren(id)).map(child => child.id === '/ws/id_rsa' ? { ...child, is_link: true as const } : child)
+			},
+		}
+
+		const preflight = await preflight_tree(fm, '/ws', LIMITS)
+
+		expect(preflight.files.map(file => file.name)).not.toContain('id_rsa')
+		expect(preflight.total_bytes).toBe(7 + 2048 + 4096)
+	})
+
 	test('copies a cover file and leaves the rest of .pile behind', async () => {
 		const src = await make_source()
 		src.seed_folder('/ws/board/.pile')

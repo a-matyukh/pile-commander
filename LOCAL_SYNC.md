@@ -213,6 +213,14 @@ writes' own echoes wake finds nothing to do.
   trash or the system trash. After the folder's cover attribute is merged,
   the file manager deletes the spare file of that role itself. The watcher
   still ignores the rest of `.pile`.
+- **Symbolic links are never synced**, whatever they point at, and they
+  protect their folder exactly as a hidden name does (below). Reading a link
+  reads its target: a link to a file elsewhere on the disk would put that
+  file into the cloud and in front of everyone the folder is shared with,
+  and a link to a folder cannot be read as a file at all. "Copy to cloud"
+  and the first upload of Auto-sync skip links too (`preflight_tree`). A
+  link that went up as a file before this rule is, from then on, "deleted
+  here": its cloud copy goes to the cloud trash, the link stays.
 - **Names starting with a dot are never synced** (`.git`, `.env`, `.vscode`,
   and everything inside them). The `.pile` folder and its cover files, above,
   are the exception. Show hidden files does not change this.
@@ -273,7 +281,7 @@ Planned in three phases:
 | deleted | edited | download it back |
 | deleted | deleted | forget |
 | new | nothing there | create folder / upload |
-| new | the same kind and size there | adopt |
+| new | the same kind and size there | adopt; a text is read on both sides first, and other words under the same size count as a different size (the two rows below) |
 | new | a different size; untouched since `adopt_before` | update |
 | new | anything else there | `local_conflict` |
 | same size and mtime under a new path | — | move in the cloud, keeping the id |
@@ -479,6 +487,10 @@ here and is synced as a separate file.
 - **The app must be open.** There is no background agent or tray.
 - **Size and mtime detect edits here.** A same-size edit that restores the
   old mtime is missed (a content hash, item 4 below, would fix it).
+- **A blob is adopted by its size.** Two different pictures of the same
+  size under one name are linked as one file when a folder is first linked
+  with an existing cloud copy; the cloud keeps no hash to tell them apart
+  (item 4 below). Texts are compared by content (`text_differs`).
 - **Echo window.** The re-listing after the actions absorbs a cloud edit
   made by someone else in between (about a second per pass); that edit is
   then treated as already synced.

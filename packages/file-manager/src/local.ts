@@ -78,6 +78,7 @@ async function entry_to_child(parent_path: string, entry: DirEntry): Promise<Fol
 		id: path,
 		type: entry.isDirectory ? "folder" : "file",
 		name: entry.name,
+		...(entry.isSymlink ? { is_link: true as const } : {}),
 	}
 }
 

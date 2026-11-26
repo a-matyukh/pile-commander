@@ -64,7 +64,7 @@ function push_pile_images(
 
 /**
  * Walks the synced folder breadth-first (parents before children). Hidden
- * names and OS litter are skipped. `.pile` contributes its cover and
+ * names, symbolic links and OS litter are skipped. `.pile` contributes its cover and
  * background files only, and does not mark the parent as keeping hidden
  * files. A file that vanishes mid-walk is left out.
  */
@@ -86,7 +86,11 @@ export async function scan_local(fm: FileManager, root: string, stat: LocalStat)
 				push_pile_images(entries, await pile_image_children(fm, child.id), relative, bad_name)
 				continue
 			}
-			if (is_hidden_entry_name(child.name)) {
+			// A symbolic link stays on this computer, like a hidden name. Reading
+			// it reads its target, and a link to a file elsewhere on the disk
+			// would send that file to the cloud and to everyone the folder is
+			// shared with; a link to a folder cannot be read as a file at all.
+			if (is_hidden_entry_name(child.name) || child.is_link) {
 				note_hidden_inside(folders_with_hidden, folder.relative)
 				continue
 			}
