@@ -13,8 +13,31 @@ marked.setOptions({ breaks: true })
 // goes: no image map (<map>, <area>, `usemap`) and no address on an <a>
 // inside <svg>, either of which can cover a whole note with a link nobody
 // sees and take the window to another site on any click.
-const NOTE_FORBID_TAGS = ['style', 'form', 'map', 'area']
-const NOTE_FORBID_ATTR = ['class', 'usemap']
+//
+// Nothing to type into or press, either: a note is text, and a password field
+// or a "Sign in" button drawn inside one looks like the app asking. The one
+// control a note has is the checkbox of a task list (`uponSanitizeElement`
+// below keeps an <input> only as that). The text inside a dropped element
+// stays. Media starts when the reader starts it (`autoplay`), nothing takes
+// the focus on its own (`autofocus`), and nothing carries a name the page
+// could be looked up by (`id`, `name`): the app finds its own elements by id.
+const NOTE_FORBID_TAGS = [
+	'style', 'form', 'map', 'area',
+	'textarea', 'select', 'option', 'optgroup', 'datalist', 'button', 'fieldset', 'legend', 'output',
+]
+const NOTE_FORBID_ATTR = ['class', 'usemap', 'id', 'name', 'autoplay', 'autofocus']
+
+// `data-*` is how the app marks its own elements (`data-id`, `data-path`, a
+// drop target, the window's drag region `data-tauri-drag-region`), and its
+// handlers find them by walking up from whatever was clicked or dropped on.
+// A note keeps only the marks its own rendering reads.
+const NOTE_DATA_ATTRS: ReadonlySet<string> = new Set([
+	'data-type', 'data-checked', 'data-callout', 'data-language', 'data-front-matter',
+	'data-raw', 'data-raw-inline', 'data-raw-block', 'data-held-src', 'data-colwidth',
+])
+
+/** What stays on a task list's checkbox. */
+const CHECKBOX_ATTRS: ReadonlySet<string> = new Set(['type', 'checked', 'disabled'])
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 const LINK_ATTRS: ReadonlySet<string> = new Set(['href', 'xlink:href'])
@@ -34,8 +57,21 @@ function createNotePurify() {
 	// A DOMPurify that finds the DOM lacking still has `sanitize`, and returns
 	// its input untouched: take the fallback then.
 	if (!purify.isSupported) return null
+	purify.addHook('uponSanitizeElement', (node) => {
+		if (!(node instanceof Element) || node.localName !== 'input') return
+		if ((node.getAttribute('type') ?? '').toLowerCase() !== 'checkbox') node.remove()
+	})
 	purify.addHook('uponSanitizeAttribute', (node, data) => {
-		if (LINK_ATTRS.has(data.attrName.toLowerCase()) && node.namespaceURI === SVG_NAMESPACE && node.localName === 'a') {
+		const name = data.attrName.toLowerCase()
+		if (LINK_ATTRS.has(name) && node.namespaceURI === SVG_NAMESPACE && node.localName === 'a') {
+			data.keepAttr = false
+			return
+		}
+		if (name.startsWith('data-') && !NOTE_DATA_ATTRS.has(name)) {
+			data.keepAttr = false
+			return
+		}
+		if (node.localName === 'input' && !CHECKBOX_ATTRS.has(name)) {
 			data.keepAttr = false
 			return
 		}
@@ -57,7 +93,10 @@ const START_TAG = /<[a-z][a-z0-9-]*(?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'
 /** Inside a tag only: the same words in the note's text stay as they are. */
 function fallbackSanitizeTag(tag: string): string {
 	return tag
-		.replace(/\sclass\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+		.replace(/\s(?:class|id|name|autoplay|autofocus|data-[a-z0-9-]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?(?=[\s/>])/gi, (attr) => {
+			const name = attr.trim().split(/[\s=]/)[0]!.toLowerCase()
+			return NOTE_DATA_ATTRS.has(name) ? attr : ''
+		})
 		.replace(
 			/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
 			(_match, double_q?: string, single_q?: string, bare?: string) => {
@@ -71,7 +110,8 @@ function fallbackSanitize(html: string): string {
 	return html
 		.replace(/<script\b[\s\S]*?>[\s\S]*?<\/script>/gi, '')
 		.replace(/<style\b[\s\S]*?>[\s\S]*?<\/style>/gi, '')
-		.replace(/<\/?(?:form|map|area)\b[^>]*>/gi, '')
+		.replace(/<\/?(?:form|map|area|textarea|select|option|optgroup|datalist|button|fieldset|legend|output)\b[^>]*>/gi, '')
+		.replace(/<input\b(?![^>]*\stype\s*=\s*["']?checkbox)[^>]*>/gi, '')
 		.replace(/\susemap\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
 		.replace(/<(?:iframe|embed|object|foreignObject)\b[\s\S]*?>[\s\S]*?<\/(?:iframe|embed|object|foreignObject)>/gi, '')
 		.replace(/<(?:iframe|embed|object|foreignObject)\b[^>]*\/?>/gi, '')

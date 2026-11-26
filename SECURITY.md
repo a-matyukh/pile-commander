@@ -510,6 +510,16 @@ show only these intentional INFOs. Anything else is a regression.
   renderer checks `isSupported` and otherwise takes the regex fallback, which
   applies the same rules. `markdown.dom.test.ts` runs the shipping path under
   jsdom.
+- **A note cannot pose as the app.** Nothing to type into or press: no
+  `<input>` other than a task list's checkbox (and on it only `type`,
+  `checked`, `disabled`), no `<textarea>`, `<select>`, `<button>`,
+  `<fieldset>` — a password field under "Session expired" inside a shared
+  note would look like the app asking. Their text stays. No `autoplay` and
+  no `autofocus`. No `id` or `name`, and of `data-*` only the marks a note's
+  own rendering reads (`NOTE_DATA_ATTRS`): the app marks its own elements
+  with `data-id`, `data-path`, drop targets and the window's
+  `data-tauri-drag-region`, and finds them by walking up from what was
+  clicked or dropped on.
 - **Nothing edits sanitized markup as a string.** SVG shapes
   (`prepare_svg_for_preview`, `services/board/shapes.ts`) run DOMPurify last,
   on an instance of their own: the url and style rules sit in its attribute

@@ -61,6 +61,18 @@ describe('parseNoteMarkdown', () => {
 		expect(html).not.toContain('class=')
 	})
 
+	test('drops fields, buttons and the names the app goes by, and keeps a task checkbox', () => {
+		const html = parseNoteMarkdown('<p>Password: <input type="password"> <button>Sign in</button> id=5 stays as text</p>\n\n<div id="app" data-id="/x" data-tauri-drag-region data-callout="note">x</div>\n\n<video autoplay controls src="a.mp4"></video>\n\n- [x] done')
+		for (const gone of ['<input type="password"', '<button', 'id="app"', 'data-id', 'data-tauri-drag-region', 'autoplay']) {
+			expect(html).not.toContain(gone)
+		}
+		expect(html).toContain('Sign in')
+		expect(html).toContain('id=5 stays as text')
+		expect(html).toContain('data-callout="note"')
+		expect(html).toContain('controls')
+		expect(html).toMatch(/<input[^>]*type="checkbox"/)
+	})
+
 	test('drops a form and keeps its text', () => {
 		const html = parseNoteMarkdown('<form action="https://evil.example/login">Password: <input name="p"></form>')
 		expect(html).not.toContain('<form')

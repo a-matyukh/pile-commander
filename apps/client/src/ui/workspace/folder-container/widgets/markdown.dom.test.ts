@@ -41,6 +41,56 @@ describe('parseNoteMarkdown with DOMPurify', () => {
 		expect(html).toContain('Password:')
 	})
 
+	test('leaves nothing to type into or press, and keeps the words', () => {
+		const html = parseNoteMarkdown([
+			'<p>Session expired. Password: <input type="password" placeholder="Password"></p>',
+			'<textarea>your notes</textarea>',
+			'<select><option>Work</option><option>Home</option></select>',
+			'<button onclick="x()">Sign in</button>',
+			'<fieldset><legend>Account</legend><input type="text" value="me"></fieldset>',
+		].join('\n\n'))
+		for (const tag of ['<input', '<textarea', '<select', '<option', '<button', '<fieldset', '<legend']) {
+			expect(html).not.toContain(tag)
+		}
+		expect(html).toContain('Session expired. Password:')
+		expect(html).toContain('your notes')
+		expect(html).toContain('Sign in')
+	})
+
+	test('a task checkbox stays a checkbox and nothing more', () => {
+		const html = parseNoteMarkdown('<input type="checkbox" checked name="agree" value="1" autofocus formaction="https://evil.example">')
+		expect(html).toMatch(/<input[^>]*type="checkbox"/)
+		expect(html).toContain('checked')
+		for (const attr of ['name', 'value', 'autofocus', 'formaction', 'evil.example']) {
+			expect(html).not.toContain(attr)
+		}
+		// an <input> of another kind dressed as one is still dropped
+		expect(parseNoteMarkdown('<input type="image" src="https://evil.example/a.png">')).not.toContain('<input')
+		expect(parseNoteMarkdown('<input>')).not.toContain('<input')
+	})
+
+	test('media waits for the reader, and nothing takes the focus', () => {
+		const html = parseNoteMarkdown('<video autoplay loop controls src="https://example.com/a.mp4"></video><audio autoplay src="https://example.com/a.mp3"></audio><a href="https://example.com" autofocus>x</a>')
+		expect(html).toContain('<video')
+		expect(html).toContain('controls')
+		expect(html).toContain('<audio')
+		expect(html).not.toContain('autoplay')
+		expect(html).not.toContain('autofocus')
+	})
+
+	test('a note cannot name itself after the app\'s own elements', () => {
+		const html = parseNoteMarkdown('<div id="app" name="app" data-id="/other/folder" data-path="/other" data-drop-root data-tauri-drag-region>x</div>')
+		expect(html).toContain('x')
+		for (const attr of ['id=', 'name=', 'data-id', 'data-path', 'data-drop-root', 'data-tauri-drag-region']) {
+			expect(html).not.toContain(attr)
+		}
+		// the marks a note's own rendering reads stay
+		const own = parseNoteMarkdown('<ul data-type="taskList"><li data-type="taskItem" data-checked="true">x</li></ul><div data-callout="note">y</div><code data-language="ts">z</code>')
+		for (const attr of ['data-type="taskList"', 'data-checked="true"', 'data-callout="note"', 'data-language="ts"']) {
+			expect(own).toContain(attr)
+		}
+	})
+
 	test('keeps what notes use: task checkboxes, callouts, links, code', () => {
 		const html = parseNoteMarkdown('- [x] done\n\n<aside>\n**Tip**\n</aside>\n\n[site](https://example.com) `code`\n\n```ts\nconst a = 1\n```')
 		expect(html).toMatch(/<input[^>]*type="checkbox"/)
