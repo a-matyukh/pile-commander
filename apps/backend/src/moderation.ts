@@ -50,35 +50,91 @@ async function owner_email(db: SupabaseClient, owner_id: string): Promise<string
 	return data.user?.email ?? null;
 }
 
+/**
+ * The owner's mail queue (`moderation_mail`). Two copies of the backend run
+ * side by side for a minute or two on every deploy, and each has its own
+ * cron tick: a row read by both was sent by both. So a copy takes a row
+ * before it sends (`claim`), and the copy that comes second gets nothing.
+ */
+export type OwnerMailQueue = {
+	pending: (limit: number) => Promise<MailRow[]>;
+	/**
+	 * Counts one more attempt on the row, only if nobody has counted one
+	 * since it was read and it is still unsent. False: another copy has it
+	 */
+	claim: (row: MailRow) => Promise<boolean>;
+	email: (owner_id: string) => Promise<string | null>;
+	sent: (id: string) => Promise<void>;
+	failed: (id: string, message: string) => Promise<void>;
+};
+
+export function default_owner_mail(db: SupabaseClient): OwnerMailQueue {
+	return {
+		async pending(limit) {
+			const { data, error } = await db
+				.from("moderation_mail")
+				.select("id, kind, owner_id, reason, username, slug, workspace_name, attempts")
+				.is("sent_at", null)
+				.order("created_at", { ascending: true })
+				.limit(limit);
+			if (error) throw new Error(error.message);
+			return (data ?? []) as MailRow[];
+		},
+		async claim(row) {
+			const { data, error } = await db
+				.from("moderation_mail")
+				.update({ attempts: row.attempts + 1 })
+				.eq("id", row.id)
+				.eq("attempts", row.attempts)
+				.is("sent_at", null)
+				.select("id");
+			if (error) {
+				console.error("[moderation] claim mail:", error.message);
+				return false;
+			}
+			return (data ?? []).length === 1;
+		},
+		email: (owner_id) => owner_email(db, owner_id),
+		async sent(id) {
+			const { error } = await db
+				.from("moderation_mail")
+				.update({ sent_at: new Date().toISOString(), last_error: null })
+				.eq("id", id);
+			if (error) console.error("[moderation] mark sent:", error.message);
+		},
+		async failed(id, message) {
+			const { error } = await db.from("moderation_mail").update({ last_error: message }).eq("id", id);
+			if (error) console.error("[moderation] mark failed:", error.message);
+		},
+	};
+}
+
+/**
+ * Sends what is queued for board owners. A row that fails stays unsent with
+ * its error and is tried again on the next tick; `attempts` counts the tries.
+ * Returns how many mails went
+ */
 export async function drain_moderation_mail(
 	env: Env,
-	db: SupabaseClient,
+	queue: OwnerMailQueue,
 	send: FetchLike = fetch,
 ): Promise<number> {
 	if (!plunk_ready(env)) return 0;
 
-	const { data, error } = await db
-		.from("moderation_mail")
-		.select("id, kind, owner_id, reason, username, slug, workspace_name, attempts")
-		.is("sent_at", null)
-		.order("created_at", { ascending: true })
-		.limit(MAIL_BATCH);
-	if (error) {
-		console.error("[moderation] list mail:", error.message);
+	let rows: MailRow[];
+	try {
+		rows = await queue.pending(MAIL_BATCH);
+	} catch (err) {
+		console.error("[moderation] list mail:", err instanceof Error ? err.message : err);
 		return 0;
 	}
 
 	let sent = 0;
-	for (const row of (data ?? []) as MailRow[]) {
-		const email = await owner_email(db, row.owner_id);
+	for (const row of rows) {
+		if (!(await queue.claim(row))) continue;
+		const email = await queue.email(row.owner_id);
 		if (!email) {
-			await db
-				.from("moderation_mail")
-				.update({
-					attempts: row.attempts + 1,
-					last_error: "owner has no email",
-				})
-				.eq("id", row.id);
+			await queue.failed(row.id, "owner has no email");
 			continue;
 		}
 		const board = {
@@ -94,20 +150,14 @@ export async function drain_moderation_mail(
 				: hub_hidden_email_copy(board);
 		try {
 			await plunk_send(env, email, copy.subject, copy.body, send);
-			const { error: mark_error } = await db
-				.from("moderation_mail")
-				.update({ sent_at: new Date().toISOString(), last_error: null })
-				.eq("id", row.id);
-			if (mark_error) console.error("[moderation] mark sent:", mark_error.message);
-			else sent += 1;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			console.error("[moderation] send failed:", message);
-			await db
-				.from("moderation_mail")
-				.update({ last_error: message, attempts: row.attempts + 1 })
-				.eq("id", row.id);
+			await queue.failed(row.id, message);
+			continue;
 		}
+		await queue.sent(row.id);
+		sent += 1;
 	}
 	return sent;
 }
@@ -128,7 +178,13 @@ export type HiddenNotices = {
 	pending: (limit: number) => Promise<HiddenRow[] | null>;
 	/** how many reports each hidden card has, and what they say */
 	reports: () => Promise<HubDigestPayload["hidden"]>;
-	mark: (id: string) => Promise<{ error: { message?: string } | null }>;
+	/**
+	 * Marks the card as told, only if it is not marked yet. False: another
+	 * copy of the backend is telling the moderator (see OwnerMailQueue)
+	 */
+	claim: (id: string) => Promise<boolean>;
+	/** The notice did not go: unmark the card, the next tick tries again */
+	release: (id: string) => Promise<void>;
 };
 
 function default_hidden_notices(db: SupabaseClient): HiddenNotices {
@@ -154,12 +210,22 @@ function default_hidden_notices(db: SupabaseClient): HiddenNotices {
 			if (error) throw new Error(error.message);
 			return parse_digest_payload(data).hidden;
 		},
-		async mark(id) {
-			const { error } = await db
+		async claim(id) {
+			const { data, error } = await db
 				.from("moderation_mail")
 				.update({ moderator_notified_at: new Date().toISOString() })
-				.eq("id", id);
-			return { error };
+				.eq("id", id)
+				.is("moderator_notified_at", null)
+				.select("id");
+			if (error) {
+				console.error("[moderation] claim moderator notice:", error.message);
+				return false;
+			}
+			return (data ?? []).length === 1;
+		},
+		async release(id) {
+			const { error } = await db.from("moderation_mail").update({ moderator_notified_at: null }).eq("id", id);
+			if (error) console.error("[moderation] release moderator notice:", error.message);
 		},
 	};
 }
@@ -195,15 +261,15 @@ export async function notify_moderator_of_hidden(
 			report_count: found ? found.report_count : null,
 			reasons: found ? found.reasons : [],
 		});
+		if (!(await store.claim(row.id))) continue;
 		try {
 			await plunk_send(env, env.moderation_digest_email, copy.subject, copy.body, send);
 		} catch (err) {
 			console.error("[moderation] moderator notice failed:", err instanceof Error ? err.message : err);
+			await store.release(row.id);
 			continue;
 		}
-		const marked = await store.mark(row.id);
-		if (marked.error) console.error("[moderation] mark moderator notice:", marked.error.message);
-		else sent += 1;
+		sent += 1;
 	}
 	return sent;
 }
@@ -258,7 +324,7 @@ export function start_moderation_worker(
 			env.moderation_mail_cron,
 			wrap(async () => {
 				try {
-					await drain_moderation_mail(env, db);
+					await drain_moderation_mail(env, default_owner_mail(db));
 				} catch (err) {
 					console.error("[moderation] mail tick failed:", err);
 				}
