@@ -2895,26 +2895,40 @@ export async function purge_entry_id(client: SupabaseClient, entry_id: string): 
 	if (error) throw new Error(`purge_entry failed: ${error.message}`)
 }
 
-/** Rows of a workspace listed at once, ordered by a unique key for stable pages */
+/**
+ * Rows of a workspace listed at once, a page at a time. Each page starts
+ * after the last key of the one before (`key` is unique and is among
+ * `columns`), not at an offset: with an offset, a row deleted while the
+ * pages are being read shifts everything behind it by one, and a live row
+ * falls between two pages. The sync then took it for deleted in the cloud
+ * and moved the local file to the system trash, to download it again on
+ * the next pass.
+ */
 const LIST_ENTRIES_PAGE = 1000
 
 async function list_workspace_rows<Row>(
 	client: SupabaseClient,
 	table: "entries" | "folder_strokes" | "folder_connections",
 	columns: string,
-	order: string,
+	key: string,
 	workspace_id: string,
 	live_only: boolean,
 ): Promise<Row[]> {
 	const rows: Row[] = []
-	for (let from = 0; ; from += LIST_ENTRIES_PAGE) {
+	let after: string | null = null
+	for (;;) {
 		let query = client.from(table).select(columns).eq("workspace_id", workspace_id)
 		if (live_only) query = query.is("deleted_at", null)
-		const { data, error } = await query.order(order).range(from, from + LIST_ENTRIES_PAGE - 1)
+		if (after !== null) query = query.gt(key, after)
+		const { data, error } = await query.order(key, { ascending: true }).limit(LIST_ENTRIES_PAGE)
 		if (error) throw new Error(`list ${table} failed: ${error.message}`)
 		const page = (data ?? []) as Row[]
 		rows.push(...page)
 		if (page.length < LIST_ENTRIES_PAGE) return rows
+		const last = (page[page.length - 1] as Record<string, unknown>)[key]
+		// without the key the next page cannot be asked for; never loop on page one
+		if (typeof last !== "string") throw new Error(`list ${table} failed: rows carry no ${key}`)
+		after = last
 	}
 }
 

@@ -272,23 +272,37 @@ describe("replace_file", () => {
 })
 
 describe("workspace listings", () => {
-	/** A PostgREST-style builder that serves `total` rows in pages and records the filters. */
-	function paged_client(total: number) {
-		const calls: { table: string; filters: string[]; order: string; range: [number, number] }[] = []
+	const key_of = (index: number) => `row-${String(index).padStart(5, "0")}`
+
+	/**
+	 * A PostgREST-style builder over rows keyed `row-00000…`, read the way the
+	 * database reads them: the filters, then the order, then the limit.
+	 * `between_pages` runs after each page is served, as another writer would.
+	 */
+	function paged_client(total: number, key: "id" | "record_id" = "id", between_pages?: (keys: string[]) => void) {
+		const keys = Array.from({ length: total }, (_, index) => key_of(index))
+		const calls: { table: string; filters: string[]; order: string; after: string | null; limit: number }[] = []
 		const client = {
 			from(table: string) {
-				const call = { table, filters: [] as string[], order: "", range: [0, 0] as [number, number] }
+				const call = { table, filters: [] as string[], order: "", after: null as string | null, limit: 0 }
 				const builder = {
 					select() { return builder },
 					eq(column: string, value: string) { call.filters.push(`${column}=${value}`); return builder },
 					is(column: string, value: null) { call.filters.push(`${column} is ${value}`); return builder },
+					gt(column: string, value: string) {
+						if (column !== key) throw new Error(`paged by ${column}, not ${key}`)
+						call.after = value
+						return builder
+					},
 					order(column: string) { call.order = column; return builder },
-					range(from: number, to: number) {
-						call.range = [from, to]
+					limit(count: number) {
+						call.limit = count
 						calls.push(call)
-						const rows = Array.from({ length: Math.max(0, Math.min(to + 1, total) - from) }, (_, index) => ({
-							id: `row-${from + index}`,
-						}))
+						const rows = keys
+							.filter(row => call.after === null || row > call.after)
+							.slice(0, count)
+							.map(row => ({ [key]: row }))
+						between_pages?.(keys)
 						return Promise.resolve({ data: rows, error: null })
 					},
 				}
@@ -298,22 +312,46 @@ describe("workspace listings", () => {
 		return { client: client as unknown as SupabaseClient, calls }
 	}
 
-	test("reads every page of live entries", async () => {
+	test("reads every page of live entries, each from the last key of the one before", async () => {
 		const { client, calls } = paged_client(1001)
 		const rows = await list_workspace_entries(client, "ws-1")
 		expect(rows).toHaveLength(1001)
-		expect(calls.map(call => call.range)).toEqual([[0, 999], [1000, 1999]])
+		expect(calls.map(call => [call.after, call.limit])).toEqual([[null, 1000], [key_of(999), 1000]])
 		expect(calls[0]!.filters).toEqual(["workspace_id=ws-1", "deleted_at is null"])
 	})
 
-	test("ink and edges of the whole workspace, in stable order", async () => {
+	test("a row deleted between two pages does not push a live one out of the list", async () => {
+		// row 5 goes after the first page is read: by offset, page two would start one row late
+		let removed = false
+		const { client } = paged_client(1500, "id", (keys) => {
+			if (removed) return
+			removed = true
+			keys.splice(5, 1)
+		})
+		const rows = await list_workspace_entries(client, "ws-1") as unknown as { id: string }[]
+		const listed = new Set(rows.map(row => row.id))
+		expect(listed.size).toBe(rows.length)
+		// every row that is still there was listed
+		for (let index = 0; index < 1500; index++) {
+			if (index !== 5) expect(listed.has(key_of(index))).toBe(true)
+		}
+	})
+
+	test("a listing that ends exactly on a page reads one empty page and stops", async () => {
+		const { client, calls } = paged_client(1000)
+		expect(await list_workspace_entries(client, "ws-1")).toHaveLength(1000)
+		expect(calls).toHaveLength(2)
+	})
+
+	test("ink and edges of the whole workspace, each paged by its own key", async () => {
 		const strokes = paged_client(3)
 		expect(await list_workspace_strokes(strokes.client, "ws-1")).toHaveLength(3)
 		expect(strokes.calls[0]).toMatchObject({ table: "folder_strokes", filters: ["workspace_id=ws-1"], order: "id" })
 
-		const edges = paged_client(2)
-		expect(await list_workspace_connections(edges.client, "ws-1")).toHaveLength(2)
+		const edges = paged_client(1001, "record_id")
+		expect(await list_workspace_connections(edges.client, "ws-1")).toHaveLength(1001)
 		expect(edges.calls[0]).toMatchObject({ table: "folder_connections", filters: ["workspace_id=ws-1"], order: "record_id" })
+		expect(edges.calls[1]!.after).toBe(key_of(999))
 	})
 })
 
