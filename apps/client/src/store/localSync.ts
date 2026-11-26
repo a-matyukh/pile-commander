@@ -195,6 +195,24 @@ async function remove_state(root: string): Promise<void> {
 	await remove(sync_state_path(root)).catch(() => {})
 }
 
+/**
+ * The system's mark of a downloaded file (macOS quarantine, the app's
+ * `mark_downloaded` command; nothing on other systems). A synced folder
+ * brings files other people put into its cloud copy, and with the mark a
+ * program among them is asked about by the system before it first runs, as
+ * after a browser download. Set on the temporary file, so the file never
+ * stands under its own name without it. A file system that cannot hold the
+ * mark still gets the file.
+ */
+async function mark_downloaded(path: string): Promise<void> {
+	try {
+		const { invoke } = await import('@tauri-apps/api/core')
+		await invoke('mark_downloaded', { path })
+	} catch (error) {
+		console.warn('[sync] download mark not set', error)
+	}
+}
+
 /** Plugin-fs writes into the synced folder, the system trash through the app's `trash_path` command. */
 function local_writer(root: string): LocalWriter {
 	return {
@@ -207,6 +225,7 @@ function local_writer(root: string): LocalWriter {
 			const temporary = join_local(scratch, `sync-${crypto.randomUUID()}.tmp`)
 			await writeFile(temporary, new Uint8Array(await data.arrayBuffer()))
 			try {
+				await mark_downloaded(temporary)
 				await rename(temporary, join_local(folder, name))
 			} catch (error) {
 				await remove(temporary).catch(() => {})

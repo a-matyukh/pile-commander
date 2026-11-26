@@ -359,6 +359,12 @@ person renames one of the two.
 
 ## Safety
 
+- **Downloaded files carry the system's download mark (macOS).** Every
+  file the pass writes from the cloud gets `com.apple.quarantine` before it
+  takes its name (`mark_downloaded`, see `SECURITY.md`): a program another
+  member put into the folder is asked about by the system before it first
+  runs. The mark is an attribute beside the layout ones and changes neither
+  the bytes nor the modification time, so the next pass sees no change.
 - **Mass delete pauses, separately per side.** A pass that would trash at
   least 20 files **and** over half of one side pauses:
   - `mass_delete_cloud`: the folder was emptied here;

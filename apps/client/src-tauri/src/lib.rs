@@ -11,6 +11,7 @@ mod mcp_access;
 mod mcp_pipe;
 mod paths;
 mod presigned_put;
+mod quarantine;
 mod workspace_pack;
 
 pub use mcp_pipe::mcp_pipe_main;
@@ -449,6 +450,7 @@ pub fn run() {
             trash_path,
             restore_trashed,
             launch::open_path,
+            quarantine::mark_downloaded,
             workspace_pack::export_workspace_zip,
             workspace_pack::import_workspace_zip,
             workspace_pack::pile_zip_begin,

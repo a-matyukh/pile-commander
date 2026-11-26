@@ -638,6 +638,15 @@ Tauri checks the origin.
   default app, and for a file the system would run, install or mount (by
   extension, or an executable file with no extension) it first asks in a
   system dialog, which the page cannot draw over or click.
+- **A file a sync brings down is marked as downloaded (macOS).** A synced
+  folder receives what other members put into its cloud copy. The sync
+  writer calls `mark_downloaded` (`quarantine.rs`) on the temporary file
+  before it takes its name, which sets `com.apple.quarantine`
+  (`0081;<time>;Pile Commander;`), so a program among those files is asked
+  about by Gatekeeper on its first launch from Finder, as after a browser
+  download. Documents, pictures and notes open as before. A mark already
+  on a file is left as it is; other systems have no such mark and the
+  command does nothing there. Files unpacked from a `.pile` are not marked.
 - **Uploads go to this build's bucket.** `put_presigned_*` accepts the
   storage host only, and with `PILE_STORAGE_URLS` set at build time
   (release.yml) only a URL that starts with one of the listed prefixes, each

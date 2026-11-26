@@ -3119,6 +3119,7 @@ dependencies = [
  "tauri-plugin-xattrs",
  "tokio",
  "trash",
+ "xattr",
  "zip 2.4.2",
 ]
 
