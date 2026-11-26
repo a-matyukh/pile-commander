@@ -41,14 +41,28 @@ export async function import_workspace_from_pile(
 	})
 
 	const fm = createFileManager('local')
-	const attrs_path = await join(extracted_root, PILE_DIR_NAME, PILE_ATTRS_FILE)
-	const attrs_raw = await fm.read_text_file(attrs_path)
-	const manifest = parsePileAttrsManifest(JSON.parse(attrs_raw))
+	try {
+		const attrs_path = await join(extracted_root, PILE_DIR_NAME, PILE_ATTRS_FILE)
+		const attrs_raw = await fm.read_text_file(attrs_path)
+		let manifest
+		try {
+			manifest = parsePileAttrsManifest(JSON.parse(attrs_raw))
+		} catch (error) {
+			const why = error instanceof Error ? error.message : String(error)
+			throw new Error(`The archive’s layout file (${PILE_DIR_NAME}/${PILE_ATTRS_FILE}) cannot be read, nothing was imported: ${why}`)
+		}
 
-	// Drop only the manifest. Cover and background files live in the same
-	// `.pile` and must stay; the strokes import writes `.pile/strokes.json` itself.
-	await fm.remove(attrs_path)
-	await applyPileAttrs(fm, extracted_root, manifest)
+		// Drop only the manifest. Cover and background files live in the same
+		// `.pile` and must stay; the strokes import writes `.pile/strokes.json` itself.
+		await fm.remove(attrs_path)
+		await applyPileAttrs(fm, extracted_root, manifest)
+	} catch (error) {
+		// The folder is this import's own: the unpacking refuses a name that is
+		// taken. Left half-imported, it would only make the next attempt fail
+		// with "destination already exists"
+		await fm.remove(extracted_root).catch(() => {})
+		throw error
+	}
 
 	const name = await basename(extracted_root)
 	return { root: extracted_root, name }

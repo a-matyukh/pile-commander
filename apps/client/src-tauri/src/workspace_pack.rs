@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{copy, BufReader, Write};
+use std::io::{copy, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -143,6 +143,195 @@ fn add_directory_to_zip(
     Ok(())
 }
 
+/// What an archive may hold to be unpacked. A `.pile` comes from anywhere —
+/// a download, a message — and a zip of a few kilobytes can declare
+/// terabytes. The numbers are far above any folder a person keeps and are
+/// checked against the archive's own directory before a byte is written.
+struct UnpackLimits {
+    entries: usize,
+    file_bytes: u64,
+    total_bytes: u64,
+    /// Deflate cannot pack real files this tightly; only above `ratio_from`
+    /// unpacked bytes, so a small folder of very regular text still passes.
+    ratio: u64,
+    ratio_from: u64,
+}
+
+const GIB: u64 = 1024 * 1024 * 1024;
+const UNPACK_LIMITS: UnpackLimits = UnpackLimits {
+    entries: 200_000,
+    file_bytes: 16 * GIB,
+    total_bytes: 64 * GIB,
+    ratio: 100,
+    ratio_from: GIB,
+};
+
+fn gib(bytes: u64) -> String {
+    format!("{:.1} GB", bytes as f64 / GIB as f64)
+}
+
+/// Reads the archive's directory only. Refuses what is over a limit and an
+/// archive without `<root>/.pile/attrs.json`, which the import needs right
+/// after the unpacking, so neither is found out half-way.
+fn check_archive(
+    archive: &mut ZipArchive<BufReader<File>>,
+    root_name: &str,
+    archive_bytes: u64,
+    limits: &UnpackLimits,
+) -> Result<(), String> {
+    if archive.len() > limits.entries {
+        return Err(format!(
+            "archive holds too many items to import: {} (the limit is {})",
+            archive.len(),
+            limits.entries
+        ));
+    }
+    let manifest = Path::new(root_name).join(PILE_DIR).join(ATTRS_FILE);
+    let mut has_manifest = false;
+    let mut total: u64 = 0;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let Some(enclosed) = entry.enclosed_name() else {
+            continue;
+        };
+        if entry.is_dir() {
+            continue;
+        }
+        if entry.size() > limits.file_bytes {
+            return Err(format!(
+                "archive holds a file too large to import: {} is {} (the limit is {})",
+                enclosed.display(),
+                gib(entry.size()),
+                gib(limits.file_bytes)
+            ));
+        }
+        total = total.saturating_add(entry.size());
+        has_manifest |= enclosed == manifest;
+    }
+    if total > limits.total_bytes {
+        return Err(format!(
+            "archive is too large to import: {} unpacked (the limit is {})",
+            gib(total),
+            gib(limits.total_bytes)
+        ));
+    }
+    if total > limits.ratio_from && total / limits.ratio > archive_bytes {
+        return Err(format!(
+            "archive unpacks to {} from a file of {:.1} MB: packed too tightly to be a real folder, not imported",
+            gib(total),
+            archive_bytes as f64 / (1024.0 * 1024.0)
+        ));
+    }
+    if !has_manifest {
+        return Err(format!(
+            "not a Pile Commander archive: {root_name}/{PILE_DIR}/{ATTRS_FILE} is missing"
+        ));
+    }
+    Ok(())
+}
+
+/// A new folder next to where the workspace will stand, so the finished
+/// tree moves into place by a rename on the same volume. Not a dot-name:
+/// the app does not write into dot-folders of the home folder.
+fn staging_dir(dest_parent: &Path, root_name: &str) -> Result<PathBuf, String> {
+    let stem: String = root_name.chars().take(100).collect();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_nanos())
+        .unwrap_or(0);
+    for name in [
+        format!("{stem}.importing"),
+        format!("{stem}.importing-{stamp}"),
+    ] {
+        let dir = dest_parent.join(name);
+        match fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err(format!("cannot make a folder to unpack into in {}", dest_parent.display()))
+}
+
+fn extract_into(
+    archive: &mut ZipArchive<BufReader<File>>,
+    staging: &Path,
+) -> Result<(), String> {
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let Some(enclosed) = entry.enclosed_name() else {
+            continue;
+        };
+        let out_path = sanitize_extract_path(staging, enclosed.as_path())?;
+
+        if entry.is_dir() || entry.name().ends_with('/') {
+            fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+            continue;
+        }
+
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        // The directory was checked; the data may still be longer than the
+        // directory says. One byte past the declared size is enough to tell.
+        let declared = entry.size();
+        let mut outfile = File::create(&out_path).map_err(|e| e.to_string())?;
+        let written = copy(&mut (&mut entry).take(declared + 1), &mut outfile)
+            .map_err(|e| e.to_string())?;
+        if written > declared {
+            return Err(format!(
+                "archive entry is larger than it declares: {}",
+                enclosed.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Unpacks into a folder of its own next to the destination and moves the
+/// finished workspace into place. Whatever fails, nothing of the archive is
+/// left behind, so the import can simply be run again.
+fn unpack_pile(
+    archive_path: &Path,
+    dest_parent: &Path,
+    limits: &UnpackLimits,
+) -> Result<PathBuf, String> {
+    let archive_bytes = fs::metadata(archive_path).map_err(|e| e.to_string())?.len();
+    let file = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut archive = ZipArchive::new(BufReader::new(file)).map_err(|e| e.to_string())?;
+
+    let root_name = archive_root_name(&mut archive)?;
+    let extracted_root = dest_parent.join(&root_name);
+    if extracted_root.exists() {
+        return Err(format!(
+            "destination already exists: {}",
+            extracted_root.display()
+        ));
+    }
+    check_archive(&mut archive, &root_name, archive_bytes, limits)?;
+
+    let staging = staging_dir(dest_parent, &root_name)?;
+    let moved = extract_into(&mut archive, &staging).and_then(|()| {
+        let staged_root = staging.join(&root_name);
+        if !staged_root.is_dir() {
+            return Err(format!(
+                "archive did not produce workspace folder: {}",
+                extracted_root.display()
+            ));
+        }
+        if extracted_root.exists() {
+            return Err(format!(
+                "destination already exists: {}",
+                extracted_root.display()
+            ));
+        }
+        fs::rename(&staged_root, &extracted_root).map_err(|e| e.to_string())
+    });
+    // empty after a move, the partial tree after a failure
+    let _ = fs::remove_dir_all(&staging);
+    moved.map(|()| extracted_root)
+}
+
 /// Unpack a `.pile` (zip) archive into `dest_parent` and return the workspace root path.
 #[tauri::command]
 pub fn import_workspace_zip(
@@ -164,44 +353,7 @@ pub fn import_workspace_zip(
         ));
     }
 
-    let file = File::open(&archive_path).map_err(|e| e.to_string())?;
-    let mut archive = ZipArchive::new(BufReader::new(file)).map_err(|e| e.to_string())?;
-
-    let root_name = archive_root_name(&mut archive)?;
-    let extracted_root = dest_parent_path.join(&root_name);
-    if extracted_root.exists() {
-        return Err(format!(
-            "destination already exists: {}",
-            extracted_root.display()
-        ));
-    }
-
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let Some(enclosed) = entry.enclosed_name() else {
-            continue;
-        };
-        let out_path = sanitize_extract_path(&dest_parent_path, enclosed.as_path())?;
-
-        if entry.is_dir() || entry.name().ends_with('/') {
-            fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
-            continue;
-        }
-
-        if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let mut outfile = File::create(&out_path).map_err(|e| e.to_string())?;
-        copy(&mut entry, &mut outfile).map_err(|e| e.to_string())?;
-    }
-
-    if !extracted_root.is_dir() {
-        return Err(format!(
-            "archive did not produce workspace folder: {}",
-            extracted_root.display()
-        ));
-    }
-
+    let extracted_root = unpack_pile(&archive_path, &dest_parent_path, &UNPACK_LIMITS)?;
     path_to_string(&extracted_root)
 }
 
@@ -582,6 +734,144 @@ mod pile_zip_tests {
         assert!(archive.by_name("Trip/Empty/").is_ok());
         assert!(archive.by_name("Trip/.pile/attrs.json").is_ok());
         assert!(!partial_path(&target).unwrap().exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    const MANIFEST: (&str, &[u8]) = ("Trip/.pile/attrs.json", b"{}");
+
+    /// A name ending in `/` is a folder.
+    fn write_archive(path: &Path, entries: &[(&str, &[u8])]) {
+        let mut writer = ZipWriter::new(File::create(path).unwrap());
+        for (name, bytes) in entries {
+            if name.ends_with('/') {
+                writer.add_directory(*name, zip_options()).unwrap();
+            } else {
+                writer.start_file(*name, zip_options()).unwrap();
+                writer.write_all(bytes).unwrap();
+            }
+        }
+        writer.finish().unwrap();
+    }
+
+    /// The archive in one folder, an empty destination in another.
+    fn import_case(name: &str, entries: &[(&str, &[u8])]) -> (PathBuf, PathBuf, PathBuf) {
+        let dir = scratch(name);
+        let archive = dir.join("Trip.pile");
+        write_archive(&archive, entries);
+        let dest = dir.join("dest");
+        fs::create_dir(&dest).unwrap();
+        (dir, archive, dest)
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    const ROOMY: UnpackLimits = UnpackLimits {
+        entries: 100,
+        file_bytes: 1_000_000,
+        total_bytes: 1_000_000,
+        ratio: 100,
+        ratio_from: 1_000_000,
+    };
+
+    #[test]
+    fn an_archive_is_unpacked_beside_the_destination_and_moved_into_place() {
+        let (dir, archive, dest) = import_case(
+            "unpack",
+            &[("Trip/Empty/", b""), ("Trip/Day 1/notes.md", b"hello"), MANIFEST],
+        );
+        let root = unpack_pile(&archive, &dest, &ROOMY).unwrap();
+        assert_eq!(root, dest.join("Trip"));
+        assert_eq!(fs::read(root.join("Day 1/notes.md")).unwrap(), b"hello");
+        assert!(root.join("Empty").is_dir());
+        assert!(root.join(".pile/attrs.json").is_file());
+        // nothing of the unpacking is left next to the workspace
+        assert_eq!(names_in(&dest), vec!["Trip".to_string()]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_name_that_is_taken_is_left_alone() {
+        let (dir, archive, dest) = import_case("taken", &[("Trip/notes.md", b"new"), MANIFEST]);
+        fs::create_dir(dest.join("Trip")).unwrap();
+        fs::write(dest.join("Trip/notes.md"), b"mine").unwrap();
+        let error = unpack_pile(&archive, &dest, &ROOMY).unwrap_err();
+        assert!(error.contains("destination already exists"), "{error}");
+        assert_eq!(fs::read(dest.join("Trip/notes.md")).unwrap(), b"mine");
+        assert_eq!(names_in(&dest), vec!["Trip".to_string()]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_archive_over_a_limit_or_without_its_manifest_writes_nothing() {
+        let big = vec![0u8; 100_000];
+        let entries: &[(&str, &[u8])] = &[("Trip/a.txt", b"12345"), ("Trip/zeros.bin", &big), MANIFEST];
+        let refused = |name: &str, entries: &[(&str, &[u8])], limits: UnpackLimits, words: &str| {
+            let (dir, archive, dest) = import_case(name, entries);
+            let error = unpack_pile(&archive, &dest, &limits).unwrap_err();
+            assert!(error.contains(words), "{name}: {error}");
+            assert!(names_in(&dest).is_empty(), "{name}: {:?}", names_in(&dest));
+            fs::remove_dir_all(&dir).unwrap();
+        };
+        refused("count", entries, UnpackLimits { entries: 2, ..ROOMY }, "too many items");
+        refused("file", entries, UnpackLimits { file_bytes: 99_999, ..ROOMY }, "a file too large");
+        refused("total", entries, UnpackLimits { total_bytes: 100_004, ..ROOMY }, "too large to import");
+        // 100 000 zeros deflate to about a hundred bytes
+        refused("ratio", entries, UnpackLimits { ratio: 10, ratio_from: 50_000, ..ROOMY }, "packed too tightly");
+        refused("manifest", &[("Trip/a.txt", b"12345")], ROOMY, "not a Pile Commander archive");
+        // and the same archive passes when nothing is over
+        let (dir, archive, dest) = import_case("passes", entries);
+        unpack_pile(&archive, &dest, &ROOMY).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failure_half_way_leaves_nothing_and_the_import_can_be_run_again() {
+        // `Trip/a` is a file, so `Trip/a/b` cannot be written after it
+        let (dir, archive, dest) = import_case(
+            "half",
+            &[MANIFEST, ("Trip/first.txt", b"written"), ("Trip/a", b"file"), ("Trip/a/b", b"cannot")],
+        );
+        assert!(unpack_pile(&archive, &dest, &ROOMY).is_err());
+        assert!(names_in(&dest).is_empty(), "{:?}", names_in(&dest));
+
+        write_archive(&archive, &[MANIFEST, ("Trip/first.txt", b"written")]);
+        unpack_pile(&archive, &dest, &ROOMY).unwrap();
+        assert_eq!(names_in(&dest), vec!["Trip".to_string()]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_entry_longer_than_its_directory_says_is_refused() {
+        let dir = scratch("lying");
+        let archive = dir.join("Trip.pile");
+        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        writer.start_file(MANIFEST.0, stored).unwrap();
+        writer.write_all(MANIFEST.1).unwrap();
+        writer.start_file("Trip/long.bin", stored).unwrap();
+        writer.write_all(b"five!").unwrap();
+        writer.finish().unwrap();
+        // the last directory record is long.bin: declare 1 byte where 5 are stored
+        let mut bytes = fs::read(&archive).unwrap();
+        let record = bytes
+            .windows(4)
+            .rposition(|window| window == [0x50, 0x4b, 0x01, 0x02])
+            .unwrap();
+        bytes[record + 24..record + 28].copy_from_slice(&1u32.to_le_bytes());
+        fs::write(&archive, bytes).unwrap();
+
+        let dest = dir.join("dest");
+        fs::create_dir(&dest).unwrap();
+        let error = unpack_pile(&archive, &dest, &ROOMY).unwrap_err();
+        assert!(error.contains("larger than it declares"), "{error}");
+        assert!(names_in(&dest).is_empty(), "{:?}", names_in(&dest));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

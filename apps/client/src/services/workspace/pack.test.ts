@@ -167,6 +167,15 @@ describe('importing a .pile keeps the root cover', () => {
 		expect(ws.has('/import/Board/.pile/attrs.json')).toBe(false)
 		expect(ws.get_xattr('/import/Board', 'cover')).toBe(ROOT_COVER)
 	})
+
+	test('a layout that cannot be read takes the unpacked folder away, so the import can be run again', async () => {
+		const ws = seed_imported_root()
+		ws.seed_file('/import/Board/.pile/attrs.json', '{ not json')
+		ws.seed_file('/import/Board/note.md', '# hello')
+		await expect(import_workspace_from_pile('/tmp/Board.pile', '/import')).rejects.toThrow('layout file (.pile/attrs.json) cannot be read')
+		expect(ws.has('/import/Board')).toBe(false)
+		expect(ws.has('/import/Board/note.md')).toBe(false)
+	})
 })
 
 describe('export_cloud_workspace_to_pile', () => {
