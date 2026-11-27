@@ -121,6 +121,15 @@ describe('text reads back as it was written', () => {
 	test('blank lines between paragraphs are kept', () => {
 		kept('one\n\n\n\nafter gaps')
 	})
+
+	test('empty paragraphs typed between texts survive a save, one or several', () => {
+		const p = (text?: string): JSONContent => text ? { type: 'paragraph', content: [{ type: 'text', text }] } : { type: 'paragraph' }
+		for (const empty of [1, 2, 3]) {
+			const doc: JSONContent = { type: 'doc', content: [p('A'), ...Array.from({ length: empty }, () => p()), p('B')] }
+			const back = parse_note(serialize_note(doc)).content ?? []
+			expect(back.map(node => node.content?.length ? 'text' : 'empty')).toEqual(['text', ...Array(empty).fill('empty'), 'text'])
+		}
+	})
 })
 
 describe('lists', () => {

@@ -34,6 +34,12 @@ function render_schema(default_align: Align): Schema {
 	return schema
 }
 
+/**
+ * An empty paragraph is a blank line, as it is in the editor: an empty `<p>`
+ * has no height and would vanish, so two Enters would show as one.
+ */
+const show_empty_paragraphs = (html: string) => html.replace(/<p(\s[^>]*)?><\/p>/g, '<p$1><br></p>')
+
 /** A board shows each note's preview many times; the same text renders once. */
 const CACHE_LIMIT = 400
 const cache = new Map<string, string>()
@@ -51,7 +57,7 @@ export function render_note_html(markdown: string, default_align: Align = 'left'
 	try {
 		const schema = render_schema(default_align)
 		const doc = schema.nodeFromJSON(parse_note(markdown, default_align))
-		html = sanitizeNoteHtml(getHTMLFromFragment(doc.content, schema))
+		html = show_empty_paragraphs(sanitizeNoteHtml(getHTMLFromFragment(doc.content, schema)))
 	} catch (error) {
 		// A note the schema cannot take still shows, the way it did before.
 		console.warn('[text] note rendered by the fallback', error)

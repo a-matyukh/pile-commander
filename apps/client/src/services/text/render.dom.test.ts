@@ -67,6 +67,11 @@ describe('render_note_html', () => {
 		expect(dom('> [!WARNING]\n> careful').querySelector('div[data-callout="warning"] p')?.textContent).toBe('careful')
 	})
 
+	test('an empty paragraph shows as a blank line, as in the editor', () => {
+		expect(render_note_html('A\n\n\n\nB')).toBe('<p>A</p><p><br></p><p>B</p>')
+		expect(render_note_html('A\n\n\n\n&nbsp;\n\nB')).toBe('<p>A</p><p><br></p><p><br></p><p>B</p>')
+	})
+
 	test('the same text renders once, an empty note to nothing', () => {
 		expect(render_note_html('cached **once**')).toBe(render_note_html('cached **once**'))
 		expect(render_note_html('')).toBe('')
