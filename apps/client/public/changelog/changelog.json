@@ -1,6 +1,47 @@
 {
   "entries": [
     {
+      "version": "2.8.5",
+      "date": "2026-11-27",
+      "title": { "ru": "Пустые строки в заметке на месте", "en": "Blank lines stay in notes" },
+      "text": {
+        "ru": "Пустая строка в заметке выглядит так же и после того, как вы закончили редактировать, — раньше она пропадала.",
+        "en": "A blank line in a note now looks the same after you finish editing; before, it disappeared."
+      }
+    },
+    {
+      "version": "2.8.5",
+      "title": { "ru": "Импорт .pile можно повторить", "en": "A failed .pile import can be retried" },
+      "text": {
+        "ru": "Если импорт .pile не удался, недоделанной папки не остаётся, и можно сразу попробовать ещё раз. Раньше следующая попытка отказывала: «папка уже существует».",
+        "en": "If a .pile import fails, it leaves no half-made folder behind, so you can try again right away. Before, the next attempt refused because the folder already existed."
+      }
+    },
+    {
+      "version": "2.8.5",
+      "title": { "ru": "Ярлыки не уходят в облако", "en": "Symbolic links stay on your computer" },
+      "text": {
+        "ru": "Синхронизация и копирование в облако оставляют символические ссылки на компьютере. Раньше файл, на который вела ссылка, попадал в облако и был виден всем, с кем вы делитесь папкой.",
+        "en": "Sync and copying to the cloud now leave symbolic links on your computer. Before, the file a link pointed to went to the cloud, where everyone you share the folder with could see it."
+      }
+    },
+    {
+      "version": "2.8.5",
+      "title": { "ru": "macOS спросит перед запуском программы", "en": "macOS asks before a synced program runs" },
+      "text": {
+        "ru": "Если синхронизация скачала программу, macOS спросит перед её первым запуском — как с любым файлом из браузера. Документы, картинки и заметки открываются как раньше.",
+        "en": "If sync downloads a program, macOS asks before it first runs, as with any file from a browser. Documents, pictures and notes open as before."
+      }
+    },
+    {
+      "version": "2.8.5",
+      "title": { "ru": "Почту участников видит владелец", "en": "Only the owner sees members’ emails" },
+      "text": {
+        "ru": "В общей папке адреса почты участников теперь видит только её владелец.",
+        "en": "In a shared folder, members’ email addresses are now shown to its owner only."
+      }
+    },
+    {
       "version": "2.8.4",
       "date": "2026-11-25",
       "title": { "ru": "Копии выделяются после дублирования", "en": "Duplicates come out selected" },
